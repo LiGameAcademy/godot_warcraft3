@@ -12,7 +12,13 @@ var water_id: String = ""
 var height_offset_tiles: float = 0.0 ## Water.slk height（tile 单位）
 var num_tex: int = 0
 var tex_rate: float = 15.0 ## 约帧/秒；shader 用 TIME*tex_rate（viewer 等价于每帧 += texRate/60）
+## Water.slk cells：一张水面贴图覆盖的格数（ISha=2 → UV 按格坐标 / 2）
+var cells: float = 2.0
 var tex_file_prefix: String = "ReplaceableTextures/Water/Water"
+var shore_dir: String = "Doodads/LordaeronSummer/Water"
+var shore_s_file: String = "Shoreline"
+var shore_oc_file: String = "ShorelineOutsideCorner"
+var shore_ic_file: String = "ShorelineInsideCorner"
 var shallow_min: Color = Color(1, 1, 1, 0.04)
 var shallow_max: Color = Color(0.94, 0.94, 0.94, 0.86)
 var deep_min: Color = Color(0.46, 0.46, 0.46, 0.86)
@@ -62,7 +68,12 @@ func _load_slk(path: String) -> void:
 	height_offset_tiles = float(hit.get("height", 0.0))
 	num_tex = int(hit.get("numTex", 0))
 	tex_rate = float(hit.get("texRate", 15))
+	cells = maxf(float(hit.get("cells", 2)), 1.0)
 	tex_file_prefix = str(hit.get("texFile", "ReplaceableTextures\\Water\\Water")).replace("\\", "/")
+	shore_dir = str(hit.get("shoreDir", "Doodads\\LordaeronSummer\\Water")).replace("\\", "/")
+	shore_s_file = str(hit.get("shoreSFile", "Shoreline"))
+	shore_oc_file = str(hit.get("shoreOCFile", "ShorelineOutsideCorner"))
+	shore_ic_file = str(hit.get("shoreICFile", "ShorelineInsideCorner"))
 	shallow_min = _rgba(hit, "Smin")
 	shallow_max = _rgba(hit, "Smax")
 	deep_min = _rgba(hit, "Dmin")

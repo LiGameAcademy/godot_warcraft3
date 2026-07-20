@@ -6,6 +6,8 @@
 
 经典 MPQ 解包后各目录放什么，见 [docs/WC3_ASSET_PATHS.md](docs/WC3_ASSET_PATHS.md)（按路径查单位/地形/UI/音效等）。
 
+水体（HiveWE 对齐、后续 Shoreline、远期增强）：[docs/WATER.md](docs/WATER.md)。
+
 ## 前置条件
 
 - [Godot 4.6](https://godotengine.org/)
@@ -134,6 +136,7 @@ assets/map-parsed/       解析后的地图 JSON（不提交）
 assets/slk-exported/     SLK 导出表（不提交）
 docs/LEGAL.md            合规说明
 docs/WC3_ASSET_PATHS.md  经典资产路径手册
+docs/WATER.md            水体复刻路线与远期增强（暂不实现）
 ```
 
 ## Lost Temple 地图预览（灰盒 → 可视复原）
@@ -154,7 +157,8 @@ docs/WC3_ASSET_PATHS.md  经典资产路径手册
 
 1. **玩家首次运行**：选择本机经典安装路径 → GDExtension + [StormLib](https://github.com/ladislav-zezula/StormLib) 解包到 `user://wc3_cache/`，manifest 语义与开发工具一致。
 2. **Mod**：在 `mods/<id>/` 下用相同逻辑路径覆盖缓存文件；`AssetProvider.register_overlay` 已预留。
-3. **悬崖网格 / 地表混合 / 寻路**：WC3 cliff 模型、四角纹理混合、`war3map.wpm` 等。
+3. **水体 Shoreline**：按 [docs/WATER.md](docs/WATER.md) 复刻拍岸浪 MDX；沿岸/泡沫 shader 等增强只记文档、暂不实现。
+4. **寻路等**：`war3map.wpm` 等。
 
 ## 开发依赖说明
 

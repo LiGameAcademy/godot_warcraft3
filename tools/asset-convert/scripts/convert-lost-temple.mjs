@@ -16,6 +16,9 @@ const includes = [
   "ReplaceableTextures/LordaeronTree/**",
   "ReplaceableTextures/AshenvaleTree/**",
   "ReplaceableTextures/Water/**",
+  "Textures/ShorelineParticleXY.blp",
+  "Textures/White_64_Foam1.blp",
+  "Doodads/LordaeronSummer/Water/**",
   // Trees / rocks / props
   // Trees: living variants 0-9 (skip *D dead / *S stump for now via exclude below)
   "Doodads/Terrain/LordaeronTree/LordaeronTree?.mdx",

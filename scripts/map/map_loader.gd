@@ -60,7 +60,13 @@ func _load_all() -> void:
 		var main_ts := str(hf.get("mainTileset", "I"))
 		if main_ts.is_empty():
 			main_ts = "I"
-		_water.build(hf, main_ts)
+		var info := _read_json(map_dir.path_join("info.json"))
+		var map_flags: Dictionary = {}
+		if not info.is_empty():
+			var flags_wrap: Variant = info.get("flags", {})
+			if typeof(flags_wrap) == TYPE_DICTIONARY:
+				map_flags = flags_wrap
+		_water.build(hf, main_ts, map_flags)
 		await get_tree().process_frame
 	if place_units:
 		_units.build(_read_json(map_dir.path_join("units.json")))
@@ -72,13 +78,14 @@ func _load_all() -> void:
 	var ms := Time.get_ticks_msec() - t0
 	var cliff_n := _cliffs.last_placed if build_cliffs else 0
 	var water_n := _water.last_cell_count if build_water else 0
+	var shore_n := _water.last_shore_count if build_water else 0
 	_set_status(
-		"地形就绪（%d ms，留缝 %d，悬崖 %d，水面 %d）— WASD 移动，右键转向，滚轮缩放"
-		% [ms, _terrain.last_gap_count, cliff_n, water_n]
+		"地形就绪（%d ms，留缝 %d，悬崖 %d，水面 %d，岸浪 %d）— WASD 移动，右键转向，滚轮缩放"
+		% [ms, _terrain.last_gap_count, cliff_n, water_n, shore_n]
 	)
 	print(
-		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d)"
-		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n]
+		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d shore=%d)"
+		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n, shore_n]
 	)
 
 
