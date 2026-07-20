@@ -4,7 +4,7 @@
 > 不含离线工具链细节（见 README / 各 `tools/*/README.md`）。水体专项见 [WATER.md](WATER.md)。
 >
 > **重构分支：** `refactor/map-architecture`  
-> **进度：** 步骤 1–2 进行中 — 已引入 `MapBuildContext`、单次悬崖拓扑扫描、Cliff 共用 `MapModelCache`。
+> **进度：** 步骤 1–3 完成 — `MapBuildContext`、单次悬崖拓扑、ModelCache 共用、资源入口统一（AssetProvider + RuntimeAssets.converted_*）。
 
 原则：**离线解析 → 运行时装配 → 分层渲染**。先把边界划清，再谈优化与对标官方。
 
@@ -29,10 +29,10 @@
 
 | 项 | 细节 |
 |----|------|
-| **AssetProvider 对 map 几乎是死代码** | `scripts/` 内零引用；地图只走 `RuntimeAssets` + 写死 `res://assets/asset-converted/...` |
-| **GLB 缓存分叉** | `MapModelCache` 服务单位/装饰；`MapCliffLayer` 自建 `_mesh_cache` + `_find_mesh_instance`，未共用 |
-| **悬崖拓扑重复扫描** | `collect_ramp_placements` / 留缝 / `count_gaps` 可在同一次 load 内跑多遍 |
-| **常量与 I/O 重复** | `FLAG_WATER` 多处定义；`_read_json` 在 Loader / Catalog 各写一份；单位与装饰 xform 近乎拷贝 |
+| **AssetProvider 与 RuntimeAssets 已汇合** | `resolve`：overlay → converted → cache；地图经 `RuntimeAssets.converted_path` / `load_converted_*`，禁止手写 converted 前缀 |
+| **GLB 缓存分叉** | ~~Cliff 自建缓存~~ → 已共用 `MapModelCache`；继续盯单位/装饰路径一致性 |
+| **悬崖拓扑重复扫描** | ~~多次 collect_ramp~~ → `MapBuildContext.ensure_cliff_topology()` 一次 |
+| **常量与 I/O 重复** | `FLAG_WATER` 等仍有多处定义；JSON 读取尚未完全抽公共 |
 | **死 API / 死接线** | `HeightfieldMeshBuilder.build_uniform_mesh` 未见调用；`wc3_shore_wave.gdshader` 无运行时引用 |
 | **文档与默认开关不一致** | README 写 Lost Temple 含树等预览；`MapLoader` 默认 `place_doodads/units = false` |
 
@@ -297,9 +297,9 @@ flowchart TB
 2. **削薄 Layer + 统一 ModelCache** ✅（Cliff 已接 `MapModelCache`）  
    Layer 以 `build(ctx)` 为主；后续可继续把材质绑定与 Domain 输出契约收紧。
 
-3. **统一资源入口**  
-   中期：逻辑路径 → `AssetProvider.resolve` → converted/cache；`RuntimeAssets` 只接收绝对路径。  
-   近期至少文档约定：map 域禁止再发明第三种拼路径方式。
+3. **统一资源入口** ✅  
+   `AssetProvider.resolve`：overlay → converted → cache（含 .blp/.mdx 扩展名映射）。  
+   地图侧一律 `RuntimeAssets.converted_path` / `slk_path` / `load_converted_*`，不再手写 converted 前缀。
 
 4. **目录归位**  
    `domain/` / `layers/` / `infra/` 物理搬家；更新本文档路径表。

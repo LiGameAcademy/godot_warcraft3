@@ -33,8 +33,9 @@ static func create(
 	p_tiles: Wc3TerrainTiles,
 	p_catalog: Wc3IdCatalog = null,
 	p_cache: MapModelCache = null
-) -> MapBuildContext:
-	var ctx := MapBuildContext.new()
+):
+	# 不用 MapBuildContext.new()：headless 下 class_name 缓存可能尚未生成
+	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).new()
 	ctx.map_dir = p_map_dir
 	ctx.hf = p_hf
 	ctx.info = p_info

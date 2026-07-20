@@ -285,9 +285,9 @@ static func clamp_variation(model_dir: String, tag: String, variation: int) -> i
 
 
 static func glb_path(model_dir: String, tag: String, variation: int) -> String:
-	return "res://assets/asset-converted/Doodads/Terrain/%s/%s%s%d.glb" % [
-		model_dir, model_dir, tag, variation
-	]
+	return RuntimeAssets.converted_path(
+		"Doodads/Terrain/%s/%s%s%d.glb" % [model_dir, model_dir, tag, variation]
+	)
 
 
 static func resolve_glb(model_dir: String, tag: String, variation: int) -> String:

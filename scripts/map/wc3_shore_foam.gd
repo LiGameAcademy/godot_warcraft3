@@ -4,7 +4,7 @@ extends RefCounted
 ## 直边/角共用同一套参数，一个 MultiMesh 画完。
 
 
-const TEX_FOAM := "res://assets/asset-converted/Textures/ShorelineParticleXY.png"
+const TEX_FOAM := "Textures/ShorelineParticleXY.png"
 const FOAM_SHADER: Shader = preload("res://shaders/wc3_shore_foam.gdshader")
 
 const PARTICLES_PER := 6
@@ -18,7 +18,7 @@ const CLIFF_SPEED_MUL := 0.35
 static func build_systems(parent: Node3D, placements: Array) -> int:
 	if placements.is_empty():
 		return 0
-	var tex := RuntimeAssets.load_texture(TEX_FOAM)
+	var tex := RuntimeAssets.load_converted_texture(TEX_FOAM)
 	if tex == null:
 		push_warning("Wc3ShoreFoam: 缺贴图 %s" % TEX_FOAM)
 		return 0

@@ -8,9 +8,9 @@ var _doodads: Dictionary = {}
 
 
 func load_default() -> void:
-	_load_unit_ui("res://assets/slk-exported/Units/unitUI.json")
-	_load_destructables("res://assets/slk-exported/Units/DestructableData.json")
-	_load_doodads("res://assets/slk-exported/Doodads/Doodads.json")
+	_load_unit_ui(RuntimeAssets.slk_path("Units/unitUI.json"))
+	_load_destructables(RuntimeAssets.slk_path("Units/DestructableData.json"))
+	_load_doodads(RuntimeAssets.slk_path("Doodads/Doodads.json"))
 
 
 func lookup(type_id: String) -> Dictionary:
@@ -39,12 +39,12 @@ func converted_glb_path(type_id: String, variation: int = 0) -> String:
 	if base.is_empty():
 		return ""
 	var candidates: PackedStringArray = [
-		"res://assets/asset-converted/%s%d.glb" % [base, variation],
-		"res://assets/asset-converted/%s.glb" % base,
-		"res://assets/asset-converted/%s0.glb" % base,
+		"%s%d.glb" % [base, variation],
+		"%s.glb" % base,
+		"%s0.glb" % base,
 	]
-	for p in candidates:
-		# asset-converted 被 .gdignore，不能用 ResourceLoader
+	for rel in candidates:
+		var p := RuntimeAssets.converted_path(rel)
 		if RuntimeAssets.file_exists(p):
 			return p
 	return ""
