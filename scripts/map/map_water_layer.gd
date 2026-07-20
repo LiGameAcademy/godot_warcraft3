@@ -1,14 +1,11 @@
 class_name MapWaterLayer
 extends Node3D
-## 水体层：HiveWE 水面网格 + 官方 Shoreline PE2 泡沫（直边/内外角）。
+## 水体层：消费 MapBuildContext → 水面网格 + 岸浪。
 
 
 const WATER_SHADER: Shader = preload("res://shaders/wc3_water.gdshader")
 
 @export var height_bias_wc3: float = 0.0
-@export var build_shore_foam: bool = true
-## 已弃用：ShorelineWave 网格浪（非 Water.slk 自动岸线）
-@export var build_shore_mesh_waves: bool = false
 
 @onready var _water: HeightfieldMesh = $Surface
 
@@ -17,14 +14,14 @@ var last_shore_count: int = 0
 var _shore_root: Node3D
 
 
-func build(hf: Dictionary, main_tileset: String = "I", map_flags: Dictionary = {}) -> void:
+func build(ctx) -> void:
 	_water.clear_mesh()
 	_clear_shore()
 	last_cell_count = 0
 	last_shore_count = 0
 
-	var params := Wc3WaterParams.load_for_tileset(main_tileset)
-	var built := Wc3WaterMesh.build(hf, params, height_bias_wc3)
+	var params := Wc3WaterParams.load_for_tileset(ctx.main_tileset)
+	var built := Wc3WaterMesh.build(ctx.hf, params, height_bias_wc3, ctx.meta)
 	if built.is_empty():
 		push_warning("MapWaterLayer: 无水面网格")
 		return
@@ -62,20 +59,17 @@ func build(hf: Dictionary, main_tileset: String = "I", map_flags: Dictionary = {
 		]
 	)
 
-	if build_shore_foam:
-		_build_shore_foam(hf, params, map_flags)
+	_build_shore_foam(ctx, params)
 
 
-func _build_shore_foam(hf: Dictionary, params: Wc3WaterParams, map_flags: Dictionary) -> void:
-	var cliff_on := bool(map_flags.get("waterWavesCliff", true))
-	var roll_on := bool(map_flags.get("waterWavesRolling", true))
+func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
+	var cliff_on := bool(ctx.map_flags.get("waterWavesCliff", true))
+	var roll_on := bool(ctx.map_flags.get("waterWavesRolling", true))
 	var collected := Wc3ShorelineBuilder.collect_foam_placements(
-		hf, params, height_bias_wc3, cliff_on, roll_on
+		ctx.hf, params, height_bias_wc3, cliff_on, roll_on, ctx.meta
 	)
-	var n_s: int = (collected.get("straight", []) as Array).size()
-	var n_o: int = (collected.get("outside", []) as Array).size()
-	var n_i: int = (collected.get("inside", []) as Array).size()
-	if n_s + n_o + n_i == 0:
+	var list: Array = collected.get("placements", []) as Array
+	if list.is_empty():
 		print(
 			"Shore foam: none (candidates=%d shallowSkip=%d cliff=%s roll=%s)"
 			% [
@@ -90,14 +84,12 @@ func _build_shore_foam(hf: Dictionary, params: Wc3WaterParams, map_flags: Dictio
 	_shore_root = Node3D.new()
 	_shore_root.name = "ShoreFoam"
 	add_child(_shore_root)
-	last_shore_count = Wc3ShoreFoam.build_systems(_shore_root, collected)
+	last_shore_count = Wc3ShoreFoam.build_systems(_shore_root, list)
 	print(
-		"Shore foam: points=%d (S=%d OC=%d IC=%d) candidates=%d shallowSkip=%d"
+		"Shore foam: emitters=%d instances=%d candidates=%d shallowSkip=%d"
 		% [
+			list.size(),
 			last_shore_count,
-			n_s,
-			n_o,
-			n_i,
 			int(collected.get("edge_candidates", 0)),
 			int(collected.get("skipped_shallow", 0)),
 		]

@@ -1,5 +1,5 @@
 extends SceneTree
-## 自测：斜坡不画水 + 泡沫每实例朝向不同。
+## 自测：斜坡跳过 + 简化岸浪 MultiMesh。
 
 
 const Foam := preload("res://scripts/map/wc3_shore_foam.gd")
@@ -35,38 +35,20 @@ func _run() -> void:
 	var collected: Dictionary = Builder.collect_foam_placements(
 		hf as Dictionary, params, 0.0, true, true
 	)
-	var n_s: int = (collected.get("straight", []) as Array).size()
-	var n_o: int = (collected.get("outside", []) as Array).size()
-	var n_i: int = (collected.get("inside", []) as Array).size()
-
-	var sample: Array = collected.get("straight", []) as Array
-	var dir_keys: Dictionary = {}
-	for i in range(sample.size()):
-		var e: Vector3 = sample[i].get("emit_dir", Vector3.ZERO)
-		var key := "%d,%d" % [roundi(e.x), roundi(e.z)]
-		dir_keys[key] = true
-	print(
-		"selftest Shore foam: S=%d OC=%d IC=%d uniqueDirs=%d ok"
-		% [n_s, n_o, n_i, dir_keys.size()]
-	)
+	var list: Array = collected.get("placements", []) as Array
+	var cliff_n := 0
+	for rec in list:
+		if bool(rec.get("cliff", false)):
+			cliff_n += 1
+	print("selftest Shore: emitters=%d cliff=%d ok" % [list.size(), cliff_n])
 
 	var root := Node3D.new()
-	var placed: int = Foam.build_systems(root, collected)
-	var group0 := root.get_child(0) as Node3D
-	var unique_basis := 0
-	if group0:
-		var seen: Dictionary = {}
-		for c in group0.get_children():
-			var mi := c as MeshInstance3D
-			if mi == null:
-				continue
-			var z := mi.transform.basis.z
-			var k := "%d,%d" % [roundi(z.x), roundi(z.z)]
-			seen[k] = true
-		unique_basis = seen.size()
-	print(
-		"selftest Shore foam systems points=%d groups=%d uniqueBasis=%d"
-		% [placed, root.get_child_count(), unique_basis]
-	)
+	var n: int = Foam.build_systems(root, list)
+	print("selftest Shore instances=%d children=%d" % [n, root.get_child_count()])
+	if n <= 0:
+		push_error("selftest: foam build failed")
+		root.free()
+		quit(1)
+		return
 	root.free()
 	quit(0)

@@ -1,9 +1,13 @@
 extends Node
 class_name AssetProviderNode
-## 逻辑路径 → 物理文件 解析层（开发态读 .cache；预留 mod overlay）。
-## 玩家端首次解包（GDExtension + StormLib → user://wc3_cache）尚未接入。
+## 逻辑路径 → 物理文件。
+## 查找顺序：mod overlay → asset-converted → .cache/wc3-assets。
+## 转换产物扩展名：.blp→.png，.mdx/.mdl→.glb。
+
 
 const SETTINGS_CACHE_DIR := "warcraft3/asset_cache_dir"
+const SETTINGS_CONVERTED_DIR := "warcraft3/asset_converted_dir"
+const DEFAULT_CONVERTED_RES := "res://assets/asset-converted"
 
 ## { "id": String, "root": String }，后注册者优先。
 var _overlays: Array[Dictionary] = []
@@ -17,16 +21,39 @@ func get_cache_root() -> String:
 	var configured: String = str(ProjectSettings.get_setting(SETTINGS_CACHE_DIR, ""))
 	if not configured.is_empty():
 		return configured.replace("\\", "/").simplify_path()
+	return _project_join(".cache/wc3-assets")
+
+
+func get_converted_root() -> String:
+	var configured: String = str(ProjectSettings.get_setting(SETTINGS_CONVERTED_DIR, ""))
+	if not configured.is_empty():
+		return configured.replace("\\", "/").simplify_path()
+	return ProjectSettings.globalize_path(DEFAULT_CONVERTED_RES).replace("\\", "/")
+
+
+func _project_join(rel: String) -> String:
 	var project_root := ProjectSettings.globalize_path("res://").replace("\\", "/")
 	if project_root.ends_with("/"):
 		project_root = project_root.left(project_root.length() - 1)
-	return project_root.path_join(".cache/wc3-assets").simplify_path()
+	return project_root.path_join(rel).simplify_path()
 
 
 func normalize_logical_path(logical_path: String) -> String:
 	var p := logical_path.replace("\\", "/")
 	while p.begins_with("/"):
 		p = p.substr(1)
+	# 允许误传 res://assets/asset-converted/X
+	const PREFIXES: Array[String] = [
+		"res://assets/asset-converted/",
+		"assets/asset-converted/",
+		"asset-converted/",
+		"res://.cache/wc3-assets/",
+		".cache/wc3-assets/",
+	]
+	for pre in PREFIXES:
+		if p.begins_with(pre):
+			p = p.substr(pre.length())
+			break
 	return p
 
 
@@ -36,17 +63,45 @@ func resolve(logical_path: String) -> String:
 	if logical.is_empty():
 		return ""
 
-	# 后注册的 overlay 优先（与计划中的 mod 覆盖语义一致）。
 	for i in range(_overlays.size() - 1, -1, -1):
 		var overlay: Dictionary = _overlays[i]
-		var candidate: String = str(overlay.get("root", "")).path_join(logical).simplify_path()
-		if FileAccess.file_exists(candidate):
-			return candidate
+		var hit := _first_existing(str(overlay.get("root", "")), logical)
+		if not hit.is_empty():
+			return hit
 
-	var from_cache := get_cache_root().path_join(logical).simplify_path()
-	if FileAccess.file_exists(from_cache):
+	var from_converted := _first_existing(get_converted_root(), logical)
+	if not from_converted.is_empty():
+		return from_converted
+
+	var from_cache := _first_existing(get_cache_root(), logical)
+	if not from_cache.is_empty():
 		return from_cache
 	return ""
+
+
+func _first_existing(root: String, logical: String) -> String:
+	if root.is_empty():
+		return ""
+	for rel in _candidate_relatives(logical):
+		var candidate: String = root.path_join(rel).simplify_path()
+		if FileAccess.file_exists(candidate):
+			return candidate
+	return ""
+
+
+## 同一逻辑路径在 converted / cache 下的可能相对名。
+func _candidate_relatives(logical: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	out.append(logical)
+	var lower := logical.to_lower()
+	if lower.ends_with(".blp"):
+		out.append(logical.substr(0, logical.length() - 4) + ".png")
+	elif lower.ends_with(".mdx") or lower.ends_with(".mdl"):
+		out.append(logical.substr(0, logical.length() - 4) + ".glb")
+	elif logical.get_extension().is_empty():
+		out.append(logical + ".png")
+		out.append(logical + ".glb")
+	return out
 
 
 func exists(logical_path: String) -> bool:
@@ -62,7 +117,6 @@ func open(logical_path: String) -> FileAccess:
 
 
 ## 注册 mod 覆盖根目录。同 logical_path 下后注册者优先。
-## TODO: 第三步接入 mods/<id>/ 自动扫描与 mod.json。
 func register_overlay(mod_id: String, root: String) -> void:
 	if mod_id.is_empty() or root.is_empty():
 		push_warning("AssetProvider.register_overlay: mod_id/root 不能为空")

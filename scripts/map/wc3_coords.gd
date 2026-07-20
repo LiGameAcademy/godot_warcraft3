@@ -7,6 +7,10 @@ const TILE_SIZE := 128.0
 ## 与 tools/asset-convert 中 MODEL_SCALE 一致，便于日后挂 GLB。
 const WORLD_SCALE := 0.01
 
+## war3map.w3e tilepoint flags
+const FLAG_WATER := 1
+const FLAG_RAMP := 4
+
 
 static func wc3_to_godot(wc3: Vector3) -> Vector3:
 	return Vector3(wc3.x, wc3.z, -wc3.y) * WORLD_SCALE

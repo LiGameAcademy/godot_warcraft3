@@ -1,12 +1,15 @@
+class_name MapLoader
 extends Node3D
-## 通用地图加载器。当前专注：贴图正确的地形高度网格。
+## 地图装配入口：构建 MapBuildContext，按序驱动各 Layer。
+
+const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 
 
 @export var map_dir: String = "res://assets/map-parsed/losttemple"
 @export var build_water: bool = true
 @export var build_cliffs: bool = true
-@export var place_doodads: bool = false
-@export var place_units: bool = false
+@export var place_doodads: bool = true
+@export var place_units: bool = true
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
@@ -47,26 +50,21 @@ func _load_all() -> void:
 		_set_status("地图加载失败：缺少 terrain-heightfield.json")
 		return
 
+	var info := _read_json(map_dir.path_join("info.json"))
+	var ctx = MapBuildContextScript.create(map_dir, hf, info, _tiles, _catalog, _cache)
+	ctx.ensure_cliff_topology()
+
 	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")
-	_terrain.build(hf, _tiles)
+	_terrain.build(ctx)
 	await get_tree().process_frame
 
 	if build_cliffs:
 		_set_status("放置悬崖模型…")
-		_cliffs.build(hf, _tiles)
+		_cliffs.build(ctx)
 		await get_tree().process_frame
 	if build_water:
 		_set_status("生成水体…")
-		var main_ts := str(hf.get("mainTileset", "I"))
-		if main_ts.is_empty():
-			main_ts = "I"
-		var info := _read_json(map_dir.path_join("info.json"))
-		var map_flags: Dictionary = {}
-		if not info.is_empty():
-			var flags_wrap: Variant = info.get("flags", {})
-			if typeof(flags_wrap) == TYPE_DICTIONARY:
-				map_flags = flags_wrap
-		_water.build(hf, main_ts, map_flags)
+		_water.build(ctx)
 		await get_tree().process_frame
 	if place_units:
 		_units.build(_read_json(map_dir.path_join("units.json")))

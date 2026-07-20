@@ -1,5 +1,6 @@
 class_name Wc3TerrainAutotile
 extends RefCounted
+
 ## WC3 地表「平滑过渡贴图」——以顶点（tilepoint）染色，以 Tile 为单位查图集。
 ##
 ## 编辑器点击某个顶点时写入 groundTexture；渲染时每个 Tile 看四角：
@@ -25,12 +26,16 @@ const ATLAS_TL := 8
 
 
 ## 返回 { mesh: ArrayMesh, ground_tilesets: Array, gap_count: int }
+## romp 可选：传入则不再 collect_ramp_placements。
 static func build_ground_mesh(
 	hf: Dictionary,
 	extended_flags: PackedByteArray,
-	tiles: Wc3TerrainTiles = null
+	tiles: Wc3TerrainTiles = null,
+	meta: Dictionary = {},
+	romp: PackedByteArray = PackedByteArray()
 ) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
 	var heights: Array = Wc3CliffTiles.apply_ramp_entrance_heights(
@@ -49,7 +54,8 @@ static func build_ground_mesh(
 	var cliff_tilesets: Array = meta["cliff_tilesets"]
 	var center: Vector2 = meta["center"]
 	var tile_size: float = meta["tile_size"]
-	var romp: PackedByteArray = Wc3CliffTiles.collect_ramp_placements(hf)["romp"]
+	if romp.is_empty():
+		romp = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)["romp"]
 
 	# cliffTileset 索引 → groundTileset 索引（悬崖旁地面用 cliff.groundTile）
 	var cliff_to_ground: PackedInt32Array = _build_cliff_to_ground(cliff_tilesets, ground_tilesets, tiles)
@@ -60,8 +66,7 @@ static func build_ground_mesh(
 
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
-	var uvs := PackedVector2Array() # 格内局部坐标 0..1（供调试；着色器主要用预计算 UV）
-	var uv2s := PackedVector2Array() # 未用，占位
+	var uvs := PackedVector2Array()
 	var custom0 := PackedFloat32Array() # 每顶点：tex0,tex1,tex2,tex3（0-based 层；-1=无）
 	var custom1 := PackedFloat32Array() # 每顶点：var0,var1,var2,var3（图集编号）
 	var indices := PackedInt32Array()
@@ -113,13 +118,13 @@ static func build_ground_mesh(
 
 			# 三角形：BL-TL-TR，BL-TR-BR；局部 UV 与 viewer a_position 一致
 			_emit_tri(
-				verts, norms, uvs, uv2s, custom0, custom1, indices,
+				verts, norms, uvs, custom0, custom1, indices,
 				p_bl, p_tl, p_tr, n0,
 				Vector2(0, 0), Vector2(0, 1), Vector2(1, 1),
 				layers
 			)
 			_emit_tri(
-				verts, norms, uvs, uv2s, custom0, custom1, indices,
+				verts, norms, uvs, custom0, custom1, indices,
 				p_bl, p_tr, p_br, n1,
 				Vector2(0, 0), Vector2(1, 1), Vector2(1, 0),
 				layers
@@ -130,7 +135,6 @@ static func build_ground_mesh(
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_CUSTOM0] = custom0
 	arrays[Mesh.ARRAY_CUSTOM1] = custom1
 	arrays[Mesh.ARRAY_INDEX] = indices
@@ -334,7 +338,6 @@ static func _emit_tri(
 	verts: PackedVector3Array,
 	norms: PackedVector3Array,
 	uvs: PackedVector2Array,
-	uv2s: PackedVector2Array,
 	custom0: PackedFloat32Array,
 	custom1: PackedFloat32Array,
 	indices: PackedInt32Array,
@@ -343,16 +346,15 @@ static func _emit_tri(
 	uva: Vector2, uvb: Vector2, uvc: Vector2,
 	layers: Dictionary
 ) -> void:
-	_append_vert(verts, norms, uvs, uv2s, custom0, custom1, indices, pa, normal, uva, layers)
-	_append_vert(verts, norms, uvs, uv2s, custom0, custom1, indices, pb, normal, uvb, layers)
-	_append_vert(verts, norms, uvs, uv2s, custom0, custom1, indices, pc, normal, uvc, layers)
+	_append_vert(verts, norms, uvs, custom0, custom1, indices, pa, normal, uva, layers)
+	_append_vert(verts, norms, uvs, custom0, custom1, indices, pb, normal, uvb, layers)
+	_append_vert(verts, norms, uvs, custom0, custom1, indices, pc, normal, uvc, layers)
 
 
 static func _append_vert(
 	verts: PackedVector3Array,
 	norms: PackedVector3Array,
 	uvs: PackedVector2Array,
-	uv2s: PackedVector2Array,
 	custom0: PackedFloat32Array,
 	custom1: PackedFloat32Array,
 	indices: PackedInt32Array,
@@ -365,7 +367,6 @@ static func _append_vert(
 	verts.append(pos)
 	norms.append(normal)
 	uvs.append(local_uv)
-	uv2s.append(Vector2.ZERO)
 	var tex: PackedFloat32Array = layers["tex"]
 	var vars: PackedFloat32Array = layers["var"]
 	for k in range(4):

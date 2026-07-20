@@ -15,10 +15,6 @@ var tex_rate: float = 15.0 ## 约帧/秒；shader 用 TIME*tex_rate（viewer 等
 ## Water.slk cells：一张水面贴图覆盖的格数（ISha=2 → UV 按格坐标 / 2）
 var cells: float = 2.0
 var tex_file_prefix: String = "ReplaceableTextures/Water/Water"
-var shore_dir: String = "Doodads/LordaeronSummer/Water"
-var shore_s_file: String = "Shoreline"
-var shore_oc_file: String = "ShorelineOutsideCorner"
-var shore_ic_file: String = "ShorelineInsideCorner"
 var shallow_min: Color = Color(1, 1, 1, 0.04)
 var shallow_max: Color = Color(0.94, 0.94, 0.94, 0.86)
 var deep_min: Color = Color(0.46, 0.46, 0.46, 0.86)
@@ -32,7 +28,7 @@ static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
 	if tid.is_empty():
 		tid = "I"
 	p.water_id = tid.substr(0, 1).to_upper() + "Sha"
-	p._load_slk("res://assets/slk-exported/TerrainArt/Water.json")
+	p._load_slk(RuntimeAssets.slk_path("TerrainArt/Water.json"))
 	p._resolve_frames()
 	return p
 
@@ -70,10 +66,6 @@ func _load_slk(path: String) -> void:
 	tex_rate = float(hit.get("texRate", 15))
 	cells = maxf(float(hit.get("cells", 2)), 1.0)
 	tex_file_prefix = str(hit.get("texFile", "ReplaceableTextures\\Water\\Water")).replace("\\", "/")
-	shore_dir = str(hit.get("shoreDir", "Doodads\\LordaeronSummer\\Water")).replace("\\", "/")
-	shore_s_file = str(hit.get("shoreSFile", "Shoreline"))
-	shore_oc_file = str(hit.get("shoreOCFile", "ShorelineOutsideCorner"))
-	shore_ic_file = str(hit.get("shoreICFile", "ShorelineInsideCorner"))
 	shallow_min = _rgba(hit, "Smin")
 	shallow_max = _rgba(hit, "Smax")
 	deep_min = _rgba(hit, "Dmin")
@@ -94,7 +86,7 @@ func _resolve_frames() -> void:
 		return
 	var tileset := water_id.substr(0, 1) if water_id.length() >= 1 else "I"
 	var base_name := tex_file_prefix.get_file() # Water
-	var dir := "res://assets/asset-converted/" + tex_file_prefix.get_base_dir()
+	var dir := tex_file_prefix.get_base_dir()
 	for i in range(num_tex):
 		var frame := "%s%02d" % [base_name, i]
 		var candidates: Array[String] = [
@@ -103,11 +95,12 @@ func _resolve_frames() -> void:
 		]
 		var found := ""
 		for c in candidates:
-			if RuntimeAssets.file_exists(c):
-				found = c
+			var res_path := RuntimeAssets.converted_path(c)
+			if RuntimeAssets.file_exists(res_path):
+				found = res_path
 				break
 		if found.is_empty():
-			push_warning("Wc3WaterParams: 缺水面帧 %s" % candidates[0])
+			push_warning("Wc3WaterParams: 缺水面帧 %s" % RuntimeAssets.converted_path(candidates[0]))
 			continue
 		frame_pngs.append(found)
 

@@ -1,0 +1,73 @@
+class_name MapBuildContext
+extends RefCounted
+## 单次地图加载的共享上下文：heightfield meta、SLK 索引、悬崖拓扑只算一遍。
+## Layer / Builder 应优先吃 ctx，避免各自再拆 JSON、再扫斜坡。
+
+
+var map_dir: String = ""
+## 原始 terrain-heightfield.json
+var hf: Dictionary = {}
+## HeightfieldMeshBuilder.read_heightfield_meta 结果
+var meta: Dictionary = {}
+## info.json（可空）
+var info: Dictionary = {}
+## info.flags（waterWavesCliff 等）
+var map_flags: Dictionary = {}
+var main_tileset: String = "I"
+
+var tiles: Wc3TerrainTiles
+var catalog: Wc3IdCatalog
+var cache: MapModelCache
+
+## 悬崖拓扑（ensure_cliff_topology 后有效）
+var cliff_romp: PackedByteArray = PackedByteArray()
+var cliff_ramp_placements: Array = []
+var cliff_gap_stats: Dictionary = {}
+var _cliff_ready: bool = false
+
+
+static func create(
+	p_map_dir: String,
+	p_hf: Dictionary,
+	p_info: Dictionary,
+	p_tiles: Wc3TerrainTiles,
+	p_catalog: Wc3IdCatalog = null,
+	p_cache: MapModelCache = null
+):
+	# 不用 MapBuildContext.new()：headless 下 class_name 缓存可能尚未生成
+	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).new()
+	ctx.map_dir = p_map_dir
+	ctx.hf = p_hf
+	ctx.info = p_info
+	ctx.meta = HeightfieldMeshBuilder.read_heightfield_meta(p_hf)
+	ctx.tiles = p_tiles
+	ctx.catalog = p_catalog
+	ctx.cache = p_cache if p_cache else MapModelCache.new()
+
+	var flags_wrap: Variant = p_info.get("flags", {})
+	if typeof(flags_wrap) == TYPE_DICTIONARY:
+		ctx.map_flags = flags_wrap
+
+	var ts := str(p_hf.get("mainTileset", ""))
+	if ts.is_empty():
+		ts = str(ctx.meta.get("main_tileset", ""))
+	ctx.main_tileset = ts if not ts.is_empty() else "I"
+	return ctx
+
+
+func ensure_cliff_topology() -> void:
+	if _cliff_ready:
+		return
+	var ramp_data := Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
+	cliff_romp = ramp_data.get("romp", PackedByteArray()) as PackedByteArray
+	cliff_ramp_placements = ramp_data.get("placements", []) as Array
+	cliff_gap_stats = Wc3CliffTiles.count_gaps(hf, meta, ramp_data)
+	_cliff_ready = true
+
+
+func width() -> int:
+	return int(meta.get("width", 0))
+
+
+func height() -> int:
+	return int(meta.get("height", 0))

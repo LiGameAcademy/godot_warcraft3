@@ -4,11 +4,17 @@ extends RefCounted
 ## 斜坡格（ramp）不画水面：与斜坡 mesh 冲突，也会把岸线/泡沫推到高侧。
 
 
-const FLAG_WATER := 1
+const FLAG_WATER := Wc3Coords.FLAG_WATER
 
 
-static func build(hf: Dictionary, params: Wc3WaterParams, height_bias_wc3: float = 0.0) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+static func build(
+	hf: Dictionary,
+	params: Wc3WaterParams,
+	height_bias_wc3: float = 0.0,
+	meta: Dictionary = {}
+) -> Dictionary:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var ground: Array = meta["heights"]

@@ -1,11 +1,11 @@
 class_name Wc3TerrainTiles
 extends RefCounted
+
 ## tileID / cliffID → 贴图路径与悬崖模型目录。
 ##
 ## 悬崖贴图路径在 SLK 里始终是 ReplaceableTextures/Cliff/Cliff0|1，
 ## 但经典客户端按地图 mainTileset 从 A.mpq / I.mpq 等子包解析不同内容。
 ## 解包时用 {tileset}_Cliff0.png 保存（如 I_Cliff1 = Icecrown）。
-
 
 var _tile_to_png: Dictionary = {}
 var _cliff_to_png: Dictionary = {}
@@ -15,8 +15,8 @@ var _cliff_ground_tile: Dictionary = {}
 
 
 func load_default() -> void:
-	_load_terrain_slk("res://assets/slk-exported/TerrainArt/Terrain.json")
-	_load_cliff_slk("res://assets/slk-exported/TerrainArt/CliffTypes.json")
+	_load_terrain_slk(RuntimeAssets.slk_path("TerrainArt/Terrain.json"))
+	_load_cliff_slk(RuntimeAssets.slk_path("TerrainArt/CliffTypes.json"))
 
 
 func png_for_tile_id(tile_id: String) -> String:
@@ -69,7 +69,7 @@ func _load_terrain_slk(path: String) -> void:
 		var file := str(rec.get("file", ""))
 		if dir.is_empty() or file.is_empty():
 			continue
-		var png := "res://assets/asset-converted/%s/%s.png" % [dir, file]
+		var png := RuntimeAssets.converted_path("%s/%s.png" % [dir, file])
 		_tile_to_png[id] = png
 
 
@@ -104,17 +104,17 @@ func _load_cliff_slk(path: String) -> void:
 
 ## cliffID 如 CIsn → 地形集字母 I；优先 I_Cliff1.png，再回退 Cliff1.png。
 static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) -> String:
-	var base := "res://assets/asset-converted/%s" % dir
 	var tileset := ""
 	if cliff_id.length() >= 2:
 		tileset = cliff_id.substr(1, 1)
 	var candidates: Array[String] = []
 	if not tileset.is_empty():
-		candidates.append("%s/%s_%s.png" % [base, tileset, tex_file])
-		candidates.append("%s/%s_%s.png" % [base, tileset, tex_file.to_lower()])
-		candidates.append("%s/%s%s.png" % [base, tileset, tex_file])
-	candidates.append("%s/%s.png" % [base, tex_file])
+		candidates.append("%s/%s_%s.png" % [dir, tileset, tex_file])
+		candidates.append("%s/%s_%s.png" % [dir, tileset, tex_file.to_lower()])
+		candidates.append("%s/%s%s.png" % [dir, tileset, tex_file])
+	candidates.append("%s/%s.png" % [dir, tex_file])
 	for c in candidates:
-		if RuntimeAssets.file_exists(c):
-			return c
-	return candidates[candidates.size() - 1]
+		var res_path := RuntimeAssets.converted_path(c)
+		if RuntimeAssets.file_exists(res_path):
+			return res_path
+	return RuntimeAssets.converted_path(candidates[candidates.size() - 1])

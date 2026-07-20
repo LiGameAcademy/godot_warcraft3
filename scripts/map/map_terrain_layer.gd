@@ -1,6 +1,6 @@
 class_name MapTerrainLayer
 extends Node3D
-## 地面层：WC3 图集自动地形 + HeightfieldMesh（悬崖/斜坡格留空）。
+## 地面层：消费 MapBuildContext → Autotile 网格 + shader。
 
 
 const GROUND_SHADER: Shader = preload("res://shaders/wc3_ground.gdshader")
@@ -10,21 +10,25 @@ const GROUND_SHADER: Shader = preload("res://shaders/wc3_ground.gdshader")
 var last_gap_count: int = 0
 
 
-func build(hf: Dictionary, tiles: Wc3TerrainTiles) -> void:
+func build(ctx) -> void:
 	_ground.clear_mesh()
 	last_gap_count = 0
-	var ground_tilesets: Array = hf.get("groundTilesets", [])
+	ctx.ensure_cliff_topology()
+
+	var ground_tilesets: Array = ctx.hf.get("groundTilesets", [])
 	if ground_tilesets.is_empty():
 		push_warning("MapTerrainLayer: groundTilesets 为空")
 		return
 
-	var extended := Wc3TerrainAutotile.build_extended_flags(ground_tilesets, tiles)
-	var built := Wc3TerrainAutotile.build_ground_mesh(hf, extended, tiles)
+	var extended := Wc3TerrainAutotile.build_extended_flags(ground_tilesets, ctx.tiles)
+	var built := Wc3TerrainAutotile.build_ground_mesh(
+		ctx.hf, extended, ctx.tiles, ctx.meta, ctx.cliff_romp
+	)
 	if built.is_empty():
 		push_warning("MapTerrainLayer: 地面网格为空")
 		return
 
-	var tex_array := Wc3TerrainAutotile.build_tileset_array(ground_tilesets, tiles)
+	var tex_array := Wc3TerrainAutotile.build_tileset_array(ground_tilesets, ctx.tiles)
 	if tex_array == null:
 		push_warning("MapTerrainLayer: Texture2DArray 失败")
 		return
@@ -41,14 +45,14 @@ func build(hf: Dictionary, tiles: Wc3TerrainTiles) -> void:
 	_ground.apply_uniform_material(mat)
 	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	var stats := Wc3CliffTiles.count_gaps(hf)
+	var stats: Dictionary = ctx.cliff_gap_stats
 	print(
 		"Terrain gaps: %d (cliff=%d ramp_tiles=%d ramp_models=%d / tiles=%d)"
 		% [
-			stats["gaps"],
-			stats["cliffs"],
-			stats["ramps"],
-			stats.get("ramp_models", 0),
-			stats["tiles"],
+			int(stats.get("gaps", last_gap_count)),
+			int(stats.get("cliffs", 0)),
+			int(stats.get("ramps", 0)),
+			int(stats.get("ramp_models", 0)),
+			int(stats.get("tiles", 0)),
 		]
 	)
