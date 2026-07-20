@@ -1,0 +1,13 @@
+{
+  "name": "map-parse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parse classic Warcraft III .w3x/.w3m map archives into JSON for godot_warcraft3",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "parse": "node src/cli.js"
+  }
+}

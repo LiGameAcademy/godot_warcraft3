@@ -1,0 +1,16 @@
+{
+  "name": "slk-export",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parse classic Warcraft III .slk tables and export JSON/CSV",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "export": "node src/cli.js"
+  },
+  "dependencies": {
+    "minimatch": "^10.0.1"
+  }
+}

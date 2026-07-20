@@ -1,0 +1,35 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# WC3 asset pipeline — never commit Blizzard assets or extract output
+.cache/
+*.mpq
+*.MPQ
+
+# Converted Godot-ready assets (PNG/GLB) — regenerate via tools/asset-convert
+assets/asset-converted/**
+!assets/asset-converted/.gitkeep
+
+# Parsed map JSON — regenerate via tools/map-parse
+assets/map-parsed/**
+!assets/map-parsed/.gitkeep
+
+# Exported SLK tables (JSON/CSV) — regenerate via tools/slk-export
+assets/slk-exported/**
+!assets/slk-exported/.gitkeep
+
+# Node.js (tools/*)
+node_modules/
+tools/mpq-extract/vendor/stormlib/**/*.zip
+tools/mpq-extract/vendor/stormlib/**/*.pdb
+tools/mpq-extract/vendor/stormlib/**/*.lib
+tools/mpq-extract/tmp/
+tools/asset-convert/tmp/
+
+# Mod content (keep mods/.gitkeep only)
+mods/**
+!mods/.gitkeep
+
+# Local developer settings (absolute paths, etc.)
+user_settings.local.json

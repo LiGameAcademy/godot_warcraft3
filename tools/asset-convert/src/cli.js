@@ -1,0 +1,150 @@
+#!/usr/bin/env node
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { convertBlpBatch } from "./convert-blp.js";
+import { convertMdxBatch } from "./convert-mdx.js";
+import { resolveFromPackage } from "./paths.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = path.resolve(__dirname, "..");
+
+function printHelp() {
+  console.log(`用法:
+  npm run convert -- [选项]
+
+顺序说明:
+  默认先转换贴图 (BLP→PNG)，再转换模型 (MDX→GLB)。
+  模型会引用已转换的 PNG；若 PNG 缺失会尝试即时从 BLP 转换。
+
+选项:
+  --in <path>           解包资产根目录（默认: ../../.cache/wc3-assets）
+  --out <path>          转换输出根目录（默认: ../../assets/asset-converted）
+  --force               忽略增量，强制重转
+  --textures-only       只转贴图
+  --models-only         只转模型（建议已跑过贴图）
+  --include <glob>      仅包含逻辑路径（可重复）
+  --exclude <glob>      排除逻辑路径（可重复）
+  -h, --help            帮助
+
+示例:
+  npm run convert -- --include "Units/Human/Footman/**" --include "Textures/Footman.blp"
+  npm run convert:textures -- --include "Textures/**"
+  npm run convert:models -- --include "Units/Human/Footman/**"
+`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    inDir: "../../.cache/wc3-assets",
+    outDir: "../../assets/asset-converted",
+    force: false,
+    texturesOnly: false,
+    modelsOnly: false,
+    include: [],
+    exclude: [],
+    help: false,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    switch (arg) {
+      case "-h":
+      case "--help":
+        opts.help = true;
+        break;
+      case "--force":
+        opts.force = true;
+        break;
+      case "--textures-only":
+        opts.texturesOnly = true;
+        break;
+      case "--models-only":
+        opts.modelsOnly = true;
+        break;
+      case "--in":
+        opts.inDir = argv[++i] ?? opts.inDir;
+        break;
+      case "--out":
+        opts.outDir = argv[++i] ?? opts.outDir;
+        break;
+      case "--include":
+        if (argv[i + 1]) opts.include.push(argv[++i]);
+        break;
+      case "--exclude":
+        if (argv[i + 1]) opts.exclude.push(argv[++i]);
+        break;
+      default:
+        if (arg.startsWith("-")) throw new Error(`未知参数: ${arg}`);
+        break;
+    }
+  }
+  return opts;
+}
+
+async function main() {
+  let opts;
+  try {
+    opts = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(err.message ?? err);
+    printHelp();
+    process.exit(1);
+  }
+
+  if (opts.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (opts.texturesOnly && opts.modelsOnly) {
+    console.error("不能同时指定 --textures-only 与 --models-only");
+    process.exit(1);
+  }
+
+  const inDir = resolveFromPackage(opts.inDir, PACKAGE_ROOT);
+  const outDir = resolveFromPackage(opts.outDir, PACKAGE_ROOT);
+  const doTextures = !opts.modelsOnly;
+  const doModels = !opts.texturesOnly;
+
+  console.log("godot_warcraft3 资产转换工具");
+  console.log(`  in:      ${inDir}`);
+  console.log(`  out:     ${outDir}`);
+  console.log(`  force:   ${opts.force}`);
+  console.log(`  steps:   ${[doTextures && "textures", doModels && "models"].filter(Boolean).join(" → ")}`);
+  if (opts.include.length) console.log(`  include: ${opts.include.join(", ")}`);
+  if (opts.exclude.length) console.log(`  exclude: ${opts.exclude.join(", ")}`);
+
+  let errors = 0;
+
+  if (doTextures) {
+    const r = convertBlpBatch({
+      inDir,
+      outDir,
+      force: opts.force,
+      include: opts.include,
+      exclude: opts.exclude,
+    });
+    errors += r.errors;
+  }
+
+  if (doModels) {
+    const r = await convertMdxBatch({
+      inDir,
+      outDir,
+      force: opts.force,
+      include: opts.include,
+      exclude: opts.exclude,
+    });
+    errors += r.errors;
+  }
+
+  console.log(
+    "\n全部完成。Godot 路径示例: res://assets/asset-converted/Units/.../Foo.glb（已 gitignore）",
+  );
+  process.exit(errors > 0 ? 2 : 0);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

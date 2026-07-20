@@ -1,0 +1,57 @@
+[gd_scene load_steps=4 format=3 uid="uid://b8losttemplemain"]
+
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="1_map"]
+[ext_resource type="Script" path="res://scripts/map/orbit_camera.gd" id="2_cam"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.08, 0.1, 0.14, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.6, 0.7, 1)
+ambient_light_energy = 0.85
+
+[node name="Main" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
+light_energy = 1.1
+shadow_enabled = true
+
+[node name="MapRoot" parent="." instance=ExtResource("1_map")]
+
+[node name="OrbitCamera" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 8, 2.5)
+script = ExtResource("2_cam")
+
+[node name="Pivot" type="Node3D" parent="OrbitCamera"]
+
+[node name="Camera3D" type="Camera3D" parent="OrbitCamera/Pivot"]
+current = true
+far = 2000.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Status" type="Label" parent="UI"]
+offset_left = 12.0
+offset_top = 10.0
+offset_right = 900.0
+offset_bottom = 48.0
+theme_override_colors/font_color = Color(0.9, 0.92, 0.95, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_constants/outline_size = 4
+text = "Loading…"
+
+[node name="Hint" type="Label" parent="UI"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -36.0
+offset_right = 700.0
+offset_bottom = -12.0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.7, 0.75, 0.8, 1)
+text = "WASD 平移 · QE 升降 · Shift 加速 · 右键旋转 · 滚轮缩放"

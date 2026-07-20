@@ -1,0 +1,19 @@
+{
+  "name": "mpq-extract",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extract classic Warcraft III MPQ archives into a local cache for godot_warcraft3 development",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "fetch-stormlib": "node scripts/fetch-stormlib.js",
+    "postinstall": "node scripts/fetch-stormlib.js",
+    "extract": "node src/cli.js"
+  },
+  "dependencies": {
+    "koffi": "^2.11.0",
+    "minimatch": "^10.0.1"
+  }
+}

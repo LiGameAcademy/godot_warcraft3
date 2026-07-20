@@ -1,0 +1,22 @@
+{
+  "name": "asset-convert",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Convert classic WC3 BLP textures and MDX models for Godot (PNG + GLB)",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "convert": "node src/cli.js",
+    "convert:textures": "node src/cli.js --textures-only",
+    "convert:models": "node src/cli.js --models-only",
+    "convert:lost-temple": "node scripts/convert-lost-temple.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.4.1",
+    "minimatch": "^10.0.1",
+    "pngjs": "^7.0.0",
+    "war3-model": "^4.0.1"
+  }
+}

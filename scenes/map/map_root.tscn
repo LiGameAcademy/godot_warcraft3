@@ -1,0 +1,36 @@
+[gd_scene load_steps=8 format=3 uid="uid://cmaprootwc3"]
+
+[ext_resource type="Script" path="res://scripts/map/map_loader.gd" id="1_loader"]
+[ext_resource type="Script" path="res://scripts/map/map_terrain_layer.gd" id="2_terrain"]
+[ext_resource type="Script" path="res://scripts/map/map_water_layer.gd" id="3_water"]
+[ext_resource type="Script" path="res://scripts/map/map_cliff_layer.gd" id="4_cliff"]
+[ext_resource type="Script" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
+[ext_resource type="Script" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
+[ext_resource type="Script" path="res://scripts/map/heightfield_mesh.gd" id="7_hfmesh"]
+
+[node name="MapRoot" type="Node3D"]
+script = ExtResource("1_loader")
+map_dir = "res://assets/map-parsed/losttemple"
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("2_terrain")
+
+[node name="Ground" type="MeshInstance3D" parent="Terrain"]
+script = ExtResource("7_hfmesh")
+
+[node name="Water" type="Node3D" parent="."]
+script = ExtResource("3_water")
+
+[node name="Surface" type="MeshInstance3D" parent="Water"]
+script = ExtResource("7_hfmesh")
+
+[node name="Cliffs" type="Node3D" parent="."]
+script = ExtResource("4_cliff")
+
+[node name="Mesh" type="MeshInstance3D" parent="Cliffs"]
+
+[node name="Doodads" type="Node3D" parent="."]
+script = ExtResource("5_doodad")
+
+[node name="Units" type="Node3D" parent="."]
+script = ExtResource("6_unit")
