@@ -68,6 +68,8 @@ export function parseW3e(buffer, opts = {}) {
   const waterHeights = new Array(tilepointCount);
   /** @type {number[]} ground variation (low 5 bits of detail byte) */
   const groundVariations = new Array(tilepointCount);
+  /** @type {number[]} cliff variation (high 3 bits of detail byte) */
+  const cliffVariations = new Array(tilepointCount);
 
   let minHeight = Infinity;
   let maxHeight = -Infinity;
@@ -107,6 +109,7 @@ export function parseW3e(buffer, opts = {}) {
     heights[i] = finalHeight;
     groundTextures[i] = groundTexture;
     groundVariations[i] = groundVariation;
+    cliffVariations[i] = cliffVariation;
     cliffTextures[i] = cliffTexture;
     layerHeights[i] = layerHeight;
     waterHeights[i] = waterHeight;
@@ -164,6 +167,7 @@ export function parseW3e(buffer, opts = {}) {
       heights,
       groundTextures,
       groundVariations,
+      cliffVariations,
       cliffTextures,
       layerHeights,
       waterHeights,

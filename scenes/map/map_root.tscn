@@ -27,8 +27,6 @@ script = ExtResource("7_hfmesh")
 [node name="Cliffs" type="Node3D" parent="."]
 script = ExtResource("4_cliff")
 
-[node name="Mesh" type="MeshInstance3D" parent="Cliffs"]
-
 [node name="Doodads" type="Node3D" parent="."]
 script = ExtResource("5_doodad")
 

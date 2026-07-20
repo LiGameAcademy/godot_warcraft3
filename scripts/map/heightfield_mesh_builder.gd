@@ -148,6 +148,7 @@ static func read_heightfield_meta(hf: Dictionary) -> Dictionary:
 		"ground_textures": hf.get("groundTextures", []) as Array,
 		"ground_variations": hf.get("groundVariations", []) as Array,
 		"cliff_textures": hf.get("cliffTextures", []) as Array,
+		"cliff_variations": hf.get("cliffVariations", []) as Array,
 		"layer_heights": hf.get("layerHeights", []) as Array,
 		"flags": hf.get("flagsPacked", []) as Array,
 		"ground_tilesets": hf.get("groundTilesets", []) as Array,

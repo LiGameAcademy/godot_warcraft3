@@ -1,12 +1,13 @@
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_disabled;
+render_mode cull_back, unshaded, fog_disabled;
 
-/// WC3 地表过渡贴图。
+/// WC3 地表过渡贴图（与悬崖同为 unshaded，避免方向光把两者亮度拉开）。
 /// CUSTOM0 = 四层 tileset 索引（0-based，-1=无）；CUSTOM1 = 对应图集编号（fill 或 bitmask 0..31）。
 /// 图集为统一 512×256（8×4 格）；256×256 素材垫在左半。
 
 uniform sampler2DArray tilesets : source_color, filter_linear, repeat_disable;
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.92;
+uniform float albedo_scale : hint_range(0.5, 1.5) = 1.0;
 
 varying flat vec4 v_tex;
 varying flat vec4 v_var;
@@ -56,7 +57,7 @@ void fragment() {
 	vec4 o3 = sample_layer(v_tex.w, v_var.w, v_local);
 	color = mix(color, o3, o3.a);
 
-	ALBEDO = color.rgb;
+	ALBEDO = color.rgb * albedo_scale;
 	ROUGHNESS = roughness_value;
 	METALLIC = 0.0;
 }

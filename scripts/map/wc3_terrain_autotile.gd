@@ -25,17 +25,34 @@ const ATLAS_TL := 8
 
 
 ## 返回 { mesh: ArrayMesh, ground_tilesets: Array, gap_count: int }
-static func build_ground_mesh(hf: Dictionary, extended_flags: PackedByteArray) -> Dictionary:
+static func build_ground_mesh(
+	hf: Dictionary,
+	extended_flags: PackedByteArray,
+	tiles: Wc3TerrainTiles = null
+) -> Dictionary:
 	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
-	var heights: Array = meta["heights"]
+	var heights: Array = Wc3CliffTiles.apply_ramp_entrance_heights(
+		meta["heights"],
+		meta["layer_heights"],
+		meta["flags"],
+		width,
+		height
+	)
 	var ground_tex: Array = meta["ground_textures"]
 	var ground_var: Array = meta["ground_variations"]
 	var layer_heights: Array = meta["layer_heights"]
 	var flags: Array = meta["flags"]
+	var cliff_tex: Array = meta["cliff_textures"]
+	var ground_tilesets: Array = meta["ground_tilesets"]
+	var cliff_tilesets: Array = meta["cliff_tilesets"]
 	var center: Vector2 = meta["center"]
 	var tile_size: float = meta["tile_size"]
+	var romp: PackedByteArray = Wc3CliffTiles.collect_ramp_placements(hf)["romp"]
+
+	# cliffTileset 索引 → groundTileset 索引（悬崖旁地面用 cliff.groundTile）
+	var cliff_to_ground: PackedInt32Array = _build_cliff_to_ground(cliff_tilesets, ground_tilesets, tiles)
 
 	if width < 2 or height < 2 or heights.size() < width * height:
 		push_error("Wc3TerrainAutotile: heightfield 尺寸无效")
@@ -52,8 +69,8 @@ static func build_ground_mesh(hf: Dictionary, extended_flags: PackedByteArray) -
 
 	for iy in range(height - 1):
 		for ix in range(width - 1):
-			# 悬崖 / 斜坡格：不生成地面三角，留缝给后续模型
-			if Wc3CliffTiles.should_leave_gap(layer_heights, flags, width, ix, iy):
+			# 仅在有悬崖/CliffTrans 模型处挖洞；普通斜坡保留地面高度图
+			if Wc3CliffTiles.should_leave_gap(layer_heights, flags, width, height, ix, iy, romp):
 				gap_count += 1
 				continue
 
@@ -62,11 +79,19 @@ static func build_ground_mesh(hf: Dictionary, extended_flags: PackedByteArray) -
 			var i01 := i00 + width
 			var i11 := i01 + 1
 
-			# 四角纹理（顶点染色）
-			var t_bl := _tex_at(ground_tex, i00)
-			var t_br := _tex_at(ground_tex, i10)
-			var t_tl := _tex_at(ground_tex, i01)
-			var t_tr := _tex_at(ground_tex, i11)
+			# 四角纹理：邻近悬崖时改用 cliff.groundTile（mdx-m3-viewer cornerTexture）
+			var t_bl := _corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy
+			)
+			var t_br := _corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy
+			)
+			var t_tl := _corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy + 1
+			)
+			var t_tr := _corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy + 1
+			)
 
 			var layers := _build_layers(
 				t_bl, t_br, t_tl, t_tr,
@@ -241,6 +266,56 @@ static func _pad_to_atlas(src: Image) -> Image:
 		Vector2i(0, 0)
 	)
 	return out
+
+
+static func _build_cliff_to_ground(
+	cliff_tilesets: Array,
+	ground_tilesets: Array,
+	tiles: Wc3TerrainTiles
+) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(cliff_tilesets.size())
+	out.fill(-1)
+	if tiles == null:
+		return out
+	for i in range(cliff_tilesets.size()):
+		var ground_id := tiles.ground_tile_for_cliff_id(str(cliff_tilesets[i]))
+		if ground_id.is_empty():
+			continue
+		for gi in range(ground_tilesets.size()):
+			if str(ground_tilesets[gi]) == ground_id:
+				out[i] = gi
+				break
+	return out
+
+
+## 邻近悬崖格时改用 cliff.groundTile（对齐 mdx-m3-viewer cornerTexture）。
+static func _corner_texture(
+	ground_tex: Array,
+	layer_heights: Array,
+	cliff_tex: Array,
+	cliff_to_ground: PackedInt32Array,
+	tp_w: int,
+	tp_h: int,
+	col: int,
+	row: int
+) -> int:
+	if not cliff_to_ground.is_empty():
+		for dy in range(-1, 1):
+			for dx in range(-1, 1):
+				var tx := col + dx
+				var ty := row + dy
+				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+					continue
+				if not Wc3CliffTiles.is_cliff_tile(layer_heights, tp_w, tx, ty):
+					continue
+				var i00 := ty * tp_w + tx
+				var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
+				if ci == 15:
+					ci = 1
+				if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
+					return cliff_to_ground[ci]
+	return _tex_at(ground_tex, row * tp_w + col)
 
 
 static func _tex_at(ground_tex: Array, i: int) -> int:

@@ -4,7 +4,7 @@ extends Node3D
 
 @export var map_dir: String = "res://assets/map-parsed/losttemple"
 @export var build_water: bool = false
-@export var build_cliffs: bool = false
+@export var build_cliffs: bool = true
 @export var place_doodads: bool = false
 @export var place_units: bool = false
 @export var try_load_glb: bool = true
@@ -55,6 +55,7 @@ func _load_all() -> void:
 		_water.build(hf)
 		await get_tree().process_frame
 	if build_cliffs:
+		_set_status("放置悬崖模型…")
 		_cliffs.build(hf, _tiles)
 		await get_tree().process_frame
 	if place_units:
@@ -65,11 +66,15 @@ func _load_all() -> void:
 		await get_tree().process_frame
 
 	var ms := Time.get_ticks_msec() - t0
+	var cliff_n := _cliffs.last_placed if build_cliffs else 0
 	_set_status(
-		"地形就绪（%d ms，留缝 %d 格）— WASD 移动，右键转向，滚轮缩放"
-		% [ms, _terrain.last_gap_count]
+		"地形就绪（%d ms，留缝 %d，悬崖 %d）— WASD 移动，右键转向，滚轮缩放"
+		% [ms, _terrain.last_gap_count, cliff_n]
 	)
-	print("Terrain load in %d ms from %s (gaps=%d)" % [ms, map_dir, _terrain.last_gap_count])
+	print(
+		"Terrain load in %d ms from %s (gaps=%d cliffs=%d)"
+		% [ms, map_dir, _terrain.last_gap_count, cliff_n]
+	)
 
 
 func _read_json(path: String) -> Dictionary:

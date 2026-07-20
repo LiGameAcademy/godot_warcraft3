@@ -19,7 +19,7 @@ func build(hf: Dictionary, tiles: Wc3TerrainTiles) -> void:
 		return
 
 	var extended := Wc3TerrainAutotile.build_extended_flags(ground_tilesets, tiles)
-	var built := Wc3TerrainAutotile.build_ground_mesh(hf, extended)
+	var built := Wc3TerrainAutotile.build_ground_mesh(hf, extended, tiles)
 	if built.is_empty():
 		push_warning("MapTerrainLayer: 地面网格为空")
 		return
@@ -37,10 +37,18 @@ func build(hf: Dictionary, tiles: Wc3TerrainTiles) -> void:
 	mat.shader = GROUND_SHADER
 	mat.set_shader_parameter("tilesets", tex_array)
 	mat.set_shader_parameter("roughness_value", 0.92)
+	mat.set_shader_parameter("albedo_scale", 1.0)
 	_ground.apply_uniform_material(mat)
+	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var stats := Wc3CliffTiles.count_gaps(hf)
 	print(
-		"Terrain gaps: %d (cliff=%d ramp=%d / tiles=%d)"
-		% [stats["gaps"], stats["cliffs"], stats["ramps"], stats["tiles"]]
+		"Terrain gaps: %d (cliff=%d ramp_tiles=%d ramp_models=%d / tiles=%d)"
+		% [
+			stats["gaps"],
+			stats["cliffs"],
+			stats["ramps"],
+			stats.get("ramp_models", 0),
+			stats["tiles"],
+		]
 	)
