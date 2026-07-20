@@ -1,5 +1,6 @@
 class_name Wc3TerrainAutotile
 extends RefCounted
+
 ## WC3 地表「平滑过渡贴图」——以顶点（tilepoint）染色，以 Tile 为单位查图集。
 ##
 ## 编辑器点击某个顶点时写入 groundTexture；渲染时每个 Tile 看四角：
@@ -25,12 +26,16 @@ const ATLAS_TL := 8
 
 
 ## 返回 { mesh: ArrayMesh, ground_tilesets: Array, gap_count: int }
+## romp 可选：传入则不再 collect_ramp_placements。
 static func build_ground_mesh(
 	hf: Dictionary,
 	extended_flags: PackedByteArray,
-	tiles: Wc3TerrainTiles = null
+	tiles: Wc3TerrainTiles = null,
+	meta: Dictionary = {},
+	romp: PackedByteArray = PackedByteArray()
 ) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
 	var heights: Array = Wc3CliffTiles.apply_ramp_entrance_heights(
@@ -49,7 +54,8 @@ static func build_ground_mesh(
 	var cliff_tilesets: Array = meta["cliff_tilesets"]
 	var center: Vector2 = meta["center"]
 	var tile_size: float = meta["tile_size"]
-	var romp: PackedByteArray = Wc3CliffTiles.collect_ramp_placements(hf)["romp"]
+	if romp.is_empty():
+		romp = Wc3CliffTiles.collect_ramp_placements(hf, meta)["romp"]
 
 	# cliffTileset 索引 → groundTileset 索引（悬崖旁地面用 cliff.groundTile）
 	var cliff_to_ground: PackedInt32Array = _build_cliff_to_ground(cliff_tilesets, ground_tilesets, tiles)

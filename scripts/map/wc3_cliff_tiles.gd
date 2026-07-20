@@ -90,8 +90,10 @@ static func is_ramp_entrance(layer_heights: Array, flags: Array, width: int, ix:
 
 ## 扫描整张地图，返回斜坡模型实例与 romp 占位（对齐 HiveWE update_cliff_meshes）。
 ## 每项: { ix, iy, tag, base_layer, tex_idx }
-static func collect_ramp_placements(hf: Dictionary) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+## meta 可选：传入则不再 read_heightfield_meta。
+static func collect_ramp_placements(hf: Dictionary, meta: Dictionary = {}) -> Dictionary:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var layers: Array = meta["layer_heights"]
@@ -326,13 +328,18 @@ static func apply_ramp_entrance_heights(heights: Array, layers: Array, flags: Ar
 	return out
 
 
-static func count_gaps(hf: Dictionary) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+## gap/cliff/ramp 统计。可传入已算好的 meta 与 ramp_data，避免重复全图扫描。
+static func count_gaps(
+	hf: Dictionary, meta: Dictionary = {}, ramp_data: Dictionary = {}
+) -> Dictionary:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
 	var layers: Array = meta["layer_heights"]
 	var flags: Array = meta["flags"]
-	var ramp_data := collect_ramp_placements(hf)
+	if ramp_data.is_empty():
+		ramp_data = collect_ramp_placements(hf, meta)
 	var romp: PackedByteArray = ramp_data["romp"]
 	var cliffs := 0
 	var ramps := 0

@@ -7,8 +7,14 @@ extends RefCounted
 const FLAG_WATER := 1
 
 
-static func build(hf: Dictionary, params: Wc3WaterParams, height_bias_wc3: float = 0.0) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+static func build(
+	hf: Dictionary,
+	params: Wc3WaterParams,
+	height_bias_wc3: float = 0.0,
+	meta: Dictionary = {}
+) -> Dictionary:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var ground: Array = meta["heights"]

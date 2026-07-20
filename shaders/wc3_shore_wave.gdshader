@@ -1,6 +1,6 @@
 shader_type spatial;
-// depth_test_disabled：悬崖 mesh 会盖住岸边共面/贴边的浪；官方 PE/Add 泡沫也不靠深度遮挡
-render_mode cull_disabled, unshaded, blend_add, depth_draw_never, depth_test_disabled, fog_disabled;
+// ShorelineWave 装饰浪（非自动岸线）。默认关闭；若启用需深度测试以免透视。
+render_mode cull_disabled, unshaded, blend_add, depth_draw_never, fog_disabled;
 
 /// ShorelineWave：FilterMode=4（Add Alpha）+ 层 Alpha 脉冲（Stand 序列约 2.3s）。
 

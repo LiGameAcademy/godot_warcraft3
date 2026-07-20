@@ -37,9 +37,9 @@
 | 水面网格 + 深度色 + 序列帧 | `wc3_water_*` / `wc3_water.gdshader` |
 | UV × `cells` | `tile_xy / cells` |
 | **斜坡不画水** | `Wc3WaterMesh.is_surface_water_tile`：有 water 标志但 `is_ramp_tile` → 跳过（水面停在坡底） |
-| **Shoreline 泡沫** | 每岸点 **3 层** `MeshInstance3D`；细分网格新月弧；偏航抖动；相位/周期/摆动 instance 错开 |
-| 尺寸 | `QuadMesh` 边长 `QUAD_METERS≈3.2`（Godot 米），不靠粒子 `scale * WORLD_SCALE` |
-| 拓扑 | 直边 S、外角 OC、内角 IC；另补 WavesDepth 等深线；岸线判定与水面格一致 |
+| **Shoreline 泡沫** | 一套 PE2 参数 + **单个** MultiMesh；水平 XYQuad；Additive + 深度测试 |
+| 尺寸 | Scale 30→80→70 ×`WORLD_SCALE` |
+| 拓扑 | 岸格直边/角平分统一列表；悬崖更大 inset + 降速；**无** S/OC/IC 分档、**无**等深线补点 |
 | 贴图 | `Textures/ShorelineParticleXY.png` |
 
 ### 有意不做 / 降级
@@ -47,7 +47,7 @@
 | 项 | 说明 |
 |----|------|
 | ShorelineWave 网格浪 | 非官方自动管线；`MapWaterLayer.build_shore_mesh_waves=false` |
-| 完整 MDX PE2 粒子系统 | 用定向四边形 + shader 近似（每实例独立朝向，避免共享 emission 失败） |
+| OC/IC 独立 MDX 参数、splash、等深线岸浪 | 视觉收益小，已合并简化 |
 
 ### 相关文件
 
@@ -79,6 +79,6 @@ Godot_*_console.exe --headless --path . -s res://tools/selftest_shoreline.gd
 
 ## 远期（只文档）
 
-- 更完整的 PE2（splash 发射器、XYQuad、Length 线发射）
+- 完整 PE2 splash 发射器、节点四元数朝向、画质档 Emission×N
 - `shore_mask` / stylized 泡沫 shader
 - Gerstner / SSR（不做）

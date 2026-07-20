@@ -3,8 +3,14 @@ extends RefCounted
 ## 扫描 heightfield，生成悬崖 (Cliffs) 与斜坡过渡 (CliffTrans) 模型实例。
 
 
-static func collect_instances(hf: Dictionary, tiles: Wc3TerrainTiles) -> Dictionary:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+static func collect_instances(
+	hf: Dictionary,
+	tiles: Wc3TerrainTiles,
+	meta: Dictionary = {},
+	ramp_data: Dictionary = {}
+) -> Dictionary:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var layers: Array = meta["layer_heights"]
@@ -18,7 +24,8 @@ static func collect_instances(hf: Dictionary, tiles: Wc3TerrainTiles) -> Diction
 	if layers.is_empty() or cliff_tilesets.is_empty():
 		return {}
 
-	var ramp_data := Wc3CliffTiles.collect_ramp_placements(hf)
+	if ramp_data.is_empty():
+		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta)
 	var romp: PackedByteArray = ramp_data["romp"]
 	var ramp_placements: Array = ramp_data["placements"]
 

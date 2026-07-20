@@ -8,6 +8,8 @@
 
 水体（HiveWE 对齐、后续 Shoreline、远期增强）：[docs/WATER.md](docs/WATER.md)。
 
+地图运行时架构（分层、数据流、演进）：[docs/MAP_ARCHITECTURE.md](docs/MAP_ARCHITECTURE.md)。
+
 ## 前置条件
 
 - [Godot 4.6](https://godotengine.org/)

@@ -3,8 +3,9 @@ extends RefCounted
 ## 构建悬崖顶点变形用 groundHeight 纹理（对齐 mdx-m3-viewer cliffHeightMap）。
 
 
-static func build_image(hf: Dictionary) -> Image:
-	var meta := HeightfieldMeshBuilder.read_heightfield_meta(hf)
+static func build_image(hf: Dictionary, meta: Dictionary = {}) -> Image:
+	if meta.is_empty():
+		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var heights: Array = meta["heights"]
@@ -22,6 +23,6 @@ static func build_image(hf: Dictionary) -> Image:
 	return img
 
 
-static func build_texture(hf: Dictionary) -> ImageTexture:
-	var img := build_image(hf)
+static func build_texture(hf: Dictionary, meta: Dictionary = {}) -> ImageTexture:
+	var img := build_image(hf, meta)
 	return ImageTexture.create_from_image(img)

@@ -1,12 +1,14 @@
 class_name MapModelCache
 extends RefCounted
+
 ## 运行时 GLB 场景 / Mesh 缓存，供单位与装饰层共用。
 
-
+## 场景缓存
 var _scene_cache: Dictionary = {}
+## 网格缓存
 var _mesh_cache: Dictionary = {}
 
-
+## 实例化 GLB 场景
 func instance_glb(path: String) -> Node3D:
 	if path.is_empty():
 		return null
@@ -17,7 +19,7 @@ func instance_glb(path: String) -> Node3D:
 		_scene_cache[path] = loaded
 	return (_scene_cache[path] as Node3D).duplicate() as Node3D
 
-
+## 从 GLB 获取网格
 func mesh_from_glb(path: String) -> Mesh:
 	if path.is_empty():
 		return null
@@ -33,7 +35,7 @@ func mesh_from_glb(path: String) -> Mesh:
 		_mesh_cache[path] = m
 	return m
 
-
+## 查找网格实例
 func _find_mesh_instance(n: Node) -> MeshInstance3D:
 	if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
 		return n as MeshInstance3D
