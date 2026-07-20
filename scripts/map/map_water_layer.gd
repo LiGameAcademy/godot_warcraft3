@@ -6,9 +6,6 @@ extends Node3D
 const WATER_SHADER: Shader = preload("res://shaders/wc3_water.gdshader")
 
 @export var height_bias_wc3: float = 0.0
-@export var build_shore_foam: bool = true
-## 已弃用：ShorelineWave 网格浪（非 Water.slk 自动岸线）
-@export var build_shore_mesh_waves: bool = false
 
 @onready var _water: HeightfieldMesh = $Surface
 
@@ -62,8 +59,7 @@ func build(ctx) -> void:
 		]
 	)
 
-	if build_shore_foam:
-		_build_shore_foam(ctx, params)
+	_build_shore_foam(ctx, params)
 
 
 func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:

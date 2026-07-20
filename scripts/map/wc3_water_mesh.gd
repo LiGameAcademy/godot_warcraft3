@@ -4,7 +4,7 @@ extends RefCounted
 ## 斜坡格（ramp）不画水面：与斜坡 mesh 冲突，也会把岸线/泡沫推到高侧。
 
 
-const FLAG_WATER := 1
+const FLAG_WATER := Wc3Coords.FLAG_WATER
 
 
 static func build(

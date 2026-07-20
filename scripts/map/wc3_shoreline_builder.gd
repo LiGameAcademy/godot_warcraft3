@@ -3,7 +3,7 @@ extends RefCounted
 ## 收集自动岸浪放置点（水面侧、朝岸发射）。角与直边统一为同一列表。
 
 
-const FLAG_WATER := 1
+const FLAG_WATER := Wc3Coords.FLAG_WATER
 const WAVES_DEPTH := 25.0
 const INSET := 0.62
 const INSET_CLIFF := 0.88

@@ -5,7 +5,7 @@ extends RefCounted
 ## 斜坡选型对齐 HiveWE（CliffTrans 竖/横两格条带 + A/H/L/B 编码）。
 
 
-const FLAG_RAMP := 4
+const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
 const CLIFF_VAR_MAX := {
 	"AAAB": 1, "AAAC": 1, "AABA": 1, "AABB": 2, "AABC": 0, "AACA": 1, "AACB": 0, "AACC": 1,
@@ -89,9 +89,13 @@ static func is_ramp_entrance(layer_heights: Array, flags: Array, width: int, ix:
 
 
 ## 扫描整张地图，返回斜坡模型实例与 romp 占位（对齐 HiveWE update_cliff_meshes）。
-## 每项: { ix, iy, tag, base_layer, tex_idx }
-## meta 可选：传入则不再 read_heightfield_meta。
-static func collect_ramp_placements(hf: Dictionary, meta: Dictionary = {}) -> Dictionary:
+## 每项: { ix, iy, tag, base_layer, tex_idx, ramp_dir }
+## meta / tiles 可选：meta 空则 read；tiles 空则用 cliffID 硬编码回退。
+static func collect_ramp_placements(
+	hf: Dictionary,
+	meta: Dictionary = {},
+	tiles: Wc3TerrainTiles = null
+) -> Dictionary:
 	if meta.is_empty():
 		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var tp_w: int = meta["width"]
@@ -113,7 +117,7 @@ static func collect_ramp_placements(hf: Dictionary, meta: Dictionary = {}) -> Di
 			if iy < tp_h - 2:
 				var tag_v := _vertical_ramp_tag(layers, flags, tp_w, ix, iy)
 				if not tag_v.is_empty():
-					var ramp_dir := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy)
+					var ramp_dir := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy, tiles)
 					if resolve_glb(ramp_dir, tag_v, 0) != "":
 						var base_v := _vertical_ramp_base(layers, tp_w, ix, iy)
 						placements.append({
@@ -128,7 +132,7 @@ static func collect_ramp_placements(hf: Dictionary, meta: Dictionary = {}) -> Di
 			if not placed and ix < tp_w - 2:
 				var tag_h := _horizontal_ramp_tag(layers, flags, tp_w, ix, iy)
 				if not tag_h.is_empty():
-					var ramp_dir_h := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy)
+					var ramp_dir_h := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy, tiles)
 					if resolve_glb(ramp_dir_h, tag_h, 0) != "":
 						var base_h := _horizontal_ramp_base(layers, tp_w, ix, iy)
 						placements.append({
@@ -267,9 +271,19 @@ static func _tex_idx_at(cliff_tex: Array, cliff_tilesets: Array, i00: int) -> in
 	return tex_idx
 
 
-static func _ramp_dir_at(cliff_tilesets: Array, cliff_tex: Array, tp_w: int, ix: int, iy: int) -> String:
+static func _ramp_dir_at(
+	cliff_tilesets: Array,
+	cliff_tex: Array,
+	tp_w: int,
+	ix: int,
+	iy: int,
+	tiles: Wc3TerrainTiles = null
+) -> String:
 	var tex_idx := _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix)
 	var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
+	if tiles != null and not cliff_id.is_empty():
+		return tiles.cliff_ramp_dir(cliff_id)
+	# 无 SLK 时的最小回退（城市冰崖）
 	if cliff_id == "CIrb":
 		return "CityCliffTrans"
 	return "CliffTrans"

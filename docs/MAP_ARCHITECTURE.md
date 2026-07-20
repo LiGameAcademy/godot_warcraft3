@@ -4,7 +4,7 @@
 > 不含离线工具链细节（见 README / 各 `tools/*/README.md`）。水体专项见 [WATER.md](WATER.md)。
 >
 > **重构分支：** `refactor/map-architecture`  
-> **进度：** 步骤 1–3 完成 — `MapBuildContext`、单次悬崖拓扑、ModelCache 共用、资源入口统一（AssetProvider + RuntimeAssets.converted_*）。
+> **进度：** 步骤 1–3、5 完成 — Context / 资源入口 / 死代码清理；步骤 4（目录归位）待做。
 
 原则：**离线解析 → 运行时装配 → 分层渲染**。先把边界划清，再谈优化与对标官方。
 
@@ -29,12 +29,11 @@
 
 | 项 | 细节 |
 |----|------|
-| **AssetProvider 与 RuntimeAssets 已汇合** | `resolve`：overlay → converted → cache；地图经 `RuntimeAssets.converted_path` / `load_converted_*`，禁止手写 converted 前缀 |
-| **GLB 缓存分叉** | ~~Cliff 自建缓存~~ → 已共用 `MapModelCache`；继续盯单位/装饰路径一致性 |
-| **悬崖拓扑重复扫描** | ~~多次 collect_ramp~~ → `MapBuildContext.ensure_cliff_topology()` 一次 |
-| **常量与 I/O 重复** | `FLAG_WATER` 等仍有多处定义；JSON 读取尚未完全抽公共 |
-| **死 API / 死接线** | `HeightfieldMeshBuilder.build_uniform_mesh` 未见调用；`wc3_shore_wave.gdshader` 无运行时引用 |
-| **文档与默认开关不一致** | README 写 Lost Temple 含树等预览；`MapLoader` 默认 `place_doodads/units = false` |
+| **AssetProvider 与 RuntimeAssets 已汇合** | `resolve`：overlay → converted → cache；地图经 `RuntimeAssets.converted_path` |
+| **GLB 缓存** | Cliff / 单位 / 装饰共用 `MapModelCache` |
+| **悬崖拓扑** | `MapBuildContext.ensure_cliff_topology()` 单次扫描 |
+| **tile flags** | 统一在 `Wc3Coords.FLAG_WATER` / `FLAG_RAMP` |
+| **预览默认** | `place_doodads` / `place_units` 默认开启（与 Lost Temple 预览文档一致） |
 
 依赖关系本身**无环**（Layer → Builder → Coords/RuntimeAssets）；痛点是共享不足与职责膨胀，不是循环依赖。
 
@@ -140,7 +139,6 @@ Main (scenes/main.tscn)
 | `wc3_cliff.gdshader` | 悬崖贴图 + 高度变形 |
 | `wc3_water.gdshader` | 水面序列帧 + 深浅色 |
 | `wc3_shore_foam.gdshader` | 岸浪 XYQuad Additive |
-| `wc3_shore_wave.gdshader` | ShorelineWave（默认关闭） |
 
 ---
 
@@ -304,8 +302,10 @@ flowchart TB
 4. **目录归位**  
    `domain/` / `layers/` / `infra/` 物理搬家；更新本文档路径表。
 
-5. **清理与对齐**  
-   删或标明死 API（`build_uniform_mesh`、未接线的 shore_wave）；预览默认是否启用 doodads 与 README 对齐。
+5. **清理与对齐** ✅  
+   删除 `build_uniform_mesh` 桶几何 API、`wc3_shore_wave`、未用 shore* SLK 字段与 `build_shore_mesh_waves`；  
+   flags 收入 `Wc3Coords`；地面网格去掉占位 UV2；预览默认启用 doodads/units；  
+   斜坡 `rampModelDir` 走 `Wc3TerrainTiles.cliff_ramp_dir`；去掉未用的 `RuntimeAssets` / `HeightfieldMesh` 薄封装。
 
 6. **（可选）Pipeline 配置化**  
    `build_water` / `place_doodads` 变成步骤列表，便于测试单层。

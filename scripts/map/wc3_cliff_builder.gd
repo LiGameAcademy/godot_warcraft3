@@ -25,7 +25,7 @@ static func collect_instances(
 		return {}
 
 	if ramp_data.is_empty():
-		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta)
+		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
 	var romp: PackedByteArray = ramp_data["romp"]
 	var ramp_placements: Array = ramp_data["placements"]
 

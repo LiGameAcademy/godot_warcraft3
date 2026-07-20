@@ -72,10 +72,6 @@ static func file_exists(res_or_abs: String) -> bool:
 	return FileAccess.file_exists(abs)
 
 
-static func converted_exists(relative: String) -> bool:
-	return file_exists(converted_path(relative))
-
-
 static func load_image(res_or_abs: String) -> Image:
 	var abs := project_abs(res_or_abs)
 	if not FileAccess.file_exists(abs):
@@ -93,10 +89,6 @@ static func load_texture(res_or_abs: String) -> Texture2D:
 	if img == null:
 		return null
 	return ImageTexture.create_from_image(img)
-
-
-static func load_converted_image(relative: String) -> Image:
-	return load_image(converted_path(relative))
 
 
 static func load_converted_texture(relative: String) -> Texture2D:
@@ -121,7 +113,3 @@ static func load_gltf_scene(res_or_abs: String) -> Node3D:
 		wrap.add_child(scene)
 		return wrap
 	return null
-
-
-static func load_converted_gltf(relative: String) -> Node3D:
-	return load_gltf_scene(converted_path(relative))

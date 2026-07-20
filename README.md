@@ -159,7 +159,7 @@ docs/WATER.md            水体复刻路线与远期增强（暂不实现）
 
 1. **玩家首次运行**：选择本机经典安装路径 → GDExtension + [StormLib](https://github.com/ladislav-zezula/StormLib) 解包到 `user://wc3_cache/`，manifest 语义与开发工具一致。
 2. **Mod**：在 `mods/<id>/` 下用相同逻辑路径覆盖缓存文件；`AssetProvider.register_overlay` 已预留。
-3. **水体 Shoreline**：按 [docs/WATER.md](docs/WATER.md) 复刻拍岸浪 MDX；沿岸/泡沫 shader 等增强只记文档、暂不实现。
+3. **水体 Shoreline**：自动岸浪已用 PE2 近似；完整 MDX 粒子 / ShorelineWave 装饰浪仍未做。
 4. **寻路等**：`war3map.wpm` 等。
 
 ## 开发依赖说明

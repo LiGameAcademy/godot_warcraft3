@@ -58,7 +58,7 @@ static func create(
 func ensure_cliff_topology() -> void:
 	if _cliff_ready:
 		return
-	var ramp_data := Wc3CliffTiles.collect_ramp_placements(hf, meta)
+	var ramp_data := Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
 	cliff_romp = ramp_data.get("romp", PackedByteArray()) as PackedByteArray
 	cliff_ramp_placements = ramp_data.get("placements", []) as Array
 	cliff_gap_stats = Wc3CliffTiles.count_gaps(hf, meta, ramp_data)

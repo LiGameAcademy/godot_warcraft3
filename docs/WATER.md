@@ -36,18 +36,17 @@
 |----|------|
 | 水面网格 + 深度色 + 序列帧 | `wc3_water_*` / `wc3_water.gdshader` |
 | UV × `cells` | `tile_xy / cells` |
-| **斜坡不画水** | `Wc3WaterMesh.is_surface_water_tile`：有 water 标志但 `is_ramp_tile` → 跳过（水面停在坡底） |
-| **Shoreline 泡沫** | 一套 PE2 参数 + **单个** MultiMesh；水平 XYQuad；Additive + 深度测试 |
-| 尺寸 | Scale 30→80→70 ×`WORLD_SCALE` |
-| 拓扑 | 岸格直边/角平分统一列表；悬崖更大 inset + 降速；**无** S/OC/IC 分档、**无**等深线补点 |
+| **斜坡不画水** | `Wc3WaterMesh.is_surface_water_tile`：有 water 标志但 `is_ramp_tile` → 跳过 |
+| **Shoreline 泡沫** | 一套 PE2 参数 + 单个 MultiMesh；水平 XYQuad；Additive + 深度测试 |
 | 贴图 | `Textures/ShorelineParticleXY.png` |
 
-### 有意不做 / 降级
+### 有意不做
 
 | 项 | 说明 |
 |----|------|
-| ShorelineWave 网格浪 | 非官方自动管线；`MapWaterLayer.build_shore_mesh_waves=false` |
-| OC/IC 独立 MDX 参数、splash、等深线岸浪 | 视觉收益小，已合并简化 |
+| ShorelineWave 网格浪 | 非 Water.slk 自动岸线；已删除相关 shader |
+| OC/IC 独立 MDX 参数、splash | 视觉收益小，已合并简化 |
+| 读取 Water.slk 的 shore* 文件名字段 | 当前泡沫不实例化 Shoreline*.mdx |
 
 ### 相关文件
 
@@ -64,7 +63,7 @@
 
 ```text
 Water: tiles=… skipRamp=…
-Shore foam: points=… (S=… OC=… IC=…) …
+Shore foam: emitters=… instances=…
 ```
 
 斜坡底部应见水面边界与朝岸泡沫；斜坡 mesh 下不应再铺一层水。
