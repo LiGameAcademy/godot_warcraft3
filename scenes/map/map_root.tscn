@@ -18,14 +18,14 @@ script = ExtResource("2_terrain")
 [node name="Ground" type="MeshInstance3D" parent="Terrain"]
 script = ExtResource("7_hfmesh")
 
+[node name="Cliffs" type="Node3D" parent="."]
+script = ExtResource("4_cliff")
+
 [node name="Water" type="Node3D" parent="."]
 script = ExtResource("3_water")
 
 [node name="Surface" type="MeshInstance3D" parent="Water"]
 script = ExtResource("7_hfmesh")
-
-[node name="Cliffs" type="Node3D" parent="."]
-script = ExtResource("4_cliff")
 
 [node name="Doodads" type="Node3D" parent="."]
 script = ExtResource("5_doodad")

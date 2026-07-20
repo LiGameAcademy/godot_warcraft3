@@ -153,4 +153,5 @@ static func read_heightfield_meta(hf: Dictionary) -> Dictionary:
 		"flags": hf.get("flagsPacked", []) as Array,
 		"ground_tilesets": hf.get("groundTilesets", []) as Array,
 		"cliff_tilesets": hf.get("cliffTilesets", []) as Array,
+		"main_tileset": str(hf.get("mainTileset", "")),
 	}
