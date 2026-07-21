@@ -37,21 +37,34 @@
 | 水面网格 + 深度色 + 序列帧 | `wc3_water_*` / `wc3_water.gdshader` |
 | UV × `cells` | `tile_xy / cells` |
 | **斜坡不画水** | `Wc3WaterMesh.is_surface_water_tile`：有 water 标志但 `is_ramp_tile` → 跳过 |
-| **Shoreline 泡沫（近似）** | 单套 PE2 参数 + 单个 MultiMesh；水平 XYQuad；Additive + 深度测试 |
+| **WavesDepth 岸线过滤** | 岸边深度 &lt; 25 跳过 |
+| **WavesDepth 等深线（激流）** | 深/浅邻格交界：深水侧朝浅水发射，水道对向泡沫 |
+| **Shoreline S / OC / IC** | 直边/外角/内角分型；各用对应 MDX 主 PE2 |
 | 贴图 | `Textures/ShorelineParticleXY.png` |
 | 地图 flags | `waterWavesCliff` / `waterWavesRolling` |
+| **Icecrown 贴图** | 嵌套 `War3x.mpq/I.mpq` → `I_Cliff*` / `I_Water*`（`tools/extract-icecrown-replaceables.mjs`）；无则回退 `N_*` |
+| **PE2 着色** | 对齐 HiveWE：`frag = tex * color`；Additive ≈ `SRC_ALPHA, ONE`（预乘 + `blend_add`） |
+| **PE2 参数** | 来自 `Shoreline0.mdx` 等：S `rate=0.8 life=4.5 scale=30/80/70`；稳态约 `rate*life` 个大软粒子 |
+
+### HiveWE 对照结论（2026-07）
+
+HiveWE **不实现**自动岸浪摆放（无 `shoreSFile` / `WavesDepth` 逻辑），只渲染已放置 MDX 的 PE2：
+
+- `particle_emitter2.frag`：`frag_color = tex * v_color`
+- Additive：`glBlendFunc(GL_SRC_ALPHA, GL_ONE)`
+- XYQuad：贴地，朝向水平速度；spawn 在 `±0.5*length` 矩形
+
+自动岸线仍是游戏/本仓库 `Wc3ShorelineBuilder` 的职责。稀碎感通常来自错误裁切 alpha / 缩尺度，而非粒子数量不够（S 稳态仅约 4 个，靠大 scale 软边叠成条）。
 
 ### 与原作差距（完善优先级）
 
 | 优先级 | 项 | 现状 | 目标 |
 |--------|----|------|------|
-| **P0** | WavesDepth | 未读 `MiscData` / 未按深度过滤 | 深度 &lt; 25/128 不出浪（对齐官方） |
-| **P0** | S / OC / IC 分型 | 直边与角共用一套参数 | 按边类型选 Shoreline / OutsideCorner / InsideCorner |
-| **P1** | Water.slk `shore*` | 字段已删、不读 | 恢复读取 `shoreDir` + `shoreS/OC/ICFile`（及 Var） |
-| **P1** | PE2 参数分档 | 硬编码 Shoreline0 近似 | 从对应 MDX（或导出表）取 Length/Speed/Life/Scale/Emission |
-| **P2** | 真正 MDX 粒子 | Godot MultiMesh 模拟 | 解析 PE2 或预烘焙粒子描述，尽量复刻节点朝向/splash |
-| **P3** | 水面 shader 细项 | 序列帧 + 顶点色 | 对照 viewer/HiveWE 补雾、混合、过滤方式 |
-| — | ShorelineWave 网格浪 | 已删自动管线 | **不**做自动生成；地图里若有 doodad 则走装饰层 |
+| **P1** | Water.slk `shore*` | 未读路径字段 | 恢复 `shoreDir` + `shoreS/OC/ICFile`（及 Var）选模 |
+| **P1** | splash 第二发射器 | 仅主 PE2 | Shoreline / OC 的 splash 粒子 |
+| **P2** | 真正 MDX 粒子 | Godot MultiMesh 模拟 | 解析 PE2 或预烘焙；节点朝向 / Emission |
+| **P3** | 水面 shader 细项 | 序列帧 + 顶点色 | 对照 viewer/HiveWE 补雾、混合 |
+| — | ShorelineWave 网格浪 | 不自动生成 | 地图 doodad 走装饰层 |
 
 ### 相关文件
 
@@ -66,7 +79,7 @@
 
 ```text
 Water: tiles=… skipRamp=…
-Shore foam: emitters=… instances=…
+Shore foam: S=… OC=… IC=… instances=…
 ```
 
 斜坡底部应见水面边界与朝岸泡沫；斜坡 mesh 下不应再铺一层水。

@@ -45,12 +45,13 @@ func build(ctx) -> void:
 	_water.apply_uniform_material(mat)
 
 	print(
-		"Water: tiles=%d skipRamp=%d frames=%d id=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle)"
+		"Water: tiles=%d skipRamp=%d frames=%d id=%s tex0=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle)"
 		% [
 			last_cell_count,
 			int(built.get("skipped_ramp", 0)),
 			params.frame_pngs.size(),
 			params.water_id,
+			params.frame_pngs[0].get_file() if params.frame_pngs.size() else "?",
 			params.height_offset_wc3(),
 			height_bias_wc3,
 			params.tex_rate,
@@ -86,9 +87,12 @@ func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
 	add_child(_shore_root)
 	last_shore_count = Wc3ShoreFoam.build_systems(_shore_root, list)
 	print(
-		"Shore foam: emitters=%d instances=%d candidates=%d shallowSkip=%d"
+		"Shore foam: S=%d OC=%d IC=%d contour=%d instances=%d candidates=%d shallowSkip=%d"
 		% [
-			list.size(),
+			int(collected.get("count_s", 0)),
+			int(collected.get("count_oc", 0)),
+			int(collected.get("count_ic", 0)),
+			int(collected.get("count_contour", 0)),
 			last_shore_count,
 			int(collected.get("edge_candidates", 0)),
 			int(collected.get("skipped_shallow", 0)),

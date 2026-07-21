@@ -11,8 +11,6 @@
 [node name="MapRoot" type="Node3D"]
 script = ExtResource("1_loader")
 map_dir = "res://assets/map-parsed/losttemple"
-place_doodads = true
-place_units = true
 
 [node name="Terrain" type="Node3D" parent="."]
 script = ExtResource("2_terrain")

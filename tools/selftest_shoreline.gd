@@ -1,5 +1,5 @@
 extends SceneTree
-## 自测：斜坡跳过 + 简化岸浪 MultiMesh。
+## 自测：斜坡跳过 + WavesDepth + S/OC/IC 岸浪 MultiMesh。
 
 
 const Foam := preload("res://scripts/map/wc3_shore_foam.gd")
@@ -36,17 +36,42 @@ func _run() -> void:
 		hf as Dictionary, params, 0.0, true, true
 	)
 	var list: Array = collected.get("placements", []) as Array
+	var n_s := int(collected.get("count_s", 0))
+	var n_oc := int(collected.get("count_oc", 0))
+	var n_ic := int(collected.get("count_ic", 0))
 	var cliff_n := 0
 	for rec in list:
 		if bool(rec.get("cliff", false)):
 			cliff_n += 1
-	print("selftest Shore: emitters=%d cliff=%d ok" % [list.size(), cliff_n])
+	print(
+		"selftest Shore: S=%d OC=%d IC=%d contour=%d cliff=%d shallowSkip=%d"
+		% [
+			n_s,
+			n_oc,
+			n_ic,
+			int(collected.get("count_contour", 0)),
+			cliff_n,
+			int(collected.get("skipped_shallow", 0)),
+		]
+	)
+	if n_s <= 0 or n_oc <= 0:
+		push_error("selftest: expected S and OC placements")
+		quit(1)
+		return
+	if int(collected.get("count_contour", 0)) <= 0:
+		push_error("selftest: expected WavesDepth contour placements (rapids)")
+		quit(1)
+		return
+	if list.size() != n_s + n_oc + n_ic:
+		push_error("selftest: kind counts mismatch list size")
+		quit(1)
+		return
 
 	var root := Node3D.new()
 	var n: int = Foam.build_systems(root, list)
 	print("selftest Shore instances=%d children=%d" % [n, root.get_child_count()])
-	if n <= 0:
-		push_error("selftest: foam build failed")
+	if n <= 0 or root.get_child_count() < 2:
+		push_error("selftest: foam build failed (need ≥2 MultiMesh kinds)")
 		root.free()
 		quit(1)
 		return

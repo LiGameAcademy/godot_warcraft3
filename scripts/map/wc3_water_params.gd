@@ -84,15 +84,18 @@ func _resolve_frames() -> void:
 	frame_pngs.clear()
 	if num_tex <= 0:
 		return
-	var tileset := water_id.substr(0, 1) if water_id.length() >= 1 else "I"
+	var tileset := water_id.substr(0, 1).to_upper() if water_id.length() >= 1 else "I"
+	var alt := Wc3TerrainTiles._tileset_texture_fallback(tileset)
 	var base_name := tex_file_prefix.get_file() # Water
 	var dir := tex_file_prefix.get_base_dir()
 	for i in range(num_tex):
 		var frame := "%s%02d" % [base_name, i]
-		var candidates: Array[String] = [
-			"%s/%s_%s.png" % [dir, tileset, frame],
-			"%s/%s.png" % [dir, frame],
-		]
+		var candidates: Array[String] = []
+		for ts in [tileset, alt]:
+			if ts.is_empty():
+				continue
+			candidates.append("%s/%s_%s.png" % [dir, ts, frame])
+		candidates.append("%s/%s.png" % [dir, frame])
 		var found := ""
 		for c in candidates:
 			var res_path := RuntimeAssets.converted_path(c)

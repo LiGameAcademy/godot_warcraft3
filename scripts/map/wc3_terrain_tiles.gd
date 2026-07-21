@@ -102,19 +102,33 @@ func _load_cliff_slk(path: String) -> void:
 			_cliff_ramp_dir[id] = ramp_dir
 
 
-## cliffID 如 CIsn → 地形集字母 I；优先 I_Cliff1.png，再回退 Cliff1.png。
+## cliffID 如 CIsn → 地形集字母 I；优先 I_Cliff1.png。
+## Icecrown（I）经典解包常无独立 I_Cliff*（嵌在 I.mpq），回退 Northrend（N）雪崖，
+## 避免落到默认 Cliff0/1（洛丹伦夏天绿边）。
 static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) -> String:
 	var tileset := ""
 	if cliff_id.length() >= 2:
-		tileset = cliff_id.substr(1, 1)
+		tileset = cliff_id.substr(1, 1).to_upper()
+	var alt := _tileset_texture_fallback(tileset)
 	var candidates: Array[String] = []
-	if not tileset.is_empty():
-		candidates.append("%s/%s_%s.png" % [dir, tileset, tex_file])
-		candidates.append("%s/%s_%s.png" % [dir, tileset, tex_file.to_lower()])
-		candidates.append("%s/%s%s.png" % [dir, tileset, tex_file])
+	for ts in [tileset, alt]:
+		if ts.is_empty():
+			continue
+		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file])
+		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file.to_lower()])
+		candidates.append("%s/%s%s.png" % [dir, ts, tex_file])
 	candidates.append("%s/%s.png" % [dir, tex_file])
 	for c in candidates:
 		var res_path := RuntimeAssets.converted_path(c)
 		if RuntimeAssets.file_exists(res_path):
 			return res_path
 	return RuntimeAssets.converted_path(candidates[candidates.size() - 1])
+
+
+## 地形集贴图字母回退（无独立 MPQ 前缀时）。
+static func _tileset_texture_fallback(tileset: String) -> String:
+	match tileset:
+		"I":
+			return "N" # Icecrown → Northrend
+		_:
+			return ""
