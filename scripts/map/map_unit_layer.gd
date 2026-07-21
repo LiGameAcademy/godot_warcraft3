@@ -54,6 +54,7 @@ func _make_unit_node(type_id: String, variation: int, owner_id: int) -> Node3D:
 			var inst := _cache.instance_glb(glb)
 			if inst:
 				inst.set_meta("is_placeholder", false)
+				_cache.autoplay_stand(inst)
 				return inst
 	var ph := MapPlaceholders.make_entity(type_id, owner_id, true)
 	ph.set_meta("is_placeholder", true)

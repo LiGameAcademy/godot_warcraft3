@@ -6,6 +6,10 @@ extends Node3D
 const WATER_SHADER: Shader = preload("res://shaders/wc3_water.gdshader")
 
 @export var height_bias_wc3: float = 0.0
+## 由 MapRoot「岸浪微调」同步；也可直接改本节点。
+@export_range(0.0, 0.40, 0.01) var foam_cliff_out_extra: float = 0.08
+@export_range(0.0, 0.55, 0.01) var foam_ramp_pull_tiles: float = 0.38
+@export_range(0.0, 0.40, 0.01) var foam_shore_pull_tiles: float = 0.10
 
 @onready var _water: HeightfieldMesh = $Surface
 
@@ -45,10 +49,10 @@ func build(ctx) -> void:
 	_water.apply_uniform_material(mat)
 
 	print(
-		"Water: tiles=%d skipRamp=%d frames=%d id=%s tex0=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle)"
+		"Water: tiles=%d underRamp=%d frames=%d id=%s tex0=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle)"
 		% [
 			last_cell_count,
-			int(built.get("skipped_ramp", 0)),
+			int(built.get("under_ramp", 0)),
 			params.frame_pngs.size(),
 			params.water_id,
 			params.frame_pngs[0].get_file() if params.frame_pngs.size() else "?",
@@ -67,7 +71,15 @@ func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
 	var cliff_on := bool(ctx.map_flags.get("waterWavesCliff", true))
 	var roll_on := bool(ctx.map_flags.get("waterWavesRolling", true))
 	var collected := Wc3ShorelineBuilder.collect_foam_placements(
-		ctx.hf, params, height_bias_wc3, cliff_on, roll_on, ctx.meta
+		ctx.hf,
+		params,
+		height_bias_wc3,
+		cliff_on,
+		roll_on,
+		ctx.meta,
+		foam_shore_pull_tiles,
+		foam_ramp_pull_tiles,
+		foam_cliff_out_extra,
 	)
 	var list: Array = collected.get("placements", []) as Array
 	if list.is_empty():
@@ -87,15 +99,17 @@ func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
 	add_child(_shore_root)
 	last_shore_count = Wc3ShoreFoam.build_systems(_shore_root, list)
 	print(
-		"Shore foam: S=%d OC=%d IC=%d contour=%d instances=%d candidates=%d shallowSkip=%d"
+		"Shore foam: S=%d OC=%d IC=%d contour=%d cliff=%d instances=%d pull(r=%.2f s=%.2f) cliffOut+=%.2f"
 		% [
 			int(collected.get("count_s", 0)),
 			int(collected.get("count_oc", 0)),
 			int(collected.get("count_ic", 0)),
 			int(collected.get("count_contour", 0)),
+			int(collected.get("count_cliff_l1", 0)) + int(collected.get("count_cliff_l2", 0)),
 			last_shore_count,
-			int(collected.get("edge_candidates", 0)),
-			int(collected.get("skipped_shallow", 0)),
+			foam_ramp_pull_tiles,
+			foam_shore_pull_tiles,
+			foam_cliff_out_extra,
 		]
 	)
 

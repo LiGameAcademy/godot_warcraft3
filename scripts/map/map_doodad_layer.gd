@@ -1,6 +1,6 @@
 class_name MapDoodadLayer
 extends Node3D
-## 静物 / 装饰物层。
+## 静物 / 装饰物层：GLB 实例或按 Geoset 分片 MultiMesh。
 
 
 @export var try_load_glb: bool = true
@@ -8,6 +8,8 @@ extends Node3D
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
+var last_placed: int = 0
+var last_placeholder: int = 0
 
 
 func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
@@ -17,6 +19,8 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 
 func build(doodads_json: Dictionary) -> void:
 	_clear_children()
+	last_placed = 0
+	last_placeholder = 0
 	var doodads: Array = doodads_json.get("doodads", [])
 	if doodads.is_empty():
 		return
@@ -32,6 +36,8 @@ func build(doodads_json: Dictionary) -> void:
 
 	var glb_groups := 0
 	var ph_groups := 0
+	var mm_groups := 0
+	var anim_instances := 0
 	for key_variant in groups.keys():
 		var key := str(key_variant)
 		var list: Array = groups[key]
@@ -39,49 +45,83 @@ func build(doodads_json: Dictionary) -> void:
 		var type_id: String = parts[0] if parts.size() > 0 else ""
 		var variation: int = int(parts[1]) if parts.size() > 1 else 0
 		var glb := _catalog.converted_glb_path(type_id, variation) if try_load_glb else ""
+		var has_anim := (not glb.is_empty()) and _cache.glb_has_animation(glb)
 
-		if not glb.is_empty() and list.size() >= multimesh_threshold:
+		# 带动画的不走 MultiMesh（否则只剩 bind-pose）
+		if not glb.is_empty() and (not has_anim) and list.size() >= multimesh_threshold:
 			if _place_multimesh_group(type_id, variation, glb, list):
 				glb_groups += 1
+				mm_groups += 1
+				last_placed += list.size()
 				continue
 
 		if not glb.is_empty():
 			for d in list:
-				_place_doodad_instance(type_id, glb, d)
+				_place_doodad_instance(type_id, glb, d, has_anim)
+				last_placed += 1
+				if has_anim:
+					anim_instances += 1
 			glb_groups += 1
 		else:
 			for d in list:
 				_place_doodad_placeholder(type_id, d)
+				last_placeholder += 1
 			ph_groups += 1
 
-	print("Doodad groups: glb=%d placeholder=%d" % [glb_groups, ph_groups])
+	print(
+		"Doodads: placed=%d placeholder=%d animated=%d groups(glb=%d mm=%d ph=%d)"
+		% [last_placed, last_placeholder, anim_instances, glb_groups, mm_groups, ph_groups]
+	)
 
 
 func _place_multimesh_group(type_id: String, variation: int, glb: String, list: Array) -> bool:
-	var mesh := _cache.mesh_from_glb(glb)
-	if mesh == null:
+	var parts: Array = _cache.mesh_parts_from_glb(glb)
+	if parts.is_empty():
 		return false
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = list.size()
+	var xforms: Array[Transform3D] = []
+	xforms.resize(list.size())
 	for i in range(list.size()):
-		mm.set_instance_transform(i, _doodad_transform(list[i]))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = "MM_%s_%d" % [type_id, variation]
-	mmi.multimesh = mm
-	add_child(mmi)
+		xforms[i] = _doodad_transform(list[i])
+
+	var root := Node3D.new()
+	root.name = "MM_%s_%d" % [type_id, variation]
+	for pi in range(parts.size()):
+		var part: Dictionary = parts[pi]
+		var mesh: Mesh = part.get("mesh") as Mesh
+		if mesh == null:
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = xforms.size()
+		for i in range(xforms.size()):
+			mm.set_instance_transform(i, xforms[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Part%d" % pi
+		mmi.multimesh = mm
+		var mat: Material = part.get("material") as Material
+		if mat:
+			mmi.material_override = mat
+		root.add_child(mmi)
+	if root.get_child_count() == 0:
+		root.free()
+		return false
+	add_child(root)
 	return true
 
 
-func _place_doodad_instance(type_id: String, glb: String, d: Dictionary) -> void:
+func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_anim: bool = false) -> void:
 	var node := _cache.instance_glb(glb)
 	if node == null:
 		_place_doodad_placeholder(type_id, d)
+		last_placeholder += 1
+		last_placed -= 1
 		return
 	node.name = "%s_%s" % [type_id, str(d.get("creationNumber", 0))]
 	_apply_doodad_xform(node, d, true)
 	add_child(node)
+	if play_anim:
+		_cache.autoplay_stand(node)
 
 
 func _place_doodad_placeholder(type_id: String, d: Dictionary) -> void:
@@ -105,10 +145,11 @@ func _apply_doodad_xform(node: Node3D, d: Dictionary, multiply_imported_scale: b
 	var sy := float(scale_data.get("y", 1.0))
 	var sz := float(scale_data.get("z", 1.0))
 	if multiply_imported_scale:
+		# GLB 根节点已含 MODEL_SCALE=0.01，只乘地图缩放
 		var b := node.scale
 		node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
 	else:
-		node.scale = Vector3(sx, sz, sy)
+		node.scale = Vector3(sx, sz, sy) * Wc3Coords.WORLD_SCALE
 
 
 func _doodad_transform(d: Dictionary) -> Transform3D:
@@ -123,6 +164,7 @@ func _doodad_transform(d: Dictionary) -> Transform3D:
 	var sx := float(scale_data.get("x", 1.0))
 	var sy := float(scale_data.get("y", 1.0))
 	var sz := float(scale_data.get("z", 1.0))
+	# 网格顶点仍是 WC3 单位，需 WORLD_SCALE（与 GLB 根 scale 等价）
 	var xf := Transform3D.IDENTITY
 	xf = xf.scaled(Vector3(sx, sz, sy) * Wc3Coords.WORLD_SCALE)
 	xf = xf.rotated(Vector3.UP, Wc3Coords.yaw_wc3_to_godot(angle))

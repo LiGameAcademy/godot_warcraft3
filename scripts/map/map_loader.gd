@@ -8,11 +8,19 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 @export var map_dir: String = "res://assets/map-parsed/losttemple"
 @export var build_water: bool = true
 @export var build_cliffs: bool = true
-@export var place_doodads: bool = false
+@export var place_doodads: bool = true
 @export var place_units: bool = false
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
+
+@export_group("岸浪微调")
+## 悬崖泡沫额外退入水面（格）。全悬崖共用。
+@export_range(0.0, 0.40, 0.01) var foam_cliff_out_extra: float = 0.08
+## 斜坡泡沫向岸拉近（格）。越大越贴坡脚。
+@export_range(0.0, 0.55, 0.01) var foam_ramp_pull_tiles: float = 0.38
+## 普通平缓岸向岸拉近（格）
+@export_range(0.0, 0.40, 0.01) var foam_shore_pull_tiles: float = 0.10
 
 @onready var _terrain: MapTerrainLayer = $Terrain
 @onready var _water: MapWaterLayer = $Water
@@ -64,6 +72,9 @@ func _load_all() -> void:
 		await get_tree().process_frame
 	if build_water:
 		_set_status("生成水体…")
+		_water.foam_cliff_out_extra = foam_cliff_out_extra
+		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
+		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		_water.build(ctx)
 		await get_tree().process_frame
 	if place_units:
@@ -77,13 +88,14 @@ func _load_all() -> void:
 	var cliff_n := _cliffs.last_placed if build_cliffs else 0
 	var water_n := _water.last_cell_count if build_water else 0
 	var shore_n := _water.last_shore_count if build_water else 0
+	var doodad_n := _doodads.last_placed if place_doodads else 0
 	_set_status(
-		"地形就绪（%d ms，留缝 %d，悬崖 %d，水面 %d，岸浪 %d）— WASD 移动，右键转向，滚轮缩放"
-		% [ms, _terrain.last_gap_count, cliff_n, water_n, shore_n]
+		"地形就绪（%d ms，留缝 %d，悬崖 %d，水面 %d，岸浪 %d，装饰 %d）— WASD 移动，右键转向，滚轮缩放"
+		% [ms, _terrain.last_gap_count, cliff_n, water_n, shore_n, doodad_n]
 	)
 	print(
-		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d shore=%d)"
-		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n, shore_n]
+		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d shore=%d doodads=%d)"
+		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n, shore_n, doodad_n]
 	)
 
 

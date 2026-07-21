@@ -1,5 +1,5 @@
 extends SceneTree
-## 自测：斜坡跳过 + WavesDepth + S/OC/IC 岸浪 MultiMesh。
+## 自测：斜坡下铺水 + WavesDepth + S/OC/IC 岸浪 MultiMesh。
 
 
 const Foam := preload("res://scripts/map/wc3_shore_foam.gd")
@@ -27,30 +27,36 @@ func _run() -> void:
 
 	var params = Params.load_for_tileset("I")
 	var built: Dictionary = WaterMesh.build(hf as Dictionary, params, 0.0)
-	print(
-		"selftest Water: tiles=%d skipRamp=%d"
-		% [int(built.get("cell_count", 0)), int(built.get("skipped_ramp", 0))]
-	)
+	var tiles := int(built.get("cell_count", 0))
+	var under_ramp := int(built.get("under_ramp", 0))
+	print("selftest Water: tiles=%d underRamp=%d" % [tiles, under_ramp])
+	if tiles <= 0:
+		push_error("selftest: expected water tiles")
+		quit(1)
+		return
+	if under_ramp <= 0:
+		push_error("selftest: expected water under ramp tiles (HiveWE parity)")
+		quit(1)
+		return
 
 	var collected: Dictionary = Builder.collect_foam_placements(
-		hf as Dictionary, params, 0.0, true, true
+		hf as Dictionary, params, 0.0, true, true, {}, 0.10, 0.38, 0.08
 	)
 	var list: Array = collected.get("placements", []) as Array
 	var n_s := int(collected.get("count_s", 0))
 	var n_oc := int(collected.get("count_oc", 0))
 	var n_ic := int(collected.get("count_ic", 0))
-	var cliff_n := 0
-	for rec in list:
-		if bool(rec.get("cliff", false)):
-			cliff_n += 1
+	var n_l1 := int(collected.get("count_cliff_l1", 0))
+	var n_l2 := int(collected.get("count_cliff_l2", 0))
 	print(
-		"selftest Shore: S=%d OC=%d IC=%d contour=%d cliff=%d shallowSkip=%d"
+		"selftest Shore: S=%d OC=%d IC=%d contour=%d cliffL1=%d cliffL2+=%d shallowSkip=%d"
 		% [
 			n_s,
 			n_oc,
 			n_ic,
 			int(collected.get("count_contour", 0)),
-			cliff_n,
+			n_l1,
+			n_l2,
 			int(collected.get("skipped_shallow", 0)),
 		]
 	)

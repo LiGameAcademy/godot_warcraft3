@@ -6,11 +6,12 @@ extends RefCounted
 
 const TEX_FOAM := "Textures/ShorelineParticleXY.png"
 const FOAM_SHADER: Shader = preload("res://shaders/wc3_shore_foam.gdshader")
-const CLIFF_SPEED_MUL := 0.35
-const CLIFF_OUT_TILES := 0.18
-## 视觉放大：MDX 尺度在 WORLD_SCALE 下偏小，略放大减少稀碎感
+const CLIFF_SPEED_MUL := 0.10
+## 悬崖泡沫统一略退入水面（格）
+const CLIFF_OUT_TILES := 0.10
+## 斜坡不向水面退，贴岸靠 builder 的 ramp_pull
+const RAMP_OUT_TILES := 0.0
 const SCALE_VISUAL := 1.45
-## XYQuad 贴片绕竖直轴额外扭动（度），打破横平竖直
 const TWIST_DEG := 55.0
 
 ## war3-model 解析 Shoreline0 / OutsideCorner0 / InsideCorner0 主 PE2
@@ -122,9 +123,10 @@ static func _add_kind(
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(node_name) ^ 0x5A0FE1
-	# HiveWE：spawn 在 length 轴 ±0.5*length
 	var half_len := length_wc3 * s * 0.5
-	var cliff_out := CLIFF_OUT_TILES * Wc3Coords.TILE_SIZE * s
+	var tile_s := Wc3Coords.TILE_SIZE * s
+	var cliff_out := CLIFF_OUT_TILES * tile_s
+	var ramp_out := RAMP_OUT_TILES * tile_s
 	var idx := 0
 
 	for rec in list:
@@ -140,24 +142,26 @@ static func _add_kind(
 		tangent = tangent.normalized()
 
 		var is_cliff := bool(rec.get("cliff", false))
+		var is_ramp := bool(rec.get("ramp", false))
 		var is_contour := bool(rec.get("contour", false))
 		var base: Vector3 = origin
 		if is_cliff:
 			base = origin - emit * cliff_out
+		elif is_ramp:
+			base = origin - emit * ramp_out
 
-		# PE2：沿 length（沿岸）随机散布；悬崖略收以免进崖体
-		var along := half_len * (0.85 if is_cliff else (0.7 if is_contour else 1.0))
-		var speed0 := CLIFF_SPEED_MUL if is_cliff else (0.9 if is_contour else 1.0)
+		var along := half_len * (0.8 if is_cliff else (0.85 if is_ramp else (0.7 if is_contour else 1.0)))
+		var speed0 := (
+			CLIFF_SPEED_MUL if is_cliff else (0.55 if is_ramp else (0.9 if is_contour else 1.0))
+		)
 
 		for _p in particles_per:
 			var yaw := rng.randf_range(-yaw_rad, yaw_rad)
 			var dir := emit.rotated(Vector3.UP, yaw).normalized()
-			# 对齐 HiveWE create_particle：沿 length 轴均匀随机
 			var pos := base + tangent * rng.randf_range(-along, along)
 			var speed_mul := clampf(
-				speed0 * (1.0 + variation * rng.randf_range(-1.0, 1.0)), 0.15, 1.8
+				speed0 * (1.0 + variation * rng.randf_range(-1.0, 1.0)), 0.08, 1.8
 			)
-			# 贴片绕竖直轴扭动：HiveWE XYQuad 用水平速度朝向，rotZ 可大幅偏转
 			var twist := rng.randf_range(-twist_rad, twist_rad)
 			mm.set_instance_transform(idx, _orient(pos, dir, twist))
 			mm.set_instance_custom_data(

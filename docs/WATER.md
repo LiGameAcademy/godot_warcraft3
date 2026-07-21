@@ -17,7 +17,7 @@
 
 | 模块 | 做法 |
 |------|------|
-| 几何 | 每格一个 quad；四角任一有 `water` 标志才画 |
+| 几何 | 每格一个 quad；四角任一有 `water` 标志才画（**含斜坡格**） |
 | 高度 | `waterHeight + tileset.water_offset`（Icecrown `ISha.height = -0.7` → ×128 ≈ -89.6） |
 | 深/浅色 | `depth = waterH - groundH`，浅/深色插值（DeepLevel=64） |
 | **贴图缩放** | **`cells`：一张贴图覆盖 cells×cells 格**（ISha=`2`） |
@@ -36,7 +36,7 @@
 |----|------|
 | 水面网格 + 深度色 + 序列帧 | `wc3_water_*` / `wc3_water.gdshader` |
 | UV × `cells` | `tile_xy / cells` |
-| **斜坡不画水** | `Wc3WaterMesh.is_surface_water_tile`：有 water 标志但 `is_ramp_tile` → 跳过 |
+| **斜坡下铺水** | `has_water_flag` 画水（HiveWE `water.vert`）；`is_surface_water_tile` 仅岸浪排除斜坡 |
 | **WavesDepth 岸线过滤** | 岸边深度 &lt; 25 跳过 |
 | **WavesDepth 等深线（激流）** | 深/浅邻格交界：深水侧朝浅水发射，水道对向泡沫 |
 | **Shoreline S / OC / IC** | 直边/外角/内角分型；各用对应 MDX 主 PE2 |
@@ -68,7 +68,7 @@ HiveWE **不实现**自动岸浪摆放（无 `shoreSFile` / `WavesDepth` 逻辑�
 
 ### 相关文件
 
-- `scripts/map/wc3_water_mesh.gd` — 水面；斜坡跳过
+- `scripts/map/wc3_water_mesh.gd` — 水面；斜坡下铺水
 - `scripts/map/wc3_shoreline_builder.gd` — 放置点
 - `scripts/map/wc3_shore_foam.gd` — MultiMesh 泡沫
 - `shaders/wc3_shore_foam.gdshader` / `wc3_water.gdshader`
@@ -78,11 +78,11 @@ HiveWE **不实现**自动岸浪摆放（无 `shoreSFile` / `WavesDepth` 逻辑�
 ### 验收
 
 ```text
-Water: tiles=… skipRamp=…
+Water: tiles=… underRamp=…
 Shore foam: S=… OC=… IC=… instances=…
 ```
 
-斜坡底部应见水面边界与朝岸泡沫；斜坡 mesh 下不应再铺一层水。
+斜坡/崖下应能看见水面伸入坡底；岸浪仍只落在开阔水面侧。
 
 ```bash
 Godot_*_console.exe --headless --path . -s res://tools/selftest_shoreline.gd

@@ -1,7 +1,7 @@
 class_name Wc3WaterMesh
 extends RefCounted
 ## 构建 HiveWE 式水面网格：含水格 + (waterH+offset) 高度 + 深度顶点色。
-## 斜坡格（ramp）不画水面：与斜坡 mesh 冲突，也会把岸线/泡沫推到高侧。
+## 对齐 HiveWE water.vert：四角任一有 water 即画（含斜坡格，水面在坡 mesh 下方）。
 
 
 const FLAG_WATER := Wc3Coords.FLAG_WATER
@@ -35,14 +35,15 @@ static func build(
 	var cols := PackedColorArray()
 	var indices := PackedInt32Array()
 	var cell_count := 0
-	var skipped_ramp := 0
+	var under_ramp := 0
 
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
-			if not is_surface_water_tile(flags, tp_w, ix, iy):
-				if has_water_flag(flags, tp_w, ix, iy):
-					skipped_ramp += 1
+			# HiveWE：不因 ramp 跳过；斜坡/崖下也要有水面，避免岸边直角硬切
+			if not has_water_flag(flags, tp_w, ix, iy):
 				continue
+			if Wc3CliffTiles.is_ramp_tile(flags, tp_w, ix, iy):
+				under_ramp += 1
 			cell_count += 1
 			var i00 := iy * tp_w + ix
 			var i10 := i00 + 1
@@ -96,10 +97,10 @@ static func build(
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return {"mesh": mesh, "cell_count": cell_count, "skipped_ramp": skipped_ramp}
+	return {"mesh": mesh, "cell_count": cell_count, "under_ramp": under_ramp, "skipped_ramp": 0}
 
 
-## 四角任一有 water 标志（原始 W3E）。
+## 四角任一有 water 标志（原始 W3E / HiveWE water_exists）。
 static func has_water_flag(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
 	var i00 := iy * tp_w + ix
 	var i10 := i00 + 1
@@ -115,7 +116,7 @@ static func has_water_flag(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
 	)
 
 
-## 实际绘制/岸线用的水面格：有 water 且非斜坡（斜坡 mesh 占位，水面应停在坡底）。
+## 开阔水面（岸浪用）：有 water 且非斜坡。斜坡格仍画水，但泡沫停在坡底。
 static func is_surface_water_tile(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
 	if not has_water_flag(flags, tp_w, ix, iy):
 		return false
