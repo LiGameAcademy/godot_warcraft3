@@ -24,7 +24,7 @@ func build(ctx) -> void:
 
 	var extended := Wc3TerrainAutotile.build_extended_flags(ground_tilesets, ctx.tiles)
 	var built := Wc3TerrainAutotile.build_ground_mesh(
-		ctx.hf, extended, ctx.tiles, ctx.meta, ctx.cliff_romp
+		ctx.hf, extended, ctx.tiles, ctx.meta, ctx.cliff_romp, ctx.cliff_ramp_placements
 	)
 	if built.is_empty():
 		push_warning("MapTerrainLayer: 地面网格为空")
@@ -53,9 +53,10 @@ func build(ctx) -> void:
 
 	var stats: Dictionary = ctx.cliff_gap_stats
 	print(
-		"Terrain gaps: %d (cliff=%d ramp_tiles=%d ramp_models=%d / tiles=%d)"
+		"Terrain gaps: %d rampDecks=%d (cliff=%d ramp_tiles=%d ramp_models=%d / tiles=%d)"
 		% [
-			int(stats.get("gaps", last_gap_count)),
+			last_gap_count,
+			int(built.get("ramp_deck_count", 0)),
 			int(stats.get("cliffs", 0)),
 			int(stats.get("ramps", 0)),
 			int(stats.get("ramp_models", 0)),

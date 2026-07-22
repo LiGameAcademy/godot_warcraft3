@@ -124,6 +124,7 @@ static func collect_ramp_placements(
 							"ix": ix, "iy": iy, "tag": tag_v, "base_layer": base_v,
 							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix),
 							"ramp_dir": ramp_dir,
+							"axis": "v",
 						})
 						romp[iy * tp_w + ix] = 1
 						romp[(iy + 1) * tp_w + ix] = 1
@@ -139,6 +140,7 @@ static func collect_ramp_placements(
 							"ix": ix, "iy": iy, "tag": tag_h, "base_layer": base_h,
 							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix),
 							"ramp_dir": ramp_dir_h,
+							"axis": "h",
 						})
 						romp[iy * tp_w + ix] = 1
 						romp[iy * tp_w + ix + 1] = 1
@@ -155,12 +157,55 @@ static func should_leave_gap(
 	iy: int,
 	romp: PackedByteArray = PackedByteArray()
 ) -> bool:
+	# 数据推演方案：romp 不挖洞（铺 A→B 地面甲板）；仅直崖挖洞。
+	# 斜坡入口始终保留地面。
 	if is_ramp_entrance(layer_heights, flags, tp_w, ix, iy):
 		return false
 	var i00 := iy * tp_w + ix
 	if i00 < romp.size() and romp[i00] != 0:
-		return true
+		return false
 	return is_cliff_tile(layer_heights, tp_w, ix, iy)
+
+
+## 落在 2 格 ramp 条带内时，用两端 tilepoint 线性插值（侧视 A→B 斜线）。
+## 中间层在 W3E 里常为低台；直接用 heights 会出「平台+陡坎」。
+static func sample_ramp_plane_height(
+	heights: Array, placements: Array, tp_w: int, tp_h: int, tx: float, ty: float
+) -> float:
+	for p in placements:
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		var axis := str(p.get("axis", "v"))
+		if axis == "v":
+			if tx < float(ix) or tx > float(ix + 1) or ty < float(iy) or ty > float(iy + 2):
+				continue
+			var t := (ty - float(iy)) / 2.0
+			var fx := tx - float(ix)
+			var h_sw := _tp_height(heights, tp_w, tp_h, ix, iy)
+			var h_se := _tp_height(heights, tp_w, tp_h, ix + 1, iy)
+			var h_nw := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
+			var h_ne := _tp_height(heights, tp_w, tp_h, ix + 1, iy + 2)
+			return lerpf(lerpf(h_sw, h_se, fx), lerpf(h_nw, h_ne, fx), t)
+		else:
+			if ty < float(iy) or ty > float(iy + 1) or tx < float(ix) or tx > float(ix + 2):
+				continue
+			var t2 := (tx - float(ix)) / 2.0
+			var fy := ty - float(iy)
+			var h_sw2 := _tp_height(heights, tp_w, tp_h, ix, iy)
+			var h_nw2 := _tp_height(heights, tp_w, tp_h, ix, iy + 1)
+			var h_se2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
+			var h_ne2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy + 1)
+			return lerpf(lerpf(h_sw2, h_nw2, fy), lerpf(h_se2, h_ne2, fy), t2)
+	return NAN
+
+
+static func _tp_height(heights: Array, tp_w: int, tp_h: int, ix: int, iy: int) -> float:
+	ix = clampi(ix, 0, tp_w - 1)
+	iy = clampi(iy, 0, tp_h - 1)
+	var i := iy * tp_w + ix
+	if i < 0 or i >= heights.size():
+		return 0.0
+	return float(heights[i])
 
 
 static func cliff_tag_at(layer_heights: Array, width: int, ix: int, iy: int) -> Dictionary:
