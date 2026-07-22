@@ -8,6 +8,7 @@ extends RefCounted
 ## 解包时用 {tileset}_Cliff0.png 保存（如 I_Cliff1 = Icecrown）。
 
 var _tile_to_png: Dictionary = {}
+var _tile_name: Dictionary = {}
 var _cliff_to_png: Dictionary = {}
 var _cliff_model_dir: Dictionary = {}
 var _cliff_ramp_dir: Dictionary = {}
@@ -17,6 +18,27 @@ var _cliff_ground_tile: Dictionary = {}
 func load_default() -> void:
 	_load_terrain_slk(RuntimeAssets.slk_path("TerrainArt/Terrain.json"))
 	_load_cliff_slk(RuntimeAssets.slk_path("TerrainArt/CliffTypes.json"))
+
+
+## 指定地形集字母（如 "I"）下的地表 tileID 列表（SLK 顺序）。
+func tile_ids_for_tileset(tileset_letter: String) -> PackedStringArray:
+	var letter := tileset_letter.strip_edges().to_upper()
+	if letter.is_empty():
+		letter = "I"
+	var out := PackedStringArray()
+	for id in _tile_to_png.keys():
+		var tid := str(id)
+		if tid.length() >= 1 and tid.substr(0, 1).to_upper() == letter:
+			out.append(tid)
+	out.sort()
+	return out
+
+
+func display_name_for_tile_id(tile_id: String) -> String:
+	var n := str(_tile_name.get(tile_id, ""))
+	if n.is_empty() or n == "_":
+		return tile_id
+	return "%s (%s)" % [n, tile_id]
 
 
 func png_for_tile_id(tile_id: String) -> String:
@@ -71,6 +93,10 @@ func _load_terrain_slk(path: String) -> void:
 			continue
 		var png := RuntimeAssets.converted_path("%s/%s.png" % [dir, file])
 		_tile_to_png[id] = png
+		var nm := str(rec.get("name", "")).strip_edges()
+		if nm.is_empty() or nm == "_":
+			nm = str(rec.get("comment", "")).strip_edges()
+		_tile_name[id] = nm
 
 
 func _load_cliff_slk(path: String) -> void:

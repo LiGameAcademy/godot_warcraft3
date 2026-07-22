@@ -13,6 +13,10 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
+## false：由外部（如地图编辑器）调用 reload_from_hf，不在 _ready 读盘
+@export var auto_load_on_ready: bool = true
+## 重建地面后生成 trimesh 碰撞（编辑器笔刷拾取用）
+@export var build_terrain_collision: bool = false
 
 @export_group("寻路调试")
 ## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)
@@ -37,6 +41,18 @@ var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTiles.new()
 var _cache := MapModelCache.new()
 var _status: Label
+## 非空时优先于磁盘 JSON（编辑器内存文档）
+var _external_hf: Dictionary = {}
+var _external_info: Dictionary = {}
+var _tiles_ready: bool = false
+
+
+func get_tiles() -> Wc3TerrainTiles:
+	return _tiles
+
+
+func get_terrain_layer() -> MapTerrainLayer:
+	return _terrain
 
 
 func _ready() -> void:
@@ -50,25 +66,71 @@ func _ready() -> void:
 
 	_set_status("加载地形贴图索引…")
 	_tiles.load_default()
-	if place_units or place_doodads:
+	_tiles_ready = true
+	if place_units or place_doodads or show_pathing_debug_grid:
 		_catalog.load_default()
 	await get_tree().process_frame
+	if auto_load_on_ready:
+		await _load_all()
+
+
+## 用内存 heightfield 重建地图（编辑器主路径）。
+func reload_from_hf(hf: Dictionary, info: Dictionary = {}, p_map_dir: String = "") -> void:
+	if hf.is_empty():
+		_set_status("reload_from_hf：heightfield 为空")
+		return
+	_external_hf = hf
+	_external_info = info
+	if not p_map_dir.is_empty():
+		map_dir = p_map_dir
+	elif map_dir.is_empty():
+		map_dir = "res://"
+	if not _tiles_ready:
+		_tiles.load_default()
+		_tiles_ready = true
 	await _load_all()
+
+
+## 仅重建地面（笔刷脏更新）；不重载装饰/单位。
+func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
+	if hf.is_empty():
+		return
+	_external_hf = hf
+	if not info.is_empty():
+		_external_info = info
+	var ctx = MapBuildContextScript.create(
+		map_dir if not map_dir.is_empty() else "res://",
+		hf,
+		_external_info,
+		_tiles,
+		_catalog,
+		_cache
+	)
+	ctx.ensure_cliff_topology()
+	_terrain.build(ctx)
+	if build_terrain_collision:
+		_ensure_terrain_collision()
 
 
 func _load_all() -> void:
 	var t0 := Time.get_ticks_msec()
-	var hf := _read_json(map_dir.path_join("terrain-heightfield.json"))
+	var hf: Dictionary = _external_hf
+	if hf.is_empty():
+		hf = _read_json(map_dir.path_join("terrain-heightfield.json"))
 	if hf.is_empty():
 		_set_status("地图加载失败：缺少 terrain-heightfield.json")
 		return
 
-	var info := _read_json(map_dir.path_join("info.json"))
+	var info: Dictionary = _external_info
+	if info.is_empty() and _external_hf.is_empty():
+		info = _read_json(map_dir.path_join("info.json"))
 	var ctx = MapBuildContextScript.create(map_dir, hf, info, _tiles, _catalog, _cache)
 	ctx.ensure_cliff_topology()
 
 	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")
 	_terrain.build(ctx)
+	if build_terrain_collision:
+		_ensure_terrain_collision()
 	await get_tree().process_frame
 
 	if build_cliffs:
@@ -106,6 +168,16 @@ func _load_all() -> void:
 		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d shore=%d doodads=%d)"
 		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n, shore_n, doodad_n]
 	)
+
+
+func _ensure_terrain_collision() -> void:
+	var ground := _terrain.get_node_or_null("Ground") as MeshInstance3D
+	if ground == null or ground.mesh == null:
+		return
+	for c in ground.get_children():
+		if c is StaticBody3D:
+			c.free()
+	ground.create_trimesh_collision()
 
 
 func _read_json(path: String) -> Dictionary:

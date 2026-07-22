@@ -10,6 +10,8 @@
 
 地图运行时架构（分层、数据流、演进）：[docs/MAP_ARCHITECTURE.md](docs/MAP_ARCHITECTURE.md)。
 
+地图编辑器（HiveWE 式竖切，分支 `feature/map-editor`）：[docs/EDITOR.md](docs/EDITOR.md) · 场景 F6 → [`editor/scenes/editor_main.tscn`](editor/scenes/editor_main.tscn)。
+
 ## 前置条件
 
 - [Godot 4.6](https://godotengine.org/)

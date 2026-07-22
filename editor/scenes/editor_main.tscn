@@ -1,0 +1,118 @@
+[gd_scene load_steps=6 format=3 uid="uid://cwc3editormain"]
+
+[ext_resource type="Script" path="res://editor/scripts/editor_app.gd" id="1_app"]
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="2_map"]
+[ext_resource type="Script" path="res://editor/scripts/editor_camera.gd" id="3_cam"]
+[ext_resource type="Script" path="res://editor/scripts/ui/toolbar.gd" id="4_toolbar"]
+[ext_resource type="Script" path="res://editor/scripts/ui/tile_palette.gd" id="5_palette"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.07, 0.09, 0.12, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.6, 0.7, 1)
+ambient_light_energy = 0.85
+
+[node name="EditorMain" type="Node3D"]
+script = ExtResource("1_app")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
+light_energy = 1.1
+shadow_enabled = false
+
+[node name="MapRoot" parent="." instance=ExtResource("2_map")]
+auto_load_on_ready = false
+place_doodads = false
+place_units = false
+show_pathing_debug_grid = false
+build_terrain_collision = true
+status_path = NodePath("")
+
+[node name="EditorCamera" type="Node3D" parent="."]
+script = ExtResource("3_cam")
+
+[node name="Pivot" type="Node3D" parent="EditorCamera"]
+
+[node name="Camera3D" type="Camera3D" parent="EditorCamera/Pivot"]
+current = true
+far = 4000.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="TopBar" type="PanelContainer" parent="UI"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 40.0
+grow_horizontal = 2
+
+[node name="Toolbar" type="HBoxContainer" parent="UI/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 8
+script = ExtResource("4_toolbar")
+
+[node name="BtnNew" type="Button" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+text = "新建空白图"
+
+[node name="BtnOpen" type="Button" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+text = "打开 Lost Temple"
+
+[node name="BtnSave" type="Button" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+text = "保存 JSON"
+
+[node name="Sep" type="VSeparator" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+
+[node name="BrushLabel" type="Label" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+text = "笔刷: —"
+
+[node name="DirtyLabel" type="Label" parent="UI/TopBar/Toolbar"]
+layout_mode = 2
+text = ""
+
+[node name="SideBar" type="PanelContainer" parent="UI"]
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_top = 44.0
+offset_right = 220.0
+offset_bottom = -28.0
+grow_vertical = 2
+
+[node name="TilePalette" type="VBoxContainer" parent="UI/SideBar"]
+layout_mode = 2
+script = ExtResource("5_palette")
+
+[node name="Title" type="Label" parent="UI/SideBar/TilePalette"]
+layout_mode = 2
+text = "地表贴图"
+
+[node name="ItemList" type="ItemList" parent="UI/SideBar/TilePalette"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 200)
+
+[node name="StatusBar" type="HBoxContainer" parent="UI"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 16
+
+[node name="Status" type="Label" parent="UI/StatusBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "地图编辑器"
+
+[node name="Hover" type="Label" parent="UI/StatusBar"]
+layout_mode = 2
+text = "格 (—, —)"
