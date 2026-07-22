@@ -1,15 +1,36 @@
-[gd_scene format=3 uid="uid://7ddb7ab7r8en"]
+[gd_scene format=3 uid="uid://cxqauera443ph"]
 
 [ext_resource type="Script" uid="uid://bqu2h0ywu2y78" path="res://editor/scripts/ui/tool_palette_window.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://bdg0rfip0qhw7" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush07.png" id="4_x365p"]
+[ext_resource type="Texture2D" uid="uid://hdyv3lug5pdu" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush04.png" id="8_be5ku"]
+[ext_resource type="Texture2D" uid="uid://rorq3x4741fs" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/BoundaryPlace.png" id="boundary_place"]
+[ext_resource type="Texture2D" uid="uid://dj08304xk45rc" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/BoundaryRemove.png" id="boundary_remove"]
+[ext_resource type="Texture2D" uid="uid://cow51rl7mch53" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush01.png" id="cliff_deep"]
+[ext_resource type="Texture2D" uid="uid://b3tm81f24y6i6" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush02.png" id="cliff_level"]
+[ext_resource type="Texture2D" uid="uid://bmjlp1lag73uw" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush06.png" id="cliff_lower"]
+[ext_resource type="Texture2D" uid="uid://5nkb3smynw52" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush03.png" id="cliff_raise"]
+[ext_resource type="Texture2D" uid="uid://f6bg30b2rqrd" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RampBrush00.png" id="cliff_ramp"]
+[ext_resource type="Texture2D" uid="uid://dxnqx0hmokde2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush00.png" id="cliff_shallow"]
+[ext_resource type="Texture2D" uid="uid://b4p87paofsfqv" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush01.png" id="height_lower"]
+[ext_resource type="Texture2D" uid="uid://mo24k85wcjdb" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush03.png" id="height_noise"]
+[ext_resource type="Texture2D" uid="uid://bydy0xva44ko3" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush02.png" id="height_plateau"]
+[ext_resource type="Texture2D" uid="uid://dch81ioxcbcm5" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush00.png" id="height_raise"]
+[ext_resource type="Texture2D" uid="uid://cganbtbr6n4tg" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush04.png" id="height_smooth"]
+[ext_resource type="Texture2D" uid="uid://c4b3ljkjbcqsc" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush04.png" id="shape_circle"]
+[ext_resource type="Texture2D" uid="uid://qmda3fhl7kgu" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/SquareSizeBrush04.png" id="shape_square"]
+[ext_resource type="Texture2D" uid="uid://dddwjbvlovxih" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush00.png" id="size_c0"]
+[ext_resource type="Texture2D" uid="uid://34lt7g1vvgqx" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush01.png" id="size_c1"]
+[ext_resource type="Texture2D" uid="uid://cxlt06ic33sf8" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush02.png" id="size_c2"]
+[ext_resource type="Texture2D" uid="uid://bog3hdoys2lh2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush03.png" id="size_c3"]
 
-[node name="ToolPaletteWindow" type="Window" unique_id=1580981784]
+[node name="ToolPaletteWindow" type="Window" unique_id=278871348]
 oversampling_override = 1.0
 title = "WESTRING_TOOL_PALETTE"
-position = Vector2i(24, 72)
-size = Vector2i(280, 420)
+position = Vector2i(24, 47)
+size = Vector2i(268, 612)
 script = ExtResource("1_script")
 
-[node name="Margin" type="MarginContainer" parent="." unique_id=1475301862]
+[node name="Margin" type="MarginContainer" parent="." unique_id=1508506489]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -20,44 +41,30 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="Root" type="VBoxContainer" parent="Margin" unique_id=642158559]
+[node name="Root" type="VBoxContainer" parent="Margin" unique_id=578711353]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
-[node name="KindOption" type="OptionButton" parent="Margin/Root" unique_id=1434926104]
+[node name="KindOption" type="OptionButton" parent="Margin/Root" unique_id=775597206]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Pages" type="TabContainer" parent="Margin/Root" unique_id=6813052]
+[node name="Pages" type="TabContainer" parent="Margin/Root" unique_id=932379829]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 current_tab = 0
 tabs_visible = false
 
-[node name="TerrainPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=1524453003]
+[node name="MarginContainer" type="MarginContainer" parent="Margin/Root/Pages" unique_id=369626364]
 layout_mode = 2
-theme_override_constants/separation = 6
 metadata/_tab_index = 0
 
-[node name="TextureTitle" type="Label" parent="Margin/Root/Pages/TerrainPage" unique_id=123944361]
-unique_name_in_owner = true
+[node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer" unique_id=976567396]
 layout_mode = 2
-text = "EDITOR_PALETTE_TITLE"
 
-[node name="TileList" type="ItemList" parent="Margin/Root/Pages/TerrainPage" unique_id=2146525094]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 200)
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=168260239]
-visible = false
-layout_mode = 2
-metadata/_tab_index = 1
-
-[node name="Placeholder" type="Label" parent="Margin/Root/Pages/PlaceholderPage" unique_id=374653541]
+[node name="Placeholder" type="Label" parent="Margin/Root/Pages/MarginContainer/PlaceholderPage" unique_id=863925339]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -65,3 +72,348 @@ text = "EDITOR_PALETTE_PLACEHOLDER"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
+
+[node name="TerrainVBox" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer" unique_id=1237520839]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="TextureSection" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox" unique_id=1158005104]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TextureCheck" type="CheckBox" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection" unique_id=932281479]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "WESTRING_APPLYTEXTURE"
+
+[node name="TextureRow" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection" unique_id=1631972680]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TileGrid" type="GridContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow" unique_id=1631972684]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 4
+
+[node name="TilePlaceholder1" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow/TileGrid" unique_id=1957264385]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_place")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="TilePlaceholder2" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow/TileGrid" unique_id=478441912]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_place")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="SpecialCol" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow" unique_id=1631972681]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SpecialBlight" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow/SpecialCol" unique_id=1631972682]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="SpecialBoundary" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow/SpecialCol" unique_id=1631972683]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_place")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="SpecialBoundaryRemove" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/TextureSection/TextureRow/SpecialCol" unique_id=1631972685]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_remove")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffSection" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox" unique_id=1236187734]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CliffCheck" type="CheckBox" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=733327780]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "WESTRING_APPLYCLIFF"
+
+[node name="CliffRow1" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=1377004425]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 4
+
+[node name="CliffDecTwo" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow1" unique_id=1763609480]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("4_x365p")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffDecOne" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow1" unique_id=628929970]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_lower")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffSameLevel" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow1" unique_id=1164869661]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+texture_normal = ExtResource("cliff_level")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffIncOne" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow1" unique_id=470621447]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_raise")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffIncTwo" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow1" unique_id=1988566694]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("8_be5ku")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffRow2" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=1377004426]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 4
+
+[node name="CliffShallow" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow2" unique_id=618425208]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_deep")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffDeep" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow2" unique_id=2002512288]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_shallow")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffRamp" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow2" unique_id=1716495282]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_ramp")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffTypeLabel" type="Label" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=1195120623]
+unique_name_in_owner = true
+layout_mode = 2
+text = "WESTRING_BRUSH_CLIFFTYPE"
+
+[node name="CliffTypeGrid" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=1984059748]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CliffTypePlaceholder1" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffTypeGrid" unique_id=2129453958]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_place")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="CliffTypePlaceholder2" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffTypeGrid" unique_id=225883119]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("boundary_place")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="HeightSection" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox" unique_id=745631863]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeightCheck" type="CheckBox" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection" unique_id=692549361]
+unique_name_in_owner = true
+layout_mode = 2
+text = "WESTRING_APPLYHEIGHT"
+
+[node name="HeightToolGrid" type="GridContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection" unique_id=885478440]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 5
+
+[node name="HeightRaise" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection/HeightToolGrid" unique_id=1731612783]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("height_raise")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="HeightLower" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection/HeightToolGrid" unique_id=1322929544]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("height_lower")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="HeightPlateau" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection/HeightToolGrid" unique_id=238143427]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("height_plateau")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="HeightNoise" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection/HeightToolGrid" unique_id=622282832]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("height_noise")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="HeightSmooth" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/HeightSection/HeightToolGrid" unique_id=1477658148]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("height_smooth")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="BrushSection" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox" unique_id=35235358]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SizeLabel" type="Label" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection" unique_id=510052480]
+unique_name_in_owner = true
+layout_mode = 2
+text = "WESTRING_BRUSHSIZE"
+
+[node name="SizeRow" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection" unique_id=1897172980]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Size1" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/SizeRow" unique_id=1760577132]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+texture_normal = ExtResource("size_c0")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Size2" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/SizeRow" unique_id=1529607715]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("size_c1")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Size3" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/SizeRow" unique_id=772059157]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("size_c2")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Size4" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/SizeRow" unique_id=2099028168]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("size_c3")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Size5" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/SizeRow" unique_id=657619120]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("shape_circle")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="ShapeLabel" type="Label" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection" unique_id=1162528024]
+unique_name_in_owner = true
+layout_mode = 2
+text = "WESTRING_BRUSHSHAPE"
+
+[node name="ShapeRow" type="HBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection" unique_id=2113757385]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ShapeCircle" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/ShapeRow" unique_id=361704395]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+texture_normal = ExtResource("shape_circle")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="ShapeSquare" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/BrushSection/ShapeRow" unique_id=1601679829]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("shape_square")
+ignore_texture_size = true
+stretch_mode = 5

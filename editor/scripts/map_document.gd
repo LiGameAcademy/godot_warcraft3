@@ -70,6 +70,10 @@ func ground_tilesets() -> Array:
 	return hf.get("groundTilesets", []) as Array
 
 
+func cliff_tilesets() -> Array:
+	return hf.get("cliffTilesets", []) as Array
+
+
 func ensure_brush_index_valid() -> void:
 	var n: int = ground_tilesets().size()
 	if n <= 0:

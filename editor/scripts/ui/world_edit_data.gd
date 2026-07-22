@@ -1,4 +1,6 @@
 extends RefCounted
+class_name WorldEditData
+
 ## 解析经典编辑器 `UI/WorldEditData.txt`（地形集、地图尺寸档、默认值）。
 ##
 ## 解析顺序（AssetProvider / RuntimeAssets）：
@@ -10,6 +12,7 @@ extends RefCounted
 
 const LOGICAL_PATH := "UI/WorldEditData.txt"
 const CAMERA_BORDER := 6 ## 每侧镜头边距格数 → 可用区域 = 尺寸 - 12
+const CONVERTED_UI := "res://assets/asset-converted/"
 
 var tilesets: Array = [] ## { id, name_key, blight }
 var map_size_tiers: Array = [] ## { max_area, name_key } 升序
@@ -17,6 +20,14 @@ var default_map_size: Vector2i = Vector2i(64, 64)
 var min_map_size: int = 64
 var max_map_size: int = 256
 var default_tileset: String = "L"
+## 刷子表：{ id/key, name_key, icon }；icon 为 res://…png
+var cliff_brushes: Array = [] ## [CliffBrushes] 0..4 → 第一行
+var cliff_misc_brushes: Array = [] ## 浅水/深水/斜坡 → 第二行
+var height_brushes: Array = []
+var brush_shapes: Array = []
+var brush_sizes_circle: Array = []
+var brush_sizes_square: Array = []
+var misc_brushes: Dictionary = {} ## Blight/Nothing/Unnothing/…
 
 
 static func load_default():
@@ -54,6 +65,29 @@ func size_desc_key(map_w: int, map_h: int) -> String:
 	return str(map_size_tiers[map_size_tiers.size() - 1]["name_key"])
 
 
+## 地形集字母对应的荒芜贴图逻辑路径（如 TerrainArt/Blight/Lords_Blight）。
+func blight_path_for_tileset(tileset_letter: String) -> String:
+	var letter := tileset_letter.strip_edges().to_upper()
+	for ts in tilesets:
+		if str(ts.get("id", "")) == letter:
+			return str(ts.get("blight", "")).replace("\\", "/")
+	return "TerrainArt/Blight/Lords_Blight"
+
+
+## WorldEditData 图标路径 → asset-converted PNG。
+static func icon_to_res(icon_logical: String) -> String:
+	var p := icon_logical.strip_edges().replace("\\", "/")
+	if p.is_empty():
+		return ""
+	if p.begins_with("res://"):
+		return p
+	if not p.ends_with(".png") and not p.ends_with(".blp"):
+		p += ".png"
+	elif p.ends_with(".blp"):
+		p = p.substr(0, p.length() - 4) + ".png"
+	return CONVERTED_UI.path_join(p)
+
+
 func _load() -> void:
 	_apply_fallback()
 	var abs_path := _resolve(LOGICAL_PATH)
@@ -69,6 +103,14 @@ func _load() -> void:
 	var section := ""
 	tilesets.clear()
 	map_size_tiers.clear()
+	cliff_brushes.clear()
+	cliff_misc_brushes.clear()
+	height_brushes.clear()
+	brush_shapes.clear()
+	brush_sizes_circle.clear()
+	brush_sizes_square.clear()
+	misc_brushes.clear()
+	var misc_raw: Dictionary = {}
 	for raw in text.split("\n"):
 		var line := raw.strip_edges()
 		if line.is_empty() or line.begins_with("//"):
@@ -109,6 +151,35 @@ func _load() -> void:
 						max_map_size = int(val)
 					"DefaultTileset":
 						default_tileset = val.strip_edges().to_upper()
+			"CliffBrushes":
+				cliff_brushes.append(_parse_brush_entry(key, val))
+			"HeightBrushes":
+				height_brushes.append(_parse_brush_entry(key, val))
+			"BrushShapes":
+				brush_shapes.append(_parse_brush_entry(key, val))
+			"BrushSizes00":
+				brush_sizes_circle.append(_parse_brush_entry(key, val))
+			"BrushSizes01":
+				brush_sizes_square.append(_parse_brush_entry(key, val))
+			"MiscBrushes":
+				misc_raw[key] = _parse_brush_entry(key, val)
+	# 悬崖第二行：浅水、深水、斜坡（对齐经典 WE 面板）
+	for mk in ["ShallowWater", "DeepWater", "Ramp"]:
+		if misc_raw.has(mk):
+			cliff_misc_brushes.append(misc_raw[mk])
+	misc_brushes = misc_raw
+
+
+func _parse_brush_entry(id_key: String, val: String) -> Dictionary:
+	var parts: PackedStringArray = val.split(",")
+	var name_key := parts[0].strip_edges() if parts.size() > 0 else ""
+	var icon := parts[1].strip_edges() if parts.size() > 1 else ""
+	return {
+		"id": id_key,
+		"name_key": name_key,
+		"icon": icon,
+		"icon_res": icon_to_res(icon),
+	}
 
 
 func _resolve(logical: String) -> String:
@@ -123,24 +194,24 @@ func _resolve(logical: String) -> String:
 
 func _apply_fallback() -> void:
 	tilesets = [
-		{"id": "L", "name_key": "WESTRING_LOCALE_LORDAERON_SUMMER", "blight": ""},
-		{"id": "F", "name_key": "WESTRING_LOCALE_LORDAERON_FALL", "blight": ""},
-		{"id": "W", "name_key": "WESTRING_LOCALE_LORDAERON_WINTER", "blight": ""},
-		{"id": "B", "name_key": "WESTRING_LOCALE_BARRENS", "blight": ""},
-		{"id": "A", "name_key": "WESTRING_LOCALE_ASHENVALE", "blight": ""},
-		{"id": "C", "name_key": "WESTRING_LOCALE_FELWOOD", "blight": ""},
-		{"id": "N", "name_key": "WESTRING_LOCALE_NORTHREND", "blight": ""},
-		{"id": "Y", "name_key": "WESTRING_LOCALE_CITYSCAPE", "blight": ""},
-		{"id": "X", "name_key": "WESTRING_LOCALE_DALARAN", "blight": ""},
-		{"id": "V", "name_key": "WESTRING_LOCALE_VILLAGE", "blight": ""},
-		{"id": "Q", "name_key": "WESTRING_LOCALE_VILLAGEFALL", "blight": ""},
-		{"id": "D", "name_key": "WESTRING_LOCALE_DUNGEON", "blight": ""},
-		{"id": "G", "name_key": "WESTRING_LOCALE_DUNGEON2", "blight": ""},
-		{"id": "Z", "name_key": "WESTRING_LOCALE_RUINS", "blight": ""},
-		{"id": "I", "name_key": "WESTRING_LOCALE_ICECROWN", "blight": ""},
-		{"id": "O", "name_key": "WESTRING_LOCALE_OUTLAND", "blight": ""},
-		{"id": "K", "name_key": "WESTRING_LOCALE_BLACKCITADEL", "blight": ""},
-		{"id": "J", "name_key": "WESTRING_LOCALE_DALARANRUINS", "blight": ""},
+		{"id": "L", "name_key": "WESTRING_LOCALE_LORDAERON_SUMMER", "blight": "TerrainArt\\Blight\\Lords_Blight"},
+		{"id": "F", "name_key": "WESTRING_LOCALE_LORDAERON_FALL", "blight": "TerrainArt\\Blight\\Lordf_Blight"},
+		{"id": "W", "name_key": "WESTRING_LOCALE_LORDAERON_WINTER", "blight": "TerrainArt\\Blight\\Lordw_Blight"},
+		{"id": "B", "name_key": "WESTRING_LOCALE_BARRENS", "blight": "TerrainArt\\Blight\\Barrens_Blight"},
+		{"id": "A", "name_key": "WESTRING_LOCALE_ASHENVALE", "blight": "TerrainArt\\Blight\\Ashen_Blight"},
+		{"id": "C", "name_key": "WESTRING_LOCALE_FELWOOD", "blight": "TerrainArt\\Blight\\Felwood_Blight"},
+		{"id": "N", "name_key": "WESTRING_LOCALE_NORTHREND", "blight": "TerrainArt\\Blight\\North_Blight"},
+		{"id": "Y", "name_key": "WESTRING_LOCALE_CITYSCAPE", "blight": "TerrainArt\\Blight\\Village_Blight"},
+		{"id": "X", "name_key": "WESTRING_LOCALE_DALARAN", "blight": "TerrainArt\\Blight\\Village_Blight"},
+		{"id": "V", "name_key": "WESTRING_LOCALE_VILLAGE", "blight": "TerrainArt\\Blight\\Village_Blight"},
+		{"id": "Q", "name_key": "WESTRING_LOCALE_VILLAGEFALL", "blight": "TerrainArt\\Blight\\VillageFall_Blight"},
+		{"id": "D", "name_key": "WESTRING_LOCALE_DUNGEON", "blight": "TerrainArt\\Blight\\Cave_Blight"},
+		{"id": "G", "name_key": "WESTRING_LOCALE_DUNGEON2", "blight": "TerrainArt\\Blight\\Dungeon_Blight"},
+		{"id": "Z", "name_key": "WESTRING_LOCALE_RUINS", "blight": "TerrainArt\\Blight\\Ruins_Blight"},
+		{"id": "I", "name_key": "WESTRING_LOCALE_ICECROWN", "blight": "TerrainArt\\Blight\\Ice_Blight"},
+		{"id": "O", "name_key": "WESTRING_LOCALE_OUTLAND", "blight": "TerrainArt\\Blight\\Outland_Blight"},
+		{"id": "K", "name_key": "WESTRING_LOCALE_BLACKCITADEL", "blight": "TerrainArt\\Blight\\Citadel_Blight"},
+		{"id": "J", "name_key": "WESTRING_LOCALE_DALARANRUINS", "blight": "TerrainArt\\Blight\\DRuins_Blight"},
 	]
 	map_size_tiers = [
 		{"max_area": 7500, "name_key": "WESTRING_MAPSIZE_TINY"},
@@ -154,3 +225,27 @@ func _apply_fallback() -> void:
 	min_map_size = 64
 	max_map_size = 256
 	default_tileset = "L"
+	cliff_brushes = [
+		_parse_brush_entry("0", "WESTRING_DECTWO,ReplaceableTextures\\WorldEditUI\\CliffBrush07"),
+		_parse_brush_entry("1", "WESTRING_DECONE,ReplaceableTextures\\WorldEditUI\\CliffBrush06"),
+		_parse_brush_entry("2", "WESTRING_SAMELEVEL,ReplaceableTextures\\WorldEditUI\\CliffBrush02"),
+		_parse_brush_entry("3", "WESTRING_INCONE,ReplaceableTextures\\WorldEditUI\\CliffBrush03"),
+		_parse_brush_entry("4", "WESTRING_INCTWO,ReplaceableTextures\\WorldEditUI\\CliffBrush04"),
+	]
+	cliff_misc_brushes = [
+		_parse_brush_entry("ShallowWater", "WESTRING_SHALLOWWATER,ReplaceableTextures\\WorldEditUI\\CliffBrush01"),
+		_parse_brush_entry("DeepWater", "WESTRING_DEEPWATER,ReplaceableTextures\\WorldEditUI\\CliffBrush00"),
+		_parse_brush_entry("Ramp", "WESTRING_BRUSH_RAMP,ReplaceableTextures\\WorldEditUI\\RampBrush00"),
+	]
+	height_brushes = [
+		_parse_brush_entry("0", "WESTRING_BRUSH_RAISE,ReplaceableTextures\\WorldEditUI\\HeightBrush00"),
+		_parse_brush_entry("1", "WESTRING_BRUSH_LOWER,ReplaceableTextures\\WorldEditUI\\HeightBrush04"),
+		_parse_brush_entry("2", "WESTRING_BRUSH_PLATEAU,ReplaceableTextures\\WorldEditUI\\HeightBrush01"),
+		_parse_brush_entry("3", "WESTRING_BRUSH_NOISE,ReplaceableTextures\\WorldEditUI\\HeightBrush03"),
+		_parse_brush_entry("4", "WESTRING_BRUSH_SMOOTH,ReplaceableTextures\\WorldEditUI\\HeightBrush02"),
+	]
+	misc_brushes = {
+		"Blight": _parse_brush_entry("Blight", "WESTRING_BLIGHT,TerrainArt\\Blight\\Lords_Blight"),
+		"Nothing": _parse_brush_entry("Nothing", "WESTRING_NOTHINGTILE,ReplaceableTextures\\WorldEditUI\\BoundaryPlace"),
+		"Unnothing": _parse_brush_entry("Unnothing", "WESTRING_REMOVENOTHINGTILE,ReplaceableTextures\\WorldEditUI\\BoundaryRemove"),
+	}

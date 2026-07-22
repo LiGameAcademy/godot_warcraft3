@@ -23,11 +23,22 @@ var _hover_vert: Vector2i = INVALID_VERT
 var _dirty_paint: bool = false
 var _last_rebuild_ms: int = 0
 var enabled: bool = true
+## 笔刷半径档：1=单点，5=半径 4；形状 0 圆 / 1 方
+var brush_size: int = 1
+var brush_shape: int = 0 ## 0 circle, 1 square
+var apply_texture: bool = true
 
 var _hover_mesh: MeshInstance3D
 var _hover_mat: StandardMaterial3D
 var _edge_mesh: MeshInstance3D
 var _edge_mat: StandardMaterial3D
+
+
+func set_brush_settings(size: int, shape: int) -> void:
+	brush_size = clampi(size, 1, 5)
+	brush_shape = 0 if shape == 0 else 1
+	if _hover_vert != INVALID_VERT:
+		_update_hover_preview(_hover_vert)
 
 
 func _ready() -> void:
@@ -123,7 +134,15 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	if vert == _last_vert and _painting:
 		return
 	_last_vert = vert
-	if bool(document.paint_corner(vert.x, vert.y)):
+	if not apply_texture:
+		return
+	var painted_any := false
+	for p in _brush_offsets():
+		var ix: int = vert.x + p.x
+		var iy: int = vert.y + p.y
+		if bool(document.paint_corner(ix, iy)):
+			painted_any = true
+	if painted_any:
 		_dirty_paint = true
 		painted.emit()
 
@@ -188,20 +207,36 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	_edge_mesh.visible = true
 
 
-## 顶点 (ix,iy) 为中心的 1×1 格预选框四角 [bl, br, tl, tr]。
+## 顶点 (ix,iy) 为中心的笔刷预选框四角 [bl, br, tl, tr]（覆盖整个笔刷外接方框）。
 func _vertex_centered_quad_godot(ix: int, iy: int) -> Array:
 	var center: Vector2 = document.center_offset()
 	var ts: float = document.tile_size()
+	var radius: float = float(maxi(brush_size - 1, 0)) + 0.5
 	var out: Array = []
 	for c in [
-		Vector2(float(ix) - 0.5, float(iy) - 0.5),
-		Vector2(float(ix) + 0.5, float(iy) - 0.5),
-		Vector2(float(ix) - 0.5, float(iy) + 0.5),
-		Vector2(float(ix) + 0.5, float(iy) + 0.5),
+		Vector2(float(ix) - radius, float(iy) - radius),
+		Vector2(float(ix) + radius, float(iy) - radius),
+		Vector2(float(ix) - radius, float(iy) + radius),
+		Vector2(float(ix) + radius, float(iy) + radius),
 	]:
 		var h: float = float(document.sample_height_at_xy(c.x, c.y))
 		var xy := Vector2(center.x + c.x * ts, center.y + c.y * ts)
 		out.append(Wc3Coords.wc3_xy_to_godot(xy.x, xy.y, h))
+	return out
+
+
+## 笔刷覆盖的相对偏移（tilepoint）。size=1 → 仅 (0,0)。
+func _brush_offsets() -> Array:
+	var out: Array = []
+	var r: int = maxi(brush_size - 1, 0)
+	var r2: int = r * r
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if brush_shape == 0 and (dx * dx + dy * dy) > r2:
+				continue
+			out.append(Vector2i(dx, dy))
+	if out.is_empty():
+		out.append(Vector2i.ZERO)
 	return out
 
 

@@ -26,6 +26,9 @@ var _status_args: Array = []
 var _tool_palettes: Array = [] ## ToolPaletteWindow instances
 var _palettes_visible: bool = true
 var _palette_spawn_index: int = 0
+var _brush_size: int = 1
+var _brush_shape: int = 0 ## 0 circle / 1 square
+var _apply_texture: bool = true
 
 
 func _ready() -> void:
@@ -171,9 +174,14 @@ func _on_menu_action(action_id: StringName) -> void:
 
 func _spawn_tool_palette(kind: int) -> void:
 	var win = ToolPaletteScene.instantiate()
+	win.setup_we_data(_we_data)
 	add_child(win)
 	win.set_palette_kind(kind)
+	win.set_brush_settings(_brush_size, _brush_shape)
+	win.set_apply_texture(_apply_texture)
 	win.tile_selected.connect(_on_tile_selected)
+	win.brush_settings_changed.connect(_on_brush_settings_changed)
+	win.apply_texture_changed.connect(_on_apply_texture_changed)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	_tool_palettes.append(win)
@@ -186,6 +194,23 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.visible = true
 	win.popup()
 	win.grab_focus()
+
+
+func _on_brush_settings_changed(size: int, shape: int) -> void:
+	_brush_size = clampi(size, 1, 5)
+	_brush_shape = 0 if shape == 0 else 1
+	_brush.set_brush_settings(_brush_size, _brush_shape)
+	for win in _tool_palettes:
+		if is_instance_valid(win):
+			win.set_brush_settings(_brush_size, _brush_shape)
+
+
+func _on_apply_texture_changed(enabled: bool) -> void:
+	_apply_texture = enabled
+	_brush.apply_texture = enabled
+	for win in _tool_palettes:
+		if is_instance_valid(win):
+			win.set_apply_texture(enabled)
 
 
 func _toggle_tool_palettes_visible() -> void:
@@ -293,6 +318,8 @@ func _apply_document(full_reload: bool) -> void:
 	_refresh_brush_label()
 	_toolbar.set_dirty(_doc.is_dirty())
 	_brush.setup(_doc, _cam_rig.get_camera(), get_world_3d())
+	_brush.set_brush_settings(_brush_size, _brush_shape)
+	_brush.apply_texture = _apply_texture
 	if full_reload:
 		var dir: String = _doc.map_dir if not _doc.map_dir.is_empty() else "res://"
 		await _map.reload_from_hf(_doc.hf, _doc.info, dir)

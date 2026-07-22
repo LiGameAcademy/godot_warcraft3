@@ -37,6 +37,9 @@ var _water_mode: int = 0 ## 0 无 / 1 浅 / 2 深
 var _tile_buttons: Array = []
 var _water_buttons: Array = []
 
+func _ready() -> void:
+	hide()
+
 ## 初始化对话框
 ## [param tiles] Wc3TerrainTiles
 ## [param _strings] String (optional)
