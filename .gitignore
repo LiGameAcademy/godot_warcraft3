@@ -7,7 +7,8 @@
 *.mpq
 *.MPQ
 
-# Converted Godot-ready assets (PNG/GLB) — regenerate via tools/asset-convert
+# Converted Godot-ready assets (PNG/GLB + synced editor UI txt) — regenerate via tools
+# Do NOT commit Blizzard content (see docs/LEGAL.md)
 assets/asset-converted/**
 !assets/asset-converted/.gitkeep
 

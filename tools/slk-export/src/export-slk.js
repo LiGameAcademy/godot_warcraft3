@@ -4,28 +4,6 @@ import { Minimatch } from "minimatch";
 import { parseSlk } from "./parse-slk.js";
 
 /**
- * @param {unknown} value
- */
-function csvEscape(value) {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-/**
- * @param {string[]} headers
- * @param {Record<string, unknown>[]} records
- */
-export function toCsv(headers, records) {
-  const lines = [headers.map(csvEscape).join(",")];
-  for (const rec of records) {
-    lines.push(headers.map((h) => csvEscape(rec[h])).join(","));
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-/**
  * @param {string} dir
  * @returns {string[]}
  */
@@ -65,14 +43,12 @@ function matchPath(logicalPath, include, exclude) {
  *   force?: boolean,
  *   include?: string[],
  *   exclude?: string[],
- *   formats?: ('json'|'csv')[],
  *   pretty?: boolean,
  * }} opts
  */
 export function exportSlkBatch(opts) {
   const inDir = path.resolve(opts.inDir);
   const outDir = path.resolve(opts.outDir);
-  const formats = opts.formats?.length ? opts.formats : ["json", "csv"];
   const force = opts.force === true;
   const pretty = opts.pretty !== false;
 
@@ -97,17 +73,8 @@ export function exportSlkBatch(opts) {
       continue;
     }
 
-    const baseOut = path.join(outDir, logical.replace(/\.slk$/i, ""));
-    const jsonPath = `${baseOut}.json`;
-    const csvPath = `${baseOut}.csv`;
-    const needJson = formats.includes("json");
-    const needCsv = formats.includes("csv");
-
-    if (
-      !force &&
-      (!needJson || fs.existsSync(jsonPath)) &&
-      (!needCsv || fs.existsSync(csvPath))
-    ) {
+    const jsonPath = path.join(outDir, logical.replace(/\.slk$/i, ".json"));
+    if (!force && fs.existsSync(jsonPath)) {
       skipped += 1;
       continue;
     }
@@ -115,25 +82,26 @@ export function exportSlkBatch(opts) {
     try {
       const text = fs.readFileSync(abs);
       const table = parseSlk(text);
-      fs.mkdirSync(path.dirname(baseOut), { recursive: true });
+      fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
 
-      if (needJson) {
-        const payload = {
-          source: logical,
-          columns: table.columns,
-          rows: table.rows,
-          headers: table.headers,
-          recordCount: table.records.length,
-          records: table.records,
-        };
-        fs.writeFileSync(
-          jsonPath,
-          `${JSON.stringify(payload, null, pretty ? 2 : 0)}\n`,
-          "utf8",
-        );
-      }
-      if (needCsv) {
-        fs.writeFileSync(csvPath, toCsv(table.headers, table.records), "utf8");
+      const payload = {
+        source: logical,
+        columns: table.columns,
+        rows: table.rows,
+        headers: table.headers,
+        recordCount: table.records.length,
+        records: table.records,
+      };
+      fs.writeFileSync(
+        jsonPath,
+        `${JSON.stringify(payload, null, pretty ? 2 : 0)}\n`,
+        "utf8",
+      );
+
+      // 清理历史 CSV 副产物（已弃用）
+      const csvPath = jsonPath.replace(/\.json$/i, ".csv");
+      if (fs.existsSync(csvPath)) {
+        fs.unlinkSync(csvPath);
       }
 
       converted += 1;
@@ -156,7 +124,7 @@ export function exportSlkBatch(opts) {
     exportedAt: new Date().toISOString(),
     inDir,
     outDir,
-    formats,
+    format: "json",
     fileCount: done.length,
     files: done,
   };

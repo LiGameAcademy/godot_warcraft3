@@ -87,18 +87,18 @@ npm run parse -- --map "C:/war3/Maps/FrozenThrone/(4)LostTemple.w3x" --force
 
 输出（gitignore）：`assets/map-parsed/<slug>/`，含 `summary.json`、`info.json`、`terrain.json`、`units.json`、`doodads.json` 等。详见 [`tools/map-parse/README.md`](tools/map-parse/README.md)。
 
-## SLK 表导出（.slk → JSON/CSV）
+## SLK 表导出（.slk → JSON）
 
 单位数值、技能、地形类型等存在 `.slk` 表中。可用工具解析导出：
 
 ```bash
 cd tools/slk-export
 npm install
-npm run export --
-# 子集：npm run export -- --include "Units/**" --force
+node src/cli.js
+# 子集：node src/cli.js --include "Units/**" --overwrite
 ```
 
-输出（gitignore）：`assets/slk-exported/`（如 `Units/UnitData.json` / `.csv`）。详见 [`tools/slk-export/README.md`](tools/slk-export/README.md)。
+输出（gitignore）：`assets/slk-exported/`（如 `Units/UnitData.json`）。详见 [`tools/slk-export/README.md`](tools/slk-export/README.md)。
 
 ## 冒烟验证
 
@@ -130,12 +130,13 @@ npm run extract -- --game-dir "C:/definitely-not-wc3"
 ```text
 tools/mpq-extract/     Node 解包 CLI（StormLib + koffi）
 tools/asset-convert/   BLP→PNG、MDX→GLB
+tools/sync-editor-assets.mjs  编辑器所需 UI txt → asset-converted
 tools/map-parse/       .w3x → JSON（经典 war3map.*）
-tools/slk-export/      .slk → JSON/CSV
-addons/asset_provider/ 逻辑路径解析（开发态读 .cache）
+tools/slk-export/      .slk → JSON
+addons/asset_provider/ 逻辑路径解析（converted → .cache）
 mods/                  Mod 覆盖目录（内容不提交）
 .cache/wc3-assets/     解包原始资产（不提交）
-assets/asset-converted/  转换后 PNG/GLB（不提交）
+assets/asset-converted/  转换后 PNG/GLB + 同步的编辑器 UI txt（不提交）
 assets/map-parsed/       解析后的地图 JSON（不提交）
 assets/slk-exported/     SLK 导出表（不提交）
 docs/LEGAL.md            合规说明
@@ -147,10 +148,12 @@ docs/WATER.md            水体复刻路线与远期增强（暂不实现）
 
 1. 解析地图：`cd tools/map-parse && npm run parse -- --force`  
    → `assets/map-parsed/losttemple/terrain-heightfield.json` 等
-2. 导出 SLK：`cd tools/slk-export && npm run export --`
+2. 导出 SLK：`cd tools/slk-export && node src/cli.js`
 3. 转换本图资源：`cd tools/asset-convert && npm run convert:lost-temple`  
    → Icecrown 地表、雪树、金矿/泉水、野怪等 PNG/GLB
-4. Godot 4.6 打开项目并运行主场景 `scenes/main.tscn`
+4. （地图编辑器）同步 UI 配置：`node tools/sync-editor-assets.mjs`  
+   → `assets/asset-converted/UI/WorldEditData.txt` 等
+5. Godot 4.6 打开项目并运行主场景 `scenes/main.tscn`（编辑器见 `editor/scenes/editor_main.tscn`）
 
 操作：WASD 平移，QE 升降，Shift 加速，右键旋转，滚轮缩放。  
 地形按 tile 索引贴 Icecrown 地表；树木/岩石等用 MultiMesh 实例化 GLB；缺资源时回退占位体。

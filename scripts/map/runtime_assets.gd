@@ -59,11 +59,15 @@ static func resolve(logical_path: String) -> String:
 			if not from_ap.is_empty():
 				return from_ap
 
-	# 无 Autoload 或未命中：直接查 converted
+	# 无 Autoload 或未命中：converted → .cache/wc3-assets
 	var conv := converted_path(logical)
 	var abs := project_abs(conv)
 	if FileAccess.file_exists(abs):
 		return abs
+	var cache_guess := ProjectSettings.globalize_path("res://").path_join(".cache/wc3-assets").path_join(logical)
+	cache_guess = cache_guess.replace("\\", "/")
+	if FileAccess.file_exists(cache_guess):
+		return cache_guess
 	return ""
 
 

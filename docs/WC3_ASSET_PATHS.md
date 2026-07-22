@@ -20,7 +20,7 @@
 | `.mdx` / `.mdl` | 3D 模型（含骨骼、动画序列） | `asset-convert` → `.glb` |
 | `.blp` | 暴雪贴图（单位皮、UI、地形等） | `asset-convert` → `.png` |
 | `.tga` | 路径图、部分特效/旧贴图 | 寻路遮罩、部分环境资源 |
-| `.slk` | 表格数据（单位数值、地形类型、升级等） | `tools/slk-export` → JSON/CSV |
+| `.slk` | 表格数据（单位数值、地形类型、升级等） | `tools/slk-export` → JSON |
 | `.txt` | 键值配置与本地化字符串（Func/Strings） | 单位名、技能描述、杂项参数 |
 | `.j` | JASS 脚本（`common.j`、`Blizzard.j`） | 地图/触发公共库 |
 | `.ai` | 对战/战役 AI 脚本 | AI 行为 |

@@ -2,7 +2,7 @@
   "name": "slk-export",
   "version": "1.0.0",
   "private": true,
-  "description": "Parse classic Warcraft III .slk tables and export JSON/CSV",
+  "description": "Parse classic Warcraft III .slk tables and export JSON",
   "type": "module",
   "engines": {
     "node": ">=18"

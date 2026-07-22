@@ -19,14 +19,14 @@ function printHelp() {
   console.log(`用法:
   npm run export -- [选项]
 
-将经典 WC3 .slk（SYLK 表）解析为 JSON / CSV。
+将经典 WC3 .slk（SYLK 表）解析为 JSON。
 默认读取 .cache/wc3-assets，写出到 assets/slk-exported。
 
 选项:
   --in <path>           解包资产根目录（默认: ../../.cache/wc3-assets）
   --out <path>          输出根目录（默认: ../../assets/slk-exported）
-  --format <list>       导出格式，逗号分隔：json,csv（默认两者都导出）
-  --force               覆盖已有导出
+  --overwrite           覆盖已有导出（并删除同名历史 .csv）
+  --force               同 --overwrite（注意：经 npm 调用时可能被 npm 吞掉，请优先用 --overwrite）
   --include <glob>      仅包含逻辑路径（可重复）
   --exclude <glob>      排除逻辑路径（可重复；默认已排除 File*.slk / NotUsed / 旧版本目录）
   --no-default-exclude  不使用默认排除规则
@@ -34,10 +34,10 @@ function printHelp() {
   -h, --help            帮助
 
 示例:
-  npm run export --
-  npm run export -- --include "Units/**" --force
-  npm run export -- --include "Units/UnitData.slk" --include "Units/unitUI.slk"
-  npm run export -- --include "TerrainArt/**" --format csv
+  node src/cli.js
+  node src/cli.js --include "Units/**" --overwrite
+  node src/cli.js --include "Units/UnitData.slk" --include "Units/unitUI.slk"
+  npm run export "--" "--include=TerrainArt/**" --overwrite
 `);
 }
 
@@ -45,7 +45,6 @@ function parseArgs(argv) {
   const opts = {
     inDir: path.join(REPO_ROOT, ".cache", "wc3-assets"),
     outDir: path.join(REPO_ROOT, "assets", "slk-exported"),
-    formats: /** @type {('json'|'csv')[]} */ (["json", "csv"]),
     force: false,
     include: /** @type {string[]} */ ([]),
     exclude: /** @type {string[]} */ ([]),
@@ -54,13 +53,26 @@ function parseArgs(argv) {
     help: false,
   };
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
+  // 展开 --key=value，便于 PowerShell 下 npm 传参
+  /** @type {string[]} */
+  const args = [];
+  for (const raw of argv) {
+    const eq = raw.match(/^(--[^=]+)=(.*)$/);
+    if (eq) {
+      args.push(eq[1], eq[2]);
+    } else {
+      args.push(raw);
+    }
+  }
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
     switch (arg) {
       case "-h":
       case "--help":
         opts.help = true;
         break;
+      case "--overwrite":
       case "--force":
         opts.force = true;
         break;
@@ -71,27 +83,30 @@ function parseArgs(argv) {
         opts.useDefaultExclude = false;
         break;
       case "--in":
-        opts.inDir = path.resolve(argv[++i] ?? opts.inDir);
+        opts.inDir = path.resolve(args[++i] ?? opts.inDir);
         break;
       case "--out":
-        opts.outDir = path.resolve(argv[++i] ?? opts.outDir);
+        opts.outDir = path.resolve(args[++i] ?? opts.outDir);
         break;
       case "--format": {
-        const list = String(argv[++i] ?? "json,csv")
+        // 兼容旧参数：仅接受 json；csv 已弃用
+        const list = String(args[++i] ?? "json")
           .split(",")
           .map((s) => s.trim().toLowerCase())
           .filter(Boolean);
-        opts.formats = /** @type {('json'|'csv')[]} */ (
-          list.filter((f) => f === "json" || f === "csv")
-        );
-        if (!opts.formats.length) throw new Error("--format 需包含 json 或 csv");
+        if (list.includes("csv")) {
+          console.warn("警告: CSV 导出已弃用，将只写出 JSON。");
+        }
+        if (list.length && !list.includes("json")) {
+          throw new Error("--format 仅支持 json（CSV 已弃用）");
+        }
         break;
       }
       case "--include":
-        if (argv[i + 1]) opts.include.push(argv[++i]);
+        if (args[i + 1]) opts.include.push(args[++i]);
         break;
       case "--exclude":
-        if (argv[i + 1]) opts.exclude.push(argv[++i]);
+        if (args[i + 1]) opts.exclude.push(args[++i]);
         break;
       default:
         if (arg.startsWith("-")) throw new Error(`未知参数: ${arg}`);
@@ -121,10 +136,10 @@ function main() {
   }
 
   console.log("godot_warcraft3 SLK 导出");
-  console.log(`  in:      ${opts.inDir}`);
-  console.log(`  out:     ${opts.outDir}`);
-  console.log(`  formats: ${opts.formats.join(",")}`);
-  console.log(`  force:   ${opts.force}`);
+  console.log(`  in:     ${opts.inDir}`);
+  console.log(`  out:    ${opts.outDir}`);
+  console.log(`  format: json`);
+  console.log(`  force:  ${opts.force}`);
   if (opts.include.length) console.log(`  include: ${opts.include.join(", ")}`);
   if (opts.exclude.length) console.log(`  exclude: ${opts.exclude.join(", ")}`);
 

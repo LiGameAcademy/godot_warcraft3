@@ -1,0 +1,67 @@
+[gd_scene format=3 uid="uid://7ddb7ab7r8en"]
+
+[ext_resource type="Script" uid="uid://bqu2h0ywu2y78" path="res://editor/scripts/ui/tool_palette_window.gd" id="1_script"]
+
+[node name="ToolPaletteWindow" type="Window" unique_id=1580981784]
+oversampling_override = 1.0
+title = "WESTRING_TOOL_PALETTE"
+position = Vector2i(24, 72)
+size = Vector2i(280, 420)
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="." unique_id=1475301862]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Root" type="VBoxContainer" parent="Margin" unique_id=642158559]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="KindOption" type="OptionButton" parent="Margin/Root" unique_id=1434926104]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Pages" type="TabContainer" parent="Margin/Root" unique_id=6813052]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+tabs_visible = false
+
+[node name="TerrainPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=1524453003]
+layout_mode = 2
+theme_override_constants/separation = 6
+metadata/_tab_index = 0
+
+[node name="TextureTitle" type="Label" parent="Margin/Root/Pages/TerrainPage" unique_id=123944361]
+unique_name_in_owner = true
+layout_mode = 2
+text = "EDITOR_PALETTE_TITLE"
+
+[node name="TileList" type="ItemList" parent="Margin/Root/Pages/TerrainPage" unique_id=2146525094]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=168260239]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="Placeholder" type="Label" parent="Margin/Root/Pages/PlaceholderPage" unique_id=374653541]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "EDITOR_PALETTE_PLACEHOLDER"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3

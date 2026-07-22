@@ -19,8 +19,12 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 @export var build_terrain_collision: bool = false
 
 @export_group("寻路调试")
-## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)
+## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)（地图场景自动开；编辑器改用 set_view_grid_level）
 @export var show_pathing_debug_grid: bool = true
+
+## 查看→栅格：0无 / 1大黄 / 2大+中白 / 3大+中+小灰
+enum ViewGridLevel { NONE = 0, LARGE = 1, MEDIUM = 2, SMALL = 3 }
+var _view_grid_level: int = ViewGridLevel.NONE
 
 @export_group("岸浪微调")
 ## 悬崖泡沫额外退入水面（格）。全悬崖共用。
@@ -53,6 +57,25 @@ func get_tiles() -> Wc3TerrainTiles:
 
 func get_terrain_layer() -> MapTerrainLayer:
 	return _terrain
+
+
+func get_view_grid_level() -> int:
+	return _view_grid_level
+
+
+## 察看→栅格：无 / 大 / 中 / 小（嵌套显示：小 ⊂ 中 ⊂ 大）。
+func set_view_grid_level(level: int) -> void:
+	_view_grid_level = clampi(level, ViewGridLevel.NONE, ViewGridLevel.SMALL)
+	_apply_view_grid()
+
+
+func _apply_view_grid() -> void:
+	if _terrain == null:
+		return
+	var show_large := _view_grid_level >= ViewGridLevel.LARGE
+	var show_medium := _view_grid_level >= ViewGridLevel.MEDIUM
+	var show_small := _view_grid_level >= ViewGridLevel.SMALL
+	_terrain.set_debug_grid(show_large, show_medium, show_small)
 
 
 func _ready() -> void:
@@ -108,6 +131,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	)
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
+	_apply_view_grid()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 
@@ -129,6 +153,7 @@ func _load_all() -> void:
 
 	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")
 	_terrain.build(ctx)
+	_apply_view_grid()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 	await get_tree().process_frame

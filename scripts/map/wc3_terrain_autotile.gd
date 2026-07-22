@@ -24,6 +24,33 @@ const ATLAS_BL := 2
 const ATLAS_TR := 4
 const ATLAS_TL := 8
 
+## 经典 WE / HiveWE 地表 variation 加权表（总和 570）。
+## HiveWE `variation_chances`：第三项原为重复的 0；官方地图（如 Lost Temple）里
+## 17 与 0/4/8/12/16 同频，故第三项取 17。
+const VARIATION_CHANCE_SUM := 570
+const VARIATION_CHANCES := [
+	[0, 85], [16, 85], [17, 85],
+	[1, 10], [2, 4], [3, 1],
+	[4, 85], [5, 10], [6, 4], [7, 1],
+	[8, 85], [9, 10], [10, 4], [11, 1],
+	[12, 85], [13, 10], [14, 4], [15, 1],
+]
+
+
+## 新建地图 / 笔刷铺地时的 groundVariation（5 bit）。对齐 HiveWE `random_ground_variation`。
+static func random_ground_variation(rng: RandomNumberGenerator = null) -> int:
+	var r: RandomNumberGenerator = rng if rng != null else RandomNumberGenerator.new()
+	if rng == null:
+		r.randomize()
+	# HiveWE: uniform(0, 570) 再 -1；nr==-1 时落在第一档
+	var nr: int = r.randi_range(0, VARIATION_CHANCE_SUM) - 1
+	for pair in VARIATION_CHANCES:
+		var chance: int = int(pair[1])
+		if nr < chance:
+			return int(pair[0])
+		nr -= chance
+	return 0
+
 
 ## 返回 { mesh, ground_tilesets, gap_count, ramp_deck_count }
 ## romp / ramp_placements 可选；空则内部 collect。

@@ -16,9 +16,44 @@ func _run() -> void:
 		push_error("bad blank size %s" % doc.map_size())
 		quit(1)
 		return
+	doc.create_from_options({
+		"width": 64,
+		"height": 64,
+		"main_tileset": "L",
+		"main_tileset_name": "洛丹伦(夏)",
+		"ground_tilesets": ["Ldrt", "Lgrs"],
+		"cliff_tilesets": ["CLdi", "CLgr"],
+		"default_tile_index": 1,
+		"cliff_level": 2,
+		"water_mode": 0,
+		"random_height": false,
+	})
+	if doc.map_size() != Vector2i(64, 64):
+		push_error("bad options size %s" % doc.map_size())
+		quit(1)
+		return
+	if int(doc.hf["groundTextures"][0]) != 1:
+		push_error("default tile not applied")
+		quit(1)
+		return
+	var gv: Array = doc.hf["groundVariations"]
+	var seen_var := {}
+	for v in gv:
+		seen_var[int(v)] = true
+	if seen_var.size() < 2:
+		push_error("expected randomized groundVariations, unique=%d" % seen_var.size())
+		quit(1)
+		return
+	doc.brush_tile_index = 0
+	if not doc.paint_tile(2, 2):
+		push_error("paint failed")
+		quit(1)
+		return
+	# recreate small for corner test
+	doc.create_blank(5)
 	doc.brush_tile_index = 1
 	if not doc.paint_tile(1, 1):
-		push_error("paint failed")
+		push_error("paint small failed")
 		quit(1)
 		return
 	var ground: Array = doc.hf["groundTextures"]

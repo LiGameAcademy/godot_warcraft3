@@ -10,9 +10,11 @@ func set_array_mesh(m: ArrayMesh) -> void:
 
 
 func clear_mesh() -> void:
+	# 先清材质再丢 mesh；mesh 已空时 get_surface_override_material_count 会越界
+	if mesh != null:
+		for s in range(mesh.get_surface_count()):
+			set_surface_override_material(s, null)
 	mesh = null
-	for s in range(get_surface_override_material_count()):
-		set_surface_override_material(s, null)
 
 
 func apply_uniform_material(mat: Material) -> void:

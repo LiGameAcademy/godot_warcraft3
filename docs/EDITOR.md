@@ -11,7 +11,10 @@
 
 | 能力 | 说明 |
 |------|------|
-| 顶栏菜单 | 对齐原版：文件/编辑/察看/层面/情节/工具/高级/模块/窗口/帮助（文案 `UI/WorldEditStrings.txt`） |
+| 顶栏菜单 | 场景 `menu_bar.tscn` + `EditorI18n`（窗口菜单可切换中文/English） |
+| 创建新地图 | 弹窗 `new_map_dialog.tscn`；文案 key 见 `editor/locale/editor_strings.csv` |
+| 多语言 | Autoload `EditorI18n`：CSV（zh_CN/en）+ 可选 `UI/WorldEditStrings.txt` 覆盖中文 |
+| 编辑器数据 | `world_edit_data.gd` 读逻辑路径 `UI/WorldEditData.txt`（优先 `assets/asset-converted/`，可用 `node tools/sync-editor-assets.mjs` 从 `.cache` 同步） |
 | 打开 | 加载 `assets/map-parsed/losttemple` 的 `terrain-heightfield.json` |
 | 新建 | 小空白图（默认 33×33 tilepoint → 32×32 格），平坦、Icecrown 地表表 |
 | 刷地表 | 左键拖拽，整格四角同贴图；侧栏选贴图 |

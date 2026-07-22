@@ -8,37 +8,74 @@ extends RefCounted
 ## 解包时用 {tileset}_Cliff0.png 保存（如 I_Cliff1 = Icecrown）。
 
 var _tile_to_png: Dictionary = {}
-var _tile_name: Dictionary = {}
+var _tile_name: Dictionary = {} ## tileID → WESTRING_TILE_* 或 comment
+var _tile_buildable: Dictionary = {} ## tileID → bool（Terrain.slk buildable）
+var _tile_order: Array = [] ## Terrain.slk 记录顺序
 var _cliff_to_png: Dictionary = {}
+var _cliff_order: Array = []
 var _cliff_model_dir: Dictionary = {}
 var _cliff_ramp_dir: Dictionary = {}
 var _cliff_ground_tile: Dictionary = {}
 
 
 func load_default() -> void:
+	_tile_to_png.clear()
+	_tile_name.clear()
+	_tile_buildable.clear()
+	_tile_order.clear()
+	_cliff_to_png.clear()
+	_cliff_order.clear()
+	_cliff_model_dir.clear()
+	_cliff_ramp_dir.clear()
+	_cliff_ground_tile.clear()
 	_load_terrain_slk(RuntimeAssets.slk_path("TerrainArt/Terrain.json"))
 	_load_cliff_slk(RuntimeAssets.slk_path("TerrainArt/CliffTypes.json"))
 
 
-## 指定地形集字母（如 "I"）下的地表 tileID 列表（SLK 顺序）。
+## 指定地形集字母（如 "L"）下的地表 tileID（Terrain.slk 顺序，跳过 cliff 小写 id）。
 func tile_ids_for_tileset(tileset_letter: String) -> PackedStringArray:
 	var letter := tileset_letter.strip_edges().to_upper()
 	if letter.is_empty():
-		letter = "I"
+		letter = "L"
 	var out := PackedStringArray()
-	for id in _tile_to_png.keys():
+	for id in _tile_order:
 		var tid := str(id)
-		if tid.length() >= 1 and tid.substr(0, 1).to_upper() == letter:
-			out.append(tid)
-	out.sort()
+		if tid.length() != 4:
+			continue
+		if tid.substr(0, 1) != letter:
+			continue
+		# 跳过 cliff 辅助项（小写开头已不会进 letter 匹配）
+		out.append(tid)
 	return out
+
+
+## 悬崖类型：cliffID 第 2 字符为地形集字母（如 CLdi → L）。
+func cliff_ids_for_tileset(tileset_letter: String) -> PackedStringArray:
+	var letter := tileset_letter.strip_edges().to_upper()
+	var out := PackedStringArray()
+	for id in _cliff_order:
+		var cid := str(id)
+		if cid.length() >= 2 and cid.substr(1, 1).to_upper() == letter:
+			out.append(cid)
+	return out
+
+
+func name_key_for_tile_id(tile_id: String) -> String:
+	return str(_tile_name.get(tile_id, ""))
 
 
 func display_name_for_tile_id(tile_id: String) -> String:
 	var n := str(_tile_name.get(tile_id, ""))
 	if n.is_empty() or n == "_":
 		return tile_id
-	return "%s (%s)" % [n, tile_id]
+	return n
+
+
+## Terrain.slk `buildable`；缺省视为可建造。
+func is_buildable(tile_id: String) -> bool:
+	if not _tile_buildable.has(tile_id):
+		return true
+	return bool(_tile_buildable[tile_id])
 
 
 func png_for_tile_id(tile_id: String) -> String:
@@ -93,10 +130,13 @@ func _load_terrain_slk(path: String) -> void:
 			continue
 		var png := RuntimeAssets.converted_path("%s/%s.png" % [dir, file])
 		_tile_to_png[id] = png
+		_tile_order.append(id)
 		var nm := str(rec.get("name", "")).strip_edges()
 		if nm.is_empty() or nm == "_":
 			nm = str(rec.get("comment", "")).strip_edges()
 		_tile_name[id] = nm
+		# Terrain.slk：1=可建造，0=不可建造（如岩石 Lrok）
+		_tile_buildable[id] = int(rec.get("buildable", 1)) != 0
 
 
 func _load_cliff_slk(path: String) -> void:
@@ -113,6 +153,7 @@ func _load_cliff_slk(path: String) -> void:
 		var id := str(rec.get("cliffID", ""))
 		if id.is_empty():
 			continue
+		_cliff_order.append(id)
 		var dir := str(rec.get("texDir", "")).replace("\\", "/")
 		var file := str(rec.get("texFile", ""))
 		if not dir.is_empty() and not file.is_empty():

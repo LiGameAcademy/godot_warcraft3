@@ -1,6 +1,6 @@
 # slk-export
 
-将经典《魔兽争霸3》`.slk`（SYLK 表）解析为可读的 **JSON** / **CSV**。
+将经典《魔兽争霸3》`.slk`（SYLK 表）解析为可读的 **JSON**。
 
 SLK 是暴雪用来存单位数值、技能、地形类型、音效表等的表格格式。第一行是列名，之后每行一条记录。
 
@@ -9,7 +9,10 @@ SLK 是暴雪用来存单位数值、技能、地形类型、音效表等的表�
 ```bash
 cd tools/slk-export
 npm install
-npm run export --
+# 全量导出
+node src/cli.js
+# 子集覆盖
+node src/cli.js --include "Units/**" --overwrite
 ```
 
 默认：
@@ -18,28 +21,23 @@ npm run export --
 |----|-----|
 | 输入 | `../../.cache/wc3-assets` |
 | 输出 | `../../assets/slk-exported`（gitignore） |
-| 格式 | JSON + CSV |
+| 格式 | JSON |
 | 排除 | `File*.slk`、`NotUsed_*`、`Custom_V*`、`Melee_V0` |
 
 ```bash
-# 只导出单位相关表
-npm run export -- --include "Units/**" --force
-
 # 单表
-npm run export -- --include "Units/UnitData.slk" --include "Units/unitUI.slk"
+node src/cli.js --include "Units/UnitData.slk" --include "Units/unitUI.slk"
 
-# 只要 CSV（可用 Excel 打开）
-npm run export -- --include "TerrainArt/**" --format csv
+# 地形相关
+node src/cli.js --include "TerrainArt/**" --overwrite
+
+# 经 npm（PowerShell 需给 -- 加引号）
+npm run export "--" "--include=Units/**" --overwrite
 ```
 
 ## 输出示例
 
-`Units/UnitData.slk` →
-
-- `assets/slk-exported/Units/UnitData.json`
-- `assets/slk-exported/Units/UnitData.csv`
-
-JSON 结构：
+`Units/UnitData.slk` → `assets/slk-exported/Units/UnitData.json`
 
 ```json
 {
@@ -53,6 +51,8 @@ JSON 结构：
 ```
 
 另有 `assets/slk-exported/index.json` 汇总本次导出的所有表。
+
+> **已弃用 CSV**：不再写出 `.csv`；`--overwrite` 时会删除同名历史 CSV。
 
 ## 常用表
 

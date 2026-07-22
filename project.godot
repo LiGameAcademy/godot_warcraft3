@@ -11,13 +11,29 @@ config_version=5
 [application]
 
 config/name="godot_warcraft3"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="uid://bgpdr7ovrx422"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
 [autoload]
 
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
+EditorI18n="*res://editor/scripts/ui/editor_i18n.gd"
+
+[display]
+
+window/subwindows/embed_subwindows=false
+window/per_pixel_transparency/allowed=true
+
+[dotnet]
+
+project/assembly_name="godot_warcraft3"
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://editor/locale/editor_strings.en.translation", "res://editor/locale/editor_strings.zh_CN.translation")
+locale/locale_filter_mode=0
+locale/fallbacks=["en"]
 
 [physics]
 
