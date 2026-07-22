@@ -11,6 +11,7 @@
 
 | 能力 | 说明 |
 |------|------|
+| 顶栏菜单 | 对齐原版：文件/编辑/察看/层面/情节/工具/高级/模块/窗口/帮助（文案 `UI/WorldEditStrings.txt`） |
 | 打开 | 加载 `assets/map-parsed/losttemple` 的 `terrain-heightfield.json` |
 | 新建 | 小空白图（默认 33×33 tilepoint → 32×32 格），平坦、Icecrown 地表表 |
 | 刷地表 | 左键拖拽，整格四角同贴图；侧栏选贴图 |

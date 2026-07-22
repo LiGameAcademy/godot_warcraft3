@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://cwc3editormain"]
+[gd_scene load_steps=7 format=3 uid="uid://cwc3editormain"]
 
 [ext_resource type="Script" path="res://editor/scripts/editor_app.gd" id="1_app"]
 [ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="2_map"]
 [ext_resource type="Script" path="res://editor/scripts/editor_camera.gd" id="3_cam"]
 [ext_resource type="Script" path="res://editor/scripts/ui/toolbar.gd" id="4_toolbar"]
 [ext_resource type="Script" path="res://editor/scripts/ui/tile_palette.gd" id="5_palette"]
+[ext_resource type="Script" path="res://editor/scripts/ui/menu_bar.gd" id="6_menu"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -43,44 +44,41 @@ far = 4000.0
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="TopBar" type="PanelContainer" parent="UI"]
+[node name="MenuBarPanel" type="PanelContainer" parent="UI"]
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 40.0
+offset_bottom = 28.0
 grow_horizontal = 2
 
-[node name="Toolbar" type="HBoxContainer" parent="UI/TopBar"]
+[node name="MenuBar" type="MenuBar" parent="UI/MenuBarPanel"]
 layout_mode = 2
-theme_override_constants/separation = 8
+flat = true
+script = ExtResource("6_menu")
+
+[node name="ToolStrip" type="PanelContainer" parent="UI"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 28.0
+offset_bottom = 56.0
+grow_horizontal = 2
+
+[node name="Toolbar" type="HBoxContainer" parent="UI/ToolStrip"]
+layout_mode = 2
+theme_override_constants/separation = 12
 script = ExtResource("4_toolbar")
 
-[node name="BtnNew" type="Button" parent="UI/TopBar/Toolbar"]
-layout_mode = 2
-text = "新建空白图"
-
-[node name="BtnOpen" type="Button" parent="UI/TopBar/Toolbar"]
-layout_mode = 2
-text = "打开 Lost Temple"
-
-[node name="BtnSave" type="Button" parent="UI/TopBar/Toolbar"]
-layout_mode = 2
-text = "保存 JSON"
-
-[node name="Sep" type="VSeparator" parent="UI/TopBar/Toolbar"]
-layout_mode = 2
-
-[node name="BrushLabel" type="Label" parent="UI/TopBar/Toolbar"]
+[node name="BrushLabel" type="Label" parent="UI/ToolStrip/Toolbar"]
 layout_mode = 2
 text = "笔刷: —"
 
-[node name="DirtyLabel" type="Label" parent="UI/TopBar/Toolbar"]
+[node name="DirtyLabel" type="Label" parent="UI/ToolStrip/Toolbar"]
 layout_mode = 2
 text = ""
 
 [node name="SideBar" type="PanelContainer" parent="UI"]
 anchors_preset = 9
 anchor_bottom = 1.0
-offset_top = 44.0
+offset_top = 60.0
 offset_right = 220.0
 offset_bottom = -28.0
 grow_vertical = 2
@@ -94,9 +92,9 @@ layout_mode = 2
 text = "地表贴图"
 
 [node name="ItemList" type="ItemList" parent="UI/SideBar/TilePalette"]
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
-custom_minimum_size = Vector2(0, 200)
 
 [node name="StatusBar" type="HBoxContainer" parent="UI"]
 anchors_preset = 12
