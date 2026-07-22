@@ -8,10 +8,12 @@ const GROUND_SHADER: Shader = preload("res://shaders/wc3_ground.gdshader")
 @onready var _ground: HeightfieldMesh = $Ground
 
 var last_gap_count: int = 0
+var _ground_mat: ShaderMaterial
 
 
 func build(ctx) -> void:
 	_ground.clear_mesh()
+	_ground_mat = null
 	last_gap_count = 0
 	ctx.ensure_cliff_topology()
 
@@ -42,6 +44,10 @@ func build(ctx) -> void:
 	mat.set_shader_parameter("tilesets", tex_array)
 	mat.set_shader_parameter("roughness_value", 0.92)
 	mat.set_shader_parameter("albedo_scale", 1.0)
+	mat.set_shader_parameter("world_scale", Wc3Coords.WORLD_SCALE)
+	mat.set_shader_parameter("dbg_center_offset", ctx.meta.get("center", Vector2.ZERO))
+	mat.set_shader_parameter("dbg_tile_size", float(ctx.meta.get("tile_size", Wc3Coords.TILE_SIZE)))
+	_ground_mat = mat
 	_ground.apply_uniform_material(mat)
 	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
@@ -56,3 +62,12 @@ func build(ctx) -> void:
 			int(stats.get("tiles", 0)),
 		]
 	)
+
+
+## 寻路调试线框（GPU，写在 ground shader 内）。
+func set_debug_grid(show_tile: bool, show_path: bool, show_fine: bool) -> void:
+	if _ground_mat == null:
+		return
+	_ground_mat.set_shader_parameter("dbg_grid_tile", show_tile)
+	_ground_mat.set_shader_parameter("dbg_grid_path", show_path)
+	_ground_mat.set_shader_parameter("dbg_grid_fine", show_fine)

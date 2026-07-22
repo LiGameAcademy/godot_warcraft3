@@ -5,9 +5,12 @@ render_mode cull_back, unshaded, fog_disabled;
 /// CUSTOM0 = 四层 tileset 索引（0-based，-1=无）；CUSTOM1 = 对应图集编号（fill 或 bitmask 0..31）。
 /// 图集为统一 512×256（8×4 格）；256×256 素材垫在左半。
 
+#include "wc3_debug_grid.gdshaderinc"
+
 uniform sampler2DArray tilesets : source_color, filter_linear, repeat_disable;
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.92;
 uniform float albedo_scale : hint_range(0.5, 1.5) = 1.0;
+uniform float world_scale = 0.01;
 
 varying flat vec4 v_tex;
 varying flat vec4 v_var;
@@ -35,6 +38,8 @@ void vertex() {
 	v_tex = CUSTOM0;
 	v_var = CUSTOM1;
 	v_local = UV;
+	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	dbg_wc3_xy = vec2(world_pos.x, -world_pos.z) / world_scale;
 }
 
 vec4 sample_layer(float layer, float variation, vec2 local_pos) {
@@ -57,7 +62,7 @@ void fragment() {
 	vec4 o3 = sample_layer(v_tex.w, v_var.w, v_local);
 	color = mix(color, o3, o3.a);
 
-	ALBEDO = color.rgb * albedo_scale;
+	ALBEDO = dbg_apply_grid(color.rgb * albedo_scale);
 	ROUGHNESS = roughness_value;
 	METALLIC = 0.0;
 }

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://cmaprootwc3"]
+[gd_scene load_steps=9 format=3 uid="uid://cmaprootwc3"]
 
 [ext_resource type="Script" path="res://scripts/map/map_loader.gd" id="1_loader"]
 [ext_resource type="Script" path="res://scripts/map/map_terrain_layer.gd" id="2_terrain"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
 [ext_resource type="Script" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
 [ext_resource type="Script" path="res://scripts/map/heightfield_mesh.gd" id="7_hfmesh"]
+[ext_resource type="Script" path="res://scripts/map/map_pathing_debug_layer.gd" id="8_pathdbg"]
 
 [node name="MapRoot" type="Node3D"]
 script = ExtResource("1_loader")
@@ -32,3 +33,6 @@ script = ExtResource("5_doodad")
 
 [node name="Units" type="Node3D" parent="."]
 script = ExtResource("6_unit")
+
+[node name="PathingDebug" type="Node3D" parent="."]
+script = ExtResource("8_pathdbg")

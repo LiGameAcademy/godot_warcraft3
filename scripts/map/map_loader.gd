@@ -14,6 +14,10 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
 
+@export_group("寻路调试")
+## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)
+@export var show_pathing_debug_grid: bool = true
+
 @export_group("岸浪微调")
 ## 悬崖泡沫额外退入水面（格）。全悬崖共用。
 @export_range(0.0, 0.40, 0.01) var foam_cliff_out_extra: float = 0.08
@@ -27,6 +31,7 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 @onready var _cliffs: MapCliffLayer = $Cliffs
 @onready var _doodads: MapDoodadLayer = $Doodads
 @onready var _units: MapUnitLayer = $Units
+@onready var _pathing_debug: Node = $PathingDebug
 
 var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTiles.new()
@@ -82,6 +87,10 @@ func _load_all() -> void:
 		await get_tree().process_frame
 	if place_doodads:
 		_doodads.build(_read_json(map_dir.path_join("doodads.json")))
+		await get_tree().process_frame
+	if show_pathing_debug_grid and _pathing_debug:
+		_set_status("开启寻路调试线框（GPU）…")
+		_pathing_debug.build(ctx)
 		await get_tree().process_frame
 
 	var ms := Time.get_ticks_msec() - t0
