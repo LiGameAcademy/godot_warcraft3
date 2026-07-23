@@ -51,6 +51,8 @@ func _ready() -> void:
 	_palette.tile_selected.connect(_on_tile_selected)
 	_brush.tile_hovered.connect(_on_tile_hovered)
 	_brush.rebuild_requested.connect(_on_brush_rebuild)
+	if _brush.has_signal("ramp_feedback"):
+		_brush.ramp_feedback.connect(_on_ramp_feedback)
 	_doc.dirty_changed.connect(_on_dirty_changed)
 	_new_map_dialog.setup(_map.get_tiles(), null, _we_data)
 	_new_map_dialog.confirmed.connect(_on_new_map_confirmed)
@@ -59,6 +61,8 @@ func _ready() -> void:
 
 	await get_tree().process_frame
 	await _startup_new_map()
+	# 默认中级栅格（可被 user://editor_settings.cfg 覆盖）
+	_set_view_grid(EditorSettingsStore.load_view_grid_level())
 	# 经典 WE：启动后默认有一个地形工具面板
 	_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.TERRAIN)
 
@@ -196,8 +200,9 @@ func _spawn_tool_palette(kind: int) -> void:
 	var offset := _palette_spawn_index * 28
 	_palette_spawn_index += 1
 	win.position = Vector2i(24 + offset, 72 + offset)
+	win.transparent = false
+	win.unfocusable = false
 	win.always_on_top = true
-	win.unfocusable = true
 	win.transient = false
 	win.visible = true
 	win.show()
@@ -258,6 +263,7 @@ func _refresh_all_tool_palettes() -> void:
 func _set_view_grid(level: int) -> void:
 	_map.set_view_grid_level(level)
 	_menu.set_grid_level_checked(level)
+	EditorSettingsStore.save_view_grid_level(level)
 	var key := "WESTRING_MENU_GRID_NONE"
 	match level:
 		MapLoader.ViewGridLevel.LARGE:
@@ -317,6 +323,12 @@ func _on_tile_selected(index: int) -> void:
 func _on_tile_hovered(tile: Vector2i) -> void:
 	_hover_tile = tile
 	_hover.text = EditorI18n.t("EDITOR_HOVER_CELL", [tile.x, tile.y])
+
+
+func _on_ramp_feedback(message: String) -> void:
+	if message.is_empty():
+		return
+	_set_status(message)
 
 
 func _on_dirty_changed(dirty: bool) -> void:

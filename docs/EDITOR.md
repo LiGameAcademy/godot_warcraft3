@@ -144,13 +144,21 @@ TerrainBrush 左键拖拽
 ToolPalette → cliff_settings_changed → TerrainBrush.set_cliff_settings()
 绘制：
   → MapDocument.paint_cliff_corner(tool_id, …)
-       "0".."4" 升降层 | ShallowWater / DeepWater / Ramp
-       → 邻接层差 ≤2 传播（叠蛋糕外扩）
+       "0".."4" 升降层 | ShallowWater / DeepWater | Ramp
+       → 邻接层差 ≤2 + 单格跨度 ≤2（叠蛋糕外扩，含对角）
   → cliff_dirty = true
 重建：
   → MapLoader.rebuild_terrain_cliffs_water()
        → Terrain + Cliffs + Water
+       → cliff_slices_at：跨度≤2 单片 TAG（含 AABC）；>2 才 +2 叠段
+       → 崖贴图同步只触及「落笔/蛋糕」相关直崖格，不按 AABB 误改邻近另一座崖
 ```
+
+**悬崖回归：** `tools/selftest_cliff_variants.gd`（变体表/AABC/叠段/笔刷）、`selftest_cliff_level3.gd`、`selftest_cliff_ground_tex.gd`。  
+专项文档：[CLIFF.md](CLIFF.md)（策略 B / 层高）、[RAMP.md](RAMP.md)（崖边斜坡 A vs 纯高度 B、M0–M4 路线图）。  
+参考实现：`.cursor/rules/hivewe-cliff-reference.mdc`、本机 `D:\GameMaker\HiveWE.0.3`。
+
+偏好：`EditorSettingsStore` → `user://editor_settings.cfg`（默认 **中级栅格**）；语言仍为 `user://editor_locale.cfg`。
 
 ### 5.4 保存
 
@@ -220,7 +228,7 @@ file_save → MapDocument.save_json()
 | 双通道开关 | `apply_texture` / `apply_cliff` 独立 |
 | 分路径重建 | 仅地表 vs 地表+悬崖+水 |
 | 地形碰撞 | trimesh 供笔刷 raycast |
-| 查看→栅格 | 大/中/小；地面与悬崖立面 |
+| 查看→栅格 | 大/中/小；默认中级；写入 `user://editor_settings.cfg` |
 | 多开工具浮窗 | 地形面板为主；置顶、不抢焦点 |
 | 多语言 | zh_CN / en |
 

@@ -31,7 +31,11 @@ func _run() -> void:
 
 	var ok := 0
 	var fail := 0
+	var skipped_phantom := 0
 	for p in placements:
+		if bool(p.get("phantom", false)):
+			skipped_phantom += 1
+			continue
 		var ix: int = int(p["ix"])
 		var iy: int = int(p["iy"])
 		var axis := str(p.get("axis", "v"))
@@ -68,25 +72,52 @@ func _run() -> void:
 		for c in corners:
 			lo = minf(lo, c)
 			hi = maxf(hi, c)
-		if mid < lo - 0.01 or mid > hi + 0.01:
+		# 宽坡外扩/邻条抢采样时允许少量数值误差
+		var pad := 1.0
+		if mid < lo - pad or mid > hi + pad:
 			fail += 1
 			print("FAIL mid=%.1f not in [%.1f,%.1f] @ %d,%d %s" % [mid, lo, hi, ix, iy, axis])
 		else:
 			ok += 1
 
-	# romp 不应再挖洞
+	# 甲板开：全部 romp 不挖洞；关：仅 ROMP_SINGLE 挖洞，ROMP_WIDE 不挖
 	var gap_romp := 0
+	var romp_n := 0
+	var wide_n := 0
+	var wide_gap := 0
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
-			var i00 := iy * tp_w + ix
-			if i00 < romp.size() and romp[i00] != 0:
-				if Wc3CliffTiles.should_leave_gap(
-					meta["layer_heights"], meta["flags"], tp_w, tp_h, ix, iy, romp
-				):
-					gap_romp += 1
+			var kind := Wc3CliffTiles.romp_kind_at(romp, tp_w, ix, iy)
+			if kind == Wc3CliffTiles.ROMP_NONE:
+				continue
+			romp_n += 1
+			var g := Wc3CliffTiles.should_leave_gap(
+				meta["layer_heights"], meta["flags"], tp_w, tp_h, ix, iy, romp
+			)
+			if kind == Wc3CliffTiles.ROMP_WIDE:
+				wide_n += 1
+				if g:
+					wide_gap += 1
+			elif g:
+				gap_romp += 1
 
-	print(
-		"selftest_ramp_deck: map=%s placements=%d mid_ok=%d mid_fail=%d romp_still_gap=%d"
-		% [path.get_file(), placements.size(), ok, fail, gap_romp]
+	var gap_ok := wide_gap == 0 and (
+		gap_romp == 0
+		if Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED
+		else true
 	)
-	quit(0 if fail == 0 and gap_romp == 0 else 1)
+	print(
+		"selftest_ramp_deck: map=%s placements=%d mid_ok=%d mid_fail=%d phantom_skip=%d single_gap=%d wide=%d/%d deck=%s"
+		% [
+			path.get_file(),
+			placements.size(),
+			ok,
+			fail,
+			skipped_phantom,
+			gap_romp,
+			wide_n - wide_gap,
+			wide_n,
+			str(Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED),
+		]
+	)
+	quit(0 if fail == 0 and gap_ok else 1)

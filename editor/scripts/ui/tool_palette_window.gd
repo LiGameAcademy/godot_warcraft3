@@ -111,9 +111,11 @@ var _sel_style: StyleBoxFlat
 
 
 func _ready() -> void:
+	# Windows + D3D12 下 unfocusable/transparent 会导致子窗口客户区不绘制（透出桌面）
+	# 笔刷已用 DisplayServer 轮询悬停，面板获焦后仍可恢复预览，无需 unfocusable
+	transparent = false
+	unfocusable = false
 	always_on_top = true
-	# 不抢主窗口焦点，否则从面板移回地图后收不到 MouseMotion，需右键才恢复笔刷
-	unfocusable = true
 	_sel_style = _make_sel_style()
 	close_requested.connect(_on_close_requested)
 	_kind_option.item_selected.connect(_on_kind_selected)
@@ -677,13 +679,21 @@ func _load_tile_tex(tile_id: String) -> Texture2D:
 func _load_cliff_tex(cliff_id: String) -> Texture2D:
 	if _tiles == null:
 		return null
+	# WE：悬崖类型图标用 Cliffs.slk 的 groundTile（泥土/草地地表 atlas），不是崖壁 PNG
+	var ground_id: String = _tiles.ground_tile_for_cliff_id(cliff_id)
+	if not ground_id.is_empty():
+		var ground_path: String = _tiles.png_for_tile_id(ground_id)
+		if not ground_path.is_empty():
+			var ground_img := RuntimeAssets.load_image(ground_path)
+			if ground_img != null:
+				return ImageTexture.create_from_image(_atlas_first_cell(ground_img))
+	# 缺 groundTile 时回退：裁崖壁贴图左上角
 	var path: String = _tiles.png_for_cliff_id(cliff_id)
 	if path.is_empty():
 		return null
 	var img := RuntimeAssets.load_image(path)
 	if img == null:
 		return null
-	# 悬崖贴图不是地表 8×4 atlas；取左上岩壁区作类型图标
 	var side: int = int(mini(img.get_width(), img.get_height()) / 2.0)
 	if side < 8:
 		return ImageTexture.create_from_image(img)

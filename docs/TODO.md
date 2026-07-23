@@ -3,7 +3,7 @@
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。
 
 ## 地形 / 斜坡
-- [ ] **斜坡材质与剖面仍不对**：当前用「停放 CliffTrans + romp 地面 A→B 甲板」仍未对齐原作；需继续对照 HiveWE（几何/贴图/两侧岩壁）。相关：`wc3_cliff_builder.gd`、`wc3_cliff_tiles.gd`、`wc3_terrain_autotile.gd`。
+- [ ] **斜坡（崖边 A）**：设计与路线图见 [RAMP.md](RAMP.md)（M0–M4；拖动绘制、蓝菱形、双通道）。**实现按里程碑**；勿与「应用高度」纯高度坡（B）混淆。相关：`wc3_cliff_builder.gd`、`wc3_cliff_tiles.gd`、`wc3_terrain_autotile.gd`。直崖见 [CLIFF.md](CLIFF.md)。
 
 ## 岸浪
 - [ ] 泡沫精调（偏移/贴图细节）暂搁，见 `docs/WATER.md`。

@@ -29,8 +29,17 @@ title = "WESTRING_TOOL_PALETTE"
 position = Vector2i(24, 47)
 size = Vector2i(268, 612)
 always_on_top = true
-unfocusable = true
+transparent = false
+unfocusable = false
 script = ExtResource("1_script")
+
+[node name="Bg" type="Panel" parent="." unique_id=1508506488]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
 [node name="Margin" type="MarginContainer" parent="." unique_id=1508506489]
 anchors_preset = 15
@@ -63,21 +72,10 @@ tabs_visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 
-[node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer" unique_id=976567396]
-layout_mode = 2
-
-[node name="Placeholder" type="Label" parent="Margin/Root/Pages/MarginContainer/PlaceholderPage" unique_id=863925339]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-text = "EDITOR_PALETTE_PLACEHOLDER"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 3
-
 [node name="TerrainVBox" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer" unique_id=1237520839]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
 [node name="TextureSection" type="VBoxContainer" parent="Margin/Root/Pages/MarginContainer/TerrainVBox" unique_id=1158005104]
@@ -419,3 +417,16 @@ toggle_mode = true
 texture_normal = ExtResource("shape_square")
 ignore_texture_size = true
 stretch_mode = 5
+
+[node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=976567396]
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="Placeholder" type="Label" parent="Margin/Root/Pages/PlaceholderPage" unique_id=863925339]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "EDITOR_PALETTE_PLACEHOLDER"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3

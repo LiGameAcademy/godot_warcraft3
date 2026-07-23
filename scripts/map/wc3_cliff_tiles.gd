@@ -7,6 +7,15 @@ extends RefCounted
 
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
+## M3 调试开关：false = 单脊不铺甲板（挖洞 + CliffTrans）。
+## 双脊 wide 格仍铺甲板（宽度≥2 连续坡，对照 WE）。
+const RAMP_SURFACE_DECK_ENABLED := false
+
+## romp 字节：0 无；1 单脊（藏面）；2 宽坡甲板。
+const ROMP_NONE := 0
+const ROMP_SINGLE := 1
+const ROMP_WIDE := 2
+
 const CLIFF_VAR_MAX := {
 	"AAAB": 1, "AAAC": 1, "AABA": 1, "AABB": 2, "AABC": 0, "AACA": 1, "AACB": 0, "AACC": 1,
 	"ABAA": 1, "ABAB": 1, "ABAC": 0, "ABBA": 2, "ABBB": 1, "ABBC": 0, "ABCA": 0, "ABCB": 0,
@@ -118,34 +127,417 @@ static func collect_ramp_placements(
 				var tag_v := _vertical_ramp_tag(layers, flags, tp_w, ix, iy)
 				if not tag_v.is_empty():
 					var ramp_dir := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy, tiles)
-					if resolve_glb(ramp_dir, tag_v, 0) != "":
-						var base_v := _vertical_ramp_base(layers, tp_w, ix, iy)
-						placements.append({
-							"ix": ix, "iy": iy, "tag": tag_v, "base_layer": base_v,
-							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
-							"ramp_dir": ramp_dir,
-							"axis": "v",
-						})
-						romp[iy * tp_w + ix] = 1
-						romp[(iy + 1) * tp_w + ix] = 1
-						placed = true
+					var base_v := _vertical_ramp_base(layers, tp_w, ix, iy)
+					var ramp_left := is_ramp_flag(flags, iy * tp_w + ix)
+					# M1/M2：甲板与 romp 只依赖合法 TAG；CliffTrans GLB 缺模不阻塞（M3 再强制）
+					placements.append({
+						"ix": ix, "iy": iy, "tag": tag_v, "base_layer": base_v,
+						"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
+						"ramp_dir": ramp_dir,
+						"axis": "v",
+						"ramp_left": ramp_left,
+						"has_glb": resolve_glb(ramp_dir, tag_v, 0) != "",
+					})
+					placed = true
 			# 横向斜坡（占 2x1 格）
 			if not placed and ix < tp_w - 2:
 				var tag_h := _horizontal_ramp_tag(layers, flags, tp_w, ix, iy)
 				if not tag_h.is_empty():
 					var ramp_dir_h := _ramp_dir_at(cliff_tilesets, cliff_tex, tp_w, ix, iy, tiles)
-					if resolve_glb(ramp_dir_h, tag_h, 0) != "":
-						var base_h := _horizontal_ramp_base(layers, tp_w, ix, iy)
-						placements.append({
-							"ix": ix, "iy": iy, "tag": tag_h, "base_layer": base_h,
-							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
-							"ramp_dir": ramp_dir_h,
-							"axis": "h",
-						})
-						romp[iy * tp_w + ix] = 1
-						romp[iy * tp_w + ix + 1] = 1
+					var base_h := _horizontal_ramp_base(layers, tp_w, ix, iy)
+					var ramp_bottom := is_ramp_flag(flags, iy * tp_w + ix)
+					placements.append({
+						"ix": ix, "iy": iy, "tag": tag_h, "base_layer": base_h,
+						"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
+						"ramp_dir": ramp_dir_h,
+						"axis": "h",
+						"ramp_bottom": ramp_bottom,
+						"has_glb": resolve_glb(ramp_dir_h, tag_h, 0) != "",
+					})
+
+	# 单条脊 XOR 会同时命中主条与邻格幻影 TAG；甲板只保留主条
+	_mark_horizontal_phantom_twins(placements, layers, tp_w)
+	_mark_vertical_phantom_twins(placements, layers, tp_w)
+	_apply_romp_from_placements(romp, placements, tp_w, tp_h)
+	# 双脊线及以上：相邻 placement 或连续旗列 → 宽坡甲板
+	_expand_romp_for_wide_ramps(romp, placements, tp_w, tp_h)
+	_expand_romp_for_adjacent_flag_cols(romp, placements, flags, tp_w, tp_h)
+	_propagate_wide_to_phantoms(placements)
 
 	return {"placements": placements, "romp": romp}
+
+
+## 宽坡主条的幻影对也标 wide，避免再放 CliffTrans 在中间顶出 U 隔墙。
+static func _propagate_wide_to_phantoms(placements: Array) -> void:
+	var wide_v: Dictionary = {} # "ramp_col,iy"
+	var wide_h: Dictionary = {} # "ix,ramp_row"
+	for p in placements:
+		if bool(p.get("phantom", false)) or not bool(p.get("wide", false)):
+			continue
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		if str(p.get("axis", "")) == "v":
+			var rl: bool = bool(p.get("ramp_left", true))
+			var rc := ix if rl else ix + 1
+			wide_v["%d,%d" % [rc, iy]] = true
+		else:
+			var rb: bool = bool(p.get("ramp_bottom", true))
+			var rr := iy if rb else iy + 1
+			wide_h["%d,%d" % [ix, rr]] = true
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if not bool(p.get("phantom", false)):
+			continue
+		var ix2: int = int(p.get("ix", 0))
+		var iy2: int = int(p.get("iy", 0))
+		if str(p.get("axis", "")) == "v":
+			var rl2: bool = bool(p.get("ramp_left", true))
+			var rc2 := ix2 if rl2 else ix2 + 1
+			if wide_v.has("%d,%d" % [rc2, iy2]):
+				p["wide"] = true
+				placements[i] = p
+		else:
+			var rb2: bool = bool(p.get("ramp_bottom", true))
+			var rr2 := iy2 if rb2 else iy2 + 1
+			if wide_h.has("%d,%d" % [ix2, rr2]):
+				p["wide"] = true
+				placements[i] = p
+
+
+## 同一条 3 旗竖脊会得到 (ix=R) ramp_left 与 (ix=R-1) !ramp_left 两个 TAG。
+## 按旗列分组去幻影；若存在间隔一列的兄弟旗列（111|000|111），主条朝向中缝。
+static func _mark_vertical_phantom_twins(
+	placements: Array, layers: Array, tp_w: int
+) -> void:
+	# ramp_col → [placement indices]
+	var by_col: Dictionary = {}
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if str(p.get("axis", "")) != "v":
+			continue
+		var ix: int = int(p.get("ix", 0))
+		var rl: bool = bool(p.get("ramp_left", true))
+		var ramp_col := ix if rl else ix + 1
+		var key := "%d,%d" % [ramp_col, int(p.get("iy", 0))]
+		if not by_col.has(key):
+			by_col[key] = []
+		(by_col[key] as Array).append(i)
+	for key in by_col.keys():
+		var idxs: Array = by_col[key]
+		if idxs.size() < 2:
+			continue
+		var parts: PackedStringArray = str(key).split(",")
+		var ramp_col: int = int(parts[0])
+		var iy: int = int(parts[1])
+		var keep_i := _pick_vertical_primary_idx(placements, idxs, layers, tp_w, ramp_col, iy)
+		for i in idxs:
+			var p: Dictionary = placements[i]
+			p["phantom"] = int(i) != keep_i
+			placements[i] = p
+
+
+static func _pick_vertical_primary_idx(
+	placements: Array, idxs: Array, layers: Array, _tp_w: int, ramp_col: int, iy: int
+) -> int:
+	# 邻列是否也有竖脊（相邻旗列 111|111）→ 宽坡外侧朝向
+	var has_left_sibling := false
+	var has_right_sibling := false
+	for j in range(placements.size()):
+		var q: Dictionary = placements[j]
+		if str(q.get("axis", "")) != "v":
+			continue
+		if int(q.get("iy", 0)) != iy:
+			continue
+		var qix: int = int(q.get("ix", 0))
+		var qrl: bool = bool(q.get("ramp_left", true))
+		var qc := qix if qrl else qix + 1
+		if qc == ramp_col - 1:
+			has_left_sibling = true
+		if qc == ramp_col + 1:
+			has_right_sibling = true
+	var prefer_left_facing := has_left_sibling and not has_right_sibling
+	var prefer_right_facing := has_right_sibling and not has_left_sibling
+	var best_i: int = int(idxs[0])
+	var best_score := -999999
+	for i in idxs:
+		var p: Dictionary = placements[i]
+		var ix: int = int(p.get("ix", 0))
+		var rl: bool = bool(p.get("ramp_left", true))
+		var score := _v_ramp_lowside_score(p, layers, _tp_w) * 10
+		# 宽坡：左脊朝右（ramp_left）；右脊朝左（!ramp_left）
+		if prefer_right_facing and rl and ix == ramp_col:
+			score += 1000
+		if prefer_left_facing and (not rl) and ix == ramp_col - 1:
+			score += 1000
+		# 单脊：略偏向 ramp_left 主条（ix==ramp_col）
+		if not prefer_left_facing and not prefer_right_facing and rl and ix == ramp_col:
+			score += 50
+		if score > best_score:
+			best_score = score
+			best_i = int(i)
+	return best_i
+
+
+static func _v_ramp_lowside_score(p: Dictionary, layers: Array, tp_w: int) -> int:
+	var ix: int = int(p.get("ix", 0))
+	var iy: int = int(p.get("iy", 0))
+	var ramp_left: bool = bool(p.get("ramp_left", true))
+	var x_ramp := ix if ramp_left else ix + 1
+	var x_flat := ix + 1 if ramp_left else ix
+	var h_ramp := (
+		_layer(layers, tp_w, x_ramp, iy)
+		+ _layer(layers, tp_w, x_ramp, iy + 1)
+		+ _layer(layers, tp_w, x_ramp, iy + 2)
+	)
+	var h_flat := (
+		_layer(layers, tp_w, x_flat, iy)
+		+ _layer(layers, tp_w, x_flat, iy + 1)
+		+ _layer(layers, tp_w, x_flat, iy + 2)
+	)
+	return h_flat - h_ramp
+
+
+## 同一条 3 旗横脊会得到 (ix,iy) ramp_bottom 与 (ix,iy-1) !ramp_bottom 两个 TAG。
+## 只保留「斜坡旗在低侧」的那条作为甲板主条；另一条标 phantom（M3 仍可选用）。
+static func _mark_horizontal_phantom_twins(
+	placements: Array, layers: Array, tp_w: int
+) -> void:
+	var h_at: Dictionary = {} # "ix,iy" → idx
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if str(p.get("axis", "")) != "h":
+			continue
+		h_at["%d,%d" % [int(p.get("ix", 0)), int(p.get("iy", 0))]] = i
+	var seen: Dictionary = {}
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if str(p.get("axis", "")) != "h":
+			continue
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		var key := "%d,%d" % [ix, iy]
+		if seen.get(key, false):
+			continue
+		var twin_key := "%d,%d" % [ix, iy - 1]
+		if not h_at.has(twin_key):
+			continue
+		var j: int = int(h_at[twin_key])
+		var q: Dictionary = placements[j]
+		# 幻影对：相邻 iy、ramp_bottom 相反，且共用同一 FLAG 行
+		if bool(p.get("ramp_bottom", true)) == bool(q.get("ramp_bottom", true)):
+			continue
+		var rb_p: bool = bool(p.get("ramp_bottom", true))
+		var rb_q: bool = bool(q.get("ramp_bottom", true))
+		var ramp_row_p := iy if rb_p else iy + 1
+		var qiy: int = int(q.get("iy", 0))
+		var ramp_row_q := qiy if rb_q else qiy + 1
+		if ramp_row_p != ramp_row_q:
+			continue
+		var keep_i := i
+		var drop_i := j
+		if _h_ramp_lowside_score(p, layers, tp_w) < _h_ramp_lowside_score(q, layers, tp_w):
+			keep_i = j
+			drop_i = i
+		var keep_p: Dictionary = placements[keep_i]
+		var drop_p: Dictionary = placements[drop_i]
+		keep_p["phantom"] = false
+		drop_p["phantom"] = true
+		placements[keep_i] = keep_p
+		placements[drop_i] = drop_p
+		seen[key] = true
+		seen["%d,%d" % [int(drop_p.get("ix", 0)), int(drop_p.get("iy", 0))]] = true
+
+
+static func _h_ramp_lowside_score(p: Dictionary, layers: Array, tp_w: int) -> int:
+	var ix: int = int(p.get("ix", 0))
+	var iy: int = int(p.get("iy", 0))
+	var ramp_bottom: bool = bool(p.get("ramp_bottom", true))
+	var y_ramp := iy if ramp_bottom else iy + 1
+	var y_flat := iy + 1 if ramp_bottom else iy
+	var h_ramp := (
+		_layer(layers, tp_w, ix, y_ramp)
+		+ _layer(layers, tp_w, ix + 1, y_ramp)
+		+ _layer(layers, tp_w, ix + 2, y_ramp)
+	)
+	var h_flat := (
+		_layer(layers, tp_w, ix, y_flat)
+		+ _layer(layers, tp_w, ix + 1, y_flat)
+		+ _layer(layers, tp_w, ix + 2, y_flat)
+	)
+	return h_flat - h_ramp
+
+
+static func _apply_romp_from_placements(
+	romp: PackedByteArray, placements: Array, tp_w: int, tp_h: int
+) -> void:
+	for p in placements:
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		# 主条与幻影（侧脊）格都标 romp，避免 CliffTrans 下仍叠直崖造成接缝
+		var kind: int = ROMP_SINGLE
+		if str(p.get("axis", "")) == "v":
+			_romp_set(romp, tp_w, tp_h, ix, iy, kind)
+			_romp_set(romp, tp_w, tp_h, ix, iy + 1, kind)
+		else:
+			_romp_set(romp, tp_w, tp_h, ix, iy, kind)
+			_romp_set(romp, tp_w, tp_h, ix + 1, iy, kind)
+
+
+## 仅当存在相邻同向真条带、或连续两列/行都有脊旗时：条带内升为宽坡甲板。
+## 外侧不扩甲板——侧脊用 CliffTrans，对照 WE。
+## WE 宽2 = 相邻列菱形(111|111)，不是隔列(111|000|111)。
+static func _expand_romp_for_wide_ramps(
+	romp: PackedByteArray, placements: Array, tp_w: int, tp_h: int
+) -> void:
+	var v_keys: Dictionary = {} # "ix,iy" → idx
+	var h_keys: Dictionary = {}
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if bool(p.get("phantom", false)):
+			continue
+		var key := "%d,%d" % [int(p.get("ix", 0)), int(p.get("iy", 0))]
+		if str(p.get("axis", "")) == "v":
+			v_keys[key] = i
+		else:
+			h_keys[key] = i
+	for i in range(placements.size()):
+		var p: Dictionary = placements[i]
+		if bool(p.get("phantom", false)):
+			continue
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		if str(p.get("axis", "")) == "v":
+			var has_nbr: bool = (
+				v_keys.has("%d,%d" % [ix - 1, iy]) or v_keys.has("%d,%d" % [ix + 1, iy])
+			)
+			if not has_nbr:
+				continue
+			_romp_set(romp, tp_w, tp_h, ix, iy, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, ix, iy + 1, ROMP_WIDE)
+			p["wide"] = true
+			placements[i] = p
+		else:
+			var ramp_bottom: bool = bool(p.get("ramp_bottom", true))
+			var has_nbr_h := false
+			for dy in [-1, 1]:
+				var nk := "%d,%d" % [ix, iy + dy]
+				if not h_keys.has(nk):
+					continue
+				var np: Dictionary = placements[int(h_keys[nk])]
+				if bool(np.get("ramp_bottom", true)) == ramp_bottom:
+					has_nbr_h = true
+					break
+			if not has_nbr_h:
+				continue
+			_romp_set(romp, tp_w, tp_h, ix, iy, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, ix + 1, iy, ROMP_WIDE)
+			p["wide"] = true
+			placements[i] = p
+
+
+## 连续两列都有竖脊旗（111|111）→ 宽坡；补 romp 与 wide（TAG 可能只在外侧条）。
+static func _expand_romp_for_adjacent_flag_cols(
+	romp: PackedByteArray,
+	placements: Array,
+	flags: Array,
+	tp_w: int,
+	tp_h: int
+) -> void:
+	var bands: Dictionary = {} # "iy" → true for vertical strip bands
+	for p in placements:
+		if str(p.get("axis", "")) != "v":
+			continue
+		bands[int(p.get("iy", 0))] = true
+	for iy in bands.keys():
+		var sy: int = int(iy)
+		for col in range(tp_w - 1):
+			if not _flag_col_all_ramp(flags, tp_w, col, sy):
+				continue
+			if not _flag_col_all_ramp(flags, tp_w, col + 1, sy):
+				continue
+			_romp_set(romp, tp_w, tp_h, col, sy, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, col, sy + 1, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, col + 1, sy, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, col + 1, sy + 1, ROMP_WIDE)
+			# 触及该带的 placement 标 wide
+			for i in range(placements.size()):
+				var p2: Dictionary = placements[i]
+				if str(p2.get("axis", "")) != "v":
+					continue
+				if int(p2.get("iy", 0)) != sy:
+					continue
+				var pix: int = int(p2.get("ix", 0))
+				if pix == col or pix == col + 1 or pix == col - 1:
+					p2["wide"] = true
+					# 连续旗列时 TAG 只在外侧条 → 作为侧脊放置 CliffTrans
+					p2["side_ridge"] = true
+					placements[i] = p2
+	# 横：连续两行脊旗
+	var h_bands: Dictionary = {}
+	for p3 in placements:
+		if str(p3.get("axis", "")) != "h":
+			continue
+		h_bands[int(p3.get("ix", 0))] = true
+	for ix0 in h_bands.keys():
+		var sx0: int = int(ix0)
+		for row in range(tp_h - 1):
+			if not _flag_row_all_ramp(flags, tp_w, sx0, row):
+				continue
+			if not _flag_row_all_ramp(flags, tp_w, sx0, row + 1):
+				continue
+			_romp_set(romp, tp_w, tp_h, sx0, row, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, sx0 + 1, row, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, sx0, row + 1, ROMP_WIDE)
+			_romp_set(romp, tp_w, tp_h, sx0 + 1, row + 1, ROMP_WIDE)
+			for j in range(placements.size()):
+				var p4: Dictionary = placements[j]
+				if str(p4.get("axis", "")) != "h":
+					continue
+				if int(p4.get("ix", 0)) != sx0:
+					continue
+				var piy: int = int(p4.get("iy", 0))
+				if piy == row or piy == row + 1 or piy == row - 1:
+					p4["wide"] = true
+					p4["side_ridge"] = true
+					placements[j] = p4
+
+
+static func _flag_col_all_ramp(flags: Array, tp_w: int, ix: int, sy: int) -> bool:
+	for yy in range(sy, sy + 3):
+		var i: int = yy * tp_w + ix
+		if i < 0 or i >= flags.size():
+			return false
+		if not is_ramp_flag(flags, i):
+			return false
+	return true
+
+
+static func _flag_row_all_ramp(flags: Array, tp_w: int, sx: int, iy: int) -> bool:
+	for xx in range(sx, sx + 3):
+		var i: int = iy * tp_w + xx
+		if i < 0 or i >= flags.size():
+			return false
+		if not is_ramp_flag(flags, i):
+			return false
+	return true
+
+
+static func _romp_set(
+	romp: PackedByteArray, tp_w: int, tp_h: int, ix: int, iy: int, kind: int = ROMP_SINGLE
+) -> void:
+	if ix < 0 or iy < 0 or ix >= tp_w - 1 or iy >= tp_h - 1:
+		return
+	var i := iy * tp_w + ix
+	if i >= 0 and i < romp.size():
+		# 宽坡覆盖单脊标记
+		romp[i] = maxi(int(romp[i]), kind)
+
+
+static func romp_kind_at(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> int:
+	var i00 := iy * tp_w + ix
+	if i00 < 0 or i00 >= romp.size():
+		return ROMP_NONE
+	return int(romp[i00])
 
 
 static func should_leave_gap(
@@ -157,46 +549,108 @@ static func should_leave_gap(
 	iy: int,
 	romp: PackedByteArray = PackedByteArray()
 ) -> bool:
-	# 数据推演方案：romp 不挖洞（铺 A→B 地面甲板）；仅直崖挖洞。
-	# 斜坡入口始终保留地面。
+	var kind := romp_kind_at(romp, tp_w, ix, iy)
+	if kind == ROMP_WIDE:
+		# 相邻双脊：铺连续甲板（宽度≥2），不挖成多个 U
+		return false
+	if kind == ROMP_SINGLE:
+		# 单脊：甲板总开则铺面；否则挖洞留给 CliffTrans
+		return not RAMP_SURFACE_DECK_ENABLED
 	if is_ramp_entrance(layer_heights, flags, tp_w, ix, iy):
-		return false
-	var i00 := iy * tp_w + ix
-	if i00 < romp.size() and romp[i00] != 0:
-		return false
+		# 入口：宽坡相关时由邻格 wide 处理；单脊关甲板则挖洞
+		return not RAMP_SURFACE_DECK_ENABLED
 	return is_cliff_tile(layer_heights, tp_w, ix, iy)
 
 
-## 落在 2 格 ramp 条带内时，用两端 tilepoint 线性插值（侧视 A→B 斜线）。
-## 中间层在 W3E 里常为低台；直接用 heights 会出「平台+陡坎」。
+## 落在 ramp 条带内时，用两端 tilepoint 线性插值（侧视 A→B 斜线）。
+## 单脊线：仅条带内 1×2/2×1；宽坡外扩格按扩展域四角真实高度插值（填缝）。
+## 多 placement 重叠时优先条带内核（score 更低），避免邻条外扩抢采样。
 static func sample_ramp_plane_height(
 	heights: Array, placements: Array, tp_w: int, tp_h: int, tx: float, ty: float
 ) -> float:
+	var best_h := NAN
+	var best_score := INF
+	var best_dist := INF
 	for p in placements:
-		var ix: int = int(p.get("ix", 0))
-		var iy: int = int(p.get("iy", 0))
-		var axis := str(p.get("axis", "v"))
-		if axis == "v":
-			if tx < float(ix) or tx > float(ix + 1) or ty < float(iy) or ty > float(iy + 2):
-				continue
-			var t := (ty - float(iy)) / 2.0
-			var fx := tx - float(ix)
-			var h_sw := _tp_height(heights, tp_w, tp_h, ix, iy)
-			var h_se := _tp_height(heights, tp_w, tp_h, ix + 1, iy)
-			var h_nw := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
-			var h_ne := _tp_height(heights, tp_w, tp_h, ix + 1, iy + 2)
-			return lerpf(lerpf(h_sw, h_se, fx), lerpf(h_nw, h_ne, fx), t)
-		else:
-			if ty < float(iy) or ty > float(iy + 1) or tx < float(ix) or tx > float(ix + 2):
-				continue
-			var t2 := (tx - float(ix)) / 2.0
-			var fy := ty - float(iy)
-			var h_sw2 := _tp_height(heights, tp_w, tp_h, ix, iy)
-			var h_nw2 := _tp_height(heights, tp_w, tp_h, ix, iy + 1)
-			var h_se2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
-			var h_ne2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy + 1)
-			return lerpf(lerpf(h_sw2, h_nw2, fy), lerpf(h_se2, h_ne2, fy), t2)
-	return NAN
+		if bool(p.get("phantom", false)):
+			continue
+		var score := _ramp_hit_score(p, tp_w, tp_h, tx, ty)
+		if score >= INF:
+			continue
+		var h := _sample_one_ramp_plane(heights, p, tp_w, tp_h, tx, ty)
+		if is_nan(h):
+			continue
+		var dist := _ramp_center_dist2(p, tx, ty)
+		if (
+			score < best_score - 0.0001
+			or (absf(score - best_score) <= 0.0001 and dist < best_dist - 0.0001)
+		):
+			best_score = score
+			best_dist = dist
+			best_h = h
+	return best_h
+
+
+static func _ramp_center_dist2(p: Dictionary, tx: float, ty: float) -> float:
+	var ix: int = int(p.get("ix", 0))
+	var iy: int = int(p.get("iy", 0))
+	var cx: float
+	var cy: float
+	if str(p.get("axis", "v")) == "v":
+		cx = float(ix) + 0.5
+		cy = float(iy) + 1.0
+	else:
+		cx = float(ix) + 1.0
+		cy = float(iy) + 0.5
+	var dx := tx - cx
+	var dy := ty - cy
+	return dx * dx + dy * dy
+
+
+## 0=条带内核；INF=未命中。（外侧不再外扩甲板域）
+static func _ramp_hit_score(
+	p: Dictionary, _tp_w: int, _tp_h: int, tx: float, ty: float
+) -> float:
+	var ix: int = int(p.get("ix", 0))
+	var iy: int = int(p.get("iy", 0))
+	if str(p.get("axis", "v")) == "v":
+		if ty < float(iy) or ty > float(iy + 2):
+			return INF
+		if tx >= float(ix) and tx <= float(ix + 1):
+			return 0.0
+		return INF
+	if tx < float(ix) or tx > float(ix + 2):
+		return INF
+	if ty >= float(iy) and ty <= float(iy + 1):
+		return 0.0
+	return INF
+
+
+static func _sample_one_ramp_plane(
+	heights: Array, p: Dictionary, tp_w: int, tp_h: int, tx: float, ty: float
+) -> float:
+	var ix: int = int(p.get("ix", 0))
+	var iy: int = int(p.get("iy", 0))
+	var axis := str(p.get("axis", "v"))
+	if axis == "v":
+		if tx < float(ix) or tx > float(ix + 1) or ty < float(iy) or ty > float(iy + 2):
+			return NAN
+		var t := (ty - float(iy)) / 2.0
+		var fx := clampf(tx - float(ix), 0.0, 1.0)
+		var h_sw := _tp_height(heights, tp_w, tp_h, ix, iy)
+		var h_se := _tp_height(heights, tp_w, tp_h, ix + 1, iy)
+		var h_nw := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
+		var h_ne := _tp_height(heights, tp_w, tp_h, ix + 1, iy + 2)
+		return lerpf(lerpf(h_sw, h_se, fx), lerpf(h_nw, h_ne, fx), t)
+	if ty < float(iy) or ty > float(iy + 1) or tx < float(ix) or tx > float(ix + 2):
+		return NAN
+	var t2 := (tx - float(ix)) / 2.0
+	var fy := clampf(ty - float(iy), 0.0, 1.0)
+	var h_sw2 := _tp_height(heights, tp_w, tp_h, ix, iy)
+	var h_nw2 := _tp_height(heights, tp_w, tp_h, ix, iy + 1)
+	var h_se2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
+	var h_ne2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy + 1)
+	return lerpf(lerpf(h_sw2, h_nw2, fy), lerpf(h_se2, h_ne2, fy), t2)
 
 
 static func _tp_height(heights: Array, tp_w: int, tp_h: int, ix: int, iy: int) -> float:
@@ -215,7 +669,10 @@ static func cliff_tag_at(layer_heights: Array, width: int, ix: int, iy: int) -> 
 	return slices[0]
 
 
-## 直崖可能高于 2 层：按 A/B/C 模型叠放多段，避免层差>2 时无 GLB 留下缝隙。
+## 直崖 TAG 选型（BL,TL,TR,BR → 相对 base 的 A/B/C）。
+## 对齐 HiveWE / WE：跨度 ≤2 时只放一条完整变体（含 AABC「底两边、顶一边」等）。
+## 跨度 >2（旧图/异常）：每次剥一段满 C 高（+2），再收尾剩余 ≤2 的一段。
+## 切勿对跨度≤2 再按 min_up 叠段——AABC 会错误再叠 AAAB，导致碎裂重影。
 ## 返回 [{ tag, base_layer }, ...]，tag 字母仅 A–C。
 static func cliff_slices_at(layer_heights: Array, width: int, ix: int, iy: int) -> Array:
 	if not is_cliff_tile(layer_heights, width, ix, iy):
@@ -233,25 +690,36 @@ static func cliff_slices_at(layer_heights: Array, width: int, ix: int, iy: int) 
 	var out: Array = []
 	var base := lo
 	while base < hi:
-		var rbl := clampi(bl - base, 0, 2)
-		var rtl := clampi(tl - base, 0, 2)
-		var rtr := clampi(tr - base, 0, 2)
-		var rbr := clampi(br - base, 0, 2)
-		var tag := (
-			String.chr(65 + rbl)
-			+ String.chr(65 + rtl)
-			+ String.chr(65 + rtr)
-			+ String.chr(65 + rbr)
-		)
+		var raw_bl := bl - base
+		var raw_tl := tl - base
+		var raw_tr := tr - base
+		var raw_br := br - base
+		var raw_hi := maxi(maxi(raw_bl, raw_br), maxi(raw_tl, raw_tr))
+		# 本段已能被单个 A/B/C 模型表达 → 收尾，禁止再叠
+		if raw_hi <= 2:
+			var tag_exact := _cliff_tag_from_rels(raw_bl, raw_tl, raw_tr, raw_br)
+			if tag_exact != "AAAA":
+				out.append({"tag": tag_exact, "base_layer": base})
+			break
+		var rbl := clampi(raw_bl, 0, 2)
+		var rtl := clampi(raw_tl, 0, 2)
+		var rtr := clampi(raw_tr, 0, 2)
+		var rbr := clampi(raw_br, 0, 2)
+		var tag := _cliff_tag_from_rels(rbl, rtl, rtr, rbr)
 		if tag != "AAAA":
 			out.append({"tag": tag, "base_layer": base})
-		# 推进：取本层「高出」的最小相对高度（至少 1），避免每层重复贴墙
-		var min_up := 3
-		for r in [rbl, rtl, rtr, rbr]:
-			if r > 0:
-				min_up = mini(min_up, r)
-		base += maxi(min_up, 1)
+		# 剥掉一段满 C（相对 +2）；剩余高度下一轮再表达
+		base += 2
 	return out
+
+
+static func _cliff_tag_from_rels(rbl: int, rtl: int, rtr: int, rbr: int) -> String:
+	return (
+		String.chr(65 + clampi(rbl, 0, 2))
+		+ String.chr(65 + clampi(rtl, 0, 2))
+		+ String.chr(65 + clampi(rtr, 0, 2))
+		+ String.chr(65 + clampi(rbr, 0, 2))
+	)
 
 
 static func _vertical_ramp_base(layers: Array, tp_w: int, ix: int, iy: int) -> int:
@@ -381,7 +849,22 @@ static func clamp_variation(model_dir: String, tag: String, variation: int) -> i
 	var table: Dictionary = CITY_CLIFF_VAR_MAX if model_dir == "CityCliffs" else CLIFF_VAR_MAX
 	if not table.has(tag):
 		return 0
-	return mini(variation, int(table[tag]))
+	return mini(maxi(variation, 0), int(table[tag]))
+
+
+## 直崖变体：优先用存盘值；存盘为 0 时用格点哈希打散（避免新建图整墙同一模）。
+static func pick_cliff_variation(
+	model_dir: String, tag: String, stored: int, ix: int, iy: int
+) -> int:
+	var table: Dictionary = CITY_CLIFF_VAR_MAX if model_dir == "CityCliffs" else CLIFF_VAR_MAX
+	var max_v: int = int(table.get(tag, 0))
+	if max_v <= 0:
+		return 0
+	if stored > 0:
+		return mini(stored, max_v)
+	# stored==0：可能是「未刷变体」；用稳定哈希在 0..max_v 间打散
+	var h: int = absi((ix * 73856093) ^ (iy * 19349663) ^ tag.hash())
+	return h % (max_v + 1)
 
 
 static func glb_path(model_dir: String, tag: String, variation: int) -> String:
@@ -406,7 +889,10 @@ static func resolve_glb(model_dir: String, tag: String, variation: int) -> Strin
 
 
 ## 斜坡入口：底层角点最终高度 +64（0.5 层），让地面形成缓坡。
+## 甲板关闭时不改高度（避免邻面被抬高；视觉交给 CliffTrans）。
 static func apply_ramp_entrance_heights(heights: Array, layers: Array, flags: Array, tp_w: int, tp_h: int) -> Array:
+	if not RAMP_SURFACE_DECK_ENABLED:
+		return heights
 	if heights.is_empty() or layers.is_empty() or flags.is_empty():
 		return heights
 	var out := heights.duplicate()

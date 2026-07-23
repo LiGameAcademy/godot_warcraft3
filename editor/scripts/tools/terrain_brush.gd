@@ -5,6 +5,8 @@ extends Node3D
 signal tile_hovered(tile: Vector2i) ## 实为顶点坐标 (ix, iy)
 signal painted
 signal rebuild_requested
+## 斜坡笔刷反馈（成功/拒绝原因），供状态栏
+signal ramp_feedback(message: String)
 
 const REBUILD_INTERVAL_MS := 80
 ## 略抬高，避免与地面 z-fight（Godot 单位）
@@ -248,18 +250,29 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 
 	var painted_any := false
 	var cliff_any := false
-	for p in _brush_offsets():
-		var ix: int = vert.x + p.x
-		var iy: int = vert.y + p.y
-		if apply_texture and bool(document.paint_corner(ix, iy)):
-			painted_any = true
-		if apply_cliff and bool(
-			document.paint_cliff_corner(
-				ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
-			)
-		):
+
+	# M1：斜坡按条带搜索，只取光标顶点（不受笔刷半径扩成乱旗）
+	if apply_cliff and cliff_tool_id == "Ramp":
+		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y))
+		var msg: String = str(document.last_ramp_message)
+		if not msg.is_empty():
+			ramp_feedback.emit(msg)
+		if ramp_changed:
 			painted_any = true
 			cliff_any = true
+	else:
+		for p in _brush_offsets():
+			var ix: int = vert.x + p.x
+			var iy: int = vert.y + p.y
+			if apply_texture and bool(document.paint_corner(ix, iy)):
+				painted_any = true
+			if apply_cliff and bool(
+				document.paint_cliff_corner(
+					ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
+				)
+			):
+				painted_any = true
+				cliff_any = true
 	if painted_any:
 		_dirty_paint = true
 		if cliff_any:
@@ -280,7 +293,11 @@ func _request_rebuild(force: bool) -> void:
 func _pick_vertex(screen_pos: Vector2) -> Vector2i:
 	if document == null or bool(document.is_empty()) or camera == null:
 		return INVALID_VERT
-	var hit: Vector3 = _raycast_ground(screen_pos)
+	# 悬崖格地面挖洞，物理射线会穿过洞打到后方地面 → 预览偏移。
+	# 始终对高度场求交（含悬崖顶），与 WE 一致。
+	var hit: Vector3 = _raycast_heightfield(screen_pos)
+	if hit == Vector3.INF:
+		hit = _raycast_ground(screen_pos)
 	if hit == Vector3.INF:
 		hit = _ray_plane_fallback(screen_pos)
 	if hit == Vector3.INF:
@@ -290,6 +307,54 @@ func _pick_vertex(screen_pos: Vector2) -> Vector2i:
 	if vert.x < 0 or vert.y < 0 or vert.x >= tp.x or vert.y >= tp.y:
 		return INVALID_VERT
 	return vert
+
+
+## 沿视线与 heightfield（含层高）求交；悬崖挖洞处仍可命中台顶。
+func _raycast_heightfield(screen_pos: Vector2) -> Vector3:
+	var from: Vector3 = camera.project_ray_origin(screen_pos)
+	var dir: Vector3 = camera.project_ray_normal(screen_pos)
+	if dir.length_squared() < 1e-12:
+		return Vector3.INF
+	dir = dir.normalized()
+	var t_lo := -1.0
+	var t_hi := -1.0
+	var t_prev := 0.25
+	var prev_above := _godot_point_above_hf(from + dir * t_prev)
+	var t_max := 4000.0
+	var steps := 64
+	for i in range(1, steps + 1):
+		var t: float = 0.25 + (t_max - 0.25) * float(i) / float(steps)
+		var above: bool = _godot_point_above_hf(from + dir * t)
+		if above != prev_above:
+			t_lo = t_prev
+			t_hi = t
+			break
+		t_prev = t
+		prev_above = above
+	if t_lo < 0.0:
+		return Vector3.INF
+	for _k in range(18):
+		var tm: float = (t_lo + t_hi) * 0.5
+		if _godot_point_above_hf(from + dir * tm):
+			t_lo = tm
+		else:
+			t_hi = tm
+	return from + dir * t_hi
+
+
+func _godot_point_above_hf(p: Vector3) -> bool:
+	return p.y >= _heightfield_y_at_godot(p) - 0.0001
+
+
+func _heightfield_y_at_godot(p: Vector3) -> float:
+	var ws: float = Wc3Coords.WORLD_SCALE
+	var center: Vector2 = document.center_offset()
+	var ts: float = document.tile_size()
+	if ts <= 0.0:
+		return 0.0
+	var fx: float = (p.x / ws - center.x) / ts
+	var fy: float = (-p.z / ws - center.y) / ts
+	return float(document.sample_height_at_xy(fx, fy)) * ws
 
 
 func _hide_hover_preview() -> void:
@@ -308,8 +373,11 @@ func _update_hover_preview(vert: Vector2i) -> void:
 		return
 	var fill: ArrayMesh
 	var edge: ArrayMesh
-	if brush_shape == 0:
-		# 圆形：格点并集预览（size=2 为十字，非光滑圆）
+	# 斜坡：只标当前悬停顶点（点哪刷哪）；蓝菱形调试层另显示整列旗
+	if apply_cliff and cliff_tool_id == "Ramp":
+		fill = _make_vertex_fill_mesh(vert.x, vert.y)
+		edge = _make_vertex_edge_mesh(vert.x, vert.y)
+	elif brush_shape == 0:
 		fill = _make_offsets_fill_mesh(vert.x, vert.y)
 		edge = _make_offsets_edge_mesh(vert.x, vert.y)
 	else:
@@ -331,6 +399,90 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	_hover_mesh.visible = true
 	_edge_mesh.mesh = edge
 	_edge_mesh.visible = true
+
+
+## 以 tilepoint 为中心的 1×1 预览（西南角 = vert-0.5），对齐顶点拾取。
+func _make_vertex_fill_mesh(ix: int, iy: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var bl := _tp_to_godot(float(ix) - 0.5, float(iy) - 0.5)
+	var br := _tp_to_godot(float(ix) + 0.5, float(iy) - 0.5)
+	var tl := _tp_to_godot(float(ix) - 0.5, float(iy) + 0.5)
+	var tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
+	_add_tri(st, bl, br, tr)
+	_add_tri(st, bl, tr, tl)
+	return st.commit()
+
+
+func _make_vertex_edge_mesh(ix: int, iy: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var bl := _tp_to_godot(float(ix) - 0.5, float(iy) - 0.5)
+	var br := _tp_to_godot(float(ix) + 0.5, float(iy) - 0.5)
+	var tl := _tp_to_godot(float(ix) - 0.5, float(iy) + 0.5)
+	var tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
+	_add_line(st, bl, br)
+	_add_line(st, br, tr)
+	_add_line(st, tr, tl)
+	_add_line(st, tl, bl)
+	return st.commit()
+
+
+## 斜坡预览：将落 FLAG_RAMP 的 3 个顶点小框（对齐蓝菱形，不盖崖面格）。
+func _ramp_flag_vertices(strip: Dictionary) -> Array:
+	var sx: int = int(strip.get("sx", 0))
+	var sy: int = int(strip.get("sy", 0))
+	var axis := str(strip.get("axis", "v"))
+	var out: Array = []
+	if axis == "v":
+		var col: int = sx if bool(strip.get("ramp_left", true)) else sx + 1
+		for yy in range(sy, sy + 3):
+			out.append(Vector2i(col, yy))
+	else:
+		var row: int = sy if bool(strip.get("ramp_bottom", true)) else sy + 1
+		for xx in range(sx, sx + 3):
+			out.append(Vector2i(xx, row))
+	return out
+
+
+func _make_ramp_flag_verts_fill_mesh(strip: Dictionary) -> ArrayMesh:
+	var verts: Array = _ramp_flag_vertices(strip)
+	if verts.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var half := 0.28
+	for v in verts:
+		var ix: int = int(v.x)
+		var iy: int = int(v.y)
+		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
+		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
+		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
+		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		_add_tri(st, bl, br, tr)
+		_add_tri(st, bl, tr, tl)
+	return st.commit()
+
+
+func _make_ramp_flag_verts_edge_mesh(strip: Dictionary) -> ArrayMesh:
+	var verts: Array = _ramp_flag_vertices(strip)
+	if verts.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var half := 0.28
+	for v in verts:
+		var ix: int = int(v.x)
+		var iy: int = int(v.y)
+		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
+		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
+		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
+		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		_add_line(st, bl, br)
+		_add_line(st, br, tr)
+		_add_line(st, tr, tl)
+		_add_line(st, tl, bl)
+	return st.commit()
 
 
 ## 笔刷外接方框四角（方形预览）。

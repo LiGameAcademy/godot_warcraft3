@@ -1,11 +1,9 @@
 class_name Wc3CliffBuilder
 extends RefCounted
-## 扫描 heightfield，生成悬崖 (Cliffs) 实例。
+## 扫描 heightfield，生成悬崖 (Cliffs) 与斜坡过渡 (CliffTrans) 实例。
 ##
-## 斜坡策略（数据推演，不再放 CliffTrans GLB）：
-##   - romp 占用格由地面层铺 A→B 平面甲板（贴图走地表 autotile）
-##   - 直崖仍放 Cliffs 模型
-## CliffTrans 模型轴向与 GLB 转换纠缠已多次失败；可走面用高度场两端插值更稳。
+## M3：单脊侧缝靠 CliffTrans；romp 格跳过直崖。
+## 斜坡可走甲板由 RAMP_SURFACE_DECK_ENABLED 控制（当前关闭，先看模型收口）。
 
 
 static func collect_instances(
@@ -32,7 +30,7 @@ static func collect_instances(
 	if ramp_data.is_empty():
 		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
 	var romp: PackedByteArray = ramp_data["romp"]
-	var ramp_n: int = (ramp_data.get("placements", []) as Array).size()
+	var ramp_placements: Array = ramp_data.get("placements", []) as Array
 
 	var buckets: Dictionary = {}
 	var placed_cliffs := 0
@@ -40,8 +38,38 @@ static func collect_instances(
 	var missing := 0
 	var missing_logged: Dictionary = {}
 
-	# 不放置 CliffTrans：斜坡可走面改由地面 A→B 甲板承担
-	print("Cliffs: CliffTrans skipped — ramp decks from heightfield (n=%d)" % ramp_n)
+	# CliffTrans：
+	# - 单脊：主条 + 幻影（两侧收口）
+	# - 宽坡：外侧侧脊（幻影，或连续旗列的 side_ridge）；跳过旧式双主条中间 U
+	for p in ramp_placements:
+		var is_wide: bool = bool(p.get("wide", false))
+		var is_phantom: bool = bool(p.get("phantom", false))
+		var is_side: bool = bool(p.get("side_ridge", false))
+		if is_wide and not is_phantom and not is_side:
+			continue
+		var ix: int = int(p.get("ix", 0))
+		var iy: int = int(p.get("iy", 0))
+		var tag: String = str(p.get("tag", ""))
+		var base_layer: int = int(p.get("base_layer", 2))
+		var tex_idx: int = int(p.get("tex_idx", 0))
+		var ramp_dir: String = str(p.get("ramp_dir", "CliffTrans"))
+		if tag.is_empty():
+			continue
+		var glb := Wc3CliffTiles.resolve_glb(ramp_dir, tag, 0)
+		if glb.is_empty():
+			if not missing_logged.has("R:" + tag):
+				missing_logged["R:" + tag] = true
+				push_warning("斜坡模型缺失: %s/%s" % [ramp_dir, tag])
+			missing += 1
+			continue
+		var xf := _ramp_instance_transform(ix, iy, base_layer, center, tile_size)
+		_bucket_add(buckets, glb, tex_idx, xf)
+		placed_ramps += 1
+
+	print(
+		"Cliffs: CliffTrans placed=%d missing=%d deck=%s"
+		% [placed_ramps, missing, str(Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED)]
+	)
 
 	# 直崖（跳过 romp / 斜坡入口）
 	for iy in range(tp_h - 1):
@@ -66,7 +94,9 @@ static func collect_instances(
 				if tag.is_empty() or tag == "AAAA":
 					continue
 				var base_layer: int = int(slice.get("base_layer", 2))
-				var var_clamped := Wc3CliffTiles.clamp_variation(model_dir, tag, variation)
+				var var_clamped := Wc3CliffTiles.pick_cliff_variation(
+					model_dir, tag, variation, ix, iy
+				)
 				var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, var_clamped)
 				if glb.is_empty():
 					if not missing_logged.has("C:" + tag):
@@ -146,3 +176,24 @@ static func _instance_transform(
 	var wc3_z := float(base_layer - 2) * 128.0
 	var origin := Wc3Coords.wc3_xy_to_godot(wc3_x, wc3_y, wc3_z)
 	return Transform3D(Basis.from_scale(Vector3.ONE * Wc3Coords.WORLD_SCALE), origin)
+
+
+## HiveWE CliffTrans：锚 (ix, iy)；GLB 空间再旋 90° 对齐 TAG 朝向。
+static func _ramp_instance_transform(
+	ix: int,
+	iy: int,
+	base_layer: int,
+	center: Vector2,
+	tile_size: float
+) -> Transform3D:
+	var wc3_x := float(ix) * tile_size + center.x
+	var wc3_y := float(iy) * tile_size + center.y
+	var wc3_z := float(base_layer - 2) * 128.0
+	var origin := Wc3Coords.wc3_xy_to_godot(wc3_x, wc3_y, wc3_z)
+	var rot := Basis(
+		Vector3(0, 0, 1),
+		Vector3(0, 1, 0),
+		Vector3(-1, 0, 0)
+	)
+	var basis := rot.scaled(Vector3.ONE * Wc3Coords.WORLD_SCALE)
+	return Transform3D(basis, origin)
