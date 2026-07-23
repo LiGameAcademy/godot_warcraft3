@@ -574,8 +574,54 @@ func _ramp_strip_score(
 		var dyh := float(iy) - float(ramp_row)
 		flag_focus = dxh * dxh + dyh * dyh
 	var neighbor_gap := _ramp_neighbor_gap(resolved, flags, tp_w)
-	# 仅 gap==1 视为「续刷宽坡」；勿用原始 gap 排序（会让远处同向竖条抢走 U 凹槽北缘横条）
-	var extends_pen := 0.0 if neighbor_gap <= 1.01 else 1.0
+	# 仅当光标落在「紧邻已有脊的那一列/行」时才优先续宽；
+	# 点在隔一列（想刷独立 U 凹）时不得抢成连续 111|111。
+	var extends_pen := 1.0
+	if neighbor_gap <= 1.01:
+		if axis == "v":
+			var ramp_col: int = sx if bool(resolved.get("ramp_left", true)) else sx + 1
+			var touches_existing := (
+				(ramp_col > 0 and _vert_col_all(flags, tp_w, ramp_col - 1, sy, true))
+				or _vert_col_all(flags, tp_w, ramp_col + 1, sy, true)
+			)
+			if touches_existing and ix == ramp_col:
+				extends_pen = 0.0
+		else:
+			var ramp_row: int = sy if bool(resolved.get("ramp_bottom", true)) else sy + 1
+			var touches_h := (
+				(ramp_row > 0 and _horiz_row_all(flags, tp_w, sx, ramp_row - 1, true))
+				or _horiz_row_all(flags, tp_w, sx, ramp_row + 1, true)
+			)
+			if touches_h and iy == ramp_row:
+				extends_pen = 0.0
+	# U 凹中间列/行：光标落在两脊之间的空列 → 强制优先同向条带填实；
+	# 否则崖沿横 face 会抢走落点并清掉竖脊旗。
+	if axis == "v" and ix > 0:
+		if (
+			not _vert_col_all(flags, tp_w, ix, sy, true)
+			and _vert_col_all(flags, tp_w, ix - 1, sy, true)
+			and _vert_col_all(flags, tp_w, ix + 1, sy, true)
+			and (ix == sx or ix == sx + 1)
+		):
+			var fill_left := ix == sx
+			if bool(resolved.get("ramp_left", true)) == fill_left:
+				already = 0.0
+				on_strip = 0.0
+				extends_pen = 0.0
+				flag_focus = 0.0
+	elif axis == "h" and iy > 0:
+		if (
+			not _horiz_row_all(flags, tp_w, sx, iy, true)
+			and _horiz_row_all(flags, tp_w, sx, iy - 1, true)
+			and _horiz_row_all(flags, tp_w, sx, iy + 1, true)
+			and (iy == sy or iy == sy + 1)
+		):
+			var fill_bottom := iy == sy
+			if bool(resolved.get("ramp_bottom", true)) == fill_bottom:
+				already = 0.0
+				on_strip = 0.0
+				extends_pen = 0.0
+				flag_focus = 0.0
 	# 同分时略优先 slope（沿坡续刷）；但光标若在 face 高侧崖壁上则拉近该 face
 	var kind_pen := 0.0 if str(spec.get("kind", "")) == "slope" else 0.01
 	if str(spec.get("kind", "")) == "face":
@@ -874,19 +920,29 @@ func _apply_ramp_strip(
 	return changed
 
 
-## 竖条旗向：WE 宽2 = 相邻列都有菱形。邻脊同向延伸，禁止隔列 111|000|111。
+## 西/东邻已是脊时：仅当本条左列/右列是「紧邻续刷」才同向延伸。
+## 隔列点击（中间空列）保持 prefer，以便刷出独立 U 凹（111|000|111）。
+## 左右皆脊且本左列空：填 U 凹中间 → 连续宽坡（须先于「右脊已存在」分支）。
 func _choose_vertical_ramp_left(
 	sx: int, sy: int, flags: Array, tp_w: int, prefer_left: bool
 ) -> bool:
 	if _vert_col_all(flags, tp_w, sx, sy, true) and _vert_col_all(flags, tp_w, sx + 1, sy, false):
 		return true
+	# U 凹中间：左列空、左右邻列皆脊 → 填左列（不可走「右脊已在」返回 false）
+	if (
+		sx > 0
+		and not _vert_col_all(flags, tp_w, sx, sy, true)
+		and _vert_col_all(flags, tp_w, sx - 1, sy, true)
+		and _vert_col_all(flags, tp_w, sx + 1, sy, true)
+	):
+		return true
 	if _vert_col_all(flags, tp_w, sx + 1, sy, true) and _vert_col_all(flags, tp_w, sx, sy, false):
 		return false
-	# 西邻已是脊 → 本条 L，在 sx 落旗（与西邻相邻）
-	if sx > 0 and _vert_col_all(flags, tp_w, sx - 1, sy, true):
+	# 西邻已是脊且本左列尚未成脊 → 续宽（111|111）
+	if sx > 0 and _vert_col_all(flags, tp_w, sx - 1, sy, true) and not _vert_col_all(flags, tp_w, sx, sy, true):
 		return true
-	# 东邻已是脊 → 本条 L，在 sx 落旗并保留东邻
-	if _vert_col_all(flags, tp_w, sx + 1, sy, true):
+	# 东邻已是脊且本左列空 → 向西续宽（填左列）
+	if _vert_col_all(flags, tp_w, sx + 1, sy, true) and not _vert_col_all(flags, tp_w, sx, sy, true):
 		return true
 	return prefer_left
 
@@ -896,13 +952,18 @@ func _choose_horizontal_ramp_bottom(
 ) -> bool:
 	if _horiz_row_all(flags, tp_w, sx, sy, true) and _horiz_row_all(flags, tp_w, sx, sy + 1, false):
 		return true
+	if (
+		sy > 0
+		and not _horiz_row_all(flags, tp_w, sx, sy, true)
+		and _horiz_row_all(flags, tp_w, sx, sy - 1, true)
+		and _horiz_row_all(flags, tp_w, sx, sy + 1, true)
+	):
+		return true
 	if _horiz_row_all(flags, tp_w, sx, sy + 1, true) and _horiz_row_all(flags, tp_w, sx, sy, false):
 		return false
-	# 南邻已是脊 → 本条 bottom（相邻）
-	if sy > 0 and _horiz_row_all(flags, tp_w, sx, sy - 1, true):
+	if sy > 0 and _horiz_row_all(flags, tp_w, sx, sy - 1, true) and not _horiz_row_all(flags, tp_w, sx, sy, true):
 		return true
-	# 北邻已是脊 → 本条 bottom，保留北邻
-	if _horiz_row_all(flags, tp_w, sx, sy + 1, true):
+	if _horiz_row_all(flags, tp_w, sx, sy + 1, true) and not _horiz_row_all(flags, tp_w, sx, sy, true):
 		return true
 	return prefer_bottom
 

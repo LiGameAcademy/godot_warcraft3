@@ -47,6 +47,8 @@ static func collect_instances(
 		var is_side: bool = bool(p.get("side_ridge", false))
 		if is_wide and not is_phantom and not is_side:
 			continue
+		if bool(p.get("wide_core", false)):
+			continue
 		var ix: int = int(p.get("ix", 0))
 		var iy: int = int(p.get("iy", 0))
 		var tag: String = str(p.get("tag", ""))

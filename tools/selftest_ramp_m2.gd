@@ -153,11 +153,15 @@ func _case_wide_deck_continuity() -> int:
 					wide_gap += 1
 				if k == Wc3CliffTiles.ROMP_SINGLE and g:
 					single_gap += 1
-		if wide_cells < 4:
+		if wide_cells < 2:
 			push_error("adjacent should produce wide romp cells, got %d" % wide_cells)
 			return 1
 		if wide_gap != 0:
 			push_error("wide cells must not gap (continuous width-2), got %d" % wide_gap)
+			return 1
+		# 外侧侧脊格应挖洞（SINGLE gap）
+		if single_gap < 1:
+			push_error("outer side-ridge should gap (SINGLE), got single_gap=%d" % single_gap)
 			return 1
 
 	var tiles := Wc3TerrainTiles.new()

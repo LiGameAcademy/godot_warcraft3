@@ -29,6 +29,8 @@ func _run() -> void:
 	failed += _case_horizontal_face_ok()
 	failed += _case_adjacent_strips_lr_pattern()
 	failed += _case_second_ridge_picks_adjacent_not_skip()
+	failed += _case_skip_column_makes_separate_u()
+	failed += _case_fill_u_middle_makes_width3()
 	failed += _case_reject_high_side_carve()
 	failed += _case_reject_delta2()
 	failed += _case_reject_corner_pillar()
@@ -214,6 +216,12 @@ func _case_adjacent_strips_lr_pattern() -> int:
 	if wide_cells < 2:
 		push_error("width-2 should have wide romp cells, got %d (romp=%d)" % [wide_cells, romp_n])
 		return 1
+	# 外侧侧脊格应为 SINGLE（挖洞），不得标 WIDE
+	# 第一脊 L 在 sx0，邻脊在 sx0+1 → 内部 WIDE 在 sx0；外侧条约在 sx0+1
+	var outer_k: int = Wc3CliffTiles.romp_kind_at(romp, tp_w, sx0 + 1, sy0)
+	if outer_k == Wc3CliffTiles.ROMP_WIDE and c2 == 0:
+		push_error("outer side-ridge cell must not be ROMP_WIDE")
+		return 1
 	print("OK adjacent 111|111 wide_cells=%d romp=%d" % [wide_cells, romp_n])
 	return 0
 
@@ -250,6 +258,77 @@ func _case_second_ridge_picks_adjacent_not_skip() -> int:
 		push_error("must not skip to col+2 (width-3 pattern), got %d flags there" % next_ramp)
 		return 1
 	print("OK adjacent col ramp, no skip to +2")
+	return 0
+
+
+## 跳过中间列点第三列 → 独立 U 凹（111|000|111），不得自动填满中间成连续宽坡。
+func _case_skip_column_makes_separate_u() -> int:
+	print("=== case: skip middle col → separate U (not fill continuous) ===")
+	var doc = _new_doc()
+	_set_layer_rect(doc, 8, 11, 16, 11, 3)
+	var r0: Dictionary = doc.try_paint_ramp_at(10, 10)
+	if not bool(r0.get("changed", false)):
+		push_error("first paint failed: %s" % str(r0))
+		return 1
+	var sx0: int = int(r0.get("sx", -1))
+	var sy0: int = int(r0.get("sy", 0))
+	# 隔一列点击（第三列菱形位）
+	var r1: Dictionary = doc.try_paint_ramp_at(sx0 + 2, 10)
+	if not bool(r1.get("changed", false)):
+		push_error("skip-col paint should change, got %s" % str(r1))
+		return 1
+	var flags: Array = doc.hf["flagsPacked"]
+	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var c0 := 0
+	var c1 := 0
+	var c2 := 0
+	for yy in range(sy0, sy0 + 3):
+		if (int(flags[yy * tp_w + sx0]) & DocScript.FLAG_RAMP) != 0:
+			c0 += 1
+		if (int(flags[yy * tp_w + sx0 + 1]) & DocScript.FLAG_RAMP) != 0:
+			c1 += 1
+		if (int(flags[yy * tp_w + sx0 + 2]) & DocScript.FLAG_RAMP) != 0:
+			c2 += 1
+	if c0 != 3 or c1 != 0 or c2 != 3:
+		push_error("expected 111|000|111 separate U, got %d|%d|%d" % [c0, c1, c2])
+		return 1
+	print("OK skip-col → separate U 111|000|111")
+	return 0
+
+
+## U 凹中间列补刷 → 三列连续 111|111|111（9 菱形），不得改成横 face 清旗。
+func _case_fill_u_middle_makes_width3() -> int:
+	print("=== case: fill U middle → width-3 continuous ===")
+	var doc = _new_doc()
+	_set_layer_rect(doc, 8, 11, 16, 11, 3)
+	var r0: Dictionary = doc.try_paint_ramp_at(10, 10)
+	if not bool(r0.get("changed", false)):
+		push_error("first paint failed")
+		return 1
+	var sx0: int = int(r0.get("sx", -1))
+	var sy0: int = int(r0.get("sy", 0))
+	var r1: Dictionary = doc.try_paint_ramp_at(sx0 + 2, 10)
+	if not bool(r1.get("changed", false)):
+		push_error("skip-col paint failed")
+		return 1
+	var r2: Dictionary = doc.try_paint_ramp_at(sx0 + 1, 10)
+	if not bool(r2.get("changed", false)):
+		push_error("fill-middle should change, got %s" % str(r2))
+		return 1
+	if str(r2.get("axis", "")) != "v":
+		push_error("fill-middle must stay vertical, got axis=%s" % str(r2.get("axis", "")))
+		return 1
+	var flags: Array = doc.hf["flagsPacked"]
+	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var counts := [0, 0, 0]
+	for col in range(3):
+		for yy in range(sy0, sy0 + 3):
+			if (int(flags[yy * tp_w + sx0 + col]) & DocScript.FLAG_RAMP) != 0:
+				counts[col] += 1
+	if counts[0] != 3 or counts[1] != 3 or counts[2] != 3:
+		push_error("expected 111|111|111 (9 diamonds), got %d|%d|%d" % [counts[0], counts[1], counts[2]])
+		return 1
+	print("OK fill-U-middle → 111|111|111")
 	return 0
 
 

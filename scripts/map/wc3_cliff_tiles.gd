@@ -435,7 +435,11 @@ static func _expand_romp_for_wide_ramps(
 			placements[i] = p
 
 
-## 连续两列都有竖脊旗（111|111）→ 宽坡；补 romp 与 wide（TAG 可能只在外侧条）。
+## 连续脊旗列/行 → 宽坡：
+## - 仅「脊列之间」的格标 WIDE（铺甲板）
+## - 外侧侧脊格强制 SINGLE（挖洞给 CliffTrans）；宽坡 expand 可能已把外侧升成 WIDE，此处降回
+## - 顶/底接缝格不标 WIDE：背部应显示直崖模型，禁止铺地形甲板（否则天窗/多余网格）
+## - 追加 wide_core 供坡面采样（覆盖整段宽度，避免内部点采不到平面而凹进 R5 min）
 static func _expand_romp_for_adjacent_flag_cols(
 	romp: PackedByteArray,
 	placements: Array,
@@ -443,63 +447,111 @@ static func _expand_romp_for_adjacent_flag_cols(
 	tp_w: int,
 	tp_h: int
 ) -> void:
-	var bands: Dictionary = {} # "iy" → true for vertical strip bands
+	var bands: Dictionary = {}
 	for p in placements:
 		if str(p.get("axis", "")) != "v":
 			continue
 		bands[int(p.get("iy", 0))] = true
 	for iy in bands.keys():
 		var sy: int = int(iy)
-		for col in range(tp_w - 1):
+		var col := 0
+		while col < tp_w:
 			if not _flag_col_all_ramp(flags, tp_w, col, sy):
+				col += 1
 				continue
-			if not _flag_col_all_ramp(flags, tp_w, col + 1, sy):
-				continue
-			_romp_set(romp, tp_w, tp_h, col, sy, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, col, sy + 1, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, col + 1, sy, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, col + 1, sy + 1, ROMP_WIDE)
-			# 触及该带的 placement 标 wide
-			for i in range(placements.size()):
-				var p2: Dictionary = placements[i]
-				if str(p2.get("axis", "")) != "v":
-					continue
-				if int(p2.get("iy", 0)) != sy:
-					continue
-				var pix: int = int(p2.get("ix", 0))
-				if pix == col or pix == col + 1 or pix == col - 1:
-					p2["wide"] = true
-					# 连续旗列时 TAG 只在外侧条 → 作为侧脊放置 CliffTrans
-					p2["side_ridge"] = true
-					placements[i] = p2
-	# 横：连续两行脊旗
+			var c_lo := col
+			while col + 1 < tp_w and _flag_col_all_ramp(flags, tp_w, col + 1, sy):
+				col += 1
+			var c_hi := col
+			if c_hi > c_lo:
+				# 内部格：脊列之间（仅条带 2 格深，不含顶/底）
+				for ix in range(c_lo, c_hi):
+					_romp_set(romp, tp_w, tp_h, ix, sy, ROMP_WIDE)
+					_romp_set(romp, tp_w, tp_h, ix, sy + 1, ROMP_WIDE)
+				# 外侧侧脊：强制 SINGLE 挖洞（覆盖 wide_ramps 误升的 WIDE）
+				for side_x in [c_lo - 1, c_hi]:
+					_romp_force(romp, tp_w, tp_h, side_x, sy, ROMP_SINGLE)
+					_romp_force(romp, tp_w, tp_h, side_x, sy + 1, ROMP_SINGLE)
+				placements.append({
+					"ix": c_lo,
+					"iy": sy,
+					"axis": "v",
+					"wide": true,
+					"wide_core": true,
+					"span_x": c_hi - c_lo,
+					"tag": "",
+					"base_layer": 2,
+					"tex_idx": 0,
+					"ramp_dir": "CliffTrans",
+					"has_glb": false,
+				})
+				for i in range(placements.size()):
+					var p2: Dictionary = placements[i]
+					if bool(p2.get("wide_core", false)):
+						continue
+					if str(p2.get("axis", "")) != "v":
+						continue
+					if int(p2.get("iy", 0)) != sy:
+						continue
+					var pix: int = int(p2.get("ix", 0))
+					# 外侧 TAG 条（侧脊）
+					if pix == c_lo - 1 or pix == c_hi:
+						p2["wide"] = true
+						p2["side_ridge"] = true
+						placements[i] = p2
+			col += 1
 	var h_bands: Dictionary = {}
 	for p3 in placements:
 		if str(p3.get("axis", "")) != "h":
 			continue
+		if bool(p3.get("wide_core", false)):
+			continue
 		h_bands[int(p3.get("ix", 0))] = true
 	for ix0 in h_bands.keys():
 		var sx0: int = int(ix0)
-		for row in range(tp_h - 1):
+		var row := 0
+		while row < tp_h:
 			if not _flag_row_all_ramp(flags, tp_w, sx0, row):
+				row += 1
 				continue
-			if not _flag_row_all_ramp(flags, tp_w, sx0, row + 1):
-				continue
-			_romp_set(romp, tp_w, tp_h, sx0, row, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, sx0 + 1, row, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, sx0, row + 1, ROMP_WIDE)
-			_romp_set(romp, tp_w, tp_h, sx0 + 1, row + 1, ROMP_WIDE)
-			for j in range(placements.size()):
-				var p4: Dictionary = placements[j]
-				if str(p4.get("axis", "")) != "h":
-					continue
-				if int(p4.get("ix", 0)) != sx0:
-					continue
-				var piy: int = int(p4.get("iy", 0))
-				if piy == row or piy == row + 1 or piy == row - 1:
-					p4["wide"] = true
-					p4["side_ridge"] = true
-					placements[j] = p4
+			var r_lo := row
+			while row + 1 < tp_h and _flag_row_all_ramp(flags, tp_w, sx0, row + 1):
+				row += 1
+			var r_hi := row
+			if r_hi > r_lo:
+				for iy2 in range(r_lo, r_hi):
+					_romp_set(romp, tp_w, tp_h, sx0, iy2, ROMP_WIDE)
+					_romp_set(romp, tp_w, tp_h, sx0 + 1, iy2, ROMP_WIDE)
+				for side_y in [r_lo - 1, r_hi]:
+					_romp_force(romp, tp_w, tp_h, sx0, side_y, ROMP_SINGLE)
+					_romp_force(romp, tp_w, tp_h, sx0 + 1, side_y, ROMP_SINGLE)
+				placements.append({
+					"ix": sx0,
+					"iy": r_lo,
+					"axis": "h",
+					"wide": true,
+					"wide_core": true,
+					"span_y": r_hi - r_lo,
+					"tag": "",
+					"base_layer": 2,
+					"tex_idx": 0,
+					"ramp_dir": "CliffTrans",
+					"has_glb": false,
+				})
+				for j in range(placements.size()):
+					var p4: Dictionary = placements[j]
+					if bool(p4.get("wide_core", false)):
+						continue
+					if str(p4.get("axis", "")) != "h":
+						continue
+					if int(p4.get("ix", 0)) != sx0:
+						continue
+					var piy: int = int(p4.get("iy", 0))
+					if piy == r_lo - 1 or piy == r_hi:
+						p4["wide"] = true
+						p4["side_ridge"] = true
+						placements[j] = p4
+			row += 1
 
 
 static func _flag_col_all_ramp(flags: Array, tp_w: int, ix: int, sy: int) -> bool:
@@ -533,6 +585,17 @@ static func _romp_set(
 		romp[i] = maxi(int(romp[i]), kind)
 
 
+## 强制写入 romp（可降级 WIDE→SINGLE），用于侧脊挖洞。
+static func _romp_force(
+	romp: PackedByteArray, tp_w: int, tp_h: int, ix: int, iy: int, kind: int
+) -> void:
+	if ix < 0 or iy < 0 or ix >= tp_w - 1 or iy >= tp_h - 1:
+		return
+	var i := iy * tp_w + ix
+	if i >= 0 and i < romp.size():
+		romp[i] = kind
+
+
 static func romp_kind_at(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> int:
 	var i00 := iy * tp_w + ix
 	if i00 < 0 or i00 >= romp.size():
@@ -554,12 +617,30 @@ static func should_leave_gap(
 		# 相邻双脊：铺连续甲板（宽度≥2），不挖成多个 U
 		return false
 	if kind == ROMP_SINGLE:
-		# 单脊：甲板总开则铺面；否则挖洞留给 CliffTrans
+		# 单脊 / 侧脊：甲板总开则铺面；否则挖洞留给 CliffTrans
 		return not RAMP_SURFACE_DECK_ENABLED
 	if is_ramp_entrance(layer_heights, flags, tp_w, ix, iy):
-		# 入口：宽坡相关时由邻格 wide 处理；单脊关甲板则挖洞
 		return not RAMP_SURFACE_DECK_ENABLED
+	# 直崖格挖洞。勿因「邻接 WIDE」而留高度图片——那会在崖墙另一侧拉出多余三角面
 	return is_cliff_tile(layer_heights, tp_w, ix, iy)
+
+
+static func _cell_touches_romp(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> bool:
+	return _cell_touches_romp_kind(romp, tp_w, ix, iy, -1)
+
+
+## want_kind < 0 时：任意非 NONE；否则须匹配指定 kind（如 ROMP_WIDE）。
+static func _cell_touches_romp_kind(
+	romp: PackedByteArray, tp_w: int, ix: int, iy: int, want_kind: int
+) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var k := romp_kind_at(romp, tp_w, ix + dx, iy + dy)
+			if k == ROMP_NONE:
+				continue
+			if want_kind < 0 or k == want_kind:
+				return true
+	return false
 
 
 ## 落在 ramp 条带内时，用两端 tilepoint 线性插值（侧视 A→B 斜线）。
@@ -574,6 +655,7 @@ static func sample_ramp_plane_height(
 	for p in placements:
 		if bool(p.get("phantom", false)):
 			continue
+		# wide_core 优先（负分），覆盖整段宽坡内部
 		var score := _ramp_hit_score(p, tp_w, tp_h, tx, ty)
 		if score >= INF:
 			continue
@@ -597,22 +679,38 @@ static func _ramp_center_dist2(p: Dictionary, tx: float, ty: float) -> float:
 	var cx: float
 	var cy: float
 	if str(p.get("axis", "v")) == "v":
-		cx = float(ix) + 0.5
+		var span_x: float = float(p.get("span_x", 1))
+		cx = float(ix) + span_x * 0.5
 		cy = float(iy) + 1.0
 	else:
+		var span_y: float = float(p.get("span_y", 1))
 		cx = float(ix) + 1.0
-		cy = float(iy) + 0.5
+		cy = float(iy) + span_y * 0.5
 	var dx := tx - cx
 	var dy := ty - cy
 	return dx * dx + dy * dy
 
 
-## 0=条带内核；INF=未命中。（外侧不再外扩甲板域）
+## 0=条带内核；-1=wide_core（优先）；INF=未命中。
 static func _ramp_hit_score(
 	p: Dictionary, _tp_w: int, _tp_h: int, tx: float, ty: float
 ) -> float:
 	var ix: int = int(p.get("ix", 0))
 	var iy: int = int(p.get("iy", 0))
+	if bool(p.get("wide_core", false)):
+		if str(p.get("axis", "v")) == "v":
+			var span_x: int = int(p.get("span_x", 1))
+			if ty < float(iy) or ty > float(iy + 2):
+				return INF
+			if tx >= float(ix) and tx <= float(ix + span_x):
+				return -1.0
+			return INF
+		var span_y: int = int(p.get("span_y", 1))
+		if tx < float(ix) or tx > float(ix + 2):
+			return INF
+		if ty >= float(iy) and ty <= float(iy + span_y):
+			return -1.0
+		return INF
 	if str(p.get("axis", "v")) == "v":
 		if ty < float(iy) or ty > float(iy + 2):
 			return INF
@@ -632,25 +730,47 @@ static func _sample_one_ramp_plane(
 	var ix: int = int(p.get("ix", 0))
 	var iy: int = int(p.get("iy", 0))
 	var axis := str(p.get("axis", "v"))
+	if bool(p.get("wide_core", false)):
+		if axis == "v":
+			var span_x: int = int(p.get("span_x", 1))
+			if tx < float(ix) or tx > float(ix + span_x) or ty < float(iy) or ty > float(iy + 2):
+				return NAN
+			var t := clampf((ty - float(iy)) / 2.0, 0.0, 1.0)
+			var fx := 0.0 if span_x <= 0 else clampf((tx - float(ix)) / float(span_x), 0.0, 1.0)
+			var h_sw := _tp_height(heights, tp_w, tp_h, ix, iy)
+			var h_se := _tp_height(heights, tp_w, tp_h, ix + span_x, iy)
+			var h_nw := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
+			var h_ne := _tp_height(heights, tp_w, tp_h, ix + span_x, iy + 2)
+			return lerpf(lerpf(h_sw, h_se, fx), lerpf(h_nw, h_ne, fx), t)
+		var span_y: int = int(p.get("span_y", 1))
+		if ty < float(iy) or ty > float(iy + span_y) or tx < float(ix) or tx > float(ix + 2):
+			return NAN
+		var th := clampf((tx - float(ix)) / 2.0, 0.0, 1.0)
+		var fy := 0.0 if span_y <= 0 else clampf((ty - float(iy)) / float(span_y), 0.0, 1.0)
+		var h_sw2 := _tp_height(heights, tp_w, tp_h, ix, iy)
+		var h_nw2 := _tp_height(heights, tp_w, tp_h, ix, iy + span_y)
+		var h_se2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
+		var h_ne2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy + span_y)
+		return lerpf(lerpf(h_sw2, h_se2, th), lerpf(h_nw2, h_ne2, th), fy)
 	if axis == "v":
 		if tx < float(ix) or tx > float(ix + 1) or ty < float(iy) or ty > float(iy + 2):
 			return NAN
-		var t := (ty - float(iy)) / 2.0
-		var fx := clampf(tx - float(ix), 0.0, 1.0)
-		var h_sw := _tp_height(heights, tp_w, tp_h, ix, iy)
-		var h_se := _tp_height(heights, tp_w, tp_h, ix + 1, iy)
-		var h_nw := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
-		var h_ne := _tp_height(heights, tp_w, tp_h, ix + 1, iy + 2)
-		return lerpf(lerpf(h_sw, h_se, fx), lerpf(h_nw, h_ne, fx), t)
+		var tv := (ty - float(iy)) / 2.0
+		var fxv := clampf(tx - float(ix), 0.0, 1.0)
+		var h_swv := _tp_height(heights, tp_w, tp_h, ix, iy)
+		var h_sev := _tp_height(heights, tp_w, tp_h, ix + 1, iy)
+		var h_nwv := _tp_height(heights, tp_w, tp_h, ix, iy + 2)
+		var h_nev := _tp_height(heights, tp_w, tp_h, ix + 1, iy + 2)
+		return lerpf(lerpf(h_swv, h_sev, fxv), lerpf(h_nwv, h_nev, fxv), tv)
 	if ty < float(iy) or ty > float(iy + 1) or tx < float(ix) or tx > float(ix + 2):
 		return NAN
-	var t2 := (tx - float(ix)) / 2.0
-	var fy := clampf(ty - float(iy), 0.0, 1.0)
-	var h_sw2 := _tp_height(heights, tp_w, tp_h, ix, iy)
-	var h_nw2 := _tp_height(heights, tp_w, tp_h, ix, iy + 1)
-	var h_se2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
-	var h_ne2 := _tp_height(heights, tp_w, tp_h, ix + 2, iy + 1)
-	return lerpf(lerpf(h_sw2, h_nw2, fy), lerpf(h_se2, h_ne2, fy), t2)
+	var th := (tx - float(ix)) / 2.0
+	var fyh := clampf(ty - float(iy), 0.0, 1.0)
+	var h_swh := _tp_height(heights, tp_w, tp_h, ix, iy)
+	var h_nwh := _tp_height(heights, tp_w, tp_h, ix, iy + 1)
+	var h_seh := _tp_height(heights, tp_w, tp_h, ix + 2, iy)
+	var h_neh := _tp_height(heights, tp_w, tp_h, ix + 2, iy + 1)
+	return lerpf(lerpf(h_swh, h_nwh, fyh), lerpf(h_seh, h_neh, fyh), th)
 
 
 static func _tp_height(heights: Array, tp_w: int, tp_h: int, ix: int, iy: int) -> float:

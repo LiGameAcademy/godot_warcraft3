@@ -36,6 +36,9 @@ func _run() -> void:
 		if bool(p.get("phantom", false)):
 			skipped_phantom += 1
 			continue
+		# wide_core / side_ridge 仅服务甲板采样与侧脊，不按单条四角验收
+		if bool(p.get("wide_core", false)) or bool(p.get("side_ridge", false)):
+			continue
 		var ix: int = int(p["ix"])
 		var iy: int = int(p["iy"])
 		var axis := str(p.get("axis", "v"))
@@ -47,7 +50,13 @@ func _run() -> void:
 		else:
 			mx = float(ix) + 1.0
 			my = float(iy) + 0.5
-		var mid = Wc3CliffTiles.sample_ramp_plane_height(heights, placements, tp_w, tp_h, mx, my)
+		# 采样时排除 wide_core，只验本条平面（避免宽坡核心抢采样导致越界）
+		var local_only: Array = []
+		for q in placements:
+			if bool(q.get("wide_core", false)):
+				continue
+			local_only.append(q)
+		var mid = Wc3CliffTiles.sample_ramp_plane_height(heights, local_only, tp_w, tp_h, mx, my)
 		if is_nan(mid):
 			fail += 1
 			continue
