@@ -89,7 +89,7 @@ func _run() -> void:
 		else:
 			ok += 1
 
-	# 甲板开：全部 romp 不挖洞；关：仅 ROMP_SINGLE 挖洞，ROMP_WIDE 不挖
+	# 甲板开：全部 romp 不挖洞；关：仅 ROMP_SIDE 挖洞，SINGLE/WIDE 不挖
 	var gap_romp := 0
 	var romp_n := 0
 	var wide_n := 0
@@ -107,8 +107,10 @@ func _run() -> void:
 				wide_n += 1
 				if g:
 					wide_gap += 1
-			elif g:
+			elif kind == Wc3CliffTiles.ROMP_SIDE and g:
 				gap_romp += 1
+			elif g and kind != Wc3CliffTiles.ROMP_SIDE:
+				gap_romp += 1  # unexpected
 
 	var gap_ok := wide_gap == 0 and (
 		gap_romp == 0

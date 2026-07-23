@@ -15,6 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var failed := 0
 	failed += _case_single_spine_clifftrans_no_deck()
+	failed += _case_ramp_foot_gets_ground_mesh()
 	failed += _case_adjacent_ground_not_warped()
 	failed += _case_width3_crest_foot_decked()
 	if failed > 0:
@@ -75,6 +76,7 @@ func _case_single_spine_clifftrans_no_deck() -> int:
 
 	var romp_n := 0
 	var gap_n := 0
+	var floor_n := 0
 	var tp_w: int = int(meta["width"])
 	var tp_h: int = int(meta["height"])
 	for iy in range(tp_h - 1):
@@ -83,52 +85,106 @@ func _case_single_spine_clifftrans_no_deck() -> int:
 			if i00 >= romp.size() or romp[i00] == 0:
 				continue
 			romp_n += 1
-			if Wc3CliffTiles.should_leave_gap(
+			var g := Wc3CliffTiles.should_leave_gap(
 				meta["layer_heights"], meta["flags"], tp_w, tp_h, ix, iy, romp
-			):
+			)
+			if g:
 				gap_n += 1
+			else:
+				floor_n += 1
 	if romp_n < 2:
 		push_error("expected romp>=2, got %d" % romp_n)
 		return 1
-	if gap_n != romp_n:
-		push_error("deck-off: all romp should gap, gap=%d romp=%d" % [gap_n, romp_n])
+	# 条带底格铺地板；上格挖洞给 CliffTrans
+	if floor_n < 1:
+		push_error("strip floor cells should not gap, floor=%d" % floor_n)
+		return 1
+	if gap_n < 1:
+		push_error("strip upper cells should still gap, gap=%d" % gap_n)
 		return 1
 
 	var built: Dictionary = Wc3TerrainAutotile.build_ground_mesh(
 		doc.hf, PackedByteArray(), tiles, meta, romp, placements
 	)
-	if int(built.get("ramp_deck_count", -1)) != 0:
-		push_error("deck-off: ramp_deck_count should be 0, got %d" % int(built.get("ramp_deck_count", -1)))
-		return 1
-
+	# 底格会出地面（非 ramp_deck 计数也可，只要不挖洞）
 	var cliffs: Dictionary = Wc3CliffBuilder.collect_instances(doc.hf, tiles, meta, ramp_data)
 	var placed_ramps: int = int(cliffs.get("placed_ramps", 0))
-	if placed_ramps < 1:
-		push_error("expected CliffTrans placed>=1, got %d missing=%s" % [
+	# 单脊必须主条+幻影两侧都有 CliffTrans（缺一侧即开天窗）
+	if placed_ramps < 2:
+		push_error("single-spine needs CliffTrans on BOTH sides, got %d missing=%s" % [
 			placed_ramps, str(cliffs.get("missing", 0))
 		])
 		return 1
-	# romp 格不应再放直崖；侧脊幻影格也须标 romp（否则 CliffTrans 下叠直崖接缝）
-	var phantom_romp_miss := 0
+	var phantom_n := 0
+	var main_n := 0
 	for p in placements:
-		if not bool(p.get("phantom", false)):
+		if str(p.get("axis", "")) != "v" and str(p.get("axis", "")) != "h":
 			continue
-		var pix: int = int(p.get("ix", 0))
-		var piy: int = int(p.get("iy", 0))
-		if str(p.get("axis", "")) == "v":
-			if Wc3CliffTiles.romp_kind_at(romp, tp_w, pix, piy) == 0:
-				phantom_romp_miss += 1
-			if Wc3CliffTiles.romp_kind_at(romp, tp_w, pix, piy + 1) == 0:
-				phantom_romp_miss += 1
+		if bool(p.get("wide_core", false)):
+			continue
+		if bool(p.get("phantom", false)):
+			phantom_n += 1
 		else:
-			if Wc3CliffTiles.romp_kind_at(romp, tp_w, pix, piy) == 0:
-				phantom_romp_miss += 1
-			if Wc3CliffTiles.romp_kind_at(romp, tp_w, pix + 1, piy) == 0:
-				phantom_romp_miss += 1
-	if phantom_romp_miss > 0:
-		push_error("phantom side-ridge cells must be in romp (suppress Cliffs), miss=%d" % phantom_romp_miss)
+			main_n += 1
+	if phantom_n < 1 or main_n < 1:
+		push_error("single-spine needs main+phantom pair, main=%d phantom=%d" % [main_n, phantom_n])
 		return 1
-	print("OK CliffTrans=%d romp_gap=%d deck=0 phantoms_in_romp" % [placed_ramps, gap_n])
+	# 背后顶格：非 romp，留给直崖 Cliffs
+	var sx0: int = int(r.get("sx", 10))
+	var sy0: int = int(r.get("sy", 9))
+	var crest_k := Wc3CliffTiles.romp_kind_at(romp, tp_w, sx0, sy0 + 2)
+	if crest_k != Wc3CliffTiles.ROMP_NONE:
+		push_error("crest must be free for Cliffs, romp=%d" % crest_k)
+		return 1
+	print("OK CliffTrans=%d floor=%d gap=%d crest_free" % [placed_ramps, floor_n, gap_n])
+	return 0
+
+
+## 斜坡脚底：条带底格 + 外侧一格不挖洞；背后顶格仍挖洞给 Cliffs。
+func _case_ramp_foot_gets_ground_mesh() -> int:
+	print("=== case: ramp foot strip-floor + outside → ground mesh ===")
+	var doc = _new_doc()
+	_set_layer_rect(doc, 8, 11, 16, 11, 3)
+	var r0: Dictionary = doc.try_paint_ramp_at(10, 10)
+	var r1: Dictionary = doc.try_paint_ramp_at(11, 10)
+	if not bool(r0.get("ok", false)) or not bool(r1.get("ok", false)):
+		push_error("paint failed")
+		return 1
+	var sx0: int = int(r0.get("sx", 10))
+	var sy0: int = int(r0.get("sy", 9))
+	var tiles := Wc3TerrainTiles.new()
+	tiles.load_default()
+	var meta := HeightfieldMeshBuilder.read_heightfield_meta(doc.hf)
+	var ramp_data: Dictionary = Wc3CliffTiles.collect_ramp_placements(doc.hf, meta, tiles)
+	var romp: PackedByteArray = ramp_data.get("romp", PackedByteArray())
+	var tp_w: int = int(meta["width"])
+	# 宽2：侧脊底格 SIDE 必须铺地（红框缝就是它）
+	var side_floor_ix := sx0 + 1
+	if Wc3CliffTiles.romp_kind_at(romp, tp_w, side_floor_ix, sy0) == Wc3CliffTiles.ROMP_SIDE:
+		if Wc3CliffTiles.should_leave_gap(
+			meta["layer_heights"], meta["flags"], tp_w, int(meta["height"]), side_floor_ix, sy0, romp
+		):
+			push_error("SIDE strip floor @%d,%d must not gap" % [side_floor_ix, sy0])
+			return 1
+	# 侧脊上格仍挖洞
+	if Wc3CliffTiles.romp_kind_at(romp, tp_w, side_floor_ix, sy0 + 1) == Wc3CliffTiles.ROMP_SIDE:
+		if not Wc3CliffTiles.should_leave_gap(
+			meta["layer_heights"], meta["flags"], tp_w, int(meta["height"]), side_floor_ix, sy0 + 1, romp
+		):
+			push_error("SIDE upper @%d,%d must still gap for CliffTrans" % [side_floor_ix, sy0 + 1])
+			return 1
+	# 外侧脚底
+	if sy0 > 0:
+		var foot_iy := sy0 - 1
+		if not Wc3CliffTiles.is_ramp_foot_cell(romp, tp_w, sx0, foot_iy):
+			push_error("expected outside foot @%d,%d" % [sx0, foot_iy])
+			return 1
+		if Wc3CliffTiles.should_leave_gap(
+			meta["layer_heights"], meta["flags"], tp_w, int(meta["height"]), sx0, foot_iy, romp
+		):
+			push_error("outside foot must not gap")
+			return 1
+	print("OK strip-floor + outside foot meshed, upper SIDE still gapped")
 	return 0
 
 
@@ -196,16 +252,22 @@ func _case_adjacent_ground_not_warped() -> int:
 	if crest_kind == Wc3CliffTiles.ROMP_WIDE:
 		push_error("crest must not be WIDE (back should be cliff models)")
 		return 1
-	# 侧脊格必须 SINGLE 挖洞
+	# 侧脊上格仍须挖洞；底格铺地板（不要要求底格也 gap）
 	var side_kind := Wc3CliffTiles.romp_kind_at(romp, tp_w, sx0 + 1, sy0)
-	# width-2: c_hi = sx0+1
-	if side_kind != Wc3CliffTiles.ROMP_SINGLE:
-		push_error("side ridge cell must be SINGLE, got %d" % side_kind)
+	if side_kind != Wc3CliffTiles.ROMP_SIDE:
+		push_error("side ridge cell must be SIDE, got %d" % side_kind)
 		return 1
-	if not Wc3CliffTiles.should_leave_gap(
+	var side_upper := Wc3CliffTiles.romp_kind_at(romp, tp_w, sx0 + 1, sy0 + 1)
+	if side_upper == Wc3CliffTiles.ROMP_SIDE:
+		if not Wc3CliffTiles.should_leave_gap(
+			meta["layer_heights"], meta["flags"], tp_w, int(meta["height"]), sx0 + 1, sy0 + 1, romp
+		):
+			push_error("side ridge upper must gap for CliffTrans")
+			return 1
+	if Wc3CliffTiles.should_leave_gap(
 		meta["layer_heights"], meta["flags"], tp_w, int(meta["height"]), sx0 + 1, sy0, romp
 	):
-		push_error("side ridge must gap for CliffTrans")
+		push_error("side ridge floor must not gap (dirt at foot)")
 		return 1
 	print("OK width-2 deck=%d wide_cells=%d side_clifftrans=%d mid_ok" % [
 		int(built.get("ramp_deck_count", 0)), wide_cells, placed_ramps
@@ -238,19 +300,17 @@ func _case_width3_crest_foot_decked() -> int:
 		if k != Wc3CliffTiles.ROMP_WIDE:
 			push_error("width-3 internal must be WIDE @%d,%d kind=%d" % [sx0 + dx, sy0, k])
 			return 1
-	# 侧脊 SINGLE
+	# 侧脊 SIDE
 	for side_x in [sx0 - 1, sx0 + 2]:
 		if side_x < 0:
 			continue
 		var sk := Wc3CliffTiles.romp_kind_at(romp, tp_w, side_x, sy0)
-		if sk != Wc3CliffTiles.ROMP_SINGLE and sk != Wc3CliffTiles.ROMP_NONE:
-			# 有侧脊 TAG 时应为 SINGLE
-			if sk == Wc3CliffTiles.ROMP_WIDE:
-				push_error("side must not stay WIDE @%d,%d" % [side_x, sy0])
-				return 1
+		if sk == Wc3CliffTiles.ROMP_WIDE or sk == Wc3CliffTiles.ROMP_SINGLE:
+			push_error("side must be SIDE not deck @%d,%d kind=%d" % [side_x, sy0, sk])
+			return 1
 	var right_side := Wc3CliffTiles.romp_kind_at(romp, tp_w, sx0 + 2, sy0)
-	if right_side != Wc3CliffTiles.ROMP_SINGLE:
-		push_error("right side ridge must be SINGLE, got %d" % right_side)
+	if right_side != Wc3CliffTiles.ROMP_SIDE:
+		push_error("right side ridge must be SIDE, got %d" % right_side)
 		return 1
 	# 顶格禁止 WIDE
 	for dx2 in [0, 1, 2]:

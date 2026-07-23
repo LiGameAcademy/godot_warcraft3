@@ -7,14 +7,15 @@ extends RefCounted
 
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
-## M3 调试开关：false = 单脊不铺甲板（挖洞 + CliffTrans）。
+## M3 调试开关：false = 单脊主条挖洞 + CliffTrans（两侧收口）。
 ## 双脊 wide 格仍铺甲板（宽度≥2 连续坡，对照 WE）。
 const RAMP_SURFACE_DECK_ENABLED := false
 
-## romp 字节：0 无；1 单脊（藏面）；2 宽坡甲板。
+## romp 字节：0 无；1 单脊主条（挖洞+CliffTrans）；2 宽坡甲板；3 宽坡外侧侧脊（挖洞+CliffTrans）。
 const ROMP_NONE := 0
 const ROMP_SINGLE := 1
 const ROMP_WIDE := 2
+const ROMP_SIDE := 3
 
 const CLIFF_VAR_MAX := {
 	"AAAB": 1, "AAAC": 1, "AABA": 1, "AABB": 2, "AABC": 0, "AACA": 1, "AACB": 0, "AACC": 1,
@@ -373,8 +374,8 @@ static func _apply_romp_from_placements(
 	for p in placements:
 		var ix: int = int(p.get("ix", 0))
 		var iy: int = int(p.get("iy", 0))
-		# 主条与幻影（侧脊）格都标 romp，避免 CliffTrans 下仍叠直崖造成接缝
-		var kind: int = ROMP_SINGLE
+		# 主条 → SINGLE（铺高度图）；幻影侧脊 → SIDE（挖洞给 CliffTrans）
+		var kind: int = ROMP_SIDE if bool(p.get("phantom", false)) else ROMP_SINGLE
 		if str(p.get("axis", "")) == "v":
 			_romp_set(romp, tp_w, tp_h, ix, iy, kind)
 			_romp_set(romp, tp_w, tp_h, ix, iy + 1, kind)
@@ -468,10 +469,10 @@ static func _expand_romp_for_adjacent_flag_cols(
 				for ix in range(c_lo, c_hi):
 					_romp_set(romp, tp_w, tp_h, ix, sy, ROMP_WIDE)
 					_romp_set(romp, tp_w, tp_h, ix, sy + 1, ROMP_WIDE)
-				# 外侧侧脊：强制 SINGLE 挖洞（覆盖 wide_ramps 误升的 WIDE）
+				# 外侧侧脊：强制 SIDE 挖洞（覆盖 wide_ramps 误升的 WIDE；勿改成地形）
 				for side_x in [c_lo - 1, c_hi]:
-					_romp_force(romp, tp_w, tp_h, side_x, sy, ROMP_SINGLE)
-					_romp_force(romp, tp_w, tp_h, side_x, sy + 1, ROMP_SINGLE)
+					_romp_force(romp, tp_w, tp_h, side_x, sy, ROMP_SIDE)
+					_romp_force(romp, tp_w, tp_h, side_x, sy + 1, ROMP_SIDE)
 				placements.append({
 					"ix": c_lo,
 					"iy": sy,
@@ -523,8 +524,8 @@ static func _expand_romp_for_adjacent_flag_cols(
 					_romp_set(romp, tp_w, tp_h, sx0, iy2, ROMP_WIDE)
 					_romp_set(romp, tp_w, tp_h, sx0 + 1, iy2, ROMP_WIDE)
 				for side_y in [r_lo - 1, r_hi]:
-					_romp_force(romp, tp_w, tp_h, sx0, side_y, ROMP_SINGLE)
-					_romp_force(romp, tp_w, tp_h, sx0 + 1, side_y, ROMP_SINGLE)
+					_romp_force(romp, tp_w, tp_h, sx0, side_y, ROMP_SIDE)
+					_romp_force(romp, tp_w, tp_h, sx0 + 1, side_y, ROMP_SIDE)
 				placements.append({
 					"ix": sx0,
 					"iy": r_lo,
@@ -581,11 +582,17 @@ static func _romp_set(
 		return
 	var i := iy * tp_w + ix
 	if i >= 0 and i < romp.size():
-		# 宽坡覆盖单脊标记
-		romp[i] = maxi(int(romp[i]), kind)
+		var cur := int(romp[i])
+		# SIDE 不被主条 SINGLE 覆盖；WIDE 仍可盖过 SINGLE；不可盖 SIDE（侧脊优先）
+		if cur == ROMP_SIDE and kind != ROMP_SIDE:
+			return
+		if kind == ROMP_SIDE:
+			romp[i] = ROMP_SIDE
+			return
+		romp[i] = maxi(cur, kind)
 
 
-## 强制写入 romp（可降级 WIDE→SINGLE），用于侧脊挖洞。
+## 强制写入 romp（可降级），用于侧脊挖洞。
 static func _romp_force(
 	romp: PackedByteArray, tp_w: int, tp_h: int, ix: int, iy: int, kind: int
 ) -> void:
@@ -614,15 +621,51 @@ static func should_leave_gap(
 ) -> bool:
 	var kind := romp_kind_at(romp, tp_w, ix, iy)
 	if kind == ROMP_WIDE:
-		# 相邻双脊：铺连续甲板（宽度≥2），不挖成多个 U
+		# 宽坡内部：铺高度图甲板
 		return false
-	if kind == ROMP_SINGLE:
-		# 单脊 / 侧脊：甲板总开则铺面；否则挖洞留给 CliffTrans
+	if kind == ROMP_SINGLE or kind == ROMP_SIDE:
+		# 条带「最底下一格」铺泥土/草地；上格仍挖洞给 CliffTrans
+		# 竖坡底格：北有 romp、南无 romp；横坡左格：东有 romp、西无 romp
+		if _is_romp_strip_floor_cell(romp, tp_w, ix, iy):
+			return false
 		return not RAMP_SURFACE_DECK_ENABLED
+	# 斜坡脚底外侧一格：也不挖洞
+	if is_ramp_foot_cell(romp, tp_w, ix, iy):
+		return false
 	if is_ramp_entrance(layer_heights, flags, tp_w, ix, iy):
 		return not RAMP_SURFACE_DECK_ENABLED
-	# 直崖格挖洞。勿因「邻接 WIDE」而留高度图片——那会在崖墙另一侧拉出多余三角面
+	# 直崖格挖洞 → 背后用 Cliffs 收口
 	return is_cliff_tile(layer_heights, tp_w, ix, iy)
+
+
+## 斜坡脚底外侧：紧贴竖条带正南（或横条带正西）且自身不在 romp。
+static func is_ramp_foot_cell(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> bool:
+	if romp_kind_at(romp, tp_w, ix, iy) != ROMP_NONE:
+		return false
+	var n1 := romp_kind_at(romp, tp_w, ix, iy + 1)
+	var n2 := romp_kind_at(romp, tp_w, ix, iy + 2)
+	if n1 != ROMP_NONE and n2 != ROMP_NONE:
+		return true
+	var e1 := romp_kind_at(romp, tp_w, ix + 1, iy)
+	var e2 := romp_kind_at(romp, tp_w, ix + 2, iy)
+	if e1 != ROMP_NONE and e2 != ROMP_NONE:
+		return true
+	return false
+
+
+## romp 条带朝向低地的那一格（竖=南侧格，横=西侧格）→ 脚底地板。
+static func _is_romp_strip_floor_cell(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> bool:
+	var north := romp_kind_at(romp, tp_w, ix, iy + 1)
+	var south := ROMP_NONE if iy <= 0 else romp_kind_at(romp, tp_w, ix, iy - 1)
+	# 竖坡底格：北有 romp、南无
+	if north != ROMP_NONE and south == ROMP_NONE:
+		return true
+	var east := romp_kind_at(romp, tp_w, ix + 1, iy)
+	var west := ROMP_NONE if ix <= 0 else romp_kind_at(romp, tp_w, ix - 1, iy)
+	# 横坡左格：东有 romp、西无，且上下都不是竖条带（避免误伤竖坡上格）
+	if east != ROMP_NONE and west == ROMP_NONE and north == ROMP_NONE and south == ROMP_NONE:
+		return true
+	return false
 
 
 static func _cell_touches_romp(romp: PackedByteArray, tp_w: int, ix: int, iy: int) -> bool:

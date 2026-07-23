@@ -39,8 +39,8 @@ static func collect_instances(
 	var missing_logged: Dictionary = {}
 
 	# CliffTrans：
-	# - 单脊：主条 + 幻影（两侧收口）
-	# - 宽坡：外侧侧脊（幻影，或连续旗列的 side_ridge）；跳过旧式双主条中间 U
+	# - 单脊：主条 + 幻影（左右两侧各一块，缺一不可）
+	# - 宽坡：仅外侧侧脊（幻影 / side_ridge）；跳过宽坡内部主条
 	for p in ramp_placements:
 		var is_wide: bool = bool(p.get("wide", false))
 		var is_phantom: bool = bool(p.get("phantom", false))
@@ -73,11 +73,13 @@ static func collect_instances(
 		% [placed_ramps, missing, str(Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED)]
 	)
 
-	# 直崖（跳过 romp / 斜坡入口）
+	# 直崖（跳过 romp / 斜坡入口 / 斜坡脚底——脚底铺地面，不放崖模）
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
 			var i00 := iy * tp_w + ix
 			if i00 < romp.size() and romp[i00] != 0:
+				continue
+			if Wc3CliffTiles.is_ramp_foot_cell(romp, tp_w, ix, iy):
 				continue
 			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
 				continue

@@ -138,8 +138,8 @@ func _case_wide_deck_continuity() -> int:
 			push_error("deck-on: romp must not gap, got %d" % gap_n)
 			return 1
 	else:
-		# 关全局甲板时：宽坡格不挖洞；单脊格挖洞
-		var single_gap := 0
+		# 关全局甲板时：宽坡不挖洞；SINGLE/SIDE 挖洞
+		var ridge_gap := 0
 		var wide_gap := 0
 		for iy in range(tp_h - 1):
 			for ix in range(tp_w - 1):
@@ -151,17 +151,16 @@ func _case_wide_deck_continuity() -> int:
 				)
 				if k == Wc3CliffTiles.ROMP_WIDE and g:
 					wide_gap += 1
-				if k == Wc3CliffTiles.ROMP_SINGLE and g:
-					single_gap += 1
+				if (k == Wc3CliffTiles.ROMP_SINGLE or k == Wc3CliffTiles.ROMP_SIDE) and g:
+					ridge_gap += 1
 		if wide_cells < 2:
 			push_error("adjacent should produce wide romp cells, got %d" % wide_cells)
 			return 1
 		if wide_gap != 0:
 			push_error("wide cells must not gap (continuous width-2), got %d" % wide_gap)
 			return 1
-		# 外侧侧脊格应挖洞（SINGLE gap）
-		if single_gap < 1:
-			push_error("outer side-ridge should gap (SINGLE), got single_gap=%d" % single_gap)
+		if ridge_gap < 1:
+			push_error("outer side-ridge should gap, got ridge_gap=%d" % ridge_gap)
 			return 1
 
 	var tiles := Wc3TerrainTiles.new()
@@ -209,7 +208,9 @@ func _case_single_spine_not_wide_mesh() -> int:
 	var built: Dictionary = Wc3TerrainAutotile.build_ground_mesh(
 		doc.hf, PackedByteArray(), tiles, meta, romp, ramp_data.get("placements", [])
 	)
-	var expect_deck := 2 if Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED else 0
+	var expect_deck := 0
+	if Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED:
+		expect_deck = 4
 	if int(built.get("ramp_deck_count", 0)) != expect_deck:
 		push_error(
 			"single deck count should be %d, got %d"

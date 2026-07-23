@@ -128,7 +128,7 @@ func _case_vertical_face_ok() -> int:
 	if wide_n != 0:
 		push_error("single-spine must not be wide, got %d" % wide_n)
 		return 1
-	# 全部应为 ROMP_SINGLE（挖洞），不能升宽坡甲板
+	# 主条 SINGLE + 侧脊 SIDE，不能升宽坡甲板
 	var tp_h: int = int(doc.hf["tilepointHeight"])
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
