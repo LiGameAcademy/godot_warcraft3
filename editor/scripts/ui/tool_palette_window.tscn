@@ -28,6 +28,8 @@ oversampling_override = 1.0
 title = "WESTRING_TOOL_PALETTE"
 position = Vector2i(24, 47)
 size = Vector2i(268, 612)
+always_on_top = true
+unfocusable = true
 script = ExtResource("1_script")
 
 [node name="Margin" type="MarginContainer" parent="." unique_id=1508506489]

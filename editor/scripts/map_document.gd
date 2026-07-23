@@ -14,13 +14,30 @@ const DEFAULT_CLIFF := ["CIsn", "CIrb"]
 ## layerHeight=2 时 groundHeightRaw=0x2000 → 高度 0
 const FLAT_HEIGHT := 0.0
 const FLAT_LAYER := 2
+const LAYER_MIN := 0
+const LAYER_MAX := 14
+## 悬崖层差上限（WE / 官方模型仅 A/B/C）：相邻顶点最多差 2 层。
+## 再升高则把较低邻点抬到 high-2（叠蛋糕外扩）；再降低则把较高邻点压到 low+2。
+const MAX_CLIFF_ADJ_DELTA := 2
+## 悬崖层差 1 → WC3 高度 128（与 W3E / create_from_options 一致）
+const LAYER_HEIGHT_STEP := 128.0
+
+enum CliffPropagate {
+	RAISE_LOWER = 0, ## 升：抬低邻
+	LOWER_HIGHER = 1, ## 降：压高邻
+	BOTH = 2,
+}
+const WATER_SHALLOW_EXTRA := 48.0
+const WATER_DEEP_EXTRA := 128.0
 const FLAG_WATER := Wc3Coords.FLAG_WATER
+const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
 var hf: Dictionary = {}
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
+var brush_cliff_type: int = 0
 var _dirty: bool = false
 
 
@@ -80,6 +97,28 @@ func ensure_brush_index_valid() -> void:
 		brush_tile_index = 0
 		return
 	brush_tile_index = clampi(brush_tile_index, 0, n - 1)
+
+
+func ensure_cliff_type_valid() -> void:
+	var n: int = cliff_tilesets().size()
+	if n <= 0:
+		brush_cliff_type = 0
+		return
+	brush_cliff_type = clampi(brush_cliff_type, 0, n - 1)
+
+
+func layer_at(ix: int, iy: int) -> int:
+	if is_empty():
+		return FLAT_LAYER
+	var tp_w: int = int(hf["tilepointWidth"])
+	var tp_h: int = int(hf["tilepointHeight"])
+	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
+		return FLAT_LAYER
+	var layers: Array = hf.get("layerHeights", []) as Array
+	var i: int = iy * tp_w + ix
+	if i < 0 or i >= layers.size():
+		return FLAT_LAYER
+	return clampi(int(layers[i]), LAYER_MIN, LAYER_MAX)
 
 
 func brush_tile_id() -> String:
@@ -276,6 +315,179 @@ func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if changed_any:
 		mark_dirty()
 	return changed_any
+
+
+## 悬崖笔刷：按 WorldEditData 工具 id 改 layerHeights / heights / 水 / 斜坡 / 悬崖类型。
+## tool_id: "0".."4"（降两/降一/整平/升一/升两）| "ShallowWater" | "DeepWater" | "Ramp"
+## level_layer: 整平目标层；<0 时用当前顶点层（无效果）。
+func paint_cliff_corner(
+	ix: int,
+	iy: int,
+	tool_id: String,
+	cliff_type_idx: int = -1,
+	level_layer: int = -1
+) -> bool:
+	if is_empty():
+		return false
+	var tp_w: int = int(hf["tilepointWidth"])
+	var tp_h: int = int(hf["tilepointHeight"])
+	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
+		return false
+	var i: int = iy * tp_w + ix
+	var layers: Array = hf.get("layerHeights", []) as Array
+	var heights: Array = hf.get("heights", []) as Array
+	var water_h: Array = hf.get("waterHeights", []) as Array
+	var flags: Array = hf.get("flagsPacked", []) as Array
+	var cliff_tex: Array = hf.get("cliffTextures", []) as Array
+	var cliff_var: Array = hf.get("cliffVariations", []) as Array
+	if i < 0 or i >= layers.size() or i >= heights.size() or i >= flags.size():
+		return false
+
+	var ctype: int = cliff_type_idx if cliff_type_idx >= 0 else brush_cliff_type
+	var cts: Array = cliff_tilesets()
+	if not cts.is_empty():
+		ctype = clampi(ctype, 0, cts.size() - 1)
+
+	var changed_any := false
+	var propagate := -1
+	match tool_id:
+		"0":
+			changed_any = _apply_layer_delta(i, layers, heights, water_h, -2) or changed_any
+			propagate = CliffPropagate.LOWER_HIGHER
+		"1":
+			changed_any = _apply_layer_delta(i, layers, heights, water_h, -1) or changed_any
+			propagate = CliffPropagate.LOWER_HIGHER
+		"2":
+			var target: int = level_layer if level_layer >= 0 else int(layers[i])
+			changed_any = _set_layer(i, layers, heights, water_h, target) or changed_any
+			propagate = CliffPropagate.BOTH
+		"3":
+			changed_any = _apply_layer_delta(i, layers, heights, water_h, 1) or changed_any
+			propagate = CliffPropagate.RAISE_LOWER
+		"4":
+			changed_any = _apply_layer_delta(i, layers, heights, water_h, 2) or changed_any
+			propagate = CliffPropagate.RAISE_LOWER
+		"ShallowWater":
+			changed_any = _paint_water(i, heights, water_h, flags, WATER_SHALLOW_EXTRA) or changed_any
+		"DeepWater":
+			changed_any = _paint_water(i, heights, water_h, flags, WATER_DEEP_EXTRA) or changed_any
+		"Ramp":
+			var fl: int = int(flags[i])
+			var nf: int = fl | FLAG_RAMP
+			if nf != fl:
+				flags[i] = nf
+				changed_any = true
+		_:
+			return false
+
+	if changed_any and propagate >= 0:
+		changed_any = (
+			_propagate_cliff_adjacency(ix, iy, tp_w, tp_h, layers, heights, water_h, propagate)
+			or changed_any
+		)
+
+	# 悬崖工具落笔时同步悬崖类型到本顶点及可作 tile i00 的邻角
+	#（直崖模型按格子左下角 cliffTextures 取类型，只写笔刷点会导致草地崖读成泥土）
+	if not cts.is_empty():
+		for oy in range(-1, 1):
+			for ox in range(-1, 1):
+				var cx: int = ix + ox
+				var cy: int = iy + oy
+				if cx < 0 or cy < 0 or cx >= tp_w or cy >= tp_h:
+					continue
+				var ci: int = cy * tp_w + cx
+				if ci < cliff_tex.size() and int(cliff_tex[ci]) != ctype:
+					cliff_tex[ci] = ctype
+					changed_any = true
+					if ci < cliff_var.size():
+						cliff_var[ci] = randi() % 8
+
+	if changed_any:
+		mark_dirty()
+	return changed_any
+
+
+func _apply_layer_delta(
+	i: int, layers: Array, heights: Array, water_h: Array, delta: int
+) -> bool:
+	return _set_layer(i, layers, heights, water_h, int(layers[i]) + delta)
+
+
+## WE：相邻顶点层差不得超过 2。升崖时把过低邻点抬到 high-2（下层外扩成蛋糕台）；
+## 降崖时把过高邻点压到 low+2。从落笔点 BFS 扩散。
+func _propagate_cliff_adjacency(
+	ix: int,
+	iy: int,
+	tp_w: int,
+	tp_h: int,
+	layers: Array,
+	heights: Array,
+	water_h: Array,
+	mode: int
+) -> bool:
+	var queue: Array = [Vector2i(ix, iy)]
+	var any := false
+	var guard := 0
+	var guard_max: int = tp_w * tp_h * 8
+	var dirs: Array = [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)
+	]
+	while not queue.is_empty() and guard < guard_max:
+		guard += 1
+		var p: Vector2i = queue.pop_front()
+		var i: int = p.y * tp_w + p.x
+		if i < 0 or i >= layers.size():
+			continue
+		var lv: int = int(layers[i])
+		for d in dirs:
+			var nx: int = p.x + int(d.x)
+			var ny: int = p.y + int(d.y)
+			if nx < 0 or ny < 0 or nx >= tp_w or ny >= tp_h:
+				continue
+			var ni: int = ny * tp_w + nx
+			if ni < 0 or ni >= layers.size():
+				continue
+			var ln: int = int(layers[ni])
+			var did := false
+			if mode != CliffPropagate.LOWER_HIGHER and lv > ln + MAX_CLIFF_ADJ_DELTA:
+				did = _set_layer(ni, layers, heights, water_h, lv - MAX_CLIFF_ADJ_DELTA)
+			elif mode != CliffPropagate.RAISE_LOWER and ln > lv + MAX_CLIFF_ADJ_DELTA:
+				did = _set_layer(ni, layers, heights, water_h, lv + MAX_CLIFF_ADJ_DELTA)
+			if did:
+				any = true
+				queue.append(Vector2i(nx, ny))
+	return any
+
+
+func _set_layer(
+	i: int, layers: Array, heights: Array, water_h: Array, new_layer: int
+) -> bool:
+	var clamped: int = clampi(new_layer, LAYER_MIN, LAYER_MAX)
+	var old_layer: int = int(layers[i])
+	if clamped == old_layer:
+		return false
+	var dh: float = float(clamped - old_layer) * LAYER_HEIGHT_STEP
+	layers[i] = clamped
+	heights[i] = float(heights[i]) + dh
+	if i < water_h.size():
+		water_h[i] = float(water_h[i]) + dh
+	return true
+
+
+func _paint_water(
+	i: int, heights: Array, water_h: Array, flags: Array, water_extra: float
+) -> bool:
+	var did := false
+	var fl: int = int(flags[i])
+	var nf: int = (fl | FLAG_WATER) & ~FLAG_RAMP
+	if nf != fl:
+		flags[i] = nf
+		did = true
+	var target_w: float = float(heights[i]) + water_extra
+	if i < water_h.size() and not is_equal_approx(float(water_h[i]), target_w):
+		water_h[i] = target_w
+		did = true
+	return did
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:

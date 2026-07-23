@@ -54,26 +54,29 @@ static func collect_instances(
 			if Wc3CliffTiles.is_ramp_entrance(layers, flags, tp_w, ix, iy):
 				continue
 
-			var info := Wc3CliffTiles.cliff_tag_at(layers, tp_w, ix, iy)
-			var tag: String = str(info.get("tag", ""))
-			if tag.is_empty() or tag == "AAAA":
+			var slices: Array = Wc3CliffTiles.cliff_slices_at(layers, tp_w, ix, iy)
+			if slices.is_empty():
 				continue
-			var base_layer: int = int(info.get("base_layer", 2))
-			var tex_idx := _cliff_tex_index(cliff_tex, cliff_tilesets, i00)
-			var cliff_id := str(cliff_tilesets[tex_idx])
-			var variation := int(cliff_var[i00]) if i00 < cliff_var.size() else 0
+			var tex_idx := _cliff_tex_index(cliff_tex, cliff_tilesets, tp_w, tp_h, ix, iy)
+			var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
 			var model_dir := tiles.cliff_model_dir(cliff_id)
-			variation = Wc3CliffTiles.clamp_variation(model_dir, tag, variation)
-			var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, variation)
-			if glb.is_empty():
-				if not missing_logged.has("C:" + tag):
-					missing_logged["C:" + tag] = true
-					push_warning("悬崖模型缺失: %s/%s" % [model_dir, tag])
-				missing += 1
-				continue
-			var xf := _instance_transform(ix, iy, base_layer, center, tile_size)
-			_bucket_add(buckets, glb, tex_idx, xf)
-			placed_cliffs += 1
+			var variation := int(cliff_var[i00]) if i00 < cliff_var.size() else 0
+			for slice in slices:
+				var tag: String = str(slice.get("tag", ""))
+				if tag.is_empty() or tag == "AAAA":
+					continue
+				var base_layer: int = int(slice.get("base_layer", 2))
+				var var_clamped := Wc3CliffTiles.clamp_variation(model_dir, tag, variation)
+				var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, var_clamped)
+				if glb.is_empty():
+					if not missing_logged.has("C:" + tag):
+						missing_logged["C:" + tag] = true
+						push_warning("悬崖模型缺失: %s/%s" % [model_dir, tag])
+					missing += 1
+					continue
+				var xf := _instance_transform(ix, iy, base_layer, center, tile_size)
+				_bucket_add(buckets, glb, tex_idx, xf)
+				placed_cliffs += 1
 
 	var groups: Array = []
 	for k in buckets.keys():
@@ -89,13 +92,34 @@ static func collect_instances(
 	}
 
 
-static func _cliff_tex_index(cliff_tex: Array, cliff_tilesets: Array, i00: int) -> int:
-	var tex_idx := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
-	if tex_idx == 15:
-		tex_idx = 1
-	if tex_idx < 0 or tex_idx >= cliff_tilesets.size():
-		tex_idx = clampi(tex_idx, 0, maxi(cliff_tilesets.size() - 1, 0))
-	return tex_idx
+## 从格子四角选悬崖类型：优先非 0 索引（草地等），避免只读 i00 时落成默认泥土。
+static func _cliff_tex_index(
+	cliff_tex: Array, cliff_tilesets: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> int:
+	var best := 0
+	var found_nonzero := false
+	for oy in range(0, 2):
+		for ox in range(0, 2):
+			var cx: int = ix + ox
+			var cy: int = iy + oy
+			if cx < 0 or cy < 0 or cx >= tp_w or cy >= tp_h:
+				continue
+			var i: int = cy * tp_w + cx
+			if i < 0 or i >= cliff_tex.size():
+				continue
+			var tex_idx := int(cliff_tex[i])
+			if tex_idx == 15:
+				tex_idx = 1
+			if tex_idx < 0 or tex_idx >= cliff_tilesets.size():
+				continue
+			if not found_nonzero:
+				best = tex_idx
+			if tex_idx != 0:
+				best = tex_idx
+				found_nonzero = true
+	if best < 0 or best >= cliff_tilesets.size():
+		best = clampi(best, 0, maxi(cliff_tilesets.size() - 1, 0))
+	return best
 
 
 static func _bucket_add(buckets: Dictionary, glb: String, tex_idx: int, xf: Transform3D) -> void:

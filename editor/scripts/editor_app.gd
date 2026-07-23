@@ -29,6 +29,9 @@ var _palette_spawn_index: int = 0
 var _brush_size: int = 1
 var _brush_shape: int = 0 ## 0 circle / 1 square
 var _apply_texture: bool = true
+var _apply_cliff: bool = true
+var _cliff_tool_id: String = "2"
+var _cliff_type_index: int = 0
 
 
 func _ready() -> void:
@@ -179,9 +182,11 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.set_palette_kind(kind)
 	win.set_brush_settings(_brush_size, _brush_shape)
 	win.set_apply_texture(_apply_texture)
+	win.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
 	win.tile_selected.connect(_on_tile_selected)
 	win.brush_settings_changed.connect(_on_brush_settings_changed)
 	win.apply_texture_changed.connect(_on_apply_texture_changed)
+	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	_tool_palettes.append(win)
@@ -191,15 +196,18 @@ func _spawn_tool_palette(kind: int) -> void:
 	var offset := _palette_spawn_index * 28
 	_palette_spawn_index += 1
 	win.position = Vector2i(24 + offset, 72 + offset)
+	win.always_on_top = true
+	win.unfocusable = true
+	win.transient = false
 	win.visible = true
-	win.popup()
-	win.grab_focus()
+	win.show()
 
 
 func _on_brush_settings_changed(size: int, shape: int) -> void:
-	_brush_size = clampi(size, 1, 5)
+	_brush_size = size
 	_brush_shape = 0 if shape == 0 else 1
 	_brush.set_brush_settings(_brush_size, _brush_shape)
+	_brush_size = int(_brush.brush_size)
 	for win in _tool_palettes:
 		if is_instance_valid(win):
 			win.set_brush_settings(_brush_size, _brush_shape)
@@ -211,6 +219,17 @@ func _on_apply_texture_changed(enabled: bool) -> void:
 	for win in _tool_palettes:
 		if is_instance_valid(win):
 			win.set_apply_texture(enabled)
+
+
+func _on_cliff_settings_changed(p_apply: bool, tool_id: String, type_idx: int) -> void:
+	_apply_cliff = p_apply
+	_cliff_tool_id = tool_id if not tool_id.is_empty() else "2"
+	_cliff_type_index = maxi(type_idx, 0)
+	_doc.brush_cliff_type = _cliff_type_index
+	_brush.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
+	for win in _tool_palettes:
+		if is_instance_valid(win):
+			win.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
 
 
 func _toggle_tool_palettes_visible() -> void:
@@ -308,7 +327,11 @@ func _on_brush_rebuild() -> void:
 	if _rebuilding:
 		return
 	_rebuilding = true
-	_map.rebuild_terrain_only(_doc.hf, _doc.info)
+	if bool(_brush.cliff_dirty):
+		_brush.cliff_dirty = false
+		_map.rebuild_terrain_cliffs_water(_doc.hf, _doc.info)
+	else:
+		_map.rebuild_terrain_only(_doc.hf, _doc.info)
 	_rebuilding = false
 
 
@@ -320,11 +343,12 @@ func _apply_document(full_reload: bool) -> void:
 	_brush.setup(_doc, _cam_rig.get_camera(), get_world_3d())
 	_brush.set_brush_settings(_brush_size, _brush_shape)
 	_brush.apply_texture = _apply_texture
+	_brush.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
 	if full_reload:
 		var dir: String = _doc.map_dir if not _doc.map_dir.is_empty() else "res://"
 		await _map.reload_from_hf(_doc.hf, _doc.info, dir)
 	else:
-		_map.rebuild_terrain_only(_doc.hf, _doc.info)
+		_map.rebuild_terrain_cliffs_water(_doc.hf, _doc.info)
 	_cam_rig.focus_map_extent(_doc.map_size())
 
 

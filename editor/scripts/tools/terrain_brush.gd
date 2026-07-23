@@ -27,18 +27,81 @@ var enabled: bool = true
 var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
 var apply_texture: bool = true
+var apply_cliff: bool = true
+## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater / Ramp
+var cliff_tool_id: String = "2"
+var cliff_type_index: int = 0
+## 本笔划是否改过悬崖数据（决定重建是否含悬崖/水面）
+var cliff_dirty: bool = false
 
 var _hover_mesh: MeshInstance3D
 var _hover_mat: StandardMaterial3D
 var _edge_mesh: MeshInstance3D
 var _edge_mat: StandardMaterial3D
+## 整平工具：按下瞬间采样的目标层
+var _cliff_level_anchor: int = -1
 
 
 func set_brush_settings(size: int, shape: int) -> void:
-	brush_size = clampi(size, 1, 5)
+	brush_size = _sanitize_brush_size(size)
 	brush_shape = 0 if shape == 0 else 1
 	if _hover_vert != INVALID_VERT:
 		_update_hover_preview(_hover_vert)
+
+
+func set_cliff_settings(p_apply: bool, tool_id: String, type_idx: int) -> void:
+	apply_cliff = p_apply
+	cliff_tool_id = tool_id if not tool_id.is_empty() else "2"
+	cliff_type_index = maxi(type_idx, 0)
+	if document != null and document.has_method("ensure_cliff_type_valid"):
+		document.brush_cliff_type = cliff_type_index
+		document.ensure_cliff_type_valid()
+		cliff_type_index = int(document.brush_cliff_type)
+
+
+static func _sanitize_brush_size(p_size: int) -> int:
+	const SIZES := [1, 2, 3, 5, 8]
+	if p_size in SIZES:
+		return p_size
+	var best: int = SIZES[0]
+	var best_d: int = absi(p_size - best)
+	for s in SIZES:
+		var d: int = absi(p_size - int(s))
+		if d < best_d:
+			best = int(s)
+			best_d = d
+	return best
+
+
+## 方形外接半宽（tilepoint）：尺寸 N → 边长 N，半宽 (N-1)/2。
+func _brush_half_extent() -> float:
+	return float(maxi(brush_size - 1, 0)) * 0.5
+
+
+## 圆形笔刷：欧氏格点 dx²+dy² ≤ R²。
+## R 取自 WorldEditData 圆形尺寸图标序号 TextureBrush{00,01,02,04,07}：
+##   尺寸 1 / 2 / 3 / 5 / 8  →  R = 0 / 1 / 2 / 4 / 7
+## 行宽（从上到下）：
+##   1 → [1]
+##   2 → [1,3,1]                 十字（截图）
+##   3 → [1,3,5,3,1]             菱形十字花（截图）
+##   5 → [1,5,7,7,9,7,7,5,1]     外侧尖端十字花（非实心方）
+##   8 → [1,7,9,11,13,13,13,15,…]
+func _circle_radius_sq() -> int:
+	match brush_size:
+		1:
+			return 0
+		2:
+			return 1
+		3:
+			return 4
+		5:
+			return 16
+		8:
+			return 49
+		_:
+			var r: int = maxi(brush_size - 1, 0)
+			return r * r
 
 
 func _ready() -> void:
@@ -62,7 +125,8 @@ func _ensure_hover_visuals() -> void:
 	_hover_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_hover_mat.albedo_color = HOVER_COLOR
 	_hover_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	_hover_mat.render_priority = 10
+	_hover_mat.no_depth_test = true
+	_hover_mat.render_priority = 100
 
 	_hover_mesh = MeshInstance3D.new()
 	_hover_mesh.name = "HoverFill"
@@ -76,7 +140,8 @@ func _ensure_hover_visuals() -> void:
 	_edge_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_edge_mat.albedo_color = HOVER_EDGE
 	_edge_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	_edge_mat.render_priority = 11
+	_edge_mat.no_depth_test = true
+	_edge_mat.render_priority = 101
 
 	_edge_mesh = MeshInstance3D.new()
 	_edge_mesh.name = "HoverEdge"
@@ -93,17 +158,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			_painting = mb.pressed
 			if mb.pressed:
+				_cliff_level_anchor = -1
 				_paint_at_mouse(mb.position)
 				get_viewport().set_input_as_handled()
-			elif _dirty_paint:
-				_request_rebuild(true)
+			else:
+				_cliff_level_anchor = -1
+				_last_vert = INVALID_VERT
+				if _dirty_paint:
+					_request_rebuild(true)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
-		var vert: Vector2i = _pick_vertex(mm.position)
-		_set_hover_vert(vert)
 		if _painting:
 			_paint_at_mouse(mm.position)
 			get_viewport().set_input_as_handled()
+		else:
+			# 悬停主要由 _process 轮询；此处覆盖有焦点时的即时更新
+			_set_hover_vert(_pick_vertex(mm.position))
 
 
 func _process(_delta: float) -> void:
@@ -113,6 +183,42 @@ func _process(_delta: float) -> void:
 		var now: int = Time.get_ticks_msec()
 		if now - _last_rebuild_ms >= REBUILD_INTERVAL_MS:
 			_request_rebuild(false)
+	# 工具面板抢焦点后主窗口可能收不到 MouseMotion：按全局鼠标位置轮询悬停
+	if not _painting:
+		_poll_hover_from_global_mouse()
+
+
+## 鼠标在主编辑窗口地图区时更新预览（不依赖窗口焦点 / 右键激活）。
+func _poll_hover_from_global_mouse() -> void:
+	if not enabled or document == null or camera == null:
+		return
+	if not _is_mouse_over_main_window():
+		if _hover_vert != INVALID_VERT:
+			_set_hover_vert(INVALID_VERT)
+		return
+	var local: Vector2 = _main_window_mouse_local()
+	var hovered: Control = get_viewport().gui_get_hovered_control()
+	if hovered != null:
+		# 停在菜单/工具条等 UI 上时不显示笔刷
+		if _hover_vert != INVALID_VERT:
+			_set_hover_vert(INVALID_VERT)
+		return
+	_set_hover_vert(_pick_vertex(local))
+
+
+func _is_mouse_over_main_window() -> bool:
+	var win := get_viewport().get_window()
+	if win == null:
+		return false
+	var wid: int = win.get_window_id()
+	var mp: Vector2i = DisplayServer.mouse_get_position()
+	var rect := Rect2i(DisplayServer.window_get_position(wid), DisplayServer.window_get_size(wid))
+	return rect.has_point(mp)
+
+
+func _main_window_mouse_local() -> Vector2:
+	# Viewport 坐标已处理缩放；勿用 DisplayServer 像素差（HiDPI 会偏）
+	return get_viewport().get_mouse_position()
 
 
 func _set_hover_vert(vert: Vector2i) -> void:
@@ -134,16 +240,30 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	if vert == _last_vert and _painting:
 		return
 	_last_vert = vert
-	if not apply_texture:
+	if not apply_texture and not apply_cliff:
 		return
+
+	if apply_cliff and cliff_tool_id == "2" and _cliff_level_anchor < 0:
+		_cliff_level_anchor = int(document.layer_at(vert.x, vert.y))
+
 	var painted_any := false
+	var cliff_any := false
 	for p in _brush_offsets():
 		var ix: int = vert.x + p.x
 		var iy: int = vert.y + p.y
-		if bool(document.paint_corner(ix, iy)):
+		if apply_texture and bool(document.paint_corner(ix, iy)):
 			painted_any = true
+		if apply_cliff and bool(
+			document.paint_cliff_corner(
+				ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
+			)
+		):
+			painted_any = true
+			cliff_any = true
 	if painted_any:
 		_dirty_paint = true
+		if cliff_any:
+			cliff_dirty = true
 		painted.emit()
 
 
@@ -186,38 +306,44 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	if document == null or bool(document.is_empty()):
 		_hide_hover_preview()
 		return
-	# 以顶点为中心、边长=1 中级格：四角在半格偏移处（栅格线穿过绿框中心）
-	var corners: Array = _vertex_centered_quad_godot(vert.x, vert.y)
-	if corners.is_empty():
+	var fill: ArrayMesh
+	var edge: ArrayMesh
+	if brush_shape == 0:
+		# 圆形：格点并集预览（size=2 为十字，非光滑圆）
+		fill = _make_offsets_fill_mesh(vert.x, vert.y)
+		edge = _make_offsets_edge_mesh(vert.x, vert.y)
+	else:
+		var corners: Array = _brush_aabb_corners_godot(vert.x, vert.y)
+		if corners.is_empty():
+			_hide_hover_preview()
+			return
+		var bl: Vector3 = corners[0]
+		var br: Vector3 = corners[1]
+		var tl: Vector3 = corners[2]
+		var tr: Vector3 = corners[3]
+		var lift := Vector3(0.0, HOVER_LIFT, 0.0)
+		fill = _make_fill_mesh(bl + lift, br + lift, tl + lift, tr + lift)
+		edge = _make_edge_mesh(bl + lift, br + lift, tl + lift, tr + lift)
+	if fill == null or edge == null:
 		_hide_hover_preview()
 		return
-	var bl: Vector3 = corners[0]
-	var br: Vector3 = corners[1]
-	var tl: Vector3 = corners[2]
-	var tr: Vector3 = corners[3]
-	var lift := Vector3(0.0, HOVER_LIFT, 0.0)
-	bl += lift
-	br += lift
-	tl += lift
-	tr += lift
-
-	_hover_mesh.mesh = _make_fill_mesh(bl, br, tl, tr)
+	_hover_mesh.mesh = fill
 	_hover_mesh.visible = true
-	_edge_mesh.mesh = _make_edge_mesh(bl, br, tl, tr)
+	_edge_mesh.mesh = edge
 	_edge_mesh.visible = true
 
 
-## 顶点 (ix,iy) 为中心的笔刷预选框四角 [bl, br, tl, tr]（覆盖整个笔刷外接方框）。
-func _vertex_centered_quad_godot(ix: int, iy: int) -> Array:
+## 笔刷外接方框四角（方形预览）。
+func _brush_aabb_corners_godot(ix: int, iy: int) -> Array:
 	var center: Vector2 = document.center_offset()
 	var ts: float = document.tile_size()
-	var radius: float = float(maxi(brush_size - 1, 0)) + 0.5
+	var half: float = _brush_half_extent() + 0.5
 	var out: Array = []
 	for c in [
-		Vector2(float(ix) - radius, float(iy) - radius),
-		Vector2(float(ix) + radius, float(iy) - radius),
-		Vector2(float(ix) - radius, float(iy) + radius),
-		Vector2(float(ix) + radius, float(iy) + radius),
+		Vector2(float(ix) - half, float(iy) - half),
+		Vector2(float(ix) + half, float(iy) - half),
+		Vector2(float(ix) - half, float(iy) + half),
+		Vector2(float(ix) + half, float(iy) + half),
 	]:
 		var h: float = float(document.sample_height_at_xy(c.x, c.y))
 		var xy := Vector2(center.x + c.x * ts, center.y + c.y * ts)
@@ -225,19 +351,70 @@ func _vertex_centered_quad_godot(ix: int, iy: int) -> Array:
 	return out
 
 
-## 笔刷覆盖的相对偏移（tilepoint）。size=1 → 仅 (0,0)。
+## 笔刷覆盖的相对偏移（tilepoint）。
+## 圆形：欧氏格点（见 _circle_radius_sq）；方形：严格 size×size。
 func _brush_offsets() -> Array:
 	var out: Array = []
-	var r: int = maxi(brush_size - 1, 0)
-	var r2: int = r * r
-	for dy in range(-r, r + 1):
-		for dx in range(-r, r + 1):
-			if brush_shape == 0 and (dx * dx + dy * dy) > r2:
-				continue
-			out.append(Vector2i(dx, dy))
+	if brush_shape == 0:
+		var r2: int = _circle_radius_sq()
+		var r_iter: int = int(ceil(sqrt(float(r2)))) if r2 > 0 else 0
+		for dy in range(-r_iter, r_iter + 1):
+			for dx in range(-r_iter, r_iter + 1):
+				if dx * dx + dy * dy > r2:
+					continue
+				out.append(Vector2i(dx, dy))
+	else:
+		var x0: int = -int((brush_size - 1) / 2.0)
+		var y0: int = x0
+		for dy in range(brush_size):
+			for dx in range(brush_size):
+				out.append(Vector2i(x0 + dx, y0 + dy))
 	if out.is_empty():
 		out.append(Vector2i.ZERO)
 	return out
+
+
+func _tp_to_godot(fx: float, fy: float) -> Vector3:
+	var center: Vector2 = document.center_offset()
+	var ts: float = document.tile_size()
+	var h: float = float(document.sample_height_at_xy(fx, fy))
+	var xy := Vector2(center.x + fx * ts, center.y + fy * ts)
+	var p: Vector3 = Wc3Coords.wc3_xy_to_godot(xy.x, xy.y, h)
+	p.y += HOVER_LIFT
+	return p
+
+
+## 每个笔刷格点画 1×1 方块并集（圆形预览用）。
+func _make_offsets_fill_mesh(ix: int, iy: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for o in _brush_offsets():
+		var ox: int = ix + int(o.x)
+		var oy: int = iy + int(o.y)
+		var bl := _tp_to_godot(float(ox) - 0.5, float(oy) - 0.5)
+		var br := _tp_to_godot(float(ox) + 0.5, float(oy) - 0.5)
+		var tl := _tp_to_godot(float(ox) - 0.5, float(oy) + 0.5)
+		var tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
+		_add_tri(st, bl, br, tr)
+		_add_tri(st, bl, tr, tl)
+	return st.commit()
+
+
+func _make_offsets_edge_mesh(ix: int, iy: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	for o in _brush_offsets():
+		var ox: int = ix + int(o.x)
+		var oy: int = iy + int(o.y)
+		var bl := _tp_to_godot(float(ox) - 0.5, float(oy) - 0.5)
+		var br := _tp_to_godot(float(ox) + 0.5, float(oy) - 0.5)
+		var tl := _tp_to_godot(float(ox) - 0.5, float(oy) + 0.5)
+		var tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
+		_add_line(st, bl, br)
+		_add_line(st, br, tr)
+		_add_line(st, tr, tl)
+		_add_line(st, tl, bl)
+	return st.commit()
 
 
 func _make_fill_mesh(bl: Vector3, br: Vector3, tl: Vector3, tr: Vector3) -> ArrayMesh:

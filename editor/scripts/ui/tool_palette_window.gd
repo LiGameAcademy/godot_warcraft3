@@ -7,6 +7,7 @@ extends Window
 signal tile_selected(index: int)
 signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
+signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
 signal closed_by_user
 
 enum PaletteKind { TERRAIN, UNITS, DOODADS, REGIONS, CAMERAS }
@@ -35,7 +36,10 @@ const TILE_ICON := 40
 const CLIFF_ICON := 36
 const TILE_ATLAS_COLS := 8
 const TILE_ATLAS_ROWS := 4
-const BRUSH_SIZES := [1, 2, 3, 4, 5]
+## 对齐 WorldEditData [BrushSizes00/01]：1,2,3,5,8（不是 1–5 连续）
+const BRUSH_SIZES := [1, 2, 3, 5, 8]
+## 对应 TextureBrush / SquareSizeBrush 图标编号
+const BRUSH_SIZE_ICON_IDX := [0, 1, 2, 4, 7]
 const WE_UI := "res://assets/asset-converted/ReplaceableTextures/WorldEditUI/"
 const SEL_BORDER := Color(1.0, 0.85, 0.15, 1.0)
 const SEL_BORDER_W := 2
@@ -107,6 +111,9 @@ var _sel_style: StyleBoxFlat
 
 
 func _ready() -> void:
+	always_on_top = true
+	# 不抢主窗口焦点，否则从面板移回地图后收不到 MouseMotion，需右键才恢复笔刷
+	unfocusable = true
 	_sel_style = _make_sel_style()
 	close_requested.connect(_on_close_requested)
 	_kind_option.item_selected.connect(_on_kind_selected)
@@ -145,7 +152,7 @@ func get_palette_kind() -> int:
 
 
 func set_brush_settings(p_size: int, shape: int) -> void:
-	_brush_size = clampi(p_size, 1, 5)
+	_brush_size = _sanitize_brush_size(p_size)
 	_brush_shape = BrushShape.CIRCLE if shape == BrushShape.CIRCLE else BrushShape.SQUARE
 	if is_node_ready():
 		_apply_size_button_textures()
@@ -162,10 +169,57 @@ func get_brush_shape() -> int:
 	return _brush_shape
 
 
+static func _sanitize_brush_size(p_size: int) -> int:
+	if p_size in BRUSH_SIZES:
+		return p_size
+	# 就近落到 WE 档位
+	var best: int = BRUSH_SIZES[0]
+	var best_d: int = absi(p_size - best)
+	for s in BRUSH_SIZES:
+		var d: int = absi(p_size - int(s))
+		if d < best_d:
+			best = int(s)
+			best_d = d
+	return best
+
+
 func set_apply_texture(enabled: bool) -> void:
 	_apply_texture = enabled
 	if is_node_ready():
 		_texture_check.set_pressed_no_signal(_apply_texture)
+
+
+func set_cliff_settings(p_apply: bool, tool_id: String, type_idx: int) -> void:
+	_apply_cliff = p_apply
+	_selected_cliff_type = maxi(type_idx, 0)
+	if not tool_id.is_empty():
+		for i in range(_cliff_tool_entries.size()):
+			if str(_cliff_tool_entries[i].get("id", "")) == tool_id:
+				_cliff_tool = i
+				break
+	if is_node_ready():
+		_cliff_check.set_pressed_no_signal(_apply_cliff)
+		_highlight_cliff_tools()
+		_highlight_cliff_types()
+		_refresh_section_labels()
+
+
+func get_cliff_tool_id() -> String:
+	if _cliff_tool >= 0 and _cliff_tool < _cliff_tool_entries.size():
+		return str(_cliff_tool_entries[_cliff_tool].get("id", "2"))
+	return "2"
+
+
+func get_cliff_type_index() -> int:
+	return _selected_cliff_type
+
+
+func is_apply_cliff() -> bool:
+	return _apply_cliff
+
+
+func _emit_cliff_settings() -> void:
+	cliff_settings_changed.emit(_apply_cliff, get_cliff_tool_id(), _selected_cliff_type)
 
 
 func rebuild_terrain(doc, tiles: Wc3TerrainTiles) -> void:
@@ -191,9 +245,9 @@ func rebuild_terrain(doc, tiles: Wc3TerrainTiles) -> void:
 func _cache_size_textures() -> void:
 	_size_circle_tex.clear()
 	_size_square_tex.clear()
-	for i in range(5):
-		_size_circle_tex.append(load("%sTextureBrush%02d.png" % [WE_UI, i]))
-		_size_square_tex.append(load("%sSquareSizeBrush%02d.png" % [WE_UI, i]))
+	for icon_i in BRUSH_SIZE_ICON_IDX:
+		_size_circle_tex.append(load("%sTextureBrush%02d.png" % [WE_UI, icon_i]))
+		_size_square_tex.append(load("%sSquareSizeBrush%02d.png" % [WE_UI, icon_i]))
 
 
 func _wire_static_tool_buttons() -> void:
@@ -247,10 +301,11 @@ func _wire_cliff_tool_buttons() -> void:
 			if not icon_res.is_empty() and ResourceLoader.exists(icon_res):
 				btn.texture_normal = load(icon_res) as Texture2D
 	_cliff_tool = clampi(_cliff_tool, 0, maxi(_cliff_tool_entries.size() - 1, 0))
-	for i in range(_cliff_tool_entries.size()):
-		if str(_cliff_tool_entries[i].get("id", "")) == "2":
-			_cliff_tool = i
-			break
+	if first_wire:
+		for i in range(_cliff_tool_entries.size()):
+			if str(_cliff_tool_entries[i].get("id", "")) == "2":
+				_cliff_tool = i
+				break
 
 
 func _clear_container_children(container: Node) -> void:
@@ -552,6 +607,7 @@ func _on_cliff_type_picked(index: int) -> void:
 	_selected_cliff_type = index
 	_highlight_cliff_types()
 	_refresh_cliff_type_label()
+	_emit_cliff_settings()
 
 
 func _on_cliff_tool_picked(tool_id: int) -> void:
@@ -559,6 +615,7 @@ func _on_cliff_tool_picked(tool_id: int) -> void:
 	_apply_cliff = true
 	_highlight_cliff_tools()
 	_refresh_section_labels()
+	_emit_cliff_settings()
 
 
 func _on_height_tool_picked(tool_id: int) -> void:
@@ -576,6 +633,7 @@ func _on_texture_toggled(pressed: bool) -> void:
 func _on_cliff_toggled(pressed: bool) -> void:
 	_apply_cliff = pressed
 	_refresh_section_labels()
+	_emit_cliff_settings()
 
 
 func _on_height_toggled(pressed: bool) -> void:
@@ -584,7 +642,7 @@ func _on_height_toggled(pressed: bool) -> void:
 
 
 func _on_size_picked(p_size: int) -> void:
-	_brush_size = p_size
+	_brush_size = _sanitize_brush_size(p_size)
 	_highlight_size()
 	_refresh_brush_labels()
 	brush_settings_changed.emit(_brush_size, _brush_shape)
@@ -625,7 +683,11 @@ func _load_cliff_tex(cliff_id: String) -> Texture2D:
 	var img := RuntimeAssets.load_image(path)
 	if img == null:
 		return null
-	return ImageTexture.create_from_image(_atlas_first_cell(img))
+	# 悬崖贴图不是地表 8×4 atlas；取左上岩壁区作类型图标
+	var side: int = int(mini(img.get_width(), img.get_height()) / 2.0)
+	if side < 8:
+		return ImageTexture.create_from_image(img)
+	return ImageTexture.create_from_image(img.get_region(Rect2i(0, 0, side, side)))
 
 
 func _atlas_first_cell(img: Image) -> Image:

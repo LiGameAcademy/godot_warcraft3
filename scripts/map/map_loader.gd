@@ -76,6 +76,8 @@ func _apply_view_grid() -> void:
 	var show_medium := _view_grid_level >= ViewGridLevel.MEDIUM
 	var show_small := _view_grid_level >= ViewGridLevel.SMALL
 	_terrain.set_debug_grid(show_large, show_medium, show_small)
+	if _cliffs != null:
+		_cliffs.set_debug_grid(show_large, show_medium, show_small)
 
 
 func _ready() -> void:
@@ -136,6 +138,34 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 		_ensure_terrain_collision()
 
 
+## 地表 + 悬崖 + 水面（悬崖笔刷脏更新）。
+func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void:
+	if hf.is_empty():
+		return
+	_external_hf = hf
+	if not info.is_empty():
+		_external_info = info
+	var ctx = MapBuildContextScript.create(
+		map_dir if not map_dir.is_empty() else "res://",
+		hf,
+		_external_info,
+		_tiles,
+		_catalog,
+		_cache
+	)
+	ctx.ensure_cliff_topology()
+	_terrain.build(ctx)
+	if build_terrain_collision:
+		_ensure_terrain_collision()
+	if build_cliffs:
+		_cliffs.build(ctx)
+	if build_water:
+		_water.foam_cliff_out_extra = foam_cliff_out_extra
+		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
+		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
+		_water.build(ctx)
+	_apply_view_grid()
+
 func _load_all() -> void:
 	var t0 := Time.get_ticks_msec()
 	var hf: Dictionary = _external_hf
@@ -153,7 +183,6 @@ func _load_all() -> void:
 
 	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")
 	_terrain.build(ctx)
-	_apply_view_grid()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 	await get_tree().process_frame
@@ -162,6 +191,7 @@ func _load_all() -> void:
 		_set_status("放置悬崖模型…")
 		_cliffs.build(ctx)
 		await get_tree().process_frame
+	_apply_view_grid()
 	if build_water:
 		_set_status("生成水体…")
 		_water.foam_cliff_out_extra = foam_cliff_out_extra

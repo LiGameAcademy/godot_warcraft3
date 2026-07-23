@@ -1,12 +1,14 @@
 # 地图编辑器
 
-独立运行场景，复用 `scenes/map/map_root.tscn` 做地形预览。
+独立运行场景，复用 `scenes/map/map_root.tscn` 做地形 / 悬崖 / 水面预览。
+
+设计说明见 [`docs/EDITOR.md`](../docs/EDITOR.md)。
 
 ## 运行
 
-1. 用 Godot 打开本仓库
-2. 打开 [`scenes/editor_main.tscn`](scenes/editor_main.tscn)
-3. **F6**（运行当前场景）——不要改项目主场景
+1. 用 Godot 打开本仓库  
+2. 打开 [`editor/scenes/editor_main.tscn`](scenes/editor_main.tscn)  
+3. **F6**（运行当前场景）——不要改项目主场景  
 
 主游戏入口仍是 `scenes/main.tscn`（F5）。
 
@@ -14,13 +16,12 @@
 
 | 输入 | 作用 |
 |------|------|
-| 顶栏菜单 | 原版世界编辑器菜单（文件→新建弹出对话框 / 打开/保存/退出 已接通） |
-| 创建新地图 | 选尺寸、地形集、初始地表贴图、悬崖高度、水位、随机高度 |
-| 左键拖拽 | 刷当前选中地表贴图（整格） |
+| 顶栏菜单 | 文件→新建 / 打开示例图 / 保存 / 退出；查看→栅格；窗口→工具面板 |
+| 工具浮窗 | 地表贴图、悬崖工具与类型、笔刷尺寸（1/2/3/5/8）与形状（圆/方） |
+| 左键拖拽 | 刷地表和/或悬崖（由面板勾选决定） |
 | WASD / QE | 平移相机 |
 | 右键拖拽 | 旋转 |
 | 滚轮 | 缩放 |
-| 侧栏 | 选择地表 tileID |
 
 灰色菜单项 = 尚未实现（状态栏会提示）。
 
@@ -31,12 +32,16 @@ editor/
   README.md
   scenes/editor_main.tscn
   scripts/
-    editor_app.gd
-    map_document.gd
+    editor_app.gd          # 编排根
+    map_document.gd        # 内存 heightfield 文档
     editor_camera.gd
     tools/terrain_brush.gd
-    ui/toolbar.gd
-    ui/tile_palette.gd
+    ui/
+      tool_palette_window.*
+      new_map_dialog.*
+      menu_bar.*
+      toolbar.*
+      world_edit_data.gd
+      editor_i18n.gd
+  locale/editor_strings.csv
 ```
-
-设计说明见 [`docs/EDITOR.md`](../docs/EDITOR.md)。

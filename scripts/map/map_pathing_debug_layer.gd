@@ -30,3 +30,6 @@ func _apply_gpu_grid(enabled: bool) -> void:
 	var p := show_path_grid if enabled else false
 	var f := show_fine_grid if enabled else false
 	_terrain.set_debug_grid(t, p, f)
+	var cliffs := get_node_or_null("../Cliffs")
+	if cliffs != null and cliffs.has_method("set_debug_grid"):
+		cliffs.set_debug_grid(t, p, f)

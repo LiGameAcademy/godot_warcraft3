@@ -6,15 +6,24 @@ extends Node3D
 var _shader: Shader
 var _height_tex: Texture2D
 var last_placed: int = 0
+var _cliff_mats: Array = [] ## ShaderMaterial，供调试栅格开关
+var _dbg_tile := false
+var _dbg_path := false
+var _dbg_fine := false
+var _dbg_center: Vector2 = Vector2.ZERO
+var _dbg_tile_size: float = 128.0
 
 
 func build(ctx) -> void:
 	_clear_children()
+	_cliff_mats.clear()
 	last_placed = 0
 	ctx.ensure_cliff_topology()
 
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
 	_shader = load("res://shaders/wc3_cliff.gdshader") as Shader
+	_dbg_center = ctx.meta.get("center", Vector2.ZERO)
+	_dbg_tile_size = float(ctx.meta.get("tile_size", Wc3Coords.TILE_SIZE))
 
 	var ramp_data := {
 		"romp": ctx.cliff_romp,
@@ -49,10 +58,11 @@ func build(ctx) -> void:
 				]
 			)
 
-		var mat := _cliff_material(tex_cache[tex_idx], ctx.meta)
 		var key := "%s|%d" % [glb, tex_idx]
 		var mesh: Mesh = mesh_by_key.get(key)
 		if mesh == null:
+			var mat := _cliff_material(tex_cache[tex_idx], ctx.meta)
+			_cliff_mats.append(mat)
 			mesh = _mesh_with_material(ctx.cache, glb, mat)
 			if mesh == null:
 				continue
@@ -72,6 +82,8 @@ func build(ctx) -> void:
 		add_child(mmi)
 		last_placed += transforms.size()
 
+	_apply_debug_grid_to_mats()
+
 	print(
 		"Cliffs: placed=%d (cliff=%d ramp=%d) missing=%d groups=%d"
 		% [
@@ -82,6 +94,25 @@ func build(ctx) -> void:
 			groups.size(),
 		]
 	)
+
+
+## 查看→栅格：悬崖立面/顶缘也画调试线（与地面同级开关）。
+func set_debug_grid(show_tile: bool, show_path: bool, show_fine: bool) -> void:
+	_dbg_tile = show_tile
+	_dbg_path = show_path
+	_dbg_fine = show_fine
+	_apply_debug_grid_to_mats()
+
+
+func _apply_debug_grid_to_mats() -> void:
+	for mat in _cliff_mats:
+		if mat == null:
+			continue
+		mat.set_shader_parameter("dbg_grid_tile", _dbg_tile)
+		mat.set_shader_parameter("dbg_grid_path", _dbg_path)
+		mat.set_shader_parameter("dbg_grid_fine", _dbg_fine)
+		mat.set_shader_parameter("dbg_center_offset", _dbg_center)
+		mat.set_shader_parameter("dbg_tile_size", _dbg_tile_size)
 
 
 func _cliff_material(tex: Texture2D, meta: Dictionary) -> ShaderMaterial:
@@ -95,6 +126,11 @@ func _cliff_material(tex: Texture2D, meta: Dictionary) -> ShaderMaterial:
 	)
 	mat.set_shader_parameter("world_scale", Wc3Coords.WORLD_SCALE)
 	mat.set_shader_parameter("albedo_scale", 1.0)
+	mat.set_shader_parameter("dbg_center_offset", meta.get("center", Vector2.ZERO))
+	mat.set_shader_parameter("dbg_tile_size", float(meta.get("tile_size", Wc3Coords.TILE_SIZE)))
+	mat.set_shader_parameter("dbg_grid_tile", _dbg_tile)
+	mat.set_shader_parameter("dbg_grid_path", _dbg_path)
+	mat.set_shader_parameter("dbg_grid_fine", _dbg_fine)
 	if tex:
 		mat.set_shader_parameter("cliff_albedo", tex)
 	return mat

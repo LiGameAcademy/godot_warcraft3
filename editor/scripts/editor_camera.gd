@@ -6,14 +6,19 @@ extends Node3D
 @export var zoom_speed: float = 4.0
 @export var min_pitch_deg: float = -85.0
 @export var max_pitch_deg: float = -15.0
-@export var initial_distance: float = 60.0
+## 约 3 个大栅格（512 WC3 单位）距离，便于近距编辑
+@export var initial_distance: float = 15.36
 
 @onready var _pivot: Node3D = $Pivot
 @onready var _camera: Camera3D = $Pivot/Camera3D
 
+## 大黄栅格边长 → Godot；初始观察距离约 3 格
+const LARGE_GRID_GODOT := 512.0 * Wc3Coords.WORLD_SCALE ## 5.12
+const EDIT_DISTANCE_GRIDS := 3.0
+
 var _yaw: float = 0.0
 var _pitch: float = deg_to_rad(-50.0)
-var _distance: float = 60.0
+var _distance: float = 15.36
 var _dragging: bool = false
 
 
@@ -27,9 +32,9 @@ func get_camera() -> Camera3D:
 	return _camera
 
 
-func focus_map_extent(map_tiles: Vector2i, tile_size_godot: float = 1.28) -> void:
-	var extent := maxf(float(map_tiles.x), float(map_tiles.y)) * tile_size_godot
-	_distance = clampf(extent * 0.9, 20.0, 220.0)
+func focus_map_extent(_map_tiles: Vector2i, _tile_size_godot: float = 1.28) -> void:
+	# 编辑默认近距：约 3 个大栅格，不再按整图拉远
+	_distance = EDIT_DISTANCE_GRIDS * LARGE_GRID_GODOT
 	global_position = Vector3(0, 0, 0)
 	_apply()
 
@@ -40,7 +45,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			_dragging = mb.pressed
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_distance = maxf(8.0, _distance - zoom_speed)
+			_distance = maxf(4.0, _distance - zoom_speed)
 			_apply()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_distance = minf(280.0, _distance + zoom_speed)

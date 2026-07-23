@@ -170,8 +170,8 @@ func _load_cliff_slk(path: String) -> void:
 
 
 ## cliffID 如 CIsn → 地形集字母 I；优先 I_Cliff1.png。
-## Icecrown（I）经典解包常无独立 I_Cliff*（嵌在 I.mpq），回退 Northrend（N）雪崖，
-## 避免落到默认 Cliff0/1（洛丹伦夏天绿边）。
+## Icecrown（I）经典解包常无独立 I_Cliff*（嵌在 I.mpq），回退 Northrend（N）雪崖。
+## 洛丹伦夏天（L）常无 L_Cliff*，回退无前缀的 Cliff0/Cliff1（即默认洛丹伦崖壁）。
 static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) -> String:
 	var tileset := ""
 	if cliff_id.length() >= 2:
@@ -184,7 +184,9 @@ static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) 
 		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file])
 		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file.to_lower()])
 		candidates.append("%s/%s%s.png" % [dir, ts, tex_file])
+	# 无前缀：Lordaeron Summer 默认 Cliff0/Cliff1
 	candidates.append("%s/%s.png" % [dir, tex_file])
+	candidates.append("%s/%s.png" % [dir, tex_file.to_lower()])
 	for c in candidates:
 		var res_path := RuntimeAssets.converted_path(c)
 		if RuntimeAssets.file_exists(res_path):
@@ -197,5 +199,7 @@ static func _tileset_texture_fallback(tileset: String) -> String:
 	match tileset:
 		"I":
 			return "N" # Icecrown → Northrend
+		"L":
+			return "" # 走无前缀 Cliff0/1
 		_:
 			return ""

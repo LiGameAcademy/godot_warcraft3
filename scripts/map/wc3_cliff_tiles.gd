@@ -122,7 +122,7 @@ static func collect_ramp_placements(
 						var base_v := _vertical_ramp_base(layers, tp_w, ix, iy)
 						placements.append({
 							"ix": ix, "iy": iy, "tag": tag_v, "base_layer": base_v,
-							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix),
+							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
 							"ramp_dir": ramp_dir,
 							"axis": "v",
 						})
@@ -138,7 +138,7 @@ static func collect_ramp_placements(
 						var base_h := _horizontal_ramp_base(layers, tp_w, ix, iy)
 						placements.append({
 							"ix": ix, "iy": iy, "tag": tag_h, "base_layer": base_h,
-							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix),
+							"tex_idx": _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w),
 							"ramp_dir": ramp_dir_h,
 							"axis": "h",
 						})
@@ -209,8 +209,17 @@ static func _tp_height(heights: Array, tp_w: int, tp_h: int, ix: int, iy: int) -
 
 
 static func cliff_tag_at(layer_heights: Array, width: int, ix: int, iy: int) -> Dictionary:
-	if not is_cliff_tile(layer_heights, width, ix, iy):
+	var slices: Array = cliff_slices_at(layer_heights, width, ix, iy)
+	if slices.is_empty():
 		return {}
+	return slices[0]
+
+
+## 直崖可能高于 2 层：按 A/B/C 模型叠放多段，避免层差>2 时无 GLB 留下缝隙。
+## 返回 [{ tag, base_layer }, ...]，tag 字母仅 A–C。
+static func cliff_slices_at(layer_heights: Array, width: int, ix: int, iy: int) -> Array:
+	if not is_cliff_tile(layer_heights, width, ix, iy):
+		return []
 	var i00 := iy * width + ix
 	var i10 := i00 + 1
 	var i01 := i00 + width
@@ -219,14 +228,30 @@ static func cliff_tag_at(layer_heights: Array, width: int, ix: int, iy: int) -> 
 	var br := int(layer_heights[i10])
 	var tl := int(layer_heights[i01])
 	var tr := int(layer_heights[i11])
-	var base_layer := mini(mini(bl, br), mini(tl, tr))
-	var tag := (
-		String.chr(65 + bl - base_layer)
-		+ String.chr(65 + tl - base_layer)
-		+ String.chr(65 + tr - base_layer)
-		+ String.chr(65 + br - base_layer)
-	)
-	return {"tag": tag, "base_layer": base_layer}
+	var lo := mini(mini(bl, br), mini(tl, tr))
+	var hi := maxi(maxi(bl, br), maxi(tl, tr))
+	var out: Array = []
+	var base := lo
+	while base < hi:
+		var rbl := clampi(bl - base, 0, 2)
+		var rtl := clampi(tl - base, 0, 2)
+		var rtr := clampi(tr - base, 0, 2)
+		var rbr := clampi(br - base, 0, 2)
+		var tag := (
+			String.chr(65 + rbl)
+			+ String.chr(65 + rtl)
+			+ String.chr(65 + rtr)
+			+ String.chr(65 + rbr)
+		)
+		if tag != "AAAA":
+			out.append({"tag": tag, "base_layer": base})
+		# 推进：取本层「高出」的最小相对高度（至少 1），避免每层重复贴墙
+		var min_up := 3
+		for r in [rbl, rtl, rtr, rbr]:
+			if r > 0:
+				min_up = mini(min_up, r)
+		base += maxi(min_up, 1)
+	return out
 
 
 static func _vertical_ramp_base(layers: Array, tp_w: int, ix: int, iy: int) -> int:
@@ -307,13 +332,29 @@ static func _layer(layers: Array, tp_w: int, ix: int, iy: int) -> int:
 	return int(layers[iy * tp_w + ix])
 
 
-static func _tex_idx_at(cliff_tex: Array, cliff_tilesets: Array, i00: int) -> int:
-	var tex_idx := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
-	if tex_idx == 15:
-		tex_idx = 1
-	if tex_idx < 0 or tex_idx >= cliff_tilesets.size():
-		tex_idx = clampi(tex_idx, 0, maxi(cliff_tilesets.size() - 1, 0))
-	return tex_idx
+static func _tex_idx_at(cliff_tex: Array, cliff_tilesets: Array, i00: int, tp_w: int = 0) -> int:
+	var best := 0
+	var found_nonzero := false
+	var offsets: Array = [0]
+	if tp_w > 0:
+		offsets = [0, 1, tp_w, tp_w + 1]
+	for off in offsets:
+		var i: int = i00 + int(off)
+		if i < 0 or i >= cliff_tex.size():
+			continue
+		var tex_idx := int(cliff_tex[i])
+		if tex_idx == 15:
+			tex_idx = 1
+		if tex_idx < 0 or tex_idx >= cliff_tilesets.size():
+			continue
+		if not found_nonzero:
+			best = tex_idx
+		if tex_idx != 0:
+			best = tex_idx
+			found_nonzero = true
+	if best < 0 or best >= cliff_tilesets.size():
+		best = clampi(best, 0, maxi(cliff_tilesets.size() - 1, 0))
+	return best
 
 
 static func _ramp_dir_at(
@@ -324,7 +365,7 @@ static func _ramp_dir_at(
 	iy: int,
 	tiles: Wc3TerrainTiles = null
 ) -> String:
-	var tex_idx := _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix)
+	var tex_idx := _tex_idx_at(cliff_tex, cliff_tilesets, iy * tp_w + ix, tp_w)
 	var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
 	if tiles != null and not cliff_id.is_empty():
 		return tiles.cliff_ramp_dir(cliff_id)
