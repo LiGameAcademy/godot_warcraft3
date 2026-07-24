@@ -117,7 +117,8 @@ Infrastructure
 
 | 类别 | 位置 | 内容 |
 |------|------|------|
-| 地图 JSON | `assets/map-parsed/<slug>/` | `terrain-heightfield.json`（主）、`info.json`、`units.json`、`doodads.json` |
+| 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
+
 | 表数据 | `assets/slk-exported/` | Terrain / Water / Unit / Doodad 等 |
 | 转换资产 | `assets/asset-converted/` | PNG / GLB（运行时按需加载） |
 | 原始缓存 | `.cache/wc3-assets/` | MPQ 解包，gitignore |

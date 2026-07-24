@@ -1,0 +1,133 @@
+class_name Wc3Heightfield
+extends RefCounted
+## 对应 map-parsed/*/terrain-heightfield.json（SoA 平行数组）。
+## 单顶点请用 vertex_at()，不要手写 hf["heights"][i]。
+
+
+const TileVertex := preload("res://scripts/map/data/wc3_tile_vertex.gd")
+
+
+var width: int = 0
+var height: int = 0
+var map_width: int = 0
+var map_height: int = 0
+var tile_size: float = Wc3Coords.TILE_SIZE
+var center_offset: Vector2 = Vector2.ZERO
+var main_tileset: String = ""
+var main_tileset_name: String = ""
+var ground_tilesets: Array = []
+var cliff_tilesets: Array = []
+
+## 平行数组，长度恒为 width * height（JSON 同形，元素为 Variant 数字）。
+var heights: Array = []
+var layer_heights: Array = []
+var water_heights: Array = []
+var flags_packed: Array = []
+var ground_textures: Array = []
+var ground_variations: Array = []
+var cliff_textures: Array = []
+var cliff_variations: Array = []
+
+
+func tilepoint_count() -> int:
+	return width * height
+
+
+func is_valid() -> bool:
+	var n := tilepoint_count()
+	return (
+		width > 0
+		and height > 0
+		and heights.size() == n
+		and layer_heights.size() == n
+		and flags_packed.size() == n
+	)
+
+
+func index_at(ix: int, iy: int) -> int:
+	return iy * width + ix
+
+
+func in_bounds(ix: int, iy: int) -> bool:
+	return ix >= 0 and iy >= 0 and ix < width and iy < height
+
+
+## 按需创建顶点视图（非缓存；调用方短生命周期持有即可）。
+func vertex_at(ix: int, iy: int):
+	if not in_bounds(ix, iy):
+		return null
+	return TileVertex.create(self, ix, iy)
+
+
+func vertex_at_index(index: int):
+	if index < 0 or index >= tilepoint_count():
+		return null
+	var ix: int = index % width
+	var iy: int = int(index / width)
+	return TileVertex.create(self, ix, iy)
+
+
+static func from_dict(d: Dictionary):
+	var hf = new()
+	hf.width = int(d.get("tilepointWidth", 0))
+	hf.height = int(d.get("tilepointHeight", 0))
+	hf.map_width = int(d.get("mapWidth", maxi(hf.width - 1, 0)))
+	hf.map_height = int(d.get("mapHeight", maxi(hf.height - 1, 0)))
+	hf.tile_size = float(d.get("tileSize", Wc3Coords.TILE_SIZE))
+	var co: Dictionary = d.get("centerOffset", {}) as Dictionary
+	hf.center_offset = Vector2(float(co.get("x", 0.0)), float(co.get("y", 0.0)))
+	hf.main_tileset = str(d.get("mainTileset", ""))
+	hf.main_tileset_name = str(d.get("mainTilesetName", ""))
+	hf.ground_tilesets = (d.get("groundTilesets", []) as Array).duplicate()
+	hf.cliff_tilesets = (d.get("cliffTilesets", []) as Array).duplicate()
+	hf.heights = (d.get("heights", []) as Array).duplicate()
+	hf.layer_heights = (d.get("layerHeights", []) as Array).duplicate()
+	hf.water_heights = (d.get("waterHeights", []) as Array).duplicate()
+	hf.flags_packed = (d.get("flagsPacked", []) as Array).duplicate()
+	hf.ground_textures = (d.get("groundTextures", []) as Array).duplicate()
+	hf.ground_variations = (d.get("groundVariations", []) as Array).duplicate()
+	hf.cliff_textures = (d.get("cliffTextures", []) as Array).duplicate()
+	hf.cliff_variations = (d.get("cliffVariations", []) as Array).duplicate()
+	# 缺水高时与地面齐平，避免空数组
+	if hf.water_heights.is_empty() and not hf.heights.is_empty():
+		hf.water_heights = hf.heights.duplicate()
+	return hf
+
+
+func to_dict() -> Dictionary:
+	return {
+		"tilepointWidth": width,
+		"tilepointHeight": height,
+		"mapWidth": map_width,
+		"mapHeight": map_height,
+		"centerOffset": {"x": center_offset.x, "y": center_offset.y},
+		"mainTileset": main_tileset,
+		"mainTilesetName": main_tileset_name,
+		"groundTilesets": ground_tilesets.duplicate(),
+		"cliffTilesets": cliff_tilesets.duplicate(),
+		"tileSize": tile_size,
+		"heights": heights.duplicate(),
+		"groundTextures": ground_textures.duplicate(),
+		"groundVariations": ground_variations.duplicate(),
+		"cliffVariations": cliff_variations.duplicate(),
+		"cliffTextures": cliff_textures.duplicate(),
+		"layerHeights": layer_heights.duplicate(),
+		"waterHeights": water_heights.duplicate(),
+		"flagsPacked": flags_packed.duplicate(),
+	}
+
+
+static func load_json_path(res_or_abs: String):
+	var abs := RuntimeAssets.project_abs(res_or_abs)
+	if not FileAccess.file_exists(abs):
+		push_error("Wc3Heightfield: 文件不存在 %s" % abs)
+		return null
+	var f := FileAccess.open(abs, FileAccess.READ)
+	if f == null:
+		push_error("Wc3Heightfield: 无法打开 %s" % abs)
+		return null
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("Wc3Heightfield: JSON 根不是对象 %s" % abs)
+		return null
+	return from_dict(parsed as Dictionary)
