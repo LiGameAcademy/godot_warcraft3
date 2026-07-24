@@ -114,13 +114,20 @@ Wc3TileVertex                         ← RefCounted 视图
 ## 6. 文件布局（建议）
 
 ```text
-scripts/map/data/
-  wc3_tile_vertex.gd      # 顶点视图
-  wc3_heightfield.gd      # terrain-heightfield
-  wc3_parsed_map.gd       # 目录加载
-  # 后补：wc3_map_info.gd / wc3_doodad.gd / …
-docs/MAP_DATA.md          # 本文
+scripts/map/data/           # 地图态 JSON ↔ 类型（本文）
+  wc3_tile_vertex.gd
+  wc3_heightfield.gd
+  wc3_parsed_map.gd
+  # 目标：wc3_coords.gd（基础常量）、wc3_map_info.gd …
+
+scripts/map/catalog/        # 资源映射（非 map-parsed）
+  # Wc3CliffTransCatalog / Wc3CliffCatalog / Wc3GroundTileCatalog / Wc3IdCatalog
+
+docs/MAP_DATA.md            # 本文
+docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 ```
+
+`HeightfieldMeshBuilder.read_heightfield_meta` 不应长期存在：元数据以 `Wc3Heightfield` 为准；`sample_vert` 属表现层网格构建。
 
 ---
 

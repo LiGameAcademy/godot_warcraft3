@@ -1,0 +1,14 @@
+---
+description: 架构重构优先级：先 Ground 管线，斜坡后置
+alwaysApply: true
+---
+
+# 重构优先级
+
+本仓库当前主线是 **分层重构（数据 / 资源映射 / 逻辑 / 表现 / 编辑）**，不是斜坡视觉冲刺。
+
+1. 先读 `docs/LAYERED_ARCHITECTURE.md` 与 `docs/ROADMAP.md` ①–⑤。
+2. 优先跑通：Heightfield 数据 → 改顶点 API → Ground Mesh + 纹理 Catalog。
+3. 悬崖 → 斜坡 → 水体 → 装饰/单位，严格按 ROADMAP 顺序。
+4. 改 `wc3_cliff_*` / Ramp 前确认：是否阻塞 Ground 管线？若否，不要插入斜坡大改。
+5. 新增代码必须能指出所属层；说不清层别则先补文档再写。

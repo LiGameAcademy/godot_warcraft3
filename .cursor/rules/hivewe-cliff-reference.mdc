@@ -1,0 +1,31 @@
+---
+description: 悬崖/斜坡开发时参考 HiveWE 与经典 WC3；策略 B 与文档门禁
+globs: scripts/map/wc3_cliff*.gd,editor/scripts/map_document.gd,tools/selftest_cliff*.gd,docs/CLIFF.md,docs/RAMP.md,docs/MAP_ARCHITECTURE.md,docs/EDITOR.md
+alwaysApply: false
+---
+
+# HiveWE / WC3 悬崖与斜坡参考
+
+## 本地路径
+
+| 用途 | 路径 |
+|------|------|
+| 经典 MPQ 可运行（v0.3） | `D:\GameMaker\HiveWE.0.3\HiveWE.exe` |
+| v0.3 源码 | `D:\GameMaker\HiveWE-classic\` |
+| 已装的 0.6（CASC/Reforged） | `D:\GameMaker\HiveWE.0.6\` |
+| 用户经典游戏 | `D:\Program Files (x86)\Warcraft3`（1.27.1，`war3.mpq`） |
+
+## 版本对照
+
+- **HiveWE ≤0.3**：读经典 **MPQ**，直崖 TAG 一次成型（`Terrain.cpp`：`base=min`，`A+layer-base`），跨度 ≤2 不叠段。
+- **HiveWE ≥0.6**：要 **Reforged CASC**（`Warcraft III`），不认经典 `Warcraft3`+MPQ。用户计划后续装重置版后再用。
+- **本仓库直崖**：TAG 对齐 mdx-m3-viewer / HiveWE（BL,TL,TR,BR → A/B/C）；`cliff_slices_at` 跨度≤2 **单片**，>2 才按 +2 叠段。
+- **异种崖策略 B**：触及直崖格整格同化当前类型；远处隔离。详见 `docs/CLIFF.md`。
+
+## 开发时
+
+1. 改悬崖网格/选型/笔刷拓扑前，对照 `HiveWE-classic/HiveWE/Terrain.cpp` 的 cliff 选型与 `CliffMesh.*`；读 `docs/CLIFF.md`。
+2. **斜坡**：以 `docs/RAMP.md` 为门禁与路线图（A 崖边拖动坡 vs B 纯高度；独立调试层蓝菱形；M0–M4）。CliffTrans 已启用；甲板开关 `RAMP_SURFACE_DECK_ENABLED`（当前关）。
+3. 有重置版后优先用 **HiveWE 0.6+** 做视觉对照；现阶段用 **0.3 + YDWE**。
+4. 回归跑 `tools/selftest_cliff_*.gd`（含 AABC、远程隔离、异种接触同化）。
+5. 直崖不要再对跨度≤2 做 min_up 叠段。

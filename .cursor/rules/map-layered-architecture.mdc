@@ -1,0 +1,46 @@
+---
+description: 地图模块分层门禁：Data / Catalog / Logic / Presentation / Editor
+globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/ROADMAP.md,docs/MAP_DATA.md
+alwaysApply: false
+---
+
+# 地图分层架构（vibecoding 门禁）
+
+总纲：`docs/LAYERED_ARCHITECTURE.md`。路线：`docs/ROADMAP.md`。
+
+## 五层（勿混）
+
+| 层 | 目录/前缀 | 可以 | 禁止 |
+|----|-----------|------|------|
+| Data | `scripts/map/data/` | JSON↔类型、SoA、FLAG/TILE 常量 | 建 Mesh、拼 GLB 路径、算崖 TAG |
+| Catalog | `scripts/map/catalog/`（目标） | ID/TAG/tileset → 路径或 Texture 索引 | 改 heightfield、判「这一格是崖」 |
+| Logic | Domain / Document API | 拓扑、门禁、选型、placements | `SurfaceTool`、挂节点、直接 `load` 资产 |
+| Presentation | `map_*_layer`、Mesh 构建 | 消费 placements + resolve 结果 | 写 flags/layer、硬编码资产路径 |
+| Editor | `editor/scripts/` | 调 Logic API、脏区重建 | 在笔刷里组 Mesh 或 resolve 路径 |
+
+## 模块顺序（强制）
+
+`Data → Catalog(若需) → Logic → Presentation → Editor`  
+当前重构优先 **高度图 + 地面纹理**；斜坡不是本阶段驱动目标。
+
+## 现有脚本裁决（改代码时遵守）
+
+- `Wc3Coords`：基础常量属 Data；`wc3_to_godot` 仅表现边界调用。
+- `HeightfieldMeshBuilder.read_heightfield_meta`：废除，改用 `Wc3Heightfield`。
+- `sample_vert`：属表现网格构建，不进 Data。
+- `Wc3CliffTransCatalog` / `Wc3IdCatalog`：Catalog，不是 map-parsed Data。
+- 直崖应对称做 `Wc3CliffCatalog`；`Wc3CliffTiles` 只留逻辑选型，路径查找进 Catalog。
+- Autotile：邻域选层进 Catalog/纯函数；Layer 只组几何。
+
+## 反例
+
+```gdscript
+# ❌ Layer / Brush 内
+flags[i] |= FLAG_RAMP
+var path = "Doodads/Terrain/Cliffs/AAAB0.glb"
+
+# ✅
+doc.heightfield.vertex_at(ix, iy).has_ramp = true  # Logic/Editor → Data
+var path = cliff_catalog.resolve(tag, variation)     # Logic 选型后 Catalog
+layer.build(placements)                              # Presentation
+```

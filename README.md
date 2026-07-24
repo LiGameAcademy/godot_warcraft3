@@ -8,7 +8,9 @@
 
 水体（HiveWE 对齐、后续 Shoreline、远期增强）：[docs/WATER.md](docs/WATER.md)。
 
-地图运行时架构（分层、数据流、演进）：[docs/MAP_ARCHITECTURE.md](docs/MAP_ARCHITECTURE.md)。
+分层总纲（数据 / 资源映射 / 逻辑 / 表现 / 编辑）：[docs/LAYERED_ARCHITECTURE.md](docs/LAYERED_ARCHITECTURE.md)。  
+路线图：[docs/ROADMAP.md](docs/ROADMAP.md)。  
+MapRoot 节点树与历史职责表：[docs/MAP_ARCHITECTURE.md](docs/MAP_ARCHITECTURE.md)。
 
 地图编辑器（HiveWE 式竖切，分支 `feature/map-editor`）：[docs/EDITOR.md](docs/EDITOR.md) · 场景 F6 → [`editor/scenes/editor_main.tscn`](editor/scenes/editor_main.tscn)。
 

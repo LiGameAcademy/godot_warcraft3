@@ -1,11 +1,13 @@
 # MapRoot 架构设计
 
 > 范围：`scenes/map/map_root.tscn` + `scripts/map/*` — Godot 侧如何把预解析地图数据变成可预览场景。  
-> 编辑器如何复用本结构见 [EDITOR.md](EDITOR.md)。水体细节见 [WATER.md](WATER.md)。悬崖/斜坡见 [CLIFF.md](CLIFF.md) / [RAMP.md](RAMP.md)。
+> **分层总纲（优先）**：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)（Data / Catalog / Logic / Presentation / Editor）。  
+> 编辑器如何复用本结构见 [EDITOR.md](EDITOR.md)。水体细节见 [WATER.md](WATER.md)。悬崖/斜坡见 [CLIFF.md](CLIFF.md) / [RAMP.md](RAMP.md)。  
 > 路线图见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-07-23
+> 最后更新：2026-07-24
 
-原则：**离线解析 → 数据驱动装配 → 节点树分层渲染**。数据与逻辑分离；Layer 只挂树，规则在 Domain。
+原则：**离线解析 → 数据驱动装配 → 节点树分层渲染**。数据与逻辑分离；Layer 只挂树，规则在 Domain。  
+本文 §2 职责表为历史快照；与总纲冲突时以 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) 为准，并逐步搬迁。
 
 ---
 
