@@ -8,7 +8,7 @@ godot --headless --path . -s res://tests/unit/selftest_terrain_logic.gd
 
 | 子目录 | 内容 |
 |--------|------|
-| `unit/` | 数据 / Catalog / TerrainLogic / MapDocument / 斜坡逻辑 |
+| `unit/` | 数据 / Catalog / TerrainLogic / MapDocument / Ground Mesh / 斜坡逻辑 |
 | `cliff/` | 直崖回归（变体、层高、贴图） |
 | `water/` | 岸浪等 |
 | `integration/` | 装饰物、寻路栅格等 |

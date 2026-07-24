@@ -1,12 +1,12 @@
 [gd_scene load_steps=10 format=3 uid="uid://cmaprootwc3"]
 
 [ext_resource type="Script" path="res://scripts/map/map_loader.gd" id="1_loader"]
-[ext_resource type="Script" path="res://scripts/map/map_terrain_layer.gd" id="2_terrain"]
+[ext_resource type="Script" path="res://scripts/map/presentation/layers/map_terrain_layer.gd" id="2_terrain"]
 [ext_resource type="Script" path="res://scripts/map/map_water_layer.gd" id="3_water"]
 [ext_resource type="Script" path="res://scripts/map/map_cliff_layer.gd" id="4_cliff"]
 [ext_resource type="Script" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
 [ext_resource type="Script" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
-[ext_resource type="Script" path="res://scripts/map/heightfield_mesh.gd" id="7_hfmesh"]
+[ext_resource type="Script" path="res://scripts/map/presentation/mesh/heightfield_mesh.gd" id="7_hfmesh"]
 [ext_resource type="Script" path="res://scripts/map/map_pathing_debug_layer.gd" id="8_pathdbg"]
 [ext_resource type="Script" path="res://scripts/map/map_ramp_debug_layer.gd" id="9_rampdbg"]
 

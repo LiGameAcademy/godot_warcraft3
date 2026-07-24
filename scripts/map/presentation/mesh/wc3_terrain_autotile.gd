@@ -1,15 +1,12 @@
 class_name Wc3TerrainAutotile
 extends RefCounted
 
-## WC3 地表「平滑过渡贴图」——以顶点（tilepoint）染色，以 Tile 为单位查图集。
+## 地面网格构建（表现层）：顶点染色 + 官方图集 bitmask → ArrayMesh。
+## 路径：`scripts/map/presentation/mesh/`。纹理数组请走 `Wc3GroundTileCatalog`。
 ##
 ## 编辑器点击某个顶点时写入 groundTexture；渲染时每个 Tile 看四角：
 ##   左下(BL)=1  右下(BR)=2  左上(TL)=4  右上(TR)=8
-## 对某一种地表类型，把「有该类型的角」权重相加 → 图集编号 0..15，
-## 直接取素材表中预先画好的过渡块（不必拼接 1 与 8）。
-##
-## 多纹理时：索引最小的类型做底层（整格 fill variation）；
-## 其余类型各算自己的 bitmask，按 alpha 叠在上层（mdx-m3-viewer / 经典客户端同款）。
+## 对某一种地表类型，把「有该类型的角」权重相加 → 图集编号 0..15。
 ##
 ## 注意：WC3 官方图集的 bit 布局与「BL=1」的教学口诀不同，实际采样用 ATLAS_* 常量
 ##（与 mdx-m3-viewer 一致）：BR=1, BL=2, TR=4, TL=8。

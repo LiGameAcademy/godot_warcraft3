@@ -76,10 +76,11 @@
 
 ### ④ 地形高度图 — 表现（Ground 管线）
 
-- [ ] Mesh：`SurfaceTool` / `ArrayMesh` 封装；采样用 Heightfield + `Wc3Coords.wc3_to_godot`
-- [ ] 纹理：`docs/TERRAIN_TILES.md`（规则）+ `Wc3GroundTileCatalog`（纹理级 → 数组）
-- [ ] 选图方法：邻域 → array 层 / variation（Catalog 或旁路纯函数，**不**写在 Layer 里拼路径）
-- [ ] `MapTerrainLayer` 只挂结果；逐步拆薄 `wc3_terrain_autotile.gd`
+- [x] Mesh：`presentation/mesh/`（`HeightfieldMesh` + `Wc3TerrainAutotile`）
+- [x] 纹理：`docs/TERRAIN_TILES.md` + `Wc3GroundTileCatalog`（运行时 Texture2DArray）
+- [x] `MapTerrainLayer` → `presentation/layers/`；贴图经 Catalog
+- [ ] 选图纯函数与 Mesh 构建进一步拆文件（可选）
+- [ ] 脏区局部重建（⑤）
 
 **验收**：主场景 / 编辑器能显示带正确 tileset 纹理的高度网格；改一个顶点纹理后重建可见。
 

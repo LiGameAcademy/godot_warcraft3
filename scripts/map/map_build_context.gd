@@ -51,7 +51,9 @@ static func create(
 	if typeof(flags_wrap) == TYPE_DICTIONARY:
 		ctx.map_flags = flags_wrap
 
-	var ts := ctx.heightfield.main_tileset
+	var ts: String = ""
+	if ctx.heightfield != null:
+		ts = str(ctx.heightfield.main_tileset)
 	ctx.main_tileset = ts if not ts.is_empty() else "I"
 	return ctx
 

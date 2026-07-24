@@ -1,6 +1,7 @@
 class_name MapTerrainLayer
 extends Node3D
-## 地面层：消费 MapBuildContext → Autotile 网格 + shader。
+## 地面表现层：消费 MapBuildContext → Ground Mesh + shader。
+## 纹理经 Catalog；网格经 Autotile/MeshBuilder；本节点只挂树。
 
 
 const GROUND_SHADER: Shader = preload("res://shaders/wc3_ground.gdshader")
@@ -18,11 +19,13 @@ func build(ctx) -> void:
 	ctx.ensure_cliff_topology()
 
 	var ground_tilesets: Array = ctx.hf.get("groundTilesets", [])
+	if ground_tilesets.is_empty() and ctx.heightfield != null:
+		ground_tilesets = ctx.heightfield.ground_tilesets
 	if ground_tilesets.is_empty():
 		push_warning("MapTerrainLayer: groundTilesets 为空")
 		return
 
-	var extended := Wc3TerrainAutotile.build_extended_flags(ground_tilesets, ctx.tiles)
+	var extended := Wc3GroundTileCatalog.build_extended_flags(ground_tilesets, ctx.tiles)
 	var built := Wc3TerrainAutotile.build_ground_mesh(
 		ctx.hf, extended, ctx.tiles, ctx.meta, ctx.cliff_romp, ctx.cliff_ramp_placements
 	)
@@ -30,7 +33,7 @@ func build(ctx) -> void:
 		push_warning("MapTerrainLayer: 地面网格为空")
 		return
 
-	var tex_array := Wc3TerrainAutotile.build_tileset_array(ground_tilesets, ctx.tiles)
+	var tex_array := Wc3GroundTileCatalog.build_texture_array(ground_tilesets, ctx.tiles)
 	if tex_array == null:
 		push_warning("MapTerrainLayer: Texture2DArray 失败")
 		return

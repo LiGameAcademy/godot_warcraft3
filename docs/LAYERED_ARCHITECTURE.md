@@ -182,7 +182,8 @@ scripts/map/
 │
 ├── catalog/                       # 资源映射：运行时扫盘 / resolve（不检入 .tres 表）
 │   ├── wc3_id_catalog.gd
-│   ├── wc3_ground_tile_catalog.gd # 目标
+│   ├── wc3_terrain_tiles.gd       # tileID / cliffID → PNG·模型目录
+│   ├── wc3_ground_tile_catalog.gd # Texture2DArray
 │   ├── wc3_cliff_catalog.gd       # 目标（直崖）
 │   └── wc3_cliff_trans_catalog.gd
 │
@@ -195,21 +196,16 @@ scripts/map/
 │   └── …                          # doodad / unit 放置规则（后置）
 │
 ├── presentation/                  # 表现：挂树 + 建 Mesh
-│   ├── map_loader.gd              # MapRoot 编排
-│   ├── map_build_context.gd
 │   ├── layers/
-│   │   ├── map_terrain_layer.gd
-│   │   ├── map_cliff_layer.gd
-│   │   ├── map_water_layer.gd
-│   │   ├── map_doodad_layer.gd
-│   │   ├── map_unit_layer.gd
-│   │   └── map_*_debug_layer.gd
-│   ├── mesh/
-│   │   ├── heightfield_mesh.gd
-│   │   └── ground_mesh_builder.gd # SurfaceTool；吸收 sample_vert
-│   └── orbit_camera.gd            # 预览相机（非编辑器）
+│   │   └── map_terrain_layer.gd   # Ground（其余 Layer 待迁）
+│   └── mesh/
+│       ├── heightfield_mesh.gd
+│       ├── heightfield_mesh_builder.gd
+│       └── wc3_terrain_autotile.gd  # 地面 ArrayMesh
 │
-└── infra/                         # 基建
+│   # 待迁：map_loader / map_build_context / 其它 Layer
+│
+└── infra/                         # 基建（待迁）
     ├── runtime_assets.gd
     ├── map_model_cache.gd
     └── map_placeholders.gd
@@ -219,8 +215,8 @@ scripts/map/
 | ---------------- | ------ |
 | `wc3_cliff_tiles.gd`（选型部分） | `logic/cliff/` |
 | `wc3_cliff_builder.gd`（组 transform） | `presentation/` 或 `logic/cliff/` 产出 placements、Layer 消费 |
-| `wc3_terrain_autotile.gd` | 拆：选层 → `logic/terrain` + `catalog`；组 mesh → `presentation/mesh` |
-| `heightfield_mesh_builder.gd` | meta → `data`；sample → `presentation/mesh` |
+| ~~`wc3_terrain_autotile.gd`~~ | ✅ `presentation/mesh/` + Catalog 贴图 |
+| ~~`heightfield_mesh_builder.gd`~~ | ✅ meta → `data`；sample → `presentation/mesh` |
 
 ### 4.2 `editor/`（编辑层）
 
