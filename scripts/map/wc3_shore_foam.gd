@@ -5,7 +5,7 @@ extends RefCounted
 
 
 const TEX_FOAM := "Textures/ShorelineParticleXY.png"
-const FOAM_SHADER: Shader = preload("res://shaders/wc3_shore_foam.gdshader")
+const FOAM_SHADER: Shader = preload("res://assets/shaders/wc3_shore_foam.gdshader")
 const CLIFF_SPEED_MUL := 0.10
 ## 悬崖泡沫统一略退入水面（格）
 const CLIFF_OUT_TILES := 0.10

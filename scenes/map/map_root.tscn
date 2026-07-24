@@ -1,42 +1,45 @@
-[gd_scene load_steps=10 format=3 uid="uid://cmaprootwc3"]
+[gd_scene format=3 uid="uid://cmaprootwc3"]
 
-[ext_resource type="Script" path="res://scripts/map/map_loader.gd" id="1_loader"]
-[ext_resource type="Script" path="res://scripts/map/presentation/layers/map_terrain_layer.gd" id="2_terrain"]
-[ext_resource type="Script" path="res://scripts/map/map_water_layer.gd" id="3_water"]
-[ext_resource type="Script" path="res://scripts/map/map_cliff_layer.gd" id="4_cliff"]
-[ext_resource type="Script" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
-[ext_resource type="Script" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
-[ext_resource type="Script" path="res://scripts/map/presentation/mesh/heightfield_mesh.gd" id="7_hfmesh"]
-[ext_resource type="Script" path="res://scripts/map/map_pathing_debug_layer.gd" id="8_pathdbg"]
-[ext_resource type="Script" path="res://scripts/map/map_ramp_debug_layer.gd" id="9_rampdbg"]
+[ext_resource type="Script" uid="uid://bqng5hhmqcl4" path="res://scripts/map/map_loader.gd" id="1_loader"]
+[ext_resource type="Script" uid="uid://mkkge4i7j6f3" path="res://scripts/map/presentation/layers/map_terrain_layer.gd" id="2_terrain"]
+[ext_resource type="Script" uid="uid://buk24dgmctru7" path="res://scripts/map/map_water_layer.gd" id="3_water"]
+[ext_resource type="Script" uid="uid://ciepo2qrybmca" path="res://scripts/map/map_cliff_layer.gd" id="4_cliff"]
+[ext_resource type="Script" uid="uid://cttbeh64gagpo" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
+[ext_resource type="Script" uid="uid://4ju3bbspw18r" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
+[ext_resource type="Script" uid="uid://bu2uneabbpiey" path="res://scripts/map/presentation/mesh/heightfield_mesh.gd" id="7_hfmesh"]
+[ext_resource type="Script" uid="uid://y12m4h6fuy53" path="res://scripts/map/presentation/layers/map_debug_grid_layer.gd" id="8_dbggrid"]
+[ext_resource type="Script" uid="uid://dqxttail7y3nf" path="res://scripts/map/map_ramp_debug_layer.gd" id="9_rampdbg"]
+[ext_resource type="Material" path="res://assets/materials/wc3_ground_material.tres" id="10_gmat"]
 
-[node name="MapRoot" type="Node3D"]
+[node name="MapRoot" type="Node3D" unique_id=1421899306]
 script = ExtResource("1_loader")
-map_dir = "res://assets/map-parsed/losttemple"
 
-[node name="Terrain" type="Node3D" parent="."]
+[node name="Terrain" type="Node3D" parent="." unique_id=4946903]
 script = ExtResource("2_terrain")
+ground_material = ExtResource("10_gmat")
 
-[node name="Ground" type="MeshInstance3D" parent="Terrain"]
+[node name="Ground" type="MeshInstance3D" parent="Terrain" unique_id=1955837850]
 script = ExtResource("7_hfmesh")
 
-[node name="Cliffs" type="Node3D" parent="."]
+[node name="Cliffs" type="Node3D" parent="." unique_id=871987469]
 script = ExtResource("4_cliff")
 
-[node name="Water" type="Node3D" parent="."]
+[node name="Water" type="Node3D" parent="." unique_id=1007077985]
 script = ExtResource("3_water")
 
-[node name="Surface" type="MeshInstance3D" parent="Water"]
+[node name="Surface" type="MeshInstance3D" parent="Water" unique_id=1568643738]
 script = ExtResource("7_hfmesh")
 
-[node name="Doodads" type="Node3D" parent="."]
+[node name="Doodads" type="Node3D" parent="." unique_id=808681442]
 script = ExtResource("5_doodad")
 
-[node name="Units" type="Node3D" parent="."]
+[node name="Units" type="Node3D" parent="." unique_id=1151454913]
 script = ExtResource("6_unit")
 
-[node name="PathingDebug" type="Node3D" parent="."]
-script = ExtResource("8_pathdbg")
+[node name="DebugGrid" type="Node3D" parent="." unique_id=1887812046]
+script = ExtResource("8_dbggrid")
+terrain_layer = NodePath("../Terrain")
+cliffs_layer = NodePath("../Cliffs")
 
-[node name="RampDebug" type="Node3D" parent="."]
+[node name="RampDebug" type="Node3D" parent="." unique_id=1865397034]
 script = ExtResource("9_rampdbg")

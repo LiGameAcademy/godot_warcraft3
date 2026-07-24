@@ -123,7 +123,7 @@ EditorMain (Node3D)                    ← 场景壳：环境光、挂载子节�
 1. `docs/TERRAIN_TILES.md`  
 2. `Wc3GroundTileCatalog` → `Texture2DArray`  
 3. bitmask / 组网在 `MapTerrainLayer`；底层画网格在 `HeightfieldMesh`  
-4. 静态材质 `presentation/materials/wc3_ground_material.tres`
+4. 静态材质 `assets/materials/wc3_ground_material.tres`（shader 在 `assets/shaders/`）
 
 原 `wc3_terrain_autotile.gd` 已并入 Layer + Catalog。
 
@@ -173,12 +173,12 @@ scripts/map/
 │
 ├── presentation/                  # 表现：挂树 + 建 Mesh
 │   ├── layers/
-│   │   └── map_terrain_layer.gd   # 地表规则 + 组网
-│   ├── mesh/
-│   │   └── heightfield_mesh.gd    # 采样 / 三角四边形 / 材质
-│   └── materials/
-│       └── wc3_ground_material.tres
+│   │   ├── map_terrain_layer.gd   # 地表规则 + 组网
+│   │   └── map_debug_grid_layer.gd
+│   └── mesh/
+│       └── heightfield_mesh.gd    # 采样 / Packed* 批建 / active_material
 │
+│   # 材质/shader 在 res://assets/{materials,shaders}/，不在 presentation/
 │   # 待迁：map_loader / map_build_context / 其它 Layer
 │
 └── infra/                         # 基建（待迁）
@@ -186,6 +186,8 @@ scripts/map/
     ├── map_model_cache.gd
     └── map_placeholders.gd
 ```
+
+**`MapBuildContext`：** 单次构建会话（tiles / catalog / cache / 崖拓扑缓存），**不是**数据权威。权威地形态是 `Wc3Heightfield`。`hf`/`meta` 字典视图为过渡兼容，Layer 优先读 `ctx.heightfield`。
 
 | 现文件 | 状态 |
 |--------|------|

@@ -90,6 +90,20 @@ static func from_dict(d: Dictionary, duplicate_arrays: bool = true) -> Wc3Height
 	# 缺水高时与地面齐平，避免空数组
 	if hf.water_heights.is_empty() and not hf.heights.is_empty():
 		hf.water_heights = hf.heights.duplicate()
+	if not hf.is_valid():
+		MapLog.warn(
+			MapLog.Layer.DATA,
+			"Heightfield",
+			"from_dict 结果无效 w=%d h=%d heights=%d"
+			% [hf.width, hf.height, hf.heights.size()]
+		)
+	else:
+		MapLog.debug(
+			MapLog.Layer.DATA,
+			"Heightfield",
+			"from_dict %dx%d share=%s tilesets=%d"
+			% [hf.width, hf.height, not duplicate_arrays, hf.ground_tilesets.size()]
+		)
 	return hf
 
 

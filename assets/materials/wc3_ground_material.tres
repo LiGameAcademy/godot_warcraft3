@@ -1,6 +1,6 @@
-[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+[gd_resource type="ShaderMaterial" format=3]
 
-[ext_resource type="Shader" path="res://shaders/wc3_ground.gdshader" id="1_shader"]
+[ext_resource type="Shader" uid="uid://q67h4njfuwwp" path="res://assets/shaders/wc3_ground.gdshader" id="1_shader"]
 
 [resource]
 resource_name = "Wc3Ground"

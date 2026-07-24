@@ -23,21 +23,20 @@ alwaysApply: false
 ## 地面管线（参照实现）
 
 | 脚本 | 职责 |
-|------|------|
-| `HeightfieldMesh` | 采样 + 三角/四边形批建 + 挂材质（底层） |
-| `MapTerrainLayer` | WC3 地表规则 + 调底层画网格 + 赋运行时贴图参数 |
-| `wc3_ground_material.tres` | 静态 shader 参数落盘；Layer 只 `duplicate` 后设 `tilesets` 等 |
+| ------ | ------ |
+| `HeightfieldMesh` | 采样 + Packed* 三角/四边形批建 + `active_material` / 调试 uniform |
+| `MapTerrainLayer` | WC3 地表规则 + `@export ground_material` + 调底层画网格 |
+| `MapDebugGridLayer` | 跨子系统调试栅格（地面/崖/水共用），不塞进 TerrainLayer |
+| `assets/materials/*.tres` + `assets/shaders/*` | 静态材质与 shader；Layer 只 `duplicate` 后设运行时参数 |
 | `Wc3GroundTileCatalog` | tileset → Texture2DArray |
 
 ## 反例
 
 ```gdscript
-# ❌ 代码里 new ShaderMaterial + 写死 roughness
+# ❌ 代码里 new ShaderMaterial + 写死 roughness；preload 路径写死在 Layer const
 var mat := ShaderMaterial.new()
 mat.shader = preload("...")
-mat.set_shader_parameter("roughness_value", 0.92)
 
-# ✅
-var mat := GROUND_MATERIAL.duplicate() as ShaderMaterial
-mat.set_shader_parameter("tilesets", tex_array)
+# ✅ 场景 @export 指向 assets/materials；Mesh 持有 active_material
+_ground.apply_from_template(ground_material, {"tilesets": tex_array})
 ```

@@ -32,7 +32,10 @@ alwaysApply: false
 - `sample_vert`：属表现网格构建，不进 Data。
 - `Wc3CliffTransCatalog` / `Wc3IdCatalog`：Catalog，不是 map-parsed Data。
 - 直崖应对称做 `Wc3CliffCatalog`；`Wc3CliffTiles` 只留逻辑选型，路径查找进 Catalog。
-- Autotile / 地面组网：在 `MapTerrainLayer`；底层画网格在 `HeightfieldMesh`；贴图数组在 Catalog；材质用 `.tres`。
+- Autotile / 地面组网：在 `MapTerrainLayer`；底层画网格在 `HeightfieldMesh`；贴图数组在 Catalog；材质/shader 在 `assets/`。
+- 调试栅格：`MapDebugGridLayer`；禁止塞进 Terrain/Water/Cliff 层职责。
+- `MapBuildContext`：构建会话，不是 Data；结构化数据纪律见 `map-typed-structures.mdc`。
+- 编辑总管：`MapEditor`（`editor/scripts/editor.gd`）子节点；改图走 `EditorCommandHistory`，禁止 Brush 绕过命令直接改完又不记栈（笔划用 `record`）。
 - 禁止再引入仅转发的 `*MeshBuilder`；拆分尺度见 `map-presentation-split.mdc`。
 
 ## 反例

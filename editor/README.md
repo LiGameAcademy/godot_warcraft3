@@ -16,7 +16,8 @@
 
 | 输入 | 作用 |
 |------|------|
-| 顶栏菜单 | 文件→新建 / 打开示例图 / 保存 / 退出；查看→栅格；窗口→工具面板 |
+| 顶栏菜单 | 文件→新建 / 打开示例图 / 保存 / 退出；编辑→撤销/重做；查看→栅格；窗口→工具面板 |
+| Ctrl+Z / Ctrl+Y | 撤销 / 重做（笔划级） |
 | 工具浮窗 | 地表贴图、悬崖工具与类型、笔刷尺寸（1/2/3/5/8）与形状（圆/方） |
 | 左键拖拽 | 刷地表和/或悬崖（由面板勾选决定） |
 | WASD / QE | 平移相机 |
@@ -32,16 +33,13 @@ editor/
   README.md
   scenes/editor_main.tscn
   scripts/
-    editor_app.gd          # 编排根
-    map_document.gd        # 内存 heightfield 文档
+    editor_shell.gd        # 场景壳
+    editor.gd              # MapEditor 总管
+    editor_app.gd          # 已废弃
+    map_document.gd
     editor_camera.gd
+    commands/              # 命令模式（撤销/重做）
     tools/terrain_brush.gd
     ui/
-      tool_palette_window.*
-      new_map_dialog.*
-      menu_bar.*
-      toolbar.*
-      world_edit_data.gd
-      editor_i18n.gd
   locale/editor_strings.csv
 ```

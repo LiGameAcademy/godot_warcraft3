@@ -36,60 +36,46 @@
 
 ## 3. 场景树
 
-### 3.1 目标（契约）
+### 3.1 场景树（已落地）
 
 ```text
-EditorMain (Node3D)                     ← 场景壳；无厚业务脚本
+EditorMain (Node3D)                     ← editor_shell.gd（薄壳）
+├── Editor (Node)                       ← editor.gd / MapEditor
+│                                         @export 注入；Document + CommandHistory
 ├── WorldEnvironment / Sun
-├── Editor (Node)                       ← editor.gd / class_name MapEditor
-│                                         @export map_root → MapRoot
-│                                         @export 可选：brush / camera / ui 根
-├── MapRoot (MapLoader)                 ← 实例 scenes/map/map_root.tscn
-│   ├── Terrain / Cliffs / Water / …
+├── MapRoot (MapLoader)
 ├── EditorCamera
-├── TerrainBrush
+├── TerrainBrush                        ← 笔划录制 → History.record
 ├── NewMapDialog
-└── UI (CanvasLayer)
-    ├── MenuBarPanel / MenuBar
-    ├── ToolStrip / Toolbar
-    ├── SideBar / TilePalette
-    └── StatusBar
-
-运行时：ToolPaletteWindow × N
+└── UI …
+运行时：ToolPaletteWindow × N（挂在 Editor 下）
 ```
 
 | 约定 | 说明 |
 |------|------|
-| `Editor` 是 `editor_main.tscn` 的 **直接子节点** | 与 MapRoot 同级，便于在检查器里拖引用 |
-| `extends Node` | 总管不承载 3D 变换；世界在兄弟节点 |
-| MapRoot **注入** | `@export var map_root: MapLoader`，不用「根脚本 + `$MapRoot`」作为长期形态 |
+| `Editor` 为直接子节点 | `@export` 注入；缺省按 `../MapRoot` 等回退 |
+| 命令模式 | `editor/scripts/commands/`；Ctrl+Z/Y、菜单 `edit_undo`/`edit_redo` |
 
-### 3.2 现状（迁移前）
+### 3.2 迁移说明
 
-```text
-EditorMain (editor_app.gd : Node3D)     ← 编排仍在根上
-├── MapRoot / EditorCamera / TerrainBrush / …
-└── UI …
-```
-
-迁徙：把 `editor_app.gd` 职责挪到子节点 `Editor`，根改为薄壳；路径与信号一次性改完并自测新建/笔刷/保存。
+~~根节点 `editor_app.gd`~~ 已废弃；勿再挂。
 
 ---
 
 ## 4. 模块职责
 
-### 4.1 编辑层（目标路径）
+### 4.1 编辑层
 
 | 路径 | 职责 |
 |------|------|
-| `scripts/editor.gd` | **总管 MapEditor**：Document、菜单、面板、笔刷设置、脏状态、`map_root` 重建 |
-| `scripts/document/map_document.gd` | 会话文档；目标持有 `Wc3Heightfield` |
-| `scripts/tools/terrain_brush.gd` | 拾取 tilepoint、绘制、节流 `rebuild_requested` |
-| `scripts/camera/editor_camera.gd` | WASD/QE、旋转、缩放 |
-| `scripts/ui/*` | 菜单、工具条、浮窗、对话框、i18n、WorldEditData |
-| `scripts/settings/editor_settings_store.gd` | 用户设置 |
-
-现状文件仍可能平铺在 `editor/scripts/`（如 `editor_app.gd`）；新代码按上表落位。
+| `scripts/editor_shell.gd` | 场景壳 |
+| `scripts/editor.gd`（`MapEditor`） | 总管：Document、History、菜单、重建 |
+| `scripts/map_document.gd` | 会话文档（`Wc3Heightfield`） |
+| `scripts/commands/*` | Command / History / PaintStroke / Snapshot |
+| `scripts/tools/terrain_brush.gd` | 拾取、绘制、笔划录制 |
+| `scripts/editor_camera.gd` | 相机 |
+| `scripts/ui/*` | 菜单、工具条、浮窗、i18n |
+| `scripts/editor_settings_store.gd` | 用户设置 |
 
 ### 4.2 运行时装配（编辑器复用，属 Presentation）
 
@@ -113,7 +99,7 @@ MapEditor._ready()
        → create_from_options(_default_new_map_options())
        → _apply_document(full_reload=true)
             → 各面板 rebuild_terrain
-            → TerrainBrush.setup(doc, camera, world)
+            → TerrainBrush.setup(doc, camera, world, history)
             → MapLoader.reload_from_hf → Terrain / Cliffs / Water.build
             → EditorCamera.focus_map_extent()
   → _spawn_tool_palette(TERRAIN)
@@ -213,15 +199,16 @@ file_save → MapDocument.save_json()
 
 ### 明确未做
 
-导出 w3e/w3x、撤销、装饰/单位编辑、EditorPlugin。
+导出 w3e/w3x、装饰/单位编辑、EditorPlugin。撤销栈已接入（笔划级）；菜单其它编辑项仍为桩。
 
 ---
 
 ## 9. 建议后续（服从 ROADMAP）
 
-1. 落地 `MapEditor` 总管节点（从 `editor_app.gd` 迁出）  
-2. Document 迁 `Wc3Heightfield`；Ground 管线可读可刷  
-3. 再谈撤销、高度笔刷、装饰/单位、导出  
+1. ~~落地 `MapEditor` 总管~~ ✅  
+2. 笔刷全走 Logic；脏区局部重建  
+3. 高度笔刷命令、合并细碎笔划、撤销上限与 UI 灰显  
+4. 装饰/单位、导出  
 
 完整顺序见 [ROADMAP.md](ROADMAP.md)。
 

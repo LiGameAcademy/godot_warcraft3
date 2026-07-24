@@ -1,42 +1,49 @@
 class_name MapBuildContext
 extends RefCounted
-## 单次地图加载的共享上下文。权威地形为 Wc3Heightfield；meta/hf 为其视图。
 
+## 单次地图构建会话（Presentation 装配状态），不是数据权威。
+##
+## 权威地形态：`Wc3Heightfield`（Data）与 `MapDocument`（Editor）。
+## 本类职责：
+## - 持有本次 rebuild 要用的 Catalog / Cache / tiles
+## - 缓存悬崖拓扑（romp / placements），避免各 Layer 重复算
+## - 过渡期保留 `hf` / `meta` 字典视图，供尚未改完的悬崖/水体层
+##
+## 与 Data 不重叠：Heightfield 描述「地图是什么」；Context 描述「这一次怎么建」。
+## 长期方向：Layer 优先读 `heightfield` 字段；`meta`/`hf` 随崖/水重构删掉。
 
 var map_dir: String = ""
-## 权威 SoA（与 Document / 磁盘共用或自持平行数组）
-var heightfield: Wc3Heightfield
-## 与 heightfield 共享数组的 JSON 形视图（兼容尚未改完的 Domain）
-var hf: Dictionary = {}
-## 构建器用 meta（heightfield.to_build_meta，数组共享）
-var meta: Dictionary = {}
-## info.json（可空）
-var info: Dictionary = {}
-## info.flags（waterWavesCliff 等）
-var map_flags: Dictionary = {}
-var main_tileset: String = "I"
+var heightfield: Wc3Heightfield = null					## 权威 SoA（与 Document / 磁盘共用或自持平行数组）
+var hf: Dictionary = {}									## 与 heightfield 共享数组的 JSON 形视图（兼容尚未改完的 Domain）
+var meta: Dictionary = {}								## 构建器用 meta（heightfield.to_build_meta，数组共享）——过渡期
+var info: Dictionary = {}								## info.json（可空）
+var map_flags: Dictionary = {}							## info.flags（waterWavesCliff 等）
+var main_tileset: String = "I"							## 主 tileset（I=1，D=2，C=3）
 
-var tiles: Wc3TerrainTiles
-var catalog: Wc3IdCatalog
-var cache: MapModelCache
+var tiles: Wc3TerrainTiles = null						## 地形瓷砖
+var catalog: Wc3IdCatalog = null						## 瓷砖 ID 目录
+var cache: MapModelCache = null							## 模型缓存
 
-## 悬崖拓扑（ensure_cliff_topology 后有效）
-var cliff_romp: PackedByteArray = PackedByteArray()
-var cliff_ramp_placements: Array = []
-var cliff_gap_stats: Dictionary = {}
-var _cliff_ready: bool = false
+# 悬崖拓扑（ensure_cliff_topology 后有效）
+var cliff_romp: PackedByteArray = PackedByteArray()		## 悬崖 romp
+var cliff_ramp_placements: Array = []					## 悬崖 ramp 放置
+var cliff_gap_stats: Dictionary = {}					## 悬崖 gap 统计
+var _cliff_ready: bool = false							## 悬崖拓扑是否已准备好
 
-
+## 创建上下文
+## [param p_map_dir: String] 地图目录
+## [param p_hf: Dictionary] 高度场
+## [param p_info: Dictionary] info.json
+## [param p_tiles: Wc3TerrainTiles] 地形瓷砖
+## [param p_catalog: Wc3IdCatalog] 瓷砖 ID 目录
+## [param p_cache: MapModelCache] 模型缓存
+## [return MapBuildContext] 上下文
 static func create(
-	p_map_dir: String,
-	p_hf: Dictionary,
-	p_info: Dictionary,
-	p_tiles: Wc3TerrainTiles,
-	p_catalog: Wc3IdCatalog = null,
-	p_cache: MapModelCache = null
-):
+	p_map_dir: String, p_hf: Dictionary, p_info: Dictionary,
+	p_tiles: Wc3TerrainTiles, p_catalog: Wc3IdCatalog = null, p_cache: MapModelCache = null
+	) -> MapBuildContext:
 	# 不用 MapBuildContext.new()：headless 下 class_name 缓存可能尚未生成
-	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).new()
+	var ctx := MapBuildContext.new()
 	ctx.map_dir = p_map_dir
 	# 共享调用方 SoA（编辑器 Document 视图 / 刚读入的 JSON），避免每刷复制 2.6 万点
 	ctx.heightfield = Wc3Heightfield.from_dict(p_hf, false)
@@ -57,7 +64,7 @@ static func create(
 	ctx.main_tileset = ts if not ts.is_empty() else "I"
 	return ctx
 
-
+## 确保悬崖拓扑
 func ensure_cliff_topology() -> void:
 	if _cliff_ready:
 		return
@@ -67,10 +74,12 @@ func ensure_cliff_topology() -> void:
 	cliff_gap_stats = Wc3CliffTiles.count_gaps(hf, meta, ramp_data)
 	_cliff_ready = true
 
-
+## 宽度
+## [return int] 宽度
 func width() -> int:
 	return heightfield.width if heightfield else 0
 
-
+## 高度
+## [return int] 高度
 func height() -> int:
 	return heightfield.height if heightfield else 0

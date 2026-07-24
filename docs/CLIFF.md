@@ -1,6 +1,7 @@
 # 悬崖（Cliff）
 
 > 编辑器直崖数据、选型、异种策略与回归。斜坡见 [RAMP.md](RAMP.md)。  
+> **分层重构计划**见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。  
 > HiveWE 路径见 [`.cursor/rules/hivewe-cliff-reference.mdc`](../.cursor/rules/hivewe-cliff-reference.mdc)。
 
 ## 1. 数据模型

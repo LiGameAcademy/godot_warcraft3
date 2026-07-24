@@ -1,0 +1,50 @@
+---
+description: Dictionary/Array 强类型与结构化数据抽象
+globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,tests/**/*.gd
+alwaysApply: false
+---
+
+# 字典 / 数组类型纪律
+
+## 1. 强类型声明
+
+- 优先 `Dictionary[K, V]`、`Array[T]`、`Packed*Array`。
+- GDScript **不支持嵌套泛型命名**，例如：
+  - ❌ `Dictionary[String, Dictionary[String, bool]]`
+  - ✅ `Dictionary[String, Dictionary]`，或把内层抽象成类后再 `Dictionary[String, MyRecord]`
+- 仅临时 / JSON 边界可用无类型 `Dictionary`；进入域逻辑后尽快收窄。
+
+## 2. 结构化数据 → 对象
+
+当字典表示固定字段的结构（`"mesh"` / `"gap_count"`、四角 mask 等）时：
+
+- 优先 `Resource`（需序列化 / 检视器）或 `RefCounted`（运行时结构）
+- 跨文件复用 → 独立 `.gd`；仅本脚本使用 → **内部类**，避免文件污染
+
+```gdscript
+# ✅ 内部类
+class CornerMask extends RefCounted:
+	var pedagogical: int = 0
+	var atlas: int = 0
+
+# ❌ 到处传 {"pedagogical": …, "atlas": …}
+```
+
+## 3. 数组同样处理
+
+- 同构标量：`PackedInt32Array` / `PackedByteArray` 等
+- 同构对象：`Array[MyType]`
+- 异构「一包结果」：拆字段到 RefCounted，而不是 `Array` 里混类型
+
+## 反例
+
+```gdscript
+# ❌ 业务核心路径长期依赖字符串键
+func build() -> Dictionary:
+	return {"mesh": m, "gap_count": n}
+
+# ✅
+class BuildResult extends RefCounted:
+	var mesh: ArrayMesh
+	var gap_count: int
+```

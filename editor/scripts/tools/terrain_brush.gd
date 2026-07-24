@@ -18,6 +18,8 @@ const INVALID_VERT := Vector2i(-99999, -99999)
 var document ## MapDocument（preload 实例）
 var camera: Camera3D
 var space: World3D
+## 命令历史（MapEditor 注入）；为空则不记撤销
+var history: EditorCommandHistory = null
 
 var _painting: bool = false
 var _last_vert: Vector2i = INVALID_VERT
@@ -42,6 +44,7 @@ var _edge_mesh: MeshInstance3D
 var _edge_mat: StandardMaterial3D
 ## 整平工具：按下瞬间采样的目标层
 var _cliff_level_anchor: int = -1
+var _stroke: PaintStrokeRecorder = PaintStrokeRecorder.new()
 
 
 func set_brush_settings(size: int, shape: int) -> void:
@@ -110,10 +113,11 @@ func _ready() -> void:
 	_ensure_hover_visuals()
 
 
-func setup(doc, cam: Camera3D, world: World3D) -> void:
+func setup(doc, cam: Camera3D, world: World3D, p_history: EditorCommandHistory = null) -> void:
 	document = doc
 	camera = cam
 	space = world
+	history = p_history
 	_ensure_hover_visuals()
 	_hide_hover_preview()
 
@@ -161,11 +165,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_painting = mb.pressed
 			if mb.pressed:
 				_cliff_level_anchor = -1
+				_begin_stroke()
 				_paint_at_mouse(mb.position)
 				get_viewport().set_input_as_handled()
 			else:
 				_cliff_level_anchor = -1
 				_last_vert = INVALID_VERT
+				_end_stroke()
 				if _dirty_paint:
 					_request_rebuild(true)
 	elif event is InputEventMouseMotion:
@@ -251,21 +257,23 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	var painted_any := false
 	var cliff_any := false
 
-	# 逻辑层：斜坡按条带搜索，只取光标顶点（不受笔刷半径扩成乱旗）
+	# 先悬崖后地表：cliff sync 会写 groundTile，必须让 paint_corner 最后盖住笔刷纹理
 	if apply_cliff and cliff_tool_id == "Ramp":
+		_stroke.capture_before_at(vert.x, vert.y)
 		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y))
+		_stroke.capture_after_at(vert.x, vert.y)
 		var msg: String = str(document.last_ramp_message)
 		if not msg.is_empty():
 			ramp_feedback.emit(msg)
 		if ramp_changed:
 			painted_any = true
 			cliff_any = true
+			_stroke.mark_cliff()
 	else:
 		for p in _brush_offsets():
 			var ix: int = vert.x + p.x
 			var iy: int = vert.y + p.y
-			if apply_texture and bool(document.paint_corner(ix, iy)):
-				painted_any = true
+			_stroke.capture_before_at(ix, iy)
 			if apply_cliff and bool(
 				document.paint_cliff_corner(
 					ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
@@ -273,11 +281,51 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 			):
 				painted_any = true
 				cliff_any = true
+				_stroke.mark_cliff()
+			if apply_texture and bool(document.paint_corner(ix, iy)):
+				painted_any = true
+			_stroke.capture_after_at(ix, iy)
 	if painted_any:
 		_dirty_paint = true
 		if cliff_any:
 			cliff_dirty = true
 		painted.emit()
+		var brush_tex: int = int(document.brush_tile_index) if document != null else -1
+		MapLog.info(
+			MapLog.Layer.EDITOR,
+			"Brush",
+			"paint @(%d,%d) brush_tex=%d cliff=%s tex=%s tool=%s"
+			% [vert.x, vert.y, brush_tex, cliff_any, apply_texture, cliff_tool_id]
+		)
+
+
+func _begin_stroke() -> void:
+	if history == null or document == null:
+		return
+	_stroke.begin(document)
+
+
+func _end_stroke() -> void:
+	if history == null or not _stroke.is_active():
+		_stroke.cancel()
+		return
+	var label := "Paint"
+	if apply_cliff and cliff_tool_id == "Ramp":
+		label = "Ramp"
+	elif apply_cliff and not apply_texture:
+		label = "Cliff"
+	elif apply_texture and not apply_cliff:
+		label = "Ground"
+	var cmd: PaintStrokeCommand = _stroke.finish(label)
+	if cmd != null:
+		MapLog.info(
+			MapLog.Layer.EDITOR,
+			"Brush",
+			"record %s verts=%d cliff=%s" % [label, cmd.after.size(), cmd.affects_cliffs_water()]
+		)
+		history.record(cmd)
+	else:
+		MapLog.debug(MapLog.Layer.EDITOR, "Brush", "stroke empty（无数据变化）")
 
 
 func _request_rebuild(force: bool) -> void:
@@ -393,10 +441,10 @@ func _update_hover_preview(vert: Vector2i) -> void:
 		var bl: Vector3 = corners[0]
 		var br: Vector3 = corners[1]
 		var tl: Vector3 = corners[2]
-		var tr: Vector3 = corners[3]
+		var p_tr: Vector3 = corners[3]
 		var lift := Vector3(0.0, HOVER_LIFT, 0.0)
-		fill = _make_fill_mesh(bl + lift, br + lift, tl + lift, tr + lift)
-		edge = _make_edge_mesh(bl + lift, br + lift, tl + lift, tr + lift)
+		fill = _make_fill_mesh(bl + lift, br + lift, tl + lift, p_tr + lift)
+		edge = _make_edge_mesh(bl + lift, br + lift, tl + lift, p_tr + lift)
 	if fill == null or edge == null:
 		_hide_hover_preview()
 		return
@@ -413,9 +461,9 @@ func _make_vertex_fill_mesh(ix: int, iy: int) -> ArrayMesh:
 	var bl := _tp_to_godot(float(ix) - 0.5, float(iy) - 0.5)
 	var br := _tp_to_godot(float(ix) + 0.5, float(iy) - 0.5)
 	var tl := _tp_to_godot(float(ix) - 0.5, float(iy) + 0.5)
-	var tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
-	_add_tri(st, bl, br, tr)
-	_add_tri(st, bl, tr, tl)
+	var p_tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
+	_add_tri(st, bl, br, p_tr)
+	_add_tri(st, bl, p_tr, tl)
 	return st.commit()
 
 
@@ -425,10 +473,10 @@ func _make_vertex_edge_mesh(ix: int, iy: int) -> ArrayMesh:
 	var bl := _tp_to_godot(float(ix) - 0.5, float(iy) - 0.5)
 	var br := _tp_to_godot(float(ix) + 0.5, float(iy) - 0.5)
 	var tl := _tp_to_godot(float(ix) - 0.5, float(iy) + 0.5)
-	var tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
+	var p_tr := _tp_to_godot(float(ix) + 0.5, float(iy) + 0.5)
 	_add_line(st, bl, br)
-	_add_line(st, br, tr)
-	_add_line(st, tr, tl)
+	_add_line(st, br, p_tr)
+	_add_line(st, p_tr, tl)
 	_add_line(st, tl, bl)
 	return st.commit()
 
@@ -463,9 +511,9 @@ func _make_ramp_flag_verts_fill_mesh(strip: Dictionary) -> ArrayMesh:
 		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
 		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
 		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
-		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
-		_add_tri(st, bl, br, tr)
-		_add_tri(st, bl, tr, tl)
+		var p_tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		_add_tri(st, bl, br, p_tr)
+		_add_tri(st, bl, p_tr, tl)
 	return st.commit()
 
 
@@ -482,10 +530,10 @@ func _make_ramp_flag_verts_edge_mesh(strip: Dictionary) -> ArrayMesh:
 		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
 		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
 		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
-		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		var p_tr := _tp_to_godot(float(ix) + half, float(iy) + half)
 		_add_line(st, bl, br)
-		_add_line(st, br, tr)
-		_add_line(st, tr, tl)
+		_add_line(st, br, p_tr)
+		_add_line(st, p_tr, tl)
 		_add_line(st, tl, bl)
 	return st.commit()
 
@@ -551,9 +599,9 @@ func _make_offsets_fill_mesh(ix: int, iy: int) -> ArrayMesh:
 		var bl := _tp_to_godot(float(ox) - 0.5, float(oy) - 0.5)
 		var br := _tp_to_godot(float(ox) + 0.5, float(oy) - 0.5)
 		var tl := _tp_to_godot(float(ox) - 0.5, float(oy) + 0.5)
-		var tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
-		_add_tri(st, bl, br, tr)
-		_add_tri(st, bl, tr, tl)
+		var p_tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
+		_add_tri(st, bl, br, p_tr)
+		_add_tri(st, bl, p_tr, tl)
 	return st.commit()
 
 
@@ -566,28 +614,28 @@ func _make_offsets_edge_mesh(ix: int, iy: int) -> ArrayMesh:
 		var bl := _tp_to_godot(float(ox) - 0.5, float(oy) - 0.5)
 		var br := _tp_to_godot(float(ox) + 0.5, float(oy) - 0.5)
 		var tl := _tp_to_godot(float(ox) - 0.5, float(oy) + 0.5)
-		var tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
+		var p_tr := _tp_to_godot(float(ox) + 0.5, float(oy) + 0.5)
 		_add_line(st, bl, br)
-		_add_line(st, br, tr)
-		_add_line(st, tr, tl)
+		_add_line(st, br, p_tr)
+		_add_line(st, p_tr, tl)
 		_add_line(st, tl, bl)
 	return st.commit()
 
 
-func _make_fill_mesh(bl: Vector3, br: Vector3, tl: Vector3, tr: Vector3) -> ArrayMesh:
+func _make_fill_mesh(bl: Vector3, br: Vector3, tl: Vector3, p_tr: Vector3) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_add_tri(st, bl, br, tr)
-	_add_tri(st, bl, tr, tl)
+	_add_tri(st, bl, br, p_tr)
+	_add_tri(st, bl, p_tr, tl)
 	return st.commit()
 
 
-func _make_edge_mesh(bl: Vector3, br: Vector3, tl: Vector3, tr: Vector3) -> ArrayMesh:
+func _make_edge_mesh(bl: Vector3, br: Vector3, tl: Vector3, p_tr: Vector3) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_LINES)
 	_add_line(st, bl, br)
-	_add_line(st, br, tr)
-	_add_line(st, tr, tl)
+	_add_line(st, br, p_tr)
+	_add_line(st, p_tr, tl)
 	_add_line(st, tl, bl)
 	return st.commit()
 

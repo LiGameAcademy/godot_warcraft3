@@ -41,7 +41,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @onready var _cliffs: MapCliffLayer = $Cliffs
 @onready var _doodads: MapDoodadLayer = $Doodads
 @onready var _units: MapUnitLayer = $Units
-@onready var _pathing_debug: Node = $PathingDebug
+@onready var _debug_grid: Node = $DebugGrid
 @onready var _ramp_debug: Node = $RampDebug
 
 var _catalog := Wc3IdCatalog.new()
@@ -73,14 +73,12 @@ func set_view_grid_level(level: int) -> void:
 
 
 func _apply_view_grid() -> void:
-	if _terrain == null:
+	if _debug_grid == null or not _debug_grid.has_method("set_grid_flags"):
 		return
 	var show_large := _view_grid_level >= ViewGridLevel.LARGE
 	var show_medium := _view_grid_level >= ViewGridLevel.MEDIUM
 	var show_small := _view_grid_level >= ViewGridLevel.SMALL
-	_terrain.set_debug_grid(show_large, show_medium, show_small)
-	if _cliffs != null:
-		_cliffs.set_debug_grid(show_large, show_medium, show_small)
+	_debug_grid.set_grid_flags(show_large, show_medium, show_small)
 
 
 func _ready() -> void:
@@ -129,6 +127,7 @@ func _build_ramp_debug(ctx) -> void:
 ## 仅重建地面（笔刷脏更新）；不重载装饰/单位。
 func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
+		MapLog.warn(MapLog.Layer.PRESENT, "MapLoader", "rebuild_terrain_only: hf 空")
 		return
 	_external_hf = hf
 	if not info.is_empty():
@@ -141,6 +140,11 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 		_catalog,
 		_cache
 	)
+	MapLog.info(
+		MapLog.Layer.PRESENT,
+		"MapLoader",
+		"rebuild_terrain_only %dx%d" % [ctx.width(), ctx.height()]
+	)
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
 	_apply_view_grid()
@@ -151,6 +155,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 ## 地表 + 悬崖 + 水面（悬崖笔刷脏更新）。
 func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
+		MapLog.warn(MapLog.Layer.PRESENT, "MapLoader", "rebuild_cliffs_water: hf 空")
 		return
 	_external_hf = hf
 	if not info.is_empty():
@@ -162,6 +167,11 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_tiles,
 		_catalog,
 		_cache
+	)
+	MapLog.info(
+		MapLog.Layer.PRESENT,
+		"MapLoader",
+		"rebuild_cliffs_water %dx%d" % [ctx.width(), ctx.height()]
 	)
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
@@ -217,9 +227,9 @@ func _load_all() -> void:
 	if place_doodads:
 		_doodads.build(_read_json(map_dir.path_join("doodads.json")))
 		await get_tree().process_frame
-	if show_pathing_debug_grid and _pathing_debug:
-		_set_status("开启寻路调试线框（GPU）…")
-		_pathing_debug.build(ctx)
+	if show_pathing_debug_grid and _debug_grid:
+		_set_status("开启调试栅格（GPU）…")
+		_debug_grid.build(ctx)
 		await get_tree().process_frame
 
 	var ms := Time.get_ticks_msec() - t0

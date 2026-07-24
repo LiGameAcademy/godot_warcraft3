@@ -26,7 +26,8 @@
 
 - `Wc3TerrainTiles`：tileID → PNG（SLK）  
 - `Wc3GroundTileCatalog.build_texture_array`：运行时组 `Texture2DArray`  
-- `presentation/materials/wc3_ground_material.tres`：静态 shader 参数；Layer `duplicate` 后只设 `tilesets` / 调试偏移  
+- `assets/materials/wc3_ground_material.tres` + `assets/shaders/wc3_ground.gdshader`：静态材质；场景 `@export` 注入 Layer，Mesh `duplicate` 后只设运行时参数  
+- 调试栅格：`MapDebugGridLayer`（不在 TerrainLayer 内）
 
 ## 脚本位置
 
@@ -34,8 +35,9 @@
 |------|------|
 | `catalog/wc3_terrain_tiles.gd` | Catalog：ID→路径 |
 | `catalog/wc3_ground_tile_catalog.gd` | Catalog：Texture2DArray |
-| `presentation/mesh/heightfield_mesh.gd` | 底层：采样、三角/四边形、挂材质 |
-| `presentation/layers/map_terrain_layer.gd` | 地面规则 + 组网 + 赋贴图 |
+| `presentation/mesh/heightfield_mesh.gd` | 底层：采样、Packed* 三角/四边形、`active_material` |
+| `presentation/layers/map_terrain_layer.gd` | 地面规则 + 组网；`@export ground_material` |
+| `presentation/layers/map_debug_grid_layer.gd` | 跨层调试栅格 |
 | `logic/terrain/wc3_terrain_logic.gd` | 改顶点 / variation 随机 |
 
 拆分尺度见 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) §6。

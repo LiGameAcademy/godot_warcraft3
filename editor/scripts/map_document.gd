@@ -307,10 +307,19 @@ func paint_tile(tx: int, ty: int, tex_index: int = -1) -> bool:
 ## 写单个中级栅格顶点（tilepoint）的地表索引。对齐 WE / HiveWE 角点笔刷。
 func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if is_empty():
+		MapLog.warn(MapLog.Layer.EDITOR, "Document", "paint_corner: 文档空")
 		return false
 	var idx: int = tex_index if tex_index >= 0 else brush_tile_index
+	var i: int = heightfield.index_at(ix, iy) if heightfield != null and heightfield.in_bounds(ix, iy) else -1
+	var old_tex: int = int(heightfield.ground_textures[i]) if i >= 0 else -1
 	if not terrain.paint_corner(ix, iy, idx):
 		return false
+	var new_tex: int = int(heightfield.ground_textures[i]) if i >= 0 else -1
+	MapLog.debug(
+		MapLog.Layer.EDITOR,
+		"Document",
+		"paint_corner (%d,%d) %d→%d (brush=%d)" % [ix, iy, old_tex, new_tex, idx]
+	)
 	mark_dirty()
 	return true
 
@@ -402,13 +411,19 @@ func paint_cliff_corner(
 	var ground_tex: Array = hf.get("groundTextures", []) as Array
 	var ground_var: Array = hf.get("groundVariations", []) as Array
 	var gti: int = _ground_index_for_cliff_type(ctype)
-	if (not cts.is_empty() or gti >= 0) and (
+	# 仅在层/水实际有改动时同化 groundTile；否则整平空操作也会把地表刷成崖默认贴图，盖住纹理笔刷
+	if changed_any and (not cts.is_empty() or gti >= 0) and (
 		propagate >= 0 or tool_id in ["0", "1", "2", "3", "4"]
 	):
 		if _sync_cliff_corner_textures(
 			ix, iy, tp_w, tp_h, layers, cliff_tex, cliff_var, ground_tex, ground_var, ctype, gti, touched
 		):
 			changed_any = true
+			MapLog.debug(
+				MapLog.Layer.EDITOR,
+				"Document",
+				"cliff sync ground @(%d,%d) gti=%d ctype=%d" % [ix, iy, gti, ctype]
+			)
 
 	if changed_any:
 		mark_dirty()
@@ -449,8 +464,8 @@ func try_paint_ramp_at(ix: int, iy: int) -> Dictionary:
 		return fail.call(nearest_reject)
 
 	var resolved: Dictionary = _resolve_ramp_strip_flags(best, flags, tp_w, ix, iy)
-	var changed := _apply_ramp_strip(resolved, layers, heights, water_h, flags, tp_w)
-	if changed:
+	var did_change := _apply_ramp_strip(resolved, layers, heights, water_h, flags, tp_w)
+	if did_change:
 		mark_dirty()
 		return {
 			"ok": true,
@@ -900,63 +915,63 @@ func _apply_ramp_strip(
 	var axis := str(spec.get("axis", ""))
 	var sx: int = int(spec.get("sx", 0))
 	var sy: int = int(spec.get("sy", 0))
-	var changed := false
+	var did_change := false
 	if axis == "v":
 		var mid_l: int = int(spec.get("mid_l", 0))
 		var mid_r: int = int(spec.get("mid_r", 0))
 		var i_tl: int = (sy + 1) * tp_w + sx
 		var i_tr: int = i_tl + 1
 		if _set_layer(i_tl, layers, heights, water_h, mid_l):
-			changed = true
+			did_change = true
 		if _set_layer(i_tr, layers, heights, water_h, mid_r):
-			changed = true
+			did_change = true
 		# 旗向已定稿。宽2=相邻列菱形(111|111)；勿清掉已是完整脊的邻列
 		var ramp_left: bool = bool(spec.get("ramp_left", true))
 		for yy in range(sy, sy + 3):
 			if ramp_left:
 				if _set_ramp_flag(flags, yy * tp_w + sx, true):
-					changed = true
+					did_change = true
 			else:
 				if _set_ramp_flag(flags, yy * tp_w + sx + 1, true):
-					changed = true
+					did_change = true
 		if ramp_left:
 			if not _vert_col_all(flags, tp_w, sx + 1, sy, true):
 				for yy2 in range(sy, sy + 3):
 					if _set_ramp_flag(flags, yy2 * tp_w + sx + 1, false):
-						changed = true
+						did_change = true
 		else:
 			if not _vert_col_all(flags, tp_w, sx, sy, true):
 				for yy3 in range(sy, sy + 3):
 					if _set_ramp_flag(flags, yy3 * tp_w + sx, false):
-						changed = true
+						did_change = true
 	elif axis == "h":
 		var mid_b: int = int(spec.get("mid_b", 0))
 		var mid_t: int = int(spec.get("mid_t", 0))
 		var i_br: int = sy * tp_w + sx + 1
 		var i_tr2: int = (sy + 1) * tp_w + sx + 1
 		if _set_layer(i_br, layers, heights, water_h, mid_b):
-			changed = true
+			did_change = true
 		if _set_layer(i_tr2, layers, heights, water_h, mid_t):
-			changed = true
+			did_change = true
 		var ramp_bottom: bool = bool(spec.get("ramp_bottom", true))
 		for xx in range(sx, sx + 3):
 			if ramp_bottom:
 				if _set_ramp_flag(flags, sy * tp_w + xx, true):
-					changed = true
+					did_change = true
 			else:
 				if _set_ramp_flag(flags, (sy + 1) * tp_w + xx, true):
-					changed = true
+					did_change = true
 		if ramp_bottom:
 			if not _horiz_row_all(flags, tp_w, sx, sy + 1, true):
 				for xx2 in range(sx, sx + 3):
 					if _set_ramp_flag(flags, (sy + 1) * tp_w + xx2, false):
-						changed = true
+						did_change = true
 		else:
 			if not _horiz_row_all(flags, tp_w, sx, sy, true):
 				for xx3 in range(sx, sx + 3):
 					if _set_ramp_flag(flags, sy * tp_w + xx3, false):
-						changed = true
-	return changed
+						did_change = true
+	return did_change
 
 
 ## 西/东邻已是脊时：仅当本条左列/右列是「紧邻续刷」才同向延伸。
@@ -1078,16 +1093,16 @@ func _sync_cliff_corner_textures(
 	gti: int,
 	touched: Array
 ) -> bool:
-	var seed: Dictionary = {}
+	var seed_corners: Dictionary = {}
 	for p in touched:
-		seed[Vector2i(int(p.x), int(p.y))] = true
+		seed_corners[Vector2i(int(p.x), int(p.y))] = true
 	# 落笔点邻域（整平未改层时仍要刷类型/地表）
 	for oy in range(-1, 1):
 		for ox in range(-1, 1):
-			seed[Vector2i(ix + ox, iy + oy)] = true
+			seed_corners[Vector2i(ix + ox, iy + oy)] = true
 
 	var corner_pts: Dictionary = {}
-	for key in seed.keys():
+	for key in seed_corners.keys():
 		var p: Vector2i = key
 		corner_pts[p] = true
 		# 以该角为顶点的最多 4 个地表格：若是直崖则并入其四角

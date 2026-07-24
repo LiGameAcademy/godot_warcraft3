@@ -291,8 +291,8 @@ func _atlas_first_cell(img: Image) -> Image:
 	var h: int = img.get_height()
 	if w < TILE_ATLAS_COLS or h < TILE_ATLAS_ROWS:
 		return img
-	var cell_w: int = w / TILE_ATLAS_COLS
-	var cell_h: int = h / TILE_ATLAS_ROWS
+	var cell_w: int = int(w / float(TILE_ATLAS_COLS))
+	var cell_h: int = int(h / float(TILE_ATLAS_ROWS))
 	if cell_w <= 0 or cell_h <= 0:
 		return img
 	return img.get_region(Rect2i(0, 0, cell_w, cell_h))

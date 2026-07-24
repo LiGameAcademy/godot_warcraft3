@@ -1,27 +1,28 @@
 class_name MapCliffLayer
 extends Node3D
+
 ## 悬崖 / 斜坡层：消费 MapBuildContext；GLB 经 MapModelCache（与单位/装饰共用）。
 
+var _shader: Shader							## 悬崖着色器
+var _height_tex: Texture2D					## 高度纹理
+var last_placed: int = 0					## 上次放置计数
+var _cliff_mats: Array[ShaderMaterial] = []	## 悬崖材质，供调试栅格开关
+var _dbg_tile: bool = false					## 是否显示格子
+var _dbg_path: bool = false					## 是否显示路径
+var _dbg_fine: bool = false					## 是否显示细节
+var _dbg_center: Vector2 = Vector2.ZERO		## 中心偏移
+var _dbg_tile_size: float = 128.0			## 格子大小
 
-var _shader: Shader
-var _height_tex: Texture2D
-var last_placed: int = 0
-var _cliff_mats: Array = [] ## ShaderMaterial，供调试栅格开关
-var _dbg_tile := false
-var _dbg_path := false
-var _dbg_fine := false
-var _dbg_center: Vector2 = Vector2.ZERO
-var _dbg_tile_size: float = 128.0
-
-
-func build(ctx) -> void:
+## 构建悬崖层
+## [param ctx: MapBuildContext] 上下文
+func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	_cliff_mats.clear()
 	last_placed = 0
 	ctx.ensure_cliff_topology()
 
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
-	_shader = load("res://shaders/wc3_cliff.gdshader") as Shader
+	_shader = load("res://assets/shaders/wc3_cliff.gdshader") as Shader
 	_dbg_center = ctx.meta.get("center", Vector2.ZERO)
 	_dbg_tile_size = float(ctx.meta.get("tile_size", Wc3Coords.TILE_SIZE))
 
@@ -96,6 +97,11 @@ func build(ctx) -> void:
 	)
 
 
+## 供 MapDebugGridLayer 收集材质。
+func get_debug_materials() -> Array[ShaderMaterial]:
+	return _cliff_mats.duplicate()
+
+
 ## 查看→栅格：悬崖立面/顶缘也画调试线（与地面同级开关）。
 func set_debug_grid(show_tile: bool, show_path: bool, show_fine: bool) -> void:
 	_dbg_tile = show_tile
@@ -103,7 +109,7 @@ func set_debug_grid(show_tile: bool, show_path: bool, show_fine: bool) -> void:
 	_dbg_fine = show_fine
 	_apply_debug_grid_to_mats()
 
-
+## 应用调试栅格到材质
 func _apply_debug_grid_to_mats() -> void:
 	for mat in _cliff_mats:
 		if mat == null:
@@ -114,7 +120,10 @@ func _apply_debug_grid_to_mats() -> void:
 		mat.set_shader_parameter("dbg_center_offset", _dbg_center)
 		mat.set_shader_parameter("dbg_tile_size", _dbg_tile_size)
 
-
+## 构建悬崖材质
+## [param tex: Texture2D] 纹理
+## [param meta: Dictionary] 元数据
+## [return ShaderMaterial] 材质
 func _cliff_material(tex: Texture2D, meta: Dictionary) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = _shader
@@ -135,7 +144,11 @@ func _cliff_material(tex: Texture2D, meta: Dictionary) -> ShaderMaterial:
 		mat.set_shader_parameter("cliff_albedo", tex)
 	return mat
 
-
+## 构建网格
+## [param cache: MapModelCache] 模型缓存
+## [param glb: String] 模型路径
+## [param mat: Material] 材质
+## [return Mesh] 网格
 func _mesh_with_material(cache: MapModelCache, glb: String, mat: Material) -> Mesh:
 	var src := cache.mesh_from_glb(glb)
 	if src == null:
@@ -147,7 +160,7 @@ func _mesh_with_material(cache: MapModelCache, glb: String, mat: Material) -> Me
 		dup.surface_set_material(s, mat)
 	return dup
 
-
+## 清空子节点
 func _clear_children() -> void:
 	for c in get_children():
 		c.queue_free()

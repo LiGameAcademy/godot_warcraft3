@@ -98,12 +98,19 @@ func cliff_ramp_dir(cliff_id: String) -> String:
 	return str(_cliff_ramp_dir.get(cliff_id, "CliffTrans"))
 
 
+## 获取地面纹理路径
+## [param ground_tilesets: Array] 地面纹理集
+## [param index: int] 索引
+## [return String] 纹理路径
 func png_for_ground_index(ground_tilesets: Array, index: int) -> String:
 	if index < 0 or index >= ground_tilesets.size():
 		return ""
 	return png_for_tile_id(str(ground_tilesets[index]))
 
-
+## 获取悬崖纹理路径
+## [param cliff_tilesets: Array] 悬崖纹理集
+## [param index: int] 索引
+## [return String] 纹理路径
 func png_for_cliff_index(cliff_tilesets: Array, index: int) -> String:
 	if index < 0 or index >= cliff_tilesets.size():
 		return ""

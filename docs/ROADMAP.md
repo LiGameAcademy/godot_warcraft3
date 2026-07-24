@@ -49,7 +49,8 @@
 - [x] 文档约定目标目录：`data/` · `catalog/` · `logic/` · `presentation/` · `infra/`；`editor/scripts/editor.gd` 总管
 - [x] Catalog 落位：`scripts/map/catalog/`（Id + CliffTrans）；Coords → `data/`
 - [x] meta 双通路：`Wc3Heightfield.to_build_meta` 为唯一来源；`read_heightfield_meta` 仅委托
-- [ ] **Editor 总管**：`editor_main.tscn` 下直接子节点 `Editor`（`Node`），`@export map_root`；从 `editor_app.gd` 迁编排
+- [x] **Editor 总管**：`editor_main.tscn` 下直接子节点 `Editor`（`Node`），`@export map_root`；从 `editor_app.gd` 迁编排
+- [x] 命令模式骨架（笔划撤销/重做）
 - [ ] 按目标树渐进 `git mv`（logic / presentation / infra）
 
 **验收**：新人只读架构文 + ROADMAP 能说出「改贴图路径找谁、改顶点找谁、挂 Mesh 找谁、编辑总管在哪」。
@@ -84,10 +85,11 @@
 
 ### ⑤ 编辑器可编辑
 
+- [x] `MapEditor` 总管 + 命令历史
 - [ ] 地表笔刷、高度笔刷（若启用）只调 Logic API
 - [ ] 脏区重建 Ground；不整图无脑全量（可先全量，接口预留脏区）
 
-**验收**：编辑器改地表/高度 → 数据变 → 表现更新。
+**验收**：编辑器改地表/高度 → 数据变 → 表现更新；Ctrl+Z 可撤销笔划。
 
 ### ⑥ 固化模块节奏
 
@@ -96,11 +98,12 @@
 
 ### ⑦ 悬崖层
 
-- [ ] Data：已有 layer / cliff_tex（按需扩展）
-- [ ] Catalog：`Wc3CliffCatalog`（对称 CliffTrans）
-- [ ] Logic：从 `wc3_cliff_tiles` 剥离「算 TAG / 挖洞」，与 Catalog.resolve 分离
-- [ ] Present：`map_cliff_layer` + builder 只消费 placements
-- [ ] Editor：悬崖笔刷
+> 计划全文：[CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)
+
+- [ ] M0 Catalog：`Wc3CliffCatalog`；收缩 `Wc3TerrainTiles`
+- [ ] M1 Logic：`Wc3CliffLogic` + `logic/cliff/`；Document 委托
+- [ ] M2 Present：placements 驱动；恢复地面挖洞对接
+- [ ] M3 脏区 / 命令标签；再开 ⑧ 斜坡
 
 ### ⑧ 斜坡层
 

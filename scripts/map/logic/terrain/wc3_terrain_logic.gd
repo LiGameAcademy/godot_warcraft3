@@ -122,13 +122,24 @@ func neighbor_layers(ix: int, iy: int) -> PackedInt32Array:
 ## [return bool] 是否成功
 func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true) -> bool:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
+		MapLog.debug(
+			MapLog.Layer.LOGIC,
+			"TerrainLogic",
+			"set_ground_tex OOB/unbound (%d,%d)" % [ix, iy]
+		)
 		return false
 	var gs: Array = heightfield.ground_tilesets
 	if tex_index < 0 or tex_index >= gs.size():
+		MapLog.warn(
+			MapLog.Layer.LOGIC,
+			"TerrainLogic",
+			"tex_index=%d 越界 tilesets=%d" % [tex_index, gs.size()]
+		)
 		return false
 	var i: int = heightfield.index_at(ix, iy)
+	var old_tex: int = int(heightfield.ground_textures[i])
 	var changed := false
-	if int(heightfield.ground_textures[i]) != tex_index:
+	if old_tex != tex_index:
 		heightfield.ground_textures[i] = tex_index
 		changed = true
 	if randomize_var and i < heightfield.ground_variations.size():
@@ -136,6 +147,12 @@ func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true
 		changed = true
 	if changed:
 		_mark_dirty(ix, iy)
+		MapLog.debug(
+			MapLog.Layer.LOGIC,
+			"TerrainLogic",
+			"paint (%d,%d) %d→%d var_rand=%s"
+			% [ix, iy, old_tex, tex_index, randomize_var]
+		)
 	return changed
 
 

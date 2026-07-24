@@ -3,7 +3,7 @@ extends Node3D
 ## 水体层：消费 MapBuildContext → 水面网格 + 岸浪。
 
 
-const WATER_SHADER: Shader = preload("res://shaders/wc3_water.gdshader")
+const WATER_SHADER: Shader = preload("res://assets/shaders/wc3_water.gdshader")
 
 @export var height_bias_wc3: float = 0.0
 ## 由 MapRoot「岸浪微调」同步；也可直接改本节点。
@@ -27,12 +27,12 @@ func build(ctx) -> void:
 	var params := Wc3WaterParams.load_for_tileset(ctx.main_tileset)
 	var built := Wc3WaterMesh.build(ctx.hf, params, height_bias_wc3, ctx.meta)
 	if built.is_empty():
-		push_warning("MapWaterLayer: 无水面网格")
+		MapLog.debug(MapLog.Layer.PRESENT, "Water", "无水面网格（地图无水时正常）")
 		return
 
 	var tex_array := params.build_texture_array()
 	if tex_array == null:
-		push_warning("MapWaterLayer: 水面贴图数组为空（检查 I_Water00.png …）")
+		MapLog.warn(MapLog.Layer.PRESENT, "Water", "水面贴图数组为空（检查 I_Water00.png …）")
 		return
 
 	var mesh: ArrayMesh = built["mesh"]
