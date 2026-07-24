@@ -115,19 +115,22 @@ Wc3TileVertex                         ← RefCounted 视图
 
 ```text
 scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
+  wc3_coords.gd               # FLAG / TILE / 坐标
   wc3_tile_vertex.gd
   wc3_heightfield.gd
   wc3_parsed_map.gd
-  # 目标：wc3_coords.gd（基础常量）、wc3_map_info.gd …
 
 scripts/map/catalog/          # 资源映射（非 map-parsed）
-  # Wc3CliffTransCatalog / Wc3CliffCatalog / Wc3GroundTileCatalog / Wc3IdCatalog
+  wc3_id_catalog.gd
+  wc3_cliff_trans_catalog.gd
+  # 目标：Wc3CliffCatalog / Wc3GroundTileCatalog
 
 docs/MAP_DATA.md              # 本文
 docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 ```
 
-`HeightfieldMeshBuilder.read_heightfield_meta` 不应长期存在：元数据以 `Wc3Heightfield` 为准；`sample_vert` 属表现层网格构建。
+权威为 `Wc3Heightfield`：`to_build_meta()` / `as_dict_view()` 供构建与兼容路径。  
+`HeightfieldMeshBuilder.read_heightfield_meta` 仅委托 `build_meta_from_dict`；`sample_vert` 属表现层。
 
 ---
 

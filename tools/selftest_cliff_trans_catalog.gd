@@ -3,7 +3,7 @@ extends SceneTree
 ## godot --headless -s res://tools/selftest_cliff_trans_catalog.gd
 
 
-const Catalog := preload("res://scripts/map/wc3_cliff_trans_catalog.gd")
+const Catalog := preload("res://scripts/map/catalog/wc3_cliff_trans_catalog.gd")
 
 
 func _init() -> void:

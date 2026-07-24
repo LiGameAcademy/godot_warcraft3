@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="Wc3CliffTransCatalog" format=3]
 
-[ext_resource type="Script" path="res://scripts/map/wc3_cliff_trans_catalog.gd" id="1_r8jh8"]
+[ext_resource type="Script" path="res://scripts/map/catalog/wc3_cliff_trans_catalog.gd" id="1_r8jh8"]
 
 [resource]
 script = ExtResource("1_r8jh8")

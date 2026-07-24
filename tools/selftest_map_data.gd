@@ -64,6 +64,14 @@ func _test_vertex_writeback() -> int:
 	if int(d["layerHeights"][v.index]) != v.layer:
 		push_error("to_dict layer mismatch")
 		return 1
+	var view: Dictionary = hf.as_dict_view()
+	if not is_same(view["heights"], hf.heights):
+		push_error("as_dict_view must share heights array")
+		return 1
+	var meta: Dictionary = hf.to_build_meta()
+	if int(meta["width"]) != hf.width or not is_same(meta["layer_heights"], hf.layer_heights):
+		push_error("to_build_meta mismatch")
+		return 1
 	print(
 		"  writeback OK idx=%d layer %d→%d flags %d→%d"
 		% [v.index, old_layer, v.layer, old_flags, v.flags]

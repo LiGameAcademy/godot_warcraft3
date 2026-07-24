@@ -130,7 +130,7 @@
 - `res://assets/asset-converted/Doodads/Terrain/CliffTrans/`（通用，当前 **32** 个 `.glb`）
 - `…/CityCliffTrans/`（城市崖，当前 **16** 个，是前者的子集、无 `X`/`C` 复杂缝）
 
-代码：`Wc3CliffTransCatalog`（`scripts/map/wc3_cliff_trans_catalog.gd`）  
+代码：`Wc3CliffTransCatalog`（`scripts/map/catalog/wc3_cliff_trans_catalog.gd`）  
 预扫描资源：`resources/cliff_trans_catalog.tres` / `city_cliff_trans_catalog.tres`  
 自测：`tools/selftest_cliff_trans_catalog.gd`
 

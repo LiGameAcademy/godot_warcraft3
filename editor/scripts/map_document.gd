@@ -1,5 +1,5 @@
 extends RefCounted
-## 可编辑地图文档：内存中的 terrain-heightfield（与 map-parsed JSON 同形）。
+## 可编辑地图文档：权威数据为 Wc3Heightfield；hf 为共享数组的兼容视图。
 ## （不用 class_name；编辑器通过 preload 引用）
 
 signal changed
@@ -34,7 +34,19 @@ const WATER_DEEP_EXTRA := 128.0
 const FLAG_WATER := Wc3Coords.FLAG_WATER
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
-var hf: Dictionary = {}
+## 权威地形 SoA
+var heightfield: Wc3Heightfield = null
+## 兼容旧调用：get → as_dict_view（共享数组）；set → from_dict
+var hf: Dictionary:
+	get:
+		if heightfield == null:
+			return {}
+		return heightfield.as_dict_view()
+	set(value):
+		if value == null or value.is_empty():
+			heightfield = null
+		else:
+			heightfield = Wc3Heightfield.from_dict(value, false)
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
@@ -68,33 +80,43 @@ func clear_dirty() -> void:
 
 
 func is_empty() -> bool:
-	return hf.is_empty() or int(hf.get("tilepointWidth", 0)) < 2
+	return heightfield == null or heightfield.width < 2
 
 
 func tilepoint_size() -> Vector2i:
-	return Vector2i(int(hf.get("tilepointWidth", 0)), int(hf.get("tilepointHeight", 0)))
+	if heightfield == null:
+		return Vector2i.ZERO
+	return Vector2i(heightfield.width, heightfield.height)
 
 
 func map_size() -> Vector2i:
-	var tp: Vector2i = tilepoint_size()
-	return Vector2i(maxi(tp.x - 1, 0), maxi(tp.y - 1, 0))
+	if heightfield == null:
+		return Vector2i.ZERO
+	return Vector2i(heightfield.map_width, heightfield.map_height)
 
 
 func center_offset() -> Vector2:
-	var co: Dictionary = hf.get("centerOffset", {})
-	return Vector2(float(co.get("x", 0.0)), float(co.get("y", 0.0)))
+	if heightfield == null:
+		return Vector2.ZERO
+	return heightfield.center_offset
 
 
 func tile_size() -> float:
-	return float(hf.get("tileSize", Wc3Coords.TILE_SIZE))
+	if heightfield == null:
+		return Wc3Coords.TILE_SIZE
+	return heightfield.tile_size
 
 
 func ground_tilesets() -> Array:
-	return hf.get("groundTilesets", []) as Array
+	if heightfield == null:
+		return []
+	return heightfield.ground_tilesets
 
 
 func cliff_tilesets() -> Array:
-	return hf.get("cliffTilesets", []) as Array
+	if heightfield == null:
+		return []
+	return heightfield.cliff_tilesets
 
 
 func ensure_brush_index_valid() -> void:
@@ -1398,7 +1420,7 @@ func save_json(path: String = "") -> Error:
 	if f == null:
 		push_error("MapDocument: cannot write %s (err=%s)" % [out_path, FileAccess.get_open_error()])
 		return ERR_CANT_CREATE
-	f.store_string(JSON.stringify(hf, "\t"))
+	f.store_string(JSON.stringify(heightfield.to_dict(), "\t"))
 	clear_dirty()
 	print("MapDocument: saved %s" % out_path)
 	return OK

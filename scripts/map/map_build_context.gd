@@ -1,13 +1,14 @@
 class_name MapBuildContext
 extends RefCounted
-## 单次地图加载的共享上下文：heightfield meta、SLK 索引、悬崖拓扑只算一遍。
-## Layer / Builder 应优先吃 ctx，避免各自再拆 JSON、再扫斜坡。
+## 单次地图加载的共享上下文。权威地形为 Wc3Heightfield；meta/hf 为其视图。
 
 
 var map_dir: String = ""
-## 原始 terrain-heightfield.json
+## 权威 SoA（与 Document / 磁盘共用或自持平行数组）
+var heightfield: Wc3Heightfield
+## 与 heightfield 共享数组的 JSON 形视图（兼容尚未改完的 Domain）
 var hf: Dictionary = {}
-## HeightfieldMeshBuilder.read_heightfield_meta 结果
+## 构建器用 meta（heightfield.to_build_meta，数组共享）
 var meta: Dictionary = {}
 ## info.json（可空）
 var info: Dictionary = {}
@@ -37,9 +38,11 @@ static func create(
 	# 不用 MapBuildContext.new()：headless 下 class_name 缓存可能尚未生成
 	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).new()
 	ctx.map_dir = p_map_dir
-	ctx.hf = p_hf
+	# 共享调用方 SoA（编辑器 Document 视图 / 刚读入的 JSON），避免每刷复制 2.6 万点
+	ctx.heightfield = Wc3Heightfield.from_dict(p_hf, false)
+	ctx.hf = ctx.heightfield.as_dict_view()
+	ctx.meta = ctx.heightfield.to_build_meta()
 	ctx.info = p_info
-	ctx.meta = HeightfieldMeshBuilder.read_heightfield_meta(p_hf)
 	ctx.tiles = p_tiles
 	ctx.catalog = p_catalog
 	ctx.cache = p_cache if p_cache else MapModelCache.new()
@@ -48,9 +51,7 @@ static func create(
 	if typeof(flags_wrap) == TYPE_DICTIONARY:
 		ctx.map_flags = flags_wrap
 
-	var ts := str(p_hf.get("mainTileset", ""))
-	if ts.is_empty():
-		ts = str(ctx.meta.get("main_tileset", ""))
+	var ts := ctx.heightfield.main_tileset
 	ctx.main_tileset = ts if not ts.is_empty() else "I"
 	return ctx
 
@@ -66,8 +67,8 @@ func ensure_cliff_topology() -> void:
 
 
 func width() -> int:
-	return int(meta.get("width", 0))
+	return heightfield.width if heightfield else 0
 
 
 func height() -> int:
-	return int(meta.get("height", 0))
+	return heightfield.height if heightfield else 0

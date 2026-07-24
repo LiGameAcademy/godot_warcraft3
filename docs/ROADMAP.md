@@ -47,19 +47,22 @@
 - [x] 落地 `docs/LAYERED_ARCHITECTURE.md` 为总纲（本文档配套）
 - [x] Cursor rules：分层门禁、Catalog vs Data vs Logic
 - [x] 文档约定目标目录：`data/` · `catalog/` · `logic/` · `presentation/` · `infra/`；`editor/scripts/editor.gd` 总管
-- [ ] 标明废弃路径：`HeightfieldMeshBuilder.read_heightfield_meta` → Heightfield（代码落地时删）
+- [x] Catalog 落位：`scripts/map/catalog/`（Id + CliffTrans）；Coords → `data/`
+- [x] meta 双通路：`Wc3Heightfield.to_build_meta` 为唯一来源；`read_heightfield_meta` 仅委托
 - [ ] **Editor 总管**：`editor_main.tscn` 下直接子节点 `Editor`（`Node`），`@export map_root`；从 `editor_app.gd` 迁编排
-- [ ] 按 § 目标树创建空目录 / 渐进 `git mv`（先新文件落新目录）
+- [ ] 按目标树渐进 `git mv`（logic / presentation / infra）
 
 **验收**：新人只读架构文 + ROADMAP 能说出「改贴图路径找谁、改顶点找谁、挂 Mesh 找谁、编辑总管在哪」。
 
 ### ② 地形高度图 — 数据定义
 
-- [ ] 巩固 `Wc3Heightfield` / `Wc3TileVertex` 与 JSON 往返
-- [ ] `Wc3Coords` 基础常量迁入 `data/`（或明确为 data 依赖的基础模块）
-- [ ] 删除对第二份 meta Dictionary 的依赖（表现改为读 Heightfield）
+- [x] 巩固 `Wc3Heightfield` / `Wc3TileVertex` 与 JSON 往返（`as_dict_view` / `to_build_meta`）
+- [x] `Wc3Coords` 迁入 `data/`
+- [x] `MapDocument` 以 `heightfield` 为权威；`hf` 为兼容视图
+- [x] `MapBuildContext` 持有 `heightfield`，meta 由其生成
+- [ ] 删除对第二份 meta Dictionary 手写逻辑的残余调用方（逐步改为只读 `ctx.meta` / `heightfield`）
 
-**验收**：Lost Temple 加载；单顶点读写自测通过；无并行「权威 Dictionary」长期双写。
+**验收**：Lost Temple 加载；单顶点读写自测通过；Document / Context 无并行权威 Dictionary。
 
 ### ③ 地形高度图 — 逻辑 API
 

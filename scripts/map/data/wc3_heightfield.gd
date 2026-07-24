@@ -64,7 +64,8 @@ func vertex_at_index(index: int) -> Wc3TileVertex:
 	return Wc3TileVertex.create(self, ix, iy)
 
 
-static func from_dict(d: Dictionary) -> Wc3Heightfield:
+## [param duplicate_arrays] true：拷贝平行数组（安全默认）；false：共享引用（编辑器重建 / 视图包装）。
+static func from_dict(d: Dictionary, duplicate_arrays: bool = true) -> Wc3Heightfield:
 	var hf := Wc3Heightfield.new()
 	hf.width = int(d.get("tilepointWidth", 0))
 	hf.height = int(d.get("tilepointHeight", 0))
@@ -75,20 +76,75 @@ static func from_dict(d: Dictionary) -> Wc3Heightfield:
 	hf.center_offset = Vector2(float(co.get("x", 0.0)), float(co.get("y", 0.0)))
 	hf.main_tileset = str(d.get("mainTileset", ""))
 	hf.main_tileset_name = str(d.get("mainTilesetName", ""))
-	hf.ground_tilesets = (d.get("groundTilesets", []) as Array).duplicate()
-	hf.cliff_tilesets = (d.get("cliffTilesets", []) as Array).duplicate()
-	hf.heights = (d.get("heights", []) as Array).duplicate()
-	hf.layer_heights = (d.get("layerHeights", []) as Array).duplicate()
-	hf.water_heights = (d.get("waterHeights", []) as Array).duplicate()
-	hf.flags_packed = (d.get("flagsPacked", []) as Array).duplicate()
-	hf.ground_textures = (d.get("groundTextures", []) as Array).duplicate()
-	hf.ground_variations = (d.get("groundVariations", []) as Array).duplicate()
-	hf.cliff_textures = (d.get("cliffTextures", []) as Array).duplicate()
-	hf.cliff_variations = (d.get("cliffVariations", []) as Array).duplicate()
+	hf.ground_tilesets = _arr(d.get("groundTilesets", []), duplicate_arrays)
+	hf.cliff_tilesets = _arr(d.get("cliffTilesets", []), duplicate_arrays)
+	hf.heights = _arr(d.get("heights", []), duplicate_arrays)
+	hf.layer_heights = _arr(d.get("layerHeights", []), duplicate_arrays)
+	hf.water_heights = _arr(d.get("waterHeights", []), duplicate_arrays)
+	hf.flags_packed = _arr(d.get("flagsPacked", []), duplicate_arrays)
+	hf.ground_textures = _arr(d.get("groundTextures", []), duplicate_arrays)
+	hf.ground_variations = _arr(d.get("groundVariations", []), duplicate_arrays)
+	hf.cliff_textures = _arr(d.get("cliffTextures", []), duplicate_arrays)
+	hf.cliff_variations = _arr(d.get("cliffVariations", []), duplicate_arrays)
 	# 缺水高时与地面齐平，避免空数组
 	if hf.water_heights.is_empty() and not hf.heights.is_empty():
 		hf.water_heights = hf.heights.duplicate()
 	return hf
+
+
+static func _arr(v: Variant, duplicate_arrays: bool) -> Array:
+	var a: Array = v as Array if typeof(v) == TYPE_ARRAY else []
+	return a.duplicate() if duplicate_arrays else a
+
+
+## 与 JSON 同形的 Dictionary；平行数组为共享引用（供笔刷 / Loader 兼容路径）。
+func as_dict_view() -> Dictionary:
+	return {
+		"tilepointWidth": width,
+		"tilepointHeight": height,
+		"mapWidth": map_width,
+		"mapHeight": map_height,
+		"centerOffset": {"x": center_offset.x, "y": center_offset.y},
+		"mainTileset": main_tileset,
+		"mainTilesetName": main_tileset_name,
+		"groundTilesets": ground_tilesets,
+		"cliffTilesets": cliff_tilesets,
+		"tileSize": tile_size,
+		"heights": heights,
+		"groundTextures": ground_textures,
+		"groundVariations": ground_variations,
+		"cliffVariations": cliff_variations,
+		"cliffTextures": cliff_textures,
+		"layerHeights": layer_heights,
+		"waterHeights": water_heights,
+		"flagsPacked": flags_packed,
+	}
+
+
+## 构建器用 meta（与历史 read_heightfield_meta 同形）；数组共享引用。
+func to_build_meta() -> Dictionary:
+	return {
+		"width": width,
+		"height": height,
+		"tile_size": tile_size,
+		"center": center_offset,
+		"heights": heights,
+		"water_heights": water_heights,
+		"ground_textures": ground_textures,
+		"ground_variations": ground_variations,
+		"cliff_textures": cliff_textures,
+		"cliff_variations": cliff_variations,
+		"layer_heights": layer_heights,
+		"flags": flags_packed,
+		"ground_tilesets": ground_tilesets,
+		"cliff_tilesets": cliff_tilesets,
+		"main_tileset": main_tileset,
+	}
+
+
+## Dictionary 边界适配（不经第二份权威拷贝造 meta）。
+static func build_meta_from_dict(hf: Dictionary) -> Dictionary:
+	return from_dict(hf, false).to_build_meta()
 
 
 func to_dict() -> Dictionary:
