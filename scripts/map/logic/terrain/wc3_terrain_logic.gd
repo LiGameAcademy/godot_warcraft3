@@ -4,39 +4,42 @@ extends RefCounted
 ## 高度图 / 地表逻辑层：只改 Wc3Heightfield，不建 Mesh、不查资产路径。
 ## 脏矩形供表现层局部重建（现阶段可先全量，接口已预留）。
 
+const LAYER_MIN := 0						## 最小层数
+const LAYER_MAX := 14						## 最大层数
+const FLAT_LAYER := 2						## 平坦层数
 
-const LAYER_MIN := 0
-const LAYER_MAX := 14
-const FLAT_LAYER := 2
+var heightfield: Wc3Heightfield = null		## 高度场
+var dirty_min: Vector2i = Vector2i.ZERO		## 脏区最小坐标
+var dirty_max: Vector2i = Vector2i.ZERO		## 脏区最大坐标
+var _dirty_valid: bool = false				## 是否有效
 
-var heightfield: Wc3Heightfield = null
-## 脏区（含边界）；_dirty_valid=false 表示无脏
-var dirty_min: Vector2i = Vector2i.ZERO
-var dirty_max: Vector2i = Vector2i.ZERO
-var _dirty_valid: bool = false
-
-
+## 绑定高度场
+## [param hf: Wc3Heightfield] 高度场
+## [return Wc3TerrainLogic] 自身
 func bind(hf: Wc3Heightfield) -> Wc3TerrainLogic:
 	heightfield = hf
 	clear_dirty()
 	return self
 
-
+## 是否绑定
+## [return bool] 是否绑定
 func is_bound() -> bool:
 	return heightfield != null and heightfield.width >= 2
 
-
+## 清空脏区
 func clear_dirty() -> void:
 	_dirty_valid = false
 	dirty_min = Vector2i.ZERO
 	dirty_max = Vector2i.ZERO
 
-
+## 是否有脏区
+## [return bool] 是否有脏区
 func has_dirty() -> bool:
 	return _dirty_valid
 
 
 ## 取出并清空脏矩形（tilepoint 坐标，闭区间 → Rect2i position/size）。
+## [return Rect2i] 脏矩形
 func take_dirty_rect() -> Rect2i:
 	if not _dirty_valid:
 		return Rect2i()
@@ -44,32 +47,29 @@ func take_dirty_rect() -> Rect2i:
 	clear_dirty()
 	return r
 
-
-func _mark_dirty(ix: int, iy: int) -> void:
-	if not _dirty_valid:
-		dirty_min = Vector2i(ix, iy)
-		dirty_max = Vector2i(ix, iy)
-		_dirty_valid = true
-		return
-	dirty_min.x = mini(dirty_min.x, ix)
-	dirty_min.y = mini(dirty_min.y, iy)
-	dirty_max.x = maxi(dirty_max.x, ix)
-	dirty_max.y = maxi(dirty_max.y, iy)
-
-
+## 获取顶点
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [return Wc3TileVertex] 顶点
 func vertex_at(ix: int, iy: int) -> Wc3TileVertex:
 	if not is_bound():
 		return null
 	return heightfield.vertex_at(ix, iy)
 
-
+## 获取层数
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [return int] 层数
 func layer_at(ix: int, iy: int) -> int:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
 		return FLAT_LAYER
 	var i: int = heightfield.index_at(ix, iy)
 	return clampi(int(heightfield.layer_heights[i]), LAYER_MIN, LAYER_MAX)
 
-
+## 获取高度
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [return float] 高度
 func height_at(ix: int, iy: int) -> float:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
 		return 0.0
@@ -77,6 +77,9 @@ func height_at(ix: int, iy: int) -> float:
 
 
 ## 正交四邻层高（越界为 FLAT_LAYER）。顺序：左、右、下、上。
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [return PackedInt32Array] 四邻层高
 func neighbor_layers(ix: int, iy: int) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	out.resize(4)
@@ -88,6 +91,11 @@ func neighbor_layers(ix: int, iy: int) -> PackedInt32Array:
 
 
 ## 写地表索引；可选随机 groundVariation（对齐笔刷）。
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [param tex_index: int] 地表索引
+## [param randomize_var: bool] 是否随机地表变体
+## [return bool] 是否成功
 func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true) -> bool:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
 		return false
@@ -107,6 +115,11 @@ func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true
 	return changed
 
 
+## 写高度
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [param h: float] 高度
+## [return bool] 是否成功
 func set_height(ix: int, iy: int, h: float) -> bool:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
 		return false
@@ -119,11 +132,19 @@ func set_height(ix: int, iy: int, h: float) -> bool:
 
 
 ## 单 tilepoint 地表（与 MapDocument.paint_corner 同语义）。
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [param tex_index: int] 地表索引
+## [return bool] 是否成功
 func paint_corner(ix: int, iy: int, tex_index: int) -> bool:
 	return set_ground_tex(ix, iy, tex_index, true)
 
 
 ## 地表格四角地表。
+## [param tx: int] 坐标 x
+## [param ty: int] 坐标 y
+## [param tex_index: int] 地表索引
+## [return bool] 是否成功
 func paint_tile(tx: int, ty: int, tex_index: int) -> bool:
 	if not is_bound():
 		return false
@@ -143,6 +164,10 @@ func paint_tile(tx: int, ty: int, tex_index: int) -> bool:
 	return changed_any
 
 
+## 采样地表高度；若至少一个顶点越界，返回 0。
+## [param tx: int] 坐标 x
+## [param ty: int] 坐标 y
+## [return float] 高度, 0 表示越界
 func sample_height_at_tile(tx: int, ty: int) -> float:
 	if not is_bound():
 		return 0.0
@@ -158,3 +183,17 @@ func sample_height_at_tile(tx: int, ty: int) -> float:
 			sum += height_at(c.x, c.y)
 			n += 1
 	return sum / float(n) if n > 0 else 0.0
+
+## 标记脏区
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+func _mark_dirty(ix: int, iy: int) -> void:
+	if not _dirty_valid:
+		dirty_min = Vector2i(ix, iy)
+		dirty_max = Vector2i(ix, iy)
+		_dirty_valid = true
+		return
+	dirty_min.x = mini(dirty_min.x, ix)
+	dirty_min.y = mini(dirty_min.y, iy)
+	dirty_max.x = maxi(dirty_max.x, ix)
+	dirty_max.y = maxi(dirty_max.y, iy)

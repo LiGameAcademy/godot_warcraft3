@@ -1,6 +1,6 @@
 extends SceneTree
 ## 逻辑层自测：条带写 FLAG_RAMP 的形状（不测 CliffTrans）。
-## 用法：godot --headless -s res://tools/selftest_ramp_logic.gd
+## 用法：godot --headless -s res://tests/unit/selftest_ramp_logic.gd
 
 
 const DocScript := preload("res://editor/scripts/map_document.gd")

@@ -1,6 +1,6 @@
 extends SceneTree
 ## CliffTrans 目录 / 命名 / 四角查表自测。
-## godot --headless -s res://tools/selftest_cliff_trans_catalog.gd
+## godot --headless -s res://tests/unit/selftest_cliff_trans_catalog.gd
 
 
 const Catalog := preload("res://scripts/map/catalog/wc3_cliff_trans_catalog.gd")

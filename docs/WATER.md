@@ -73,7 +73,7 @@ HiveWE **不实现**自动岸浪摆放（无 `shoreSFile` / `WavesDepth` 逻辑�
 - `scripts/map/wc3_shore_foam.gd` — MultiMesh 泡沫
 - `shaders/wc3_shore_foam.gdshader` / `wc3_water.gdshader`
 - `scripts/map/map_water_layer.gd`
-- `tools/selftest_shoreline.gd`
+- `tests/water/selftest_shoreline.gd`
 
 ### 验收
 
@@ -85,7 +85,7 @@ Shore foam: S=… OC=… IC=… instances=…
 斜坡/崖下应能看见水面伸入坡底；岸浪仍只落在开阔水面侧。
 
 ```bash
-Godot_*_console.exe --headless --path . -s res://tools/selftest_shoreline.gd
+Godot_*_console.exe --headless --path . -s res://tests/water/selftest_shoreline.gd
 ```
 
 ---

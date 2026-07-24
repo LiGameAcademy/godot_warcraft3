@@ -65,9 +65,9 @@
 ## 7. 回归
 
 ```text
-godot --headless --path . -s res://tools/selftest_cliff_variants.gd
-godot --headless --path . -s res://tools/selftest_cliff_level3.gd
-godot --headless --path . -s res://tools/selftest_cliff_ground_tex.gd
+godot --headless --path . -s res://tests/cliff/selftest_cliff_variants.gd
+godot --headless --path . -s res://tests/cliff/selftest_cliff_level3.gd
+godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 ```
 
 `selftest_cliff_variants.gd` 覆盖：TAG/GLB、AABC 单片、叠段、台面+柱、远程隔离、异种接触同化。

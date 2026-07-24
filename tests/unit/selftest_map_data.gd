@@ -1,6 +1,6 @@
 extends SceneTree
 ## 地图数据模型自测：Lost Temple heightfield + 顶点视图。
-## godot --headless -s res://tools/selftest_map_data.gd
+## godot --headless -s res://tests/unit/selftest_map_data.gd
 
 
 func _init() -> void:

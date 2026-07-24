@@ -1,6 +1,6 @@
 extends SceneTree
 ## 高度图逻辑层自测。
-## godot --headless -s res://tools/selftest_terrain_logic.gd
+## godot --headless -s res://tests/unit/selftest_terrain_logic.gd
 
 
 func _init() -> void:

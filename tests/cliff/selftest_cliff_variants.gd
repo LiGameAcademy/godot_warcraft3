@@ -20,7 +20,7 @@ extends SceneTree
 ## 8. 泥土崖旁邻接刷草地崖：接触区转为草地崖，不混角渗色
 ##
 ## 运行：
-##   godot --headless --path . -s res://tools/selftest_cliff_variants.gd
+##   godot --headless --path . -s res://tests/cliff/selftest_cliff_variants.gd
 
 
 const DocScript := preload("res://editor/scripts/map_document.gd")

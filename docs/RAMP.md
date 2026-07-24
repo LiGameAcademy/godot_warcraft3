@@ -132,7 +132,7 @@
 
 代码：`Wc3CliffTransCatalog`（`scripts/map/catalog/wc3_cliff_trans_catalog.gd`）
 入口：运行时 `load_cliff_trans()` / `load_city_cliff_trans()`（扫盘，**不**检入 `resources/*.tres`）
-自测：`tools/selftest_cliff_trans_catalog.gd`
+自测：`tests/unit/selftest_cliff_trans_catalog.gd`
 
 ### 4.1 文件名结构
 
@@ -260,7 +260,7 @@ Dispatcher / Variant **只通过 Catalog 取模型**，不要手写 `CliffTrans%
 | `peek_ramp_strip_at` | 悬停预览将写旗的顶点 |
 | `MapRampDebugLayer`（`show_ramp_debug`） | 蓝菱形 |
 
-自测：`tools/selftest_ramp_logic.gd`。
+自测：`tests/unit/selftest_ramp_logic.gd`。
 
 ### 逻辑层验收
 
