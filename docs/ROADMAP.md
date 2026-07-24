@@ -66,9 +66,11 @@
 
 ### ③ 地形高度图 — 逻辑 API
 
-- [ ] `MapDocument`（或 `TerrainLogic`）持有 `Wc3Heightfield`
-- [ ] API：`vertex_at`、批量改 `height`/`ground_tex`、邻域查询、脏矩形
+- [x] `MapDocument` 持有 `Wc3Heightfield` + `Wc3TerrainLogic`
+- [x] API：`vertex_at`、`set_ground_tex` / `set_height`、邻域层、脏矩形（`scripts/map/logic/terrain/`）
+- [x] Catalog 改为运行时扫盘；删除根目录 `resources/*.tres`
 - [ ] 门禁与撤销挂钩点预留（实现可后置）
+- [ ] 悬崖/水/坡笔刷从 Document 继续拆到 `logic/cliff`（⑦）
 
 **验收**：不经 Mesh、仅改数据 + 单元/自测可验证。
 

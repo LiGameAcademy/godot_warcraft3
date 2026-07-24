@@ -130,8 +130,8 @@
 - `res://assets/asset-converted/Doodads/Terrain/CliffTrans/`（通用，当前 **32** 个 `.glb`）
 - `…/CityCliffTrans/`（城市崖，当前 **16** 个，是前者的子集、无 `X`/`C` 复杂缝）
 
-代码：`Wc3CliffTransCatalog`（`scripts/map/catalog/wc3_cliff_trans_catalog.gd`）  
-预扫描资源：`resources/cliff_trans_catalog.tres` / `city_cliff_trans_catalog.tres`  
+代码：`Wc3CliffTransCatalog`（`scripts/map/catalog/wc3_cliff_trans_catalog.gd`）
+入口：运行时 `load_cliff_trans()` / `load_city_cliff_trans()`（扫盘，**不**检入 `resources/*.tres`）
 自测：`tools/selftest_cliff_trans_catalog.gd`
 
 ### 4.1 文件名结构
@@ -176,7 +176,7 @@ CliffTrans  AAHL  0  .glb
 ### 4.4 Catalog API
 
 ```gdscript
-var cat := Wc3CliffTransCatalog.load_cliff_trans()  # 或 preload .tres 再 rebuild
+var cat := Wc3CliffTransCatalog.load_cliff_trans()  # 运行时扫盘
 var tag := Wc3CliffTransCatalog.tag_from_corners("A", "A", "H", "L")  # → "AAHL"
 var path := cat.resolve_path_for_corners("A", "A", "H", "L")  # 磁盘存在才返回
 var path2 := cat.resolve_path_for_tag("AAHL", 0)

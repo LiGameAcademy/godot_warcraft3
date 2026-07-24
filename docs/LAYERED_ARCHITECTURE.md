@@ -180,14 +180,15 @@ scripts/map/
 │   ├── wc3_parsed_map.gd
 │   └── …                          # info / doodads / units JSON 映射
 │
-├── catalog/                       # 资源映射（非 map-parsed）
+├── catalog/                       # 资源映射：运行时扫盘 / resolve（不检入 .tres 表）
 │   ├── wc3_id_catalog.gd
 │   ├── wc3_ground_tile_catalog.gd # 目标
 │   ├── wc3_cliff_catalog.gd       # 目标（直崖）
 │   └── wc3_cliff_trans_catalog.gd
 │
 ├── logic/                         # 规则 / API（无 Node）
-│   ├── terrain/                   # 邻域选纹、脏区、高度合法性
+│   ├── terrain/
+│   │   └── wc3_terrain_logic.gd   # 地表/高度 API + 脏矩形
 │   ├── cliff/                     # is_cliff_tile、TAG 选型、挖洞集合
 │   ├── ramp/                      # 门禁、Dispatcher（后置）
 │   ├── water/                     # 深浅判定等（后置）

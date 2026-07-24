@@ -36,6 +36,8 @@ const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
 ## 权威地形 SoA
 var heightfield: Wc3Heightfield = null
+## 高度图 / 地表逻辑（绑定 heightfield）
+var terrain: Wc3TerrainLogic = Wc3TerrainLogic.new()
 ## 兼容旧调用：get → as_dict_view（共享数组）；set → from_dict
 var hf: Dictionary:
 	get:
@@ -47,6 +49,7 @@ var hf: Dictionary:
 			heightfield = null
 		else:
 			heightfield = Wc3Heightfield.from_dict(value, false)
+		_rebind_terrain()
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
@@ -57,6 +60,10 @@ var _dirty: bool = false
 var _cliff_ground_cache: PackedInt32Array = PackedInt32Array()
 ## 最近一次斜坡笔刷结果（供状态栏 / 自测）
 var last_ramp_message: String = ""
+
+
+func _rebind_terrain() -> void:
+	terrain.bind(heightfield)
 
 
 func is_dirty() -> bool:
@@ -136,17 +143,7 @@ func ensure_cliff_type_valid() -> void:
 
 
 func layer_at(ix: int, iy: int) -> int:
-	if is_empty():
-		return FLAT_LAYER
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
-	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
-		return FLAT_LAYER
-	var layers: Array = hf.get("layerHeights", []) as Array
-	var i: int = iy * tp_w + ix
-	if i < 0 or i >= layers.size():
-		return FLAT_LAYER
-	return clampi(int(layers[i]), LAYER_MIN, LAYER_MAX)
+	return terrain.layer_at(ix, iy)
 
 
 func brush_tile_id() -> String:
@@ -300,51 +297,22 @@ func create_from_options(options: Dictionary) -> void:
 func paint_tile(tx: int, ty: int, tex_index: int = -1) -> bool:
 	if is_empty():
 		return false
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
-	var map_w: int = tp_w - 1
-	var map_h: int = tp_h - 1
-	if tx < 0 or ty < 0 or tx >= map_w or ty >= map_h:
+	var idx: int = tex_index if tex_index >= 0 else brush_tile_index
+	if not terrain.paint_tile(tx, ty, idx):
 		return false
-	var changed_any: bool = false
-	for c in [
-		Vector2i(tx, ty),
-		Vector2i(tx + 1, ty),
-		Vector2i(tx, ty + 1),
-		Vector2i(tx + 1, ty + 1),
-	]:
-		if paint_corner(c.x, c.y, tex_index):
-			changed_any = true
-	return changed_any
+	mark_dirty()
+	return true
 
 
 ## 写单个中级栅格顶点（tilepoint）的地表索引。对齐 WE / HiveWE 角点笔刷。
 func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if is_empty():
 		return false
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
-	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
-		return false
 	var idx: int = tex_index if tex_index >= 0 else brush_tile_index
-	var gs: Array = hf["groundTilesets"]
-	if idx < 0 or idx >= gs.size():
+	if not terrain.paint_corner(ix, iy, idx):
 		return false
-	var ground: Array = hf["groundTextures"]
-	var ground_var: Array = hf["groundVariations"]
-	var i: int = iy * tp_w + ix
-	if i < 0 or i >= ground.size():
-		return false
-	var changed_any: bool = false
-	if int(ground[i]) != idx:
-		ground[i] = idx
-		changed_any = true
-	if i < ground_var.size():
-		ground_var[i] = Wc3TerrainAutotile.random_ground_variation()
-		changed_any = true
-	if changed_any:
-		mark_dirty()
-	return changed_any
+	mark_dirty()
+	return true
 
 
 ## 悬崖笔刷：按 WorldEditData 工具 id 改 layerHeights / heights / 水 / 斜坡 / 悬崖类型。
@@ -1329,22 +1297,7 @@ func _paint_water(
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:
-	if is_empty():
-		return 0.0
-	var tp_w: int = int(hf["tilepointWidth"])
-	var heights: Array = hf["heights"]
-	var sum: float = 0.0
-	var n: int = 0
-	for c in [
-		ty * tp_w + tx,
-		ty * tp_w + tx + 1,
-		(ty + 1) * tp_w + tx,
-		(ty + 1) * tp_w + tx + 1,
-	]:
-		if c >= 0 and c < heights.size():
-			sum += float(heights[c])
-			n += 1
-	return sum / float(n) if n > 0 else 0.0
+	return terrain.sample_height_at_tile(tx, ty)
 
 
 func world_godot_to_tile(godot_pos: Vector3) -> Vector2i:

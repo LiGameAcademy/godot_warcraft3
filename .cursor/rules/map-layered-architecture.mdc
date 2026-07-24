@@ -13,7 +13,7 @@ alwaysApply: false
 | 层 | 目录/前缀 | 可以 | 禁止 |
 | ---- | ----------- | ------ | ------ |
 | Data | `scripts/map/data/` | JSON↔类型、SoA、FLAG/TILE 常量 | 建 Mesh、拼 GLB 路径、算崖 TAG |
-| Catalog | `scripts/map/catalog/`（目标） | ID/TAG/tileset → 路径或 Texture 索引 | 改 heightfield、判「这一格是崖」 |
+| Catalog | `scripts/map/catalog/` | ID/TAG/tileset → 路径或 Texture 索引；**运行时扫盘**（`load_*`），不检入根 `resources/*.tres` | 改 heightfield、判「这一格是崖」 |
 | Logic | Domain / Document API | 拓扑、门禁、选型、placements | `SurfaceTool`、挂节点、直接 `load` 资产 |
 | Presentation | `map_*_layer`、Mesh 构建 | 消费 placements + resolve 结果 | 写 flags/layer、硬编码资产路径 |
 | Editor | `editor/scripts/`；总管 `Editor`/`MapEditor`（Node） | `@export` 注入 MapRoot；调 Logic API、脏区重建 | 根节点堆业务；笔刷里组 Mesh / resolve 路径 |

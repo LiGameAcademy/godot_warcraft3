@@ -1,9 +1,10 @@
 class_name Wc3CliffTransCatalog
 extends Resource
-## CliffTrans / CityCliffTrans 模型目录。
-## 文件名：`{Family}{TAG}{variation}.glb`，TAG 四字角序为 TL → TR → BR → BL。
-## 资源在 .gdignore 下，路径经 RuntimeAssets 解析磁盘。
 
+## CliffTrans / CityCliffTrans 模型目录（运行时扫盘，不检入 .tres 登记表）。
+## 文件名：`{Family}{TAG}{variation}.glb`，TAG 四字角序为 TL → TR → BR → BL。
+## 使用：`Wc3CliffTransCatalog.load_cliff_trans()` / `load_city_cliff_trans()`。
+## 资源在 .gdignore 下，路径经 RuntimeAssets 解析磁盘。
 
 const FAMILY_CLIFF_TRANS := "CliffTrans"
 const FAMILY_CITY_CLIFF_TRANS := "CityCliffTrans"
