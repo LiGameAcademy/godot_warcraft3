@@ -8,10 +8,34 @@ const LAYER_MIN := 0						## 最小层数
 const LAYER_MAX := 14						## 最大层数
 const FLAT_LAYER := 2						## 平坦层数
 
+## 经典 WE / HiveWE 地表 variation 加权表（总和 570）。
+const VARIATION_CHANCE_SUM := 570
+const VARIATION_CHANCES := [
+	[0, 85], [16, 85], [17, 85],
+	[1, 10], [2, 4], [3, 1],
+	[4, 85], [5, 10], [6, 4], [7, 1],
+	[8, 85], [9, 10], [10, 4], [11, 1],
+	[12, 85], [13, 10], [14, 4], [15, 1],
+]
+
 var heightfield: Wc3Heightfield = null		## 高度场
 var dirty_min: Vector2i = Vector2i.ZERO		## 脏区最小坐标
 var dirty_max: Vector2i = Vector2i.ZERO		## 脏区最大坐标
 var _dirty_valid: bool = false				## 是否有效
+
+
+## 新建地图 / 笔刷铺地时的 groundVariation（5 bit）。对齐 HiveWE。
+static func random_ground_variation(rng: RandomNumberGenerator = null) -> int:
+	var r: RandomNumberGenerator = rng if rng != null else RandomNumberGenerator.new()
+	if rng == null:
+		r.randomize()
+	var nr: int = r.randi_range(0, VARIATION_CHANCE_SUM) - 1
+	for pair in VARIATION_CHANCES:
+		var chance: int = int(pair[1])
+		if nr < chance:
+			return int(pair[0])
+		nr -= chance
+	return 0
 
 ## 绑定高度场
 ## [param hf: Wc3Heightfield] 高度场
@@ -108,7 +132,7 @@ func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true
 		heightfield.ground_textures[i] = tex_index
 		changed = true
 	if randomize_var and i < heightfield.ground_variations.size():
-		heightfield.ground_variations[i] = Wc3TerrainAutotile.random_ground_variation()
+		heightfield.ground_variations[i] = Wc3TerrainLogic.random_ground_variation()
 		changed = true
 	if changed:
 		_mark_dirty(ix, iy)

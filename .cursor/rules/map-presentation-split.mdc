@@ -1,0 +1,43 @@
+---
+description: 表现层脚本拆分尺度：避免过碎与上帝类
+globs: scripts/map/presentation/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/TERRAIN_TILES.md
+alwaysApply: false
+---
+
+# 表现层拆分原则
+
+总纲：`docs/LAYERED_ARCHITECTURE.md` §「脚本拆分尺度」。
+
+## 何时拆
+
+- **跨层**：Data / Catalog / Logic / Present / Editor 边界清晰时必须拆
+- **复用**：≥2 个无关模块共用（如 `HeightfieldMesh` 供地面与水面）
+- **生命周期不同**：Node（Layer）vs 纯算法 / Resource（材质 `.tres`）
+
+## 何时不拆
+
+- 仅转发一行的 `*Builder` / 薄封装
+- 「为了目录整齐」把同一职责拆成 3+ 文件
+- 把 Catalog 路径解析塞进 Layer 组网循环
+
+## 地面管线（参照实现）
+
+| 脚本 | 职责 |
+|------|------|
+| `HeightfieldMesh` | 采样 + 三角/四边形批建 + 挂材质（底层） |
+| `MapTerrainLayer` | WC3 地表规则 + 调底层画网格 + 赋运行时贴图参数 |
+| `wc3_ground_material.tres` | 静态 shader 参数落盘；Layer 只 `duplicate` 后设 `tilesets` 等 |
+| `Wc3GroundTileCatalog` | tileset → Texture2DArray |
+
+## 反例
+
+```gdscript
+# ❌ 代码里 new ShaderMaterial + 写死 roughness
+var mat := ShaderMaterial.new()
+mat.shader = preload("...")
+mat.set_shader_parameter("roughness_value", 0.92)
+
+# ✅
+var mat := GROUND_MATERIAL.duplicate() as ShaderMaterial
+mat.set_shader_parameter("tilesets", tex_array)
+```

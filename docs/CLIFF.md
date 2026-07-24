@@ -79,7 +79,7 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 | `editor/scripts/map_document.gd` | 笔刷、蛋糕、策略 B 同步 |
 | `scripts/map/wc3_cliff_tiles.gd` | TAG / 叠段 / 斜坡检测入口 |
 | `scripts/map/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |
-| `scripts/map/presentation/mesh/wc3_terrain_autotile.gd` | 挖洞、`_corner_texture` |
+| `scripts/map/presentation/layers/map_terrain_layer.gd` | 挖洞、`corner_texture` |
 | `editor/scripts/ui/tool_palette_window.gd` | 类型图标 |
 | [EDITOR.md](EDITOR.md) §5.3 | 编辑器流程 |
 | [RAMP.md](RAMP.md) | 斜坡设计（实现门禁） |

@@ -21,7 +21,7 @@ func build(ctx) -> void:
 		return
 	var meta: Dictionary = ctx.meta
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(ctx.hf)
+		meta = Wc3Heightfield.build_meta_from_dict(ctx.hf)
 	var tp_w: int = int(meta.get("width", 0))
 	var tp_h: int = int(meta.get("height", 0))
 	var flags: Array = meta.get("flags", []) as Array

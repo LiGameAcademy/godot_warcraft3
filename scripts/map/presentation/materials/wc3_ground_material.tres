@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/wc3_ground.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "Wc3Ground"
+shader = ExtResource("1_shader")
+shader_parameter/roughness_value = 0.92
+shader_parameter/albedo_scale = 1.0
+shader_parameter/world_scale = 0.01
+shader_parameter/dbg_grid_tile = false
+shader_parameter/dbg_grid_path = false
+shader_parameter/dbg_grid_fine = false

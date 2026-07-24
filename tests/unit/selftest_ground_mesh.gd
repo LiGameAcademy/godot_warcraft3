@@ -1,5 +1,5 @@
 extends SceneTree
-## Ground 表现管线：Catalog 贴图数组 + Autotile 网格。
+## Ground 表现管线：Catalog 贴图数组 + TerrainLayer 组网。
 ## godot --headless -s res://tests/unit/selftest_ground_mesh.gd
 
 
@@ -27,7 +27,16 @@ func _test_build_blank_ground() -> int:
 	if extended.size() != ground_tilesets.size():
 		push_error("extended size mismatch")
 		return 1
-	var built := Wc3TerrainAutotile.build_ground_mesh(hf_dict, extended, tiles, meta)
+
+	var layer := MapTerrainLayer.new()
+	var ground := HeightfieldMesh.new()
+	ground.name = "Ground"
+	layer.add_child(ground)
+	layer._ground = ground
+
+	var built: Dictionary = layer._build_ground_mesh(
+		hf_dict, extended, tiles, meta, PackedByteArray()
+	)
 	if built.is_empty() or built.get("mesh") == null:
 		push_error("ground mesh empty")
 		return 1
@@ -43,4 +52,5 @@ func _test_build_blank_ground() -> int:
 		"  ground mesh OK surfaces=%d layers=%d gaps=%d"
 		% [mesh.get_surface_count(), tex.get_layers(), int(built.get("gap_count", 0))]
 	)
+	layer.free()
 	return 0

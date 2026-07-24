@@ -130,7 +130,7 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 ```
 
 权威为 `Wc3Heightfield`：`to_build_meta()` / `as_dict_view()` 供构建与兼容路径。  
-`HeightfieldMeshBuilder.read_heightfield_meta` 仅委托 `build_meta_from_dict`；`sample_vert` 属表现层。
+`sample_vert` / 三角四边形在 `HeightfieldMesh`；勿再引入仅转发的 MeshBuilder。
 
 ---
 

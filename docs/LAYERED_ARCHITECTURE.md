@@ -106,61 +106,37 @@ EditorMain (Node3D)                    ← 场景壳：环境光、挂载子节�
 
 ### 3.2 `heightfield_mesh_builder.gd` 是否还有必要？
 
-**作为独立「数据读取器」没有必要，应拆进两处：**
-
-| 现有 API | 去向 |
-|----------|------|
-| `read_heightfield_meta(hf: Dictionary)` | **删除/吸收** → `Wc3Heightfield`（数据层已有字段，勿再造第二份 meta Dictionary） |
-| `sample_vert(...)` | **表现层** 网格构建（如 `HeightfieldMesh` / 将来的 GroundMeshBuilder）——把 WC3 高度采样成 Godot 顶点 |
-
-数据层提供「高度、中心、tile_size」；表现层负责 `SurfaceTool` / `ArrayMesh`。
+**已删除。** meta → `Wc3Heightfield`；`sample_vert` / 三角四边形 → `HeightfieldMesh`。
 
 ### 3.3 `wc3_cliff_trans_catalog.gd` 抽象如何？算数据层吗？
 
-**抽象方向正确，但属于 Catalog（资源映射），不是 map-parsed 数据层。**
+**抽象方向正确，但属于 Catalog（资源映射），不是 map-parsed 数据层。** 运行时 `load_*()` 扫盘，不检入 `.tres` 登记表。
 
-- Catalog：磁盘上有哪些 `CliffTrans{TAG}{var}.glb`、如何 parse 文件名、`resolve(tag, var)`  
-- Logic（现 `wc3_cliff_tiles` 等）：这一格四角 layer → 该用哪个 TAG、要不要洞  
+### 3.4 与 `wc3_cliff_tiles.gd` 是否重叠？
 
-**直崖 Cliffs 应同样模式**：`Wc3CliffCatalog`（A/B/C TAG + variation → 路径），与 CliffTrans 对称。
-
-### 3.4 与 `wc3_cliff_tiles.gd` 是否重叠？可否整合？
-
-**有重叠嫌疑，应拆清，不要糊成一个大文件。**
-
-| 职责 | 留在 | 说明 |
-|------|------|------|
-| `is_cliff_tile`、四角 layer → TAG、挖洞集合 | **Logic** | 「这一格是什么」 |
-| `CLIFF_VAR_MAX`、resolve GLB 路径、扫盘登记 | **Catalog** | 「这种 TAG 有哪些资产」 |
-| MultiMesh 挂树、材质 | **Presentation** | `map_cliff_layer` |
-
-整合原则：**逻辑选型结果 + Catalog.resolve → 表现实例化**。不要把「算 TAG」和「找文件」写进同一个 300 行脚本的同一段落。
+**拆清：** Tiles = 逻辑选型；Catalog = TAG→路径；Layer = 挂树。
 
 ### 3.5 地形纹理 / Autotile
 
-理想形态（与你描述一致）：
+**已落地：**
 
-1. **文档**：邻接 bitmask / 变体规则（独立 `docs/TERRAIN_TILES.md`，阶段 4 再写细）  
-2. **Catalog**：某 tileset 的「纹理级」→ `Texture2DArray`（或多张图 + 索引表）  
-3. **Logic 方法（可挂在 Catalog 旁的纯函数）**：给定顶点邻域 → 选中 array 下标 / variation  
-4. **Presentation**：Autotile 只组几何 + 采样已选中的层  
+1. `docs/TERRAIN_TILES.md`  
+2. `Wc3GroundTileCatalog` → `Texture2DArray`  
+3. bitmask / 组网在 `MapTerrainLayer`；底层画网格在 `HeightfieldMesh`  
+4. 静态材质 `presentation/materials/wc3_ground_material.tres`
 
-现 `wc3_terrain_autotile.gd` 把规则、组 mesh、贴图加载揉在一起 —— 重构时按上表拆。
+原 `wc3_terrain_autotile.gd` 已并入 Layer + Catalog。
 
 ### 3.6 `wc3_id_catalog.gd` 与统一 Catalog 层
 
 **算 Catalog，不算 map-parsed Data。**
 
-目标：`scripts/map/catalog/` 下统一「资源 ↔ ID」：
-
 | Catalog | 键 | 值 |
 |---------|----|----|
-| `Wc3IdCatalog`（已有） | 四字符单位/装饰 ID | 显示名、GLB 候选路径 |
-| `Wc3GroundTileCatalog`（目标） | tileset + tex 下标 + bitmask/var | 贴图 / array 层 |
+| `Wc3IdCatalog` | 四字符单位/装饰 ID | 显示名、GLB 候选路径 |
+| `Wc3GroundTileCatalog` | tileset 列表 | Texture2DArray / extended |
 | `Wc3CliffCatalog`（目标） | 家族 + TAG + var | Cliffs GLB |
-| `Wc3CliffTransCatalog`（已有） | TAG + var | CliffTrans GLB |
-
-逻辑层只调用 `catalog.resolve(...)`；表现层拿路径去 `RuntimeAssets` / `MapModelCache`。
+| `Wc3CliffTransCatalog` | TAG + var | CliffTrans GLB |
 
 ---
 
@@ -197,11 +173,11 @@ scripts/map/
 │
 ├── presentation/                  # 表现：挂树 + 建 Mesh
 │   ├── layers/
-│   │   └── map_terrain_layer.gd   # Ground（其余 Layer 待迁）
-│   └── mesh/
-│       ├── heightfield_mesh.gd
-│       ├── heightfield_mesh_builder.gd
-│       └── wc3_terrain_autotile.gd  # 地面 ArrayMesh
+│   │   └── map_terrain_layer.gd   # 地表规则 + 组网
+│   ├── mesh/
+│   │   └── heightfield_mesh.gd    # 采样 / 三角四边形 / 材质
+│   └── materials/
+│       └── wc3_ground_material.tres
 │
 │   # 待迁：map_loader / map_build_context / 其它 Layer
 │
@@ -211,12 +187,11 @@ scripts/map/
     └── map_placeholders.gd
 ```
 
-| 现文件（平铺） | 目标 |
-| ---------------- | ------ |
-| `wc3_cliff_tiles.gd`（选型部分） | `logic/cliff/` |
-| `wc3_cliff_builder.gd`（组 transform） | `presentation/` 或 `logic/cliff/` 产出 placements、Layer 消费 |
-| ~~`wc3_terrain_autotile.gd`~~ | ✅ `presentation/mesh/` + Catalog 贴图 |
-| ~~`heightfield_mesh_builder.gd`~~ | ✅ meta → `data`；sample → `presentation/mesh` |
+| 现文件 | 状态 |
+|--------|------|
+| ~~`wc3_terrain_autotile.gd`~~ | ✅ 并入 `MapTerrainLayer` + Catalog |
+| ~~`heightfield_mesh_builder.gd`~~ | ✅ 并入 `HeightfieldMesh` / `Wc3Heightfield` |
+| `wc3_cliff_tiles.gd`（选型） | 待迁 `logic/cliff/` |
 
 ### 4.2 `editor/`（编辑层）
 
@@ -268,13 +243,35 @@ editor/
 
 ---
 
-## 6. 与旧文档关系
+## 6. 脚本拆分尺度（表现层尤甚）
+
+**目标：** 可读、可维护；**禁止**为拆而拆，也**禁止**上帝类。
+
+| 该拆 | 不该拆 |
+|------|--------|
+| 跨层边界（Data / Catalog / Logic / Present） | 一行转发的 `*Builder` |
+| ≥2 个无关模块共用的底层能力 | 同一职责拆成多个几乎空的文件 |
+| Node 挂树 vs 纯算法 vs 落盘 Resource | Catalog 解析与 Layer 组网揉成一个 800 行文件 |
+
+**地面参照：**
+
+- `HeightfieldMesh`：三角/四边形、采样、材质挂载（底层）
+- `MapTerrainLayer`：地表 bitmask / 挖洞 / 调底层画网格（领域表现）
+- `wc3_ground_material.tres`：静态材质参数；运行时只改 `tilesets` 等
+- `Wc3GroundTileCatalog`：贴图数组
+
+评判由实现者拿捏：新增文件前问「删掉它会不会只剩转发？」；塞进已有文件前问「是否已在讲另一个子系统？」。
+
+---
+
+## 7. 与旧文档关系
 
 | 文档 | 角色 |
 |------|------|
 | 本文 | **架构总纲与 vibecoding 门禁来源** |
 | [MAP_DATA.md](MAP_DATA.md) | 数据层细节 |
 | [EDITOR.md](EDITOR.md) | 编辑层总管、场景树、与 MapRoot 接线 |
+| [TERRAIN_TILES.md](TERRAIN_TILES.md) | 地表贴图 / Autotile |
 | [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | 现 MapRoot 节点树与历史职责表（逐步对齐本文） |
 | [ROADMAP.md](ROADMAP.md) | 实施顺序 |
 | CLIFF / RAMP / WATER | 单模块规则；服从本文分层，不另起一套架构 |

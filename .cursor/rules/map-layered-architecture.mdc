@@ -32,7 +32,8 @@ alwaysApply: false
 - `sample_vert`：属表现网格构建，不进 Data。
 - `Wc3CliffTransCatalog` / `Wc3IdCatalog`：Catalog，不是 map-parsed Data。
 - 直崖应对称做 `Wc3CliffCatalog`；`Wc3CliffTiles` 只留逻辑选型，路径查找进 Catalog。
-- Autotile：邻域选层进 Catalog/纯函数；Layer 只组几何。
+- Autotile / 地面组网：在 `MapTerrainLayer`；底层画网格在 `HeightfieldMesh`；贴图数组在 Catalog；材质用 `.tres`。
+- 禁止再引入仅转发的 `*MeshBuilder`；拆分尺度见 `map-presentation-split.mdc`。
 
 ## 反例
 

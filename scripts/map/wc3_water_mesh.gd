@@ -14,7 +14,7 @@ static func build(
 	meta: Dictionary = {}
 ) -> Dictionary:
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var ground: Array = meta["heights"]
@@ -53,10 +53,10 @@ static func build(
 			var wh01 := float(water_h[i01]) + offset
 			var wh11 := float(water_h[i11]) + offset
 
-			var p00 := HeightfieldMeshBuilder.sample_vert(ix, iy, wh00, center, tile_size)
-			var p10 := HeightfieldMeshBuilder.sample_vert(ix + 1, iy, wh10, center, tile_size)
-			var p01 := HeightfieldMeshBuilder.sample_vert(ix, iy + 1, wh01, center, tile_size)
-			var p11 := HeightfieldMeshBuilder.sample_vert(ix + 1, iy + 1, wh11, center, tile_size)
+			var p00 := HeightfieldMesh.sample_vert(ix, iy, wh00, center, tile_size)
+			var p10 := HeightfieldMesh.sample_vert(ix + 1, iy, wh10, center, tile_size)
+			var p01 := HeightfieldMesh.sample_vert(ix, iy + 1, wh01, center, tile_size)
+			var p11 := HeightfieldMesh.sample_vert(ix + 1, iy + 1, wh11, center, tile_size)
 
 			var c00 := _vert_color(wh00, float(ground[i00]), params)
 			var c10 := _vert_color(wh10, float(ground[i10]), params)

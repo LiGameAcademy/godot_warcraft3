@@ -1,5 +1,6 @@
 class_name Wc3Heightfield
 extends RefCounted
+
 ## 对应 map-parsed/*/terrain-heightfield.json（SoA 平行数组）。
 ## 单顶点请用 vertex_at() → Wc3TileVertex，不要手写 hf["heights"][i]。
 

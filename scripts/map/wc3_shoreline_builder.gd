@@ -68,7 +68,7 @@ static func collect_foam_placements(
 		return out
 
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var ground: Array = meta["heights"]

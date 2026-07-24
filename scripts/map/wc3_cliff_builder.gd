@@ -11,7 +11,7 @@ static func collect_instances(
 	ramp_data: Dictionary = {}
 ) -> Dictionary:
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var layers: Array = meta["layer_heights"]

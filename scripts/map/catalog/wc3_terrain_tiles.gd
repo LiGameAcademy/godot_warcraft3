@@ -7,17 +7,17 @@ extends RefCounted
 ## 但经典客户端按地图 mainTileset 从 A.mpq / I.mpq 等子包解析不同内容。
 ## 解包时用 {tileset}_Cliff0.png 保存（如 I_Cliff1 = Icecrown）。
 
-var _tile_to_png: Dictionary = {}
-var _tile_name: Dictionary = {} ## tileID → WESTRING_TILE_* 或 comment
-var _tile_buildable: Dictionary = {} ## tileID → bool（Terrain.slk buildable）
-var _tile_order: Array = [] ## Terrain.slk 记录顺序
-var _cliff_to_png: Dictionary = {}
-var _cliff_order: Array = []
-var _cliff_model_dir: Dictionary = {}
-var _cliff_ramp_dir: Dictionary = {}
-var _cliff_ground_tile: Dictionary = {}
+var _tile_to_png: Dictionary[String, String] = {}			## tileID → 贴图路径
+var _tile_name: Dictionary[String, String] = {} 			## tileID → WESTRING_TILE_* 或 comment
+var _tile_buildable: Dictionary[String, bool] = {} 			## tileID → bool（Terrain.slk buildable）
+var _tile_order: Array[String] = [] 						## Terrain.slk 记录顺序
+var _cliff_to_png: Dictionary[String, String] = {}			## cliffID → 贴图路径
+var _cliff_order: Array[String] = []						## cliffID 记录顺序
+var _cliff_model_dir: Dictionary[String, String] = {}		## cliffID → 模型目录
+var _cliff_ramp_dir: Dictionary[String, String] = {}		## cliffID → 斜坡模型目录
+var _cliff_ground_tile: Dictionary[String, String] = {}		## cliffID → 地面纹理集
 
-
+## 加载默认数据
 func load_default() -> void:
 	_tile_to_png.clear()
 	_tile_name.clear()

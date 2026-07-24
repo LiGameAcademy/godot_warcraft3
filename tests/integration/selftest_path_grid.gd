@@ -14,7 +14,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var hf: Variant = JSON.parse_string(f.get_as_text())
-	var meta: Dictionary = HeightfieldMeshBuilder.read_heightfield_meta(hf as Dictionary)
+	var meta: Dictionary = Wc3Heightfield.build_meta_from_dict(hf as Dictionary)
 	var ramp_data: Dictionary = Wc3CliffTiles.collect_ramp_placements(hf as Dictionary, meta)
 	var placements: Array = ramp_data.get("placements", []) as Array
 	if placements.is_empty():

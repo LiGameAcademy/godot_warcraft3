@@ -89,7 +89,7 @@ static func collect_ramp_placements(
 	hf: Dictionary, meta: Dictionary = {}, _tiles: Wc3TerrainTiles = null
 ) -> Dictionary:
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var tp_w: int = int(meta.get("width", 0))
 	var tp_h: int = int(meta.get("height", 0))
 	var romp := PackedByteArray()
@@ -236,7 +236,7 @@ static func count_gaps(
 	hf: Dictionary, meta: Dictionary = {}, ramp_data: Dictionary = {}
 ) -> Dictionary:
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
 	var layers: Array = meta["layer_heights"]

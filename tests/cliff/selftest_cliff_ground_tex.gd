@@ -47,7 +47,7 @@ func _run() -> void:
 			var tr := int(ground[(iy + 1) * tp_w + ix + 1])
 			if bl == br and br == tl and tl == tr:
 				continue
-			var mask: Dictionary = Wc3TerrainAutotile.corner_mask_for_type(bl, br, tl, tr, 1)
+			var mask: Dictionary = MapTerrainLayer.corner_mask_for_type(bl, br, tl, tr, 1)
 			print(
 				"tile(%d,%d) corners=%d/%d/%d/%d atlas=%d ped=%d"
 				% [ix, iy, bl, br, tl, tr, int(mask["atlas"]), int(mask["pedagogical"])]
@@ -74,21 +74,21 @@ func _run() -> void:
 		for ix in range(cx - 3, cx + 3):
 			if Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
-			var bl2 := Wc3TerrainAutotile._corner_texture(
+			var bl2 := MapTerrainLayer.corner_texture(
 				ground, layers, cliff_tex, cliff_to_ground, tp_w, tp_h, ix, iy
 			)
-			var br2 := Wc3TerrainAutotile._corner_texture(
+			var br2 := MapTerrainLayer.corner_texture(
 				ground, layers, cliff_tex, cliff_to_ground, tp_w, tp_h, ix + 1, iy
 			)
-			var tl2 := Wc3TerrainAutotile._corner_texture(
+			var tl2 := MapTerrainLayer.corner_texture(
 				ground, layers, cliff_tex, cliff_to_ground, tp_w, tp_h, ix, iy + 1
 			)
-			var tr2 := Wc3TerrainAutotile._corner_texture(
+			var tr2 := MapTerrainLayer.corner_texture(
 				ground, layers, cliff_tex, cliff_to_ground, tp_w, tp_h, ix + 1, iy + 1
 			)
 			if bl2 == br2 and br2 == tl2 and tl2 == tr2:
 				continue
-			var mask2: Dictionary = Wc3TerrainAutotile.corner_mask_for_type(bl2, br2, tl2, tr2, 1)
+			var mask2: Dictionary = MapTerrainLayer.corner_mask_for_type(bl2, br2, tl2, tr2, 1)
 			print(
 				"tile(%d,%d) ct=%d/%d/%d/%d atlas=%d"
 				% [ix, iy, bl2, br2, tl2, tr2, int(mask2["atlas"])]

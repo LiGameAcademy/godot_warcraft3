@@ -258,7 +258,7 @@ func create_from_options(options: Dictionary) -> void:
 		heights[i] = h
 		water_h[i] = h + water_extra if water_mode > 0 else h
 		ground_tex[i] = tile_index
-		ground_var[i] = Wc3TerrainAutotile.random_ground_variation(rng)
+		ground_var[i] = Wc3TerrainLogic.random_ground_variation(rng)
 		cliff_var[i] = 0
 		cliff_tex[i] = 0
 		layers[i] = cliff_level
@@ -1126,7 +1126,7 @@ func _sync_cliff_corner_textures(
 			ground_tex[ci] = gti
 			any = true
 			if ci < ground_var.size():
-				ground_var[ci] = Wc3TerrainAutotile.random_ground_variation()
+				ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
 	return any
 
 

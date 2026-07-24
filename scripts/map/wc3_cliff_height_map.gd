@@ -5,7 +5,7 @@ extends RefCounted
 
 static func build_image(hf: Dictionary, meta: Dictionary = {}) -> Image:
 	if meta.is_empty():
-		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
 	var tp_w: int = meta["width"]
 	var tp_h: int = meta["height"]
 	var heights: Array = meta["heights"]

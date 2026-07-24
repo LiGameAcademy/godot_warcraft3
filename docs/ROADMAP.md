@@ -76,11 +76,9 @@
 
 ### ④ 地形高度图 — 表现（Ground 管线）
 
-- [x] Mesh：`presentation/mesh/`（`HeightfieldMesh` + `Wc3TerrainAutotile`）
-- [x] 纹理：`docs/TERRAIN_TILES.md` + `Wc3GroundTileCatalog`（运行时 Texture2DArray）
-- [x] `MapTerrainLayer` → `presentation/layers/`；贴图经 Catalog
-- [ ] 选图纯函数与 Mesh 构建进一步拆文件（可选）
-- [ ] 脏区局部重建（⑤）
+- [x] Mesh：`HeightfieldMesh`（三角/四边形）+ `MapTerrainLayer` 组网
+- [x] 纹理：`Wc3GroundTileCatalog` + `wc3_ground_material.tres`
+- [x] 删除过薄的 `HeightfieldMeshBuilder` / `Wc3TerrainAutotile`
 
 **验收**：主场景 / 编辑器能显示带正确 tileset 纹理的高度网格；改一个顶点纹理后重建可见。
 

@@ -5,18 +5,59 @@ extends RefCounted
 ## 运行时经 Wc3TerrainTiles + RuntimeAssets 加载，不检入 .tres。
 
 
+const ATLAS_W := 512
+const ATLAS_H := 256
+
+
 ## 各 tileset PNG 组成 Texture2DArray（shader `tilesets` 采样）。
 static func build_texture_array(ground_tilesets: Array, tiles: Wc3TerrainTiles) -> Texture2DArray:
-	return Wc3TerrainAutotile.build_tileset_array(ground_tilesets, tiles)
+	var images: Array[Image] = []
+	for i in range(ground_tilesets.size()):
+		var png := tiles.png_for_ground_index(ground_tilesets, i)
+		var img := RuntimeAssets.load_image(png)
+		if img == null:
+			push_warning("Wc3GroundTileCatalog: 缺少贴图 %s" % png)
+			img = Image.create(ATLAS_W, ATLAS_H, false, Image.FORMAT_RGBA8)
+			img.fill(Color(0.4, 0.45, 0.35, 1))
+		else:
+			img = _pad_to_atlas(img)
+		if img.get_format() != Image.FORMAT_RGBA8:
+			img.convert(Image.FORMAT_RGBA8)
+		images.append(img)
+
+	var tex := Texture2DArray.new()
+	var err := tex.create_from_images(images)
+	if err != OK:
+		push_error("Wc3GroundTileCatalog: Texture2DArray 失败 %s" % error_string(err))
+		return null
+	return tex
 
 
 ## 宽图集（过渡块）标记：1=extended，0=普通。
 static func build_extended_flags(ground_tilesets: Array, tiles: Wc3TerrainTiles) -> PackedByteArray:
-	return Wc3TerrainAutotile.build_extended_flags(ground_tilesets, tiles)
+	var extended := PackedByteArray()
+	extended.resize(ground_tilesets.size())
+	for i in range(ground_tilesets.size()):
+		var png := tiles.png_for_ground_index(ground_tilesets, i)
+		var img := RuntimeAssets.load_image(png)
+		extended[i] = 1 if (img and img.get_width() > img.get_height()) else 0
+	return extended
 
 
-## 解析某 tileset 下标对应 PNG 逻辑路径（委托 TerrainTiles）。
 static func png_for_index(ground_tilesets: Array, index: int, tiles: Wc3TerrainTiles) -> String:
 	if tiles == null:
 		return ""
 	return tiles.png_for_ground_index(ground_tilesets, index)
+
+
+static func _pad_to_atlas(src: Image) -> Image:
+	if src.get_width() == ATLAS_W and src.get_height() == ATLAS_H:
+		return src.duplicate()
+	var out := Image.create(ATLAS_W, ATLAS_H, false, Image.FORMAT_RGBA8)
+	out.fill(Color(0, 0, 0, 0))
+	out.blit_rect(
+		src,
+		Rect2i(0, 0, mini(src.get_width(), ATLAS_W), mini(src.get_height(), ATLAS_H)),
+		Vector2i(0, 0)
+	)
+	return out
