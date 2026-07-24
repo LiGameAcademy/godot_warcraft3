@@ -22,7 +22,7 @@ const MapBuildContextScript := preload("res://scripts/map/map_build_context.gd")
 ## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)（地图场景自动开；编辑器改用 set_view_grid_level）
 @export var show_pathing_debug_grid: bool = true
 ## FLAG_RAMP 蓝菱形（M1 斜坡调试）
-@export var show_ramp_debug: bool = true
+@export var show_ramp_debug: bool = false
 
 ## 查看→栅格：0无 / 1大黄 / 2大+中白 / 3大+中+小灰
 enum ViewGridLevel { NONE = 0, LARGE = 1, MEDIUM = 2, SMALL = 3 }

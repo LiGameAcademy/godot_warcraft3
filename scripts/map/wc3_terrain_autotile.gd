@@ -53,27 +53,20 @@ static func random_ground_variation(rng: RandomNumberGenerator = null) -> int:
 
 
 ## 返回 { mesh, ground_tilesets, gap_count, ramp_deck_count }
-## romp / ramp_placements 可选；空则内部 collect。
-## 斜坡甲板受 RAMP_SURFACE_DECK_ENABLED 控制；关闭时 romp 挖洞且不改邻格高度。
+## romp / ramp_placements 保留签名兼容；斜坡已清空，仅直崖挖洞。
 static func build_ground_mesh(
 	hf: Dictionary,
 	extended_flags: PackedByteArray,
 	tiles: Wc3TerrainTiles = null,
 	meta: Dictionary = {},
 	romp: PackedByteArray = PackedByteArray(),
-	ramp_placements: Array = []
+	_ramp_placements: Array = []
 ) -> Dictionary:
 	if meta.is_empty():
 		meta = HeightfieldMeshBuilder.read_heightfield_meta(hf)
 	var width: int = meta["width"]
 	var height: int = meta["height"]
-	var heights: Array = Wc3CliffTiles.apply_ramp_entrance_heights(
-		meta["heights"],
-		meta["layer_heights"],
-		meta["flags"],
-		width,
-		height
-	)
+	var heights: Array = meta["heights"]
 	var ground_tex: Array = meta["ground_textures"]
 	var ground_var: Array = meta["ground_variations"]
 	var layer_heights: Array = meta["layer_heights"]
@@ -83,12 +76,8 @@ static func build_ground_mesh(
 	var cliff_tilesets: Array = meta["cliff_tilesets"]
 	var center: Vector2 = meta["center"]
 	var tile_size: float = meta["tile_size"]
-	if romp.is_empty() or ramp_placements.is_empty():
-		var ramp_data: Dictionary = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
-		if romp.is_empty():
-			romp = ramp_data["romp"]
-		if ramp_placements.is_empty():
-			ramp_placements = ramp_data.get("placements", []) as Array
+	if romp.is_empty():
+		romp = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)["romp"]
 
 	# cliffTileset 索引 → groundTileset 索引（悬崖旁地面用 cliff.groundTile）
 	var cliff_to_ground: PackedInt32Array = _build_cliff_to_ground(cliff_tilesets, ground_tilesets, tiles)
@@ -104,17 +93,10 @@ static func build_ground_mesh(
 	var custom1 := PackedFloat32Array() # 每顶点：var0,var1,var2,var3（图集编号）
 	var indices := PackedInt32Array()
 	var gap_count := 0
-	var ramp_deck_count := 0
-	var deck_global := Wc3CliffTiles.RAMP_SURFACE_DECK_ENABLED
 
 	for iy in range(height - 1):
 		for ix in range(width - 1):
 			var i00 := iy * width + ix
-			var romp_kind := Wc3CliffTiles.romp_kind_at(romp, width, ix, iy)
-			var is_romp := romp_kind != Wc3CliffTiles.ROMP_NONE
-			# 宽坡格始终铺甲板；单脊仅全局开关打开时铺
-			var use_deck := deck_global or romp_kind == Wc3CliffTiles.ROMP_WIDE
-			# 仅直崖挖洞；romp / 入口铺地面
 			if Wc3CliffTiles.should_leave_gap(layer_heights, flags, width, height, ix, iy, romp):
 				gap_count += 1
 				continue
@@ -139,23 +121,10 @@ static func build_ground_mesh(
 				extended_flags
 			)
 
-			# 甲板开启时：romp 格走 A→B；关闭时：始终用原始高度（邻面不被抬）
-			var h_bl: float
-			var h_br: float
-			var h_tl: float
-			var h_tr: float
-			if use_deck:
-				h_bl = _ramp_or_height(heights, ramp_placements, width, height, ix, iy)
-				h_br = _ramp_or_height(heights, ramp_placements, width, height, ix + 1, iy)
-				h_tl = _ramp_or_height(heights, ramp_placements, width, height, ix, iy + 1)
-				h_tr = _ramp_or_height(heights, ramp_placements, width, height, ix + 1, iy + 1)
-			else:
-				h_bl = _raw_height(heights, width, ix, iy)
-				h_br = _raw_height(heights, width, ix + 1, iy)
-				h_tl = _raw_height(heights, width, ix, iy + 1)
-				h_tr = _raw_height(heights, width, ix + 1, iy + 1)
-			if is_romp and use_deck:
-				ramp_deck_count += 1
+			var h_bl := _raw_height(heights, width, ix, iy)
+			var h_br := _raw_height(heights, width, ix + 1, iy)
+			var h_tl := _raw_height(heights, width, ix, iy + 1)
+			var h_tr := _raw_height(heights, width, ix + 1, iy + 1)
 
 			var p_bl := HeightfieldMeshBuilder.sample_vert(ix, iy, h_bl, center, tile_size)
 			var p_br := HeightfieldMeshBuilder.sample_vert(ix + 1, iy, h_br, center, tile_size)
@@ -203,19 +172,8 @@ static func build_ground_mesh(
 		"mesh": mesh,
 		"ground_tilesets": meta["ground_tilesets"],
 		"gap_count": gap_count,
-		"ramp_deck_count": ramp_deck_count,
+		"ramp_deck_count": 0,
 	}
-
-
-static func _ramp_or_height(
-	heights: Array, placements: Array, tp_w: int, tp_h: int, ix: int, iy: int
-) -> float:
-	var rh := Wc3CliffTiles.sample_ramp_plane_height(
-		heights, placements, tp_w, tp_h, float(ix), float(iy)
-	)
-	if not is_nan(rh):
-		return rh
-	return _raw_height(heights, tp_w, ix, iy)
 
 
 static func _raw_height(heights: Array, tp_w: int, ix: int, iy: int) -> float:

@@ -42,8 +42,6 @@ static func build(
 			# HiveWE：不因 ramp 跳过；斜坡/崖下也要有水面，避免岸边直角硬切
 			if not has_water_flag(flags, tp_w, ix, iy):
 				continue
-			if Wc3CliffTiles.is_ramp_tile(flags, tp_w, ix, iy):
-				under_ramp += 1
 			cell_count += 1
 			var i00 := iy * tp_w + ix
 			var i10 := i00 + 1
@@ -116,13 +114,9 @@ static func has_water_flag(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
 	)
 
 
-## 开阔水面（岸浪用）：有 water 且非斜坡。斜坡格仍画水，但泡沫停在坡底。
+## 开阔水面（岸浪用）：有 water 旗即算（斜坡重建前忽略 FLAG_RAMP）。
 static func is_surface_water_tile(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
-	if not has_water_flag(flags, tp_w, ix, iy):
-		return false
-	if Wc3CliffTiles.is_ramp_tile(flags, tp_w, ix, iy):
-		return false
-	return true
+	return has_water_flag(flags, tp_w, ix, iy)
 
 
 static func _vert_color(water_wc3: float, ground_wc3: float, params: Wc3WaterParams) -> Color:

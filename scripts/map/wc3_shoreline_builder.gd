@@ -396,15 +396,9 @@ static func _edge_layer_delta(
 
 
 static func _any_ramp_neighbor(
-	flags: Array, tp_w: int, tp_h: int, ix: int, iy: int, land: Array[Vector2i]
+	_flags: Array, _tp_w: int, _tp_h: int, _ix: int, _iy: int, _land: Array[Vector2i]
 ) -> bool:
-	for d in land:
-		var nx := ix + d.x
-		var ny := iy + d.y
-		if nx < 0 or ny < 0 or nx >= tp_w - 1 or ny >= tp_h - 1:
-			continue
-		if Wc3CliffTiles.is_ramp_tile(flags, tp_w, nx, ny):
-			return true
+	# feature/ramp-rebuild：忽略 FLAG_RAMP
 	return false
 
 
