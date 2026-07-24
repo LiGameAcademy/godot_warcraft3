@@ -1,44 +1,58 @@
 # 斜坡（Ramp）重建说明
 
 > **分支：`feature/ramp-rebuild`**  
-> **状态：旧实现已清空，等待逐步重做。**  
+> **分层：逻辑层（FLAG_RAMP / 蓝菱形）→ 表现层（CliffTrans / 挖洞 / 甲板）**  
 > 直崖见 [CLIFF.md](CLIFF.md)。
 
 ---
 
-## 当前基线（2026-07）
+## 分层
 
-已移除 / 旁路：
-
-| 层 | 行为 |
-|----|------|
-| 笔刷 | `paint_ramp_at` / `try_paint_ramp_at` 拒绝并提示 |
-| romp / CliffTrans | `collect_ramp_placements` 恒空；builder 不放 CliffTrans |
-| 地面 | 仅直崖 `should_leave_gap`；无甲板 / 无坡面插值 |
-| 调试 | `MapRampDebugLayer` 空实现；默认关闭 |
-| 水体 | 忽略 `FLAG_RAMP`（岸浪不走斜坡分支） |
-
-仍保留（只读 / 兼容）：
-
-- `Wc3Coords.FLAG_RAMP` 与 `is_ramp_flag` / `is_ramp_tile`（读旧图旗位）
-- 空壳 API：`romp_kind_at`、`sample_ramp_plane_height`、`apply_ramp_entrance_heights` 等
-
-旧 WIP（切分支前）在 stash：`wip-ramp-before-rebuild`。
+| 层 | 职责 | 验收 |
+|----|------|------|
+| **逻辑层** | 笔刷写 `FLAG_RAMP`；可选修正条带中间层高；蓝菱形只读旗位 | WE 同位置应出现同列/同行蓝菱形 |
+| **表现层** | romp 挖洞、CliffTrans、宽坡甲板、坡面插值 | 视觉对齐 WE（本阶段不做） |
 
 ---
 
-## 重建约定
+## 当前进度
 
-1. **一次只做一步**，由用户指定；每步可独立验收。
-2. 对照 WE / HiveWE：蓝菱形 = `FLAG_RAMP`；侧脊 `CliffTrans`；宽坡内部甲板。
-3. 不恢复「边修边补」的旧耦合；新逻辑按文档逐步接入。
+- [x] 清空旧斜坡表现耦合（基线 `948c979`）
+- [x] **逻辑层**：恢复条带笔刷 + 蓝菱形调试层
+- [ ] 表现层：CliffTrans / 挖洞 / 甲板
+
+表现层仍旁路：`collect_ramp_placements` 恒空；地面仅直崖挖洞；水体忽略 ramp。
 
 ---
 
-## 验收清单（重建完成后勾）
+## 逻辑层规则（蓝菱形）
+
+对齐 WE / 先前已验证的条带语义：
+
+| 情况 | 旗位形态 | 蓝菱形 |
+|------|----------|--------|
+| 单脊竖 | 一列 3 点 | 该列 3 个菱形 |
+| 单脊横 | 一行 3 点 | 该行 3 个菱形 |
+| 宽坡 | 邻列 `111\|111` | 两列并排菱形 |
+| U 凹 | `111\|000\|111` | 两列独立；中间空列不填（除非再刷中间） |
+
+笔刷：`MapDocument.paint_ramp_at` / `try_paint_ramp_at`  
+预览：`peek_ramp_strip_at` → 悬停绿框落在将写旗的顶点  
+调试：`MapRampDebugLayer`（`show_ramp_debug`，默认开）
+
+---
+
+## 验收（本阶段）
+
+1. 选悬崖工具 → 斜坡，在直线崖边点击/拖动
+2. 蓝菱形应出现在脊线顶点（竖=一列 3 点，横=一行 3 点）
+3. 邻列续刷 → 宽 2 并排菱形；隔列刷 → 独立 U，中间无菱形
+4. 非法处（角柱、层差≠1）应拒绝并提示，不写乱旗
+
+---
+
+## 后续（表现层，勿提前）
 
 - [ ] 单脊：挖洞 + 双侧 CliffTrans
-- [ ] 宽坡：邻列菱形 → 内部甲板 + 外侧 CliffTrans
-- [ ] U 凹：隔列独立，中间空列不填
-- [ ] 背后天窗：高台后缘 Cliffs/CliffTrans
-- [ ] 脚底无棋盘缝，侧脊不被泥地三角面替换
+- [ ] 宽坡：内部甲板 + 外侧 CliffTrans
+- [ ] 背后天窗 / 脚底收口

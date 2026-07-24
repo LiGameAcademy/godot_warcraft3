@@ -251,7 +251,7 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	var painted_any := false
 	var cliff_any := false
 
-	# feature/ramp-rebuild：斜坡笔刷已清空（仍反馈提示）
+	# 逻辑层：斜坡按条带搜索，只取光标顶点（不受笔刷半径扩成乱旗）
 	if apply_cliff and cliff_tool_id == "Ramp":
 		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y))
 		var msg: String = str(document.last_ramp_message)
@@ -373,10 +373,15 @@ func _update_hover_preview(vert: Vector2i) -> void:
 		return
 	var fill: ArrayMesh
 	var edge: ArrayMesh
-	# 斜坡：只标当前悬停顶点（点哪刷哪）；蓝菱形调试层另显示整列旗
+	# 斜坡：悬停预览将落 FLAG_RAMP 的脊线顶点（与蓝菱形对齐）
 	if apply_cliff and cliff_tool_id == "Ramp":
-		fill = _make_vertex_fill_mesh(vert.x, vert.y)
-		edge = _make_vertex_edge_mesh(vert.x, vert.y)
+		var strip: Dictionary = document.peek_ramp_strip_at(vert.x, vert.y)
+		if strip.is_empty():
+			fill = _make_vertex_fill_mesh(vert.x, vert.y)
+			edge = _make_vertex_edge_mesh(vert.x, vert.y)
+		else:
+			fill = _make_ramp_flag_verts_fill_mesh(strip)
+			edge = _make_ramp_flag_verts_edge_mesh(strip)
 	elif brush_shape == 0:
 		fill = _make_offsets_fill_mesh(vert.x, vert.y)
 		edge = _make_offsets_edge_mesh(vert.x, vert.y)
@@ -425,6 +430,63 @@ func _make_vertex_edge_mesh(ix: int, iy: int) -> ArrayMesh:
 	_add_line(st, br, tr)
 	_add_line(st, tr, tl)
 	_add_line(st, tl, bl)
+	return st.commit()
+
+
+## 斜坡预览：将落 FLAG_RAMP 的 3 个顶点小框（对齐蓝菱形，不盖崖面格）。
+func _ramp_flag_vertices(strip: Dictionary) -> Array:
+	var sx: int = int(strip.get("sx", 0))
+	var sy: int = int(strip.get("sy", 0))
+	var axis := str(strip.get("axis", "v"))
+	var out: Array = []
+	if axis == "v":
+		var col: int = sx if bool(strip.get("ramp_left", true)) else sx + 1
+		for yy in range(sy, sy + 3):
+			out.append(Vector2i(col, yy))
+	else:
+		var row: int = sy if bool(strip.get("ramp_bottom", true)) else sy + 1
+		for xx in range(sx, sx + 3):
+			out.append(Vector2i(xx, row))
+	return out
+
+
+func _make_ramp_flag_verts_fill_mesh(strip: Dictionary) -> ArrayMesh:
+	var verts: Array = _ramp_flag_vertices(strip)
+	if verts.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var half := 0.28
+	for v in verts:
+		var ix: int = int(v.x)
+		var iy: int = int(v.y)
+		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
+		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
+		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
+		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		_add_tri(st, bl, br, tr)
+		_add_tri(st, bl, tr, tl)
+	return st.commit()
+
+
+func _make_ramp_flag_verts_edge_mesh(strip: Dictionary) -> ArrayMesh:
+	var verts: Array = _ramp_flag_vertices(strip)
+	if verts.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	var half := 0.28
+	for v in verts:
+		var ix: int = int(v.x)
+		var iy: int = int(v.y)
+		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
+		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
+		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
+		var tr := _tp_to_godot(float(ix) + half, float(iy) + half)
+		_add_line(st, bl, br)
+		_add_line(st, br, tr)
+		_add_line(st, tr, tl)
+		_add_line(st, tl, bl)
 	return st.commit()
 
 
