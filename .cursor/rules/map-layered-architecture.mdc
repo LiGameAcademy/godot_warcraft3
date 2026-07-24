@@ -1,6 +1,6 @@
 ---
 description: 地图模块分层门禁：Data / Catalog / Logic / Presentation / Editor
-globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/ROADMAP.md,docs/MAP_DATA.md
+globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/ROADMAP.md,docs/MAP_DATA.md,docs/EDITOR.md
 alwaysApply: false
 ---
 
@@ -11,12 +11,14 @@ alwaysApply: false
 ## 五层（勿混）
 
 | 层 | 目录/前缀 | 可以 | 禁止 |
-|----|-----------|------|------|
+| ---- | ----------- | ------ | ------ |
 | Data | `scripts/map/data/` | JSON↔类型、SoA、FLAG/TILE 常量 | 建 Mesh、拼 GLB 路径、算崖 TAG |
 | Catalog | `scripts/map/catalog/`（目标） | ID/TAG/tileset → 路径或 Texture 索引 | 改 heightfield、判「这一格是崖」 |
 | Logic | Domain / Document API | 拓扑、门禁、选型、placements | `SurfaceTool`、挂节点、直接 `load` 资产 |
 | Presentation | `map_*_layer`、Mesh 构建 | 消费 placements + resolve 结果 | 写 flags/layer、硬编码资产路径 |
-| Editor | `editor/scripts/` | 调 Logic API、脏区重建 | 在笔刷里组 Mesh 或 resolve 路径 |
+| Editor | `editor/scripts/`；总管 `Editor`/`MapEditor`（Node） | `@export` 注入 MapRoot；调 Logic API、脏区重建 | 根节点堆业务；笔刷里组 Mesh / resolve 路径 |
+
+编辑场景：`editor_main.tscn` 壳 + 直接子节点 `Editor`；目录目标见 `docs/LAYERED_ARCHITECTURE.md` §4。
 
 ## 模块顺序（强制）
 

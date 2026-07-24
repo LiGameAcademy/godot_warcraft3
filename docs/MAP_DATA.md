@@ -8,7 +8,7 @@
 ## 1. 核心原则
 
 | 原则 | 说明 |
-|------|------|
+| ------ | ------ |
 | **一文件一类型（地图级）** | `info.json` / `terrain.json` / `terrain-heightfield.json` / `doodads.json` … 各对应一个 RefCounted（或薄包装） |
 | **顶点是一等公民** | 对 heightfield 的改动一律通过「瓦片顶点」视图读写，避免满屏 `hf["heights"][i]` |
 | **存盘保持 SoA** | JSON 里是平行数组（Structure of Arrays）；内存主存储也是 SoA，与 `terrain-heightfield.json` 同形，便于 load/save |
@@ -27,7 +27,7 @@
 以 Lost Temple（`losttemple/`）为例：
 
 | JSON | 职责 | 建议脚本 | 粒度 |
-|------|------|----------|------|
+| ------ | ------ | ---------- | ------ |
 | `terrain-heightfield.json` | 地形主数据（顶点平行数组） | `Wc3Heightfield` | 地图级 SoA |
 | （派生）单顶点读写 | 笔刷 / 斜坡逻辑 API | `Wc3TileVertex`（`class_name`） | 顶点视图 |
 | `terrain.json` | 地形头信息 + stats（无大数组） | `Wc3TerrainHeader` | 地图级 |
@@ -47,19 +47,19 @@
 
 ### 3.1 地图级（Header）
 
-| JSON 字段 | 类型 | Heightfield 属性 |
-|-----------|------|------------------|
-| `tilepointWidth` / `tilepointHeight` | int | `width` / `height` |
-| `mapWidth` / `mapHeight` | int | `map_width` / `map_height` |
-| `centerOffset` | `{x,y}` | `center_offset: Vector2` |
-| `tileSize` | number | `tile_size`（默认 128） |
-| `mainTileset` / `mainTilesetName` | string | 同名 |
-| `groundTilesets` / `cliffTilesets` | string[] | 同名 |
+| JSON 字段 | 类型 | Heightfield 属性 | 语义 |
+| ----------- | ------ | ------------------ | ------------------ |
+| `tilepointWidth` / `tilepointHeight` | int | `width` / `height` | 瓦片点宽度 / 高度 |
+| `mapWidth` / `mapHeight` | int | `map_width` / `map_height` | 地图宽度 / 高度 |
+| `centerOffset` | `{x,y}` | `center_offset: Vector2` | 中心偏移 |
+| `tileSize` | number | `tile_size`（默认 128） | 瓦片大小 |
+| `mainTileset` / `mainTilesetName` | string | 同名 | 主地形纹理集 |  
+| `groundTilesets` / `cliffTilesets` | string[] | 同名 | 地面纹理集 / 悬崖纹理集 |
 
 ### 3.2 每顶点平行数组（长度 = width × height）
 
 | JSON 数组 | 顶点语义 | `Wc3TileVertex` 属性建议 |
-|-----------|----------|---------------------------|
+| ----------- | ---------- | --------------------------- |
 | `heights` | 最终地面高度（WC3） | `height` |
 | `layerHeights` | 悬崖层 0–14 | `layer` |
 | `waterHeights` | 水面高度 | `water_height` |
@@ -102,7 +102,7 @@ Wc3TileVertex                         ← RefCounted 视图
 ## 5. 与现有代码的关系
 
 | 现状 | 目标 |
-|------|------|
+| ------ | ------ |
 | `MapDocument.hf: Dictionary` 与 JSON 同形 | 内部改为持有 `Wc3Heightfield`；对外可暂时 `to_dict()` 兼容 Domain |
 | Domain（`Wc3CliffTiles` 等）吃 `Array` / `meta` | 逐步改为吃 `Wc3Heightfield` 或仍传 `to_dict()`，避免一次改爆 |
 | 编辑器笔刷 | 改为 `doc.heightfield.vertex_at(ix,iy).has_ramp = true` 这类 API |
@@ -114,16 +114,16 @@ Wc3TileVertex                         ← RefCounted 视图
 ## 6. 文件布局（建议）
 
 ```text
-scripts/map/data/           # 地图态 JSON ↔ 类型（本文）
+scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
   wc3_tile_vertex.gd
   wc3_heightfield.gd
   wc3_parsed_map.gd
   # 目标：wc3_coords.gd（基础常量）、wc3_map_info.gd …
 
-scripts/map/catalog/        # 资源映射（非 map-parsed）
+scripts/map/catalog/          # 资源映射（非 map-parsed）
   # Wc3CliffTransCatalog / Wc3CliffCatalog / Wc3GroundTileCatalog / Wc3IdCatalog
 
-docs/MAP_DATA.md            # 本文
+docs/MAP_DATA.md              # 本文
 docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 ```
 

@@ -34,7 +34,7 @@ MapRoot (Node3D)                    ← map_loader.gd  编排入口
 实例化位置：
 
 | 场景 | 用法 |
-|------|------|
+| ------ | ------ |
 | `scenes/main.tscn` | 预览 Lost Temple；`auto_load_on_ready=true`；可开 doodads / pathing 栅格 |
 | `editor/scenes/editor_main.tscn` | `auto_load_on_ready=false`；关 doodads/units；开碰撞；由 `EditorApp` 喂内存 hf |
 
@@ -63,7 +63,7 @@ Infrastructure
 ### 2.1 Presentation / Application
 
 | 文件 | 职责 | 手动干预时 |
-|------|------|------------|
+| ------ | ------ | ------------ |
 | `map_loader.gd` | 读 JSON/内存 hf；建 Context；按序调 Layer；export 开关；状态栏；碰撞；查看栅格 | 加载顺序、开关、泡沫 export、编辑器重建入口 |
 | `map_build_context.gd` | 共享 `hf`/`meta`/`info`/`tiles`/`catalog`/`cache`；`ensure_cliff_topology()` 只算一次 | 往 Context 加共享字段 |
 | `map_terrain_layer.gd` | Autotile → Ground mesh + `wc3_ground.gdshader`；`set_debug_grid` | 地面材质参数、栅格 uniform |
@@ -78,7 +78,7 @@ Infrastructure
 ### 2.2 Domain（`Wc3*`）
 
 | 文件 | 职责 | 手动干预时 |
-|------|------|------------|
+| ------ | ------ | ------------ |
 | `wc3_coords.gd` | 坐标变换、`TILE_SIZE`/`WORLD_SCALE`、flags | 缩放、坐标系 |
 | `heightfield_mesh_builder.gd` | `read_heightfield_meta`、`sample_vert` | hf 元数据字段 |
 | `wc3_terrain_tiles.gd` | tileID/cliffID → PNG、模型目录 | 贴图查找、悬崖模型路径 |
@@ -95,7 +95,7 @@ Infrastructure
 ### 2.3 Infrastructure
 
 | 文件 | 职责 | 手动干预时 |
-|------|------|------------|
+| ------ | ------ | ------------ |
 | `runtime_assets.gd` | 路径 resolve、load 贴图/图集 | 资源找不到、路径规则 |
 | `map_model_cache.gd` | GLB 场景/网格缓存 | 模型实例化/动画 |
 | `map_placeholders.gd` | 缺模灰盒 | 占位外观 |
@@ -104,7 +104,7 @@ Infrastructure
 ### 2.4 着色器
 
 | 文件 | 用途 |
-|------|------|
+| ------ | ------ |
 | `shaders/wc3_ground.gdshader` | 地表图集 + 调试栅格 |
 | `shaders/wc3_cliff.gdshader` | 悬崖贴图 + 高度变形 + 栅格 |
 | `shaders/wc3_water.gdshader` | 水面序列帧 |
@@ -118,9 +118,8 @@ Infrastructure
 ### 3.1 什么是「数据」
 
 | 类别 | 位置 | 内容 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
-
 | 表数据 | `assets/slk-exported/` | Terrain / Water / Unit / Doodad 等 |
 | 转换资产 | `assets/asset-converted/` | PNG / GLB（运行时按需加载） |
 | 原始缓存 | `.cache/wc3-assets/` | MPQ 解包，gitignore |
@@ -133,7 +132,7 @@ Infrastructure
 ### 3.2 什么是「逻辑」
 
 | 类型 | 例子 | 输出契约 |
-|------|------|----------|
+| ------ | ------ | ---------- |
 | Domain 纯计算 | Autotile / CliffBuilder / WaterMesh / Shoreline | `{ mesh }` / `{ groups[] }` / `{ placements[] }`，**不碰场景树** |
 | Layer 实例化 | `Map*Layer.build` | 清空子节点、设材质、挂 MultiMesh |
 | Application 编排 | `MapLoader._load_all` | 决定顺序与开关 |

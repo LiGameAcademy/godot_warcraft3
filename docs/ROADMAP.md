@@ -44,12 +44,14 @@
 
 ### ① 框架层搭建
 
-- [ ] 落地 `docs/LAYERED_ARCHITECTURE.md` 为总纲（本文档配套）
-- [ ] Cursor rules：分层门禁、Catalog vs Data vs Logic
-- [ ] 约定目标目录：`data/` · `catalog/`（逻辑/表现可暂缓搬家）
-- [ ] 标明废弃路径：`HeightfieldMeshBuilder.read_heightfield_meta` → Heightfield；职责表写入架构文
+- [x] 落地 `docs/LAYERED_ARCHITECTURE.md` 为总纲（本文档配套）
+- [x] Cursor rules：分层门禁、Catalog vs Data vs Logic
+- [x] 文档约定目标目录：`data/` · `catalog/` · `logic/` · `presentation/` · `infra/`；`editor/scripts/editor.gd` 总管
+- [ ] 标明废弃路径：`HeightfieldMeshBuilder.read_heightfield_meta` → Heightfield（代码落地时删）
+- [ ] **Editor 总管**：`editor_main.tscn` 下直接子节点 `Editor`（`Node`），`@export map_root`；从 `editor_app.gd` 迁编排
+- [ ] 按 § 目标树创建空目录 / 渐进 `git mv`（先新文件落新目录）
 
-**验收**：新人只读架构文 + ROADMAP 能说出「改贴图路径找谁、改顶点找谁、挂 Mesh 找谁」。
+**验收**：新人只读架构文 + ROADMAP 能说出「改贴图路径找谁、改顶点找谁、挂 Mesh 找谁、编辑总管在哪」。
 
 ### ② 地形高度图 — 数据定义
 
