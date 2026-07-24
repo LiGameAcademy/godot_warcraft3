@@ -1,22 +1,19 @@
 class_name Wc3Heightfield
 extends RefCounted
 ## 对应 map-parsed/*/terrain-heightfield.json（SoA 平行数组）。
-## 单顶点请用 vertex_at()，不要手写 hf["heights"][i]。
+## 单顶点请用 vertex_at() → Wc3TileVertex，不要手写 hf["heights"][i]。
 
 
-const TileVertex := preload("res://scripts/map/data/wc3_tile_vertex.gd")
-
-
-var width: int = 0
-var height: int = 0
-var map_width: int = 0
-var map_height: int = 0
-var tile_size: float = Wc3Coords.TILE_SIZE
-var center_offset: Vector2 = Vector2.ZERO
-var main_tileset: String = ""
-var main_tileset_name: String = ""
-var ground_tilesets: Array = []
-var cliff_tilesets: Array = []
+var width: int = 0								## 瓦片点宽度
+var height: int = 0								## 瓦片点高度
+var map_width: int = 0							## 地图宽度
+var map_height: int = 0							## 地图宽度
+var tile_size: float = Wc3Coords.TILE_SIZE		## 瓦片大小
+var center_offset: Vector2 = Vector2.ZERO		## 中心偏移
+var main_tileset: String = ""					## 主地形纹理集
+var main_tileset_name: String = ""				## 主地形纹理集名称	
+var ground_tilesets: Array = []					## 地面纹理集列表
+var cliff_tilesets: Array = []					## 悬崖纹理集列表
 
 ## 平行数组，长度恒为 width * height（JSON 同形，元素为 Variant 数字）。
 var heights: Array = []
@@ -53,22 +50,22 @@ func in_bounds(ix: int, iy: int) -> bool:
 
 
 ## 按需创建顶点视图（非缓存；调用方短生命周期持有即可）。
-func vertex_at(ix: int, iy: int):
+func vertex_at(ix: int, iy: int) -> Wc3TileVertex:
 	if not in_bounds(ix, iy):
 		return null
-	return TileVertex.create(self, ix, iy)
+	return Wc3TileVertex.create(self, ix, iy)
 
 
-func vertex_at_index(index: int):
+func vertex_at_index(index: int) -> Wc3TileVertex:
 	if index < 0 or index >= tilepoint_count():
 		return null
 	var ix: int = index % width
 	var iy: int = int(index / width)
-	return TileVertex.create(self, ix, iy)
+	return Wc3TileVertex.create(self, ix, iy)
 
 
-static func from_dict(d: Dictionary):
-	var hf = new()
+static func from_dict(d: Dictionary) -> Wc3Heightfield:
+	var hf := Wc3Heightfield.new()
 	hf.width = int(d.get("tilepointWidth", 0))
 	hf.height = int(d.get("tilepointHeight", 0))
 	hf.map_width = int(d.get("mapWidth", maxi(hf.width - 1, 0)))
@@ -117,7 +114,7 @@ func to_dict() -> Dictionary:
 	}
 
 
-static func load_json_path(res_or_abs: String):
+static func load_json_path(res_or_abs: String) -> Wc3Heightfield:
 	var abs := RuntimeAssets.project_abs(res_or_abs)
 	if not FileAccess.file_exists(abs):
 		push_error("Wc3Heightfield: 文件不存在 %s" % abs)

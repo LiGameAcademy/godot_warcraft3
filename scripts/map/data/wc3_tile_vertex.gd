@@ -1,31 +1,16 @@
+class_name Wc3TileVertex
 extends RefCounted
-## 瓦片顶点（tilepoint）视图：指向 Heightfield 某一 index，读写即改 SoA。
+## 瓦片顶点（tilepoint）视图：指向 Wc3Heightfield 某一 index，读写即改 SoA。
 ## WC3 网格改动的基本单位；不要脱离 Heightfield 长期缓存大量实例。
-## （无 class_name，避免与 Heightfield 循环注册；经 Heightfield.vertex_at 取得。）
 
-
-var heightfield ## Wc3Heightfield
+## 所属高度场
+var heightfield: Wc3Heightfield
+## 瓦片点索引
 var ix: int = 0
+## 瓦片点索引
 var iy: int = 0
+## 瓦片点索引
 var index: int = 0
-
-
-static func create(hf, p_ix: int, p_iy: int):
-	var v = new()
-	v.heightfield = hf
-	v.ix = p_ix
-	v.iy = p_iy
-	v.index = hf.index_at(p_ix, p_iy)
-	return v
-
-
-func is_valid() -> bool:
-	return (
-		heightfield != null
-		and heightfield.in_bounds(ix, iy)
-		and index == heightfield.index_at(ix, iy)
-	)
-
 
 var height: float:
 	get:
@@ -128,3 +113,19 @@ func wc3_xy() -> Vector2:
 func godot_position() -> Vector3:
 	var xy := wc3_xy()
 	return Wc3Coords.wc3_xy_to_godot(xy.x, xy.y, height)
+
+
+static func create(hf: Wc3Heightfield, p_ix: int, p_iy: int) -> Wc3TileVertex:
+	var v := Wc3TileVertex.new()
+	v.heightfield = hf
+	v.ix = p_ix
+	v.iy = p_iy
+	v.index = hf.index_at(p_ix, p_iy)
+	return v
+
+func is_valid() -> bool:
+	return (
+		heightfield != null
+		and heightfield.in_bounds(ix, iy)
+		and index == heightfield.index_at(ix, iy)
+	)

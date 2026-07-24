@@ -3,10 +3,6 @@ extends SceneTree
 ## godot --headless -s res://tools/selftest_map_data.gd
 
 
-const Heightfield := preload("res://scripts/map/data/wc3_heightfield.gd")
-const ParsedMap := preload("res://scripts/map/data/wc3_parsed_map.gd")
-
-
 func _init() -> void:
 	var failed := 0
 	failed += _test_load_losttemple()
@@ -20,18 +16,18 @@ func _init() -> void:
 
 
 func _test_load_losttemple() -> int:
-	var m = ParsedMap.load_dir("res://assets/map-parsed/losttemple")
+	var m := Wc3ParsedMap.load_dir("res://assets/map-parsed/losttemple")
 	if m == null or m.heightfield == null:
 		push_error("load_dir failed")
 		return 1
-	var hf = m.heightfield
+	var hf := m.heightfield
 	if hf.width != 161 or hf.height != 161:
 		push_error("size want 161 got %d,%d" % [hf.width, hf.height])
 		return 1
 	if not hf.is_valid():
 		push_error("heightfield invalid")
 		return 1
-	var v0 = hf.vertex_at(0, 0)
+	var v0 := hf.vertex_at(0, 0)
 	if v0 == null:
 		push_error("vertex_at 0,0 null")
 		return 1
@@ -44,13 +40,13 @@ func _test_load_losttemple() -> int:
 
 
 func _test_vertex_writeback() -> int:
-	var hf = Heightfield.load_json_path(
+	var hf := Wc3Heightfield.load_json_path(
 		"res://assets/map-parsed/losttemple/terrain-heightfield.json"
 	)
 	if hf == null:
 		push_error("reload hf failed")
 		return 1
-	var v = hf.vertex_at(10, 10)
+	var v := hf.vertex_at(10, 10)
 	var old_layer: int = v.layer
 	var old_flags: int = v.flags
 	v.layer = mini(old_layer + 1, 14)
@@ -68,7 +64,6 @@ func _test_vertex_writeback() -> int:
 	if int(d["layerHeights"][v.index]) != v.layer:
 		push_error("to_dict layer mismatch")
 		return 1
-	# restore not needed (discard hf)
 	print(
 		"  writeback OK idx=%d layer %d→%d flags %d→%d"
 		% [v.index, old_layer, v.layer, old_flags, v.flags]

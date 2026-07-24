@@ -29,7 +29,7 @@
 | JSON | 职责 | 建议脚本 | 粒度 |
 |------|------|----------|------|
 | `terrain-heightfield.json` | 地形主数据（顶点平行数组） | `Wc3Heightfield` | 地图级 SoA |
-| （派生）单顶点读写 | 笔刷 / 斜坡逻辑 API | `wc3_tile_vertex.gd`（文档称 TileVertex；无 class_name，经 `heightfield.vertex_at` 取得） | 顶点视图 |
+| （派生）单顶点读写 | 笔刷 / 斜坡逻辑 API | `Wc3TileVertex`（`class_name`） | 顶点视图 |
 | `terrain.json` | 地形头信息 + stats（无大数组） | `Wc3TerrainHeader` | 地图级 |
 | `info.json` | w3i 地图信息、玩家、雾等 | `Wc3MapInfo` | 地图级 |
 | `doodads.json` | 装饰物列表 | `Wc3DoodadList` + `Wc3Doodad` | 列表 + 单条 |
