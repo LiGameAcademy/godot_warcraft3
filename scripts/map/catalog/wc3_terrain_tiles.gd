@@ -143,21 +143,24 @@ func _rebuild_cliff_png_cache() -> void:
 
 func _terrain_def(tile_id: String) -> TerrainTileDef:
 	var store := _def_store()
-	if store == null:
+	if not is_instance_valid(store):
+		push_error("Wc3TerrainTiles: DefStore 不可用，无法获取地形类型定义")
 		return null
 	return store.get_row(TerrainTileDef.TABLE_NAME, tile_id) as TerrainTileDef
 
 
 func _cliff_def(cliff_id: String) -> CliffTypeDef:
 	var store := _def_store()
-	if store == null:
+	if not is_instance_valid(store):
+		push_error("Wc3TerrainTiles: DefStore 不可用，无法获取悬崖类型定义")
 		return null
 	return store.get_row(CliffTypeDef.TABLE_NAME, cliff_id) as CliffTypeDef
 
 
 func _def_store() -> Node:
 	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
+	if not is_instance_valid(tree) or not is_instance_valid(tree.root):
+		push_error("Wc3TerrainTiles: 主循环或根节点不可用，无法获取 DefStore")
 		return null
 	return tree.root.get_node_or_null("Wc3DefStore")
 
@@ -169,7 +172,7 @@ static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) 
 	var tileset := ""
 	if cliff_id.length() >= 2:
 		tileset = cliff_id.substr(1, 1).to_upper()
-	var alt := _tileset_texture_fallback(tileset)
+	var alt := tileset_texture_fallback(tileset)
 	var candidates: Array[String] = []
 	for ts in [tileset, alt]:
 		if ts.is_empty():
@@ -186,8 +189,8 @@ static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) 
 	return RuntimeAssets.converted_path(candidates[candidates.size() - 1])
 
 
-## 地形集贴图字母回退（无独立 MPQ 前缀时）。
-static func _tileset_texture_fallback(tileset: String) -> String:
+## 地形集贴图字母回退（无独立 MPQ 前缀时）。跨 Catalog 可调用。
+static func tileset_texture_fallback(tileset: String) -> String:
 	match tileset:
 		"I":
 			return "N" # Icecrown → Northrend

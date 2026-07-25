@@ -1,19 +1,20 @@
 class_name WeatherEffectDef
 extends Resource
 
+## 天气效果定义
 ## Weather.slk 一行定义（静态表数据；粒子贴图路径解析另做）。
 
 const TABLE_NAME := "Weather"
 const SLK_REL_PATH := "TerrainArt/Weather.json"
 const PRIMARY_KEY := "effectID"
 
-@export var effect_id: String = ""
-@export var name_key: String = ""
-@export var tex_dir: String = ""
-@export var tex_file: String = ""
-@export var alpha_mode: int = 0
-@export var use_fog: bool = false
-@export var height: float = 0.0
+@export var effect_id: String = ""						## 天气效果ID
+@export var name_key: String = ""						## 名称键
+@export var tex_dir: String = ""						## 纹理目录
+@export var tex_file: String = ""						## 纹理文件
+@export var alpha_mode: int = 0							## 透明度模式
+@export var use_fog: bool = false						## 使用雾
+@export var height: float = 0.0							## 高度
 @export var ang_x: float = 0.0
 @export var ang_y: float = 0.0
 @export var em_rate: float = 0.0

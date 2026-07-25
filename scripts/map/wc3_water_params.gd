@@ -24,13 +24,18 @@ var frame_pngs: PackedStringArray = PackedStringArray()
 
 static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
 	var p := Wc3WaterParams.new()
+	p.setup_for_tileset(main_tileset)
+	return p
+
+
+## 按地形集填充表列并解析水面帧（对外入口；内部再用私有步骤）。
+func setup_for_tileset(main_tileset: String) -> void:
 	var tid := main_tileset.strip_edges()
 	if tid.is_empty():
 		tid = "I"
-	p.water_id = tid.substr(0, 1).to_upper() + "Sha"
-	p._apply_from_def_store()
-	p._resolve_frames()
-	return p
+	water_id = tid.substr(0, 1).to_upper() + "Sha"
+	_apply_from_def_store()
+	_resolve_frames()
 
 
 func height_offset_wc3() -> float:
@@ -62,13 +67,20 @@ func _apply_from_def_store() -> void:
 	deep_max = def.deep_max
 
 
+func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
+
+
 ## 资源映射：tex_file + num_tex → 各帧 converted PNG。
 func _resolve_frames() -> void:
 	frame_pngs.clear()
 	if num_tex <= 0:
 		return
 	var tileset := water_id.substr(0, 1).to_upper() if water_id.length() >= 1 else "I"
-	var alt := Wc3TerrainTiles._tileset_texture_fallback(tileset)
+	var alt := Wc3TerrainTiles.tileset_texture_fallback(tileset)
 	var base_name := tex_file_prefix.get_file() # Water
 	var dir := tex_file_prefix.get_base_dir()
 	for i in range(num_tex):
@@ -89,14 +101,6 @@ func _resolve_frames() -> void:
 			push_warning("Wc3WaterParams: 缺水面帧 %s" % RuntimeAssets.converted_path(candidates[0]))
 			continue
 		frame_pngs.append(found)
-
-
-func _def_store() -> Node:
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
-		return null
-	return tree.root.get_node_or_null("Wc3DefStore")
-
 
 func build_texture_array() -> Texture2DArray:
 	if frame_pngs.is_empty():

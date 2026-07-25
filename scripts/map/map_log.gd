@@ -11,25 +11,25 @@ enum Level { DEBUG, INFO, WARN, ERROR }
 ## 低于此级别的日志不输出。
 static var min_level: Level = Level.DEBUG
 
-
+## 调试日志
 static func debug(layer: Layer, tag: String, msg: String) -> void:
 	_emit(Level.DEBUG, layer, tag, msg)
 
-
+## 信息日志
 static func info(layer: Layer, tag: String, msg: String) -> void:
 	_emit(Level.INFO, layer, tag, msg)
 
-
+## 警告日志
 static func warn(layer: Layer, tag: String, msg: String) -> void:
 	_emit(Level.WARN, layer, tag, msg)
 	push_warning("[%s/%s] %s" % [_layer_name(layer), tag, msg])
 
-
+## 错误日志
 static func error(layer: Layer, tag: String, msg: String) -> void:
 	_emit(Level.ERROR, layer, tag, msg)
 	push_error("[%s/%s] %s" % [_layer_name(layer), tag, msg])
 
-
+## 发出日志
 static func _emit(level: Level, layer: Layer, tag: String, msg: String) -> void:
 	if int(level) < int(min_level):
 		return

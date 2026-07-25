@@ -1,0 +1,47 @@
+---
+description: GDScript 可见性——禁止跨边界调用下划线私有成员
+globs: **/*.gd
+alwaysApply: false
+---
+
+# GDScript 可见性约定
+
+`_` 前缀表示**私有**：仅本脚本内部使用。GDScript 运行时不强制，但项目内必须遵守。
+
+## 禁止
+
+```gdscript
+# ❌ static / 外部代码调用实例的私有方法
+static func load_x() -> MyType:
+	var p := MyType.new()
+	p._apply()   # 越权
+	return p
+
+# ❌ 跨类型调用对方的私有 API
+var alt := OtherClass._helper(x)
+node._internal_rebuild()
+```
+
+## 正确做法
+
+1. **需要对外用** → 去掉 `_`，写成公开 API（可写清文档注释）。
+2. **工厂 / static** → 只调公开入口；私有步骤由该入口在**本实例方法内**再调。
+
+```gdscript
+# ✅
+static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
+	var p := Wc3WaterParams.new()
+	p.setup_for_tileset(main_tileset)  # 公开
+	return p
+
+func setup_for_tileset(main_tileset: String) -> void:
+	_apply_from_def_store()  # 仅本实例方法内
+	_resolve_frames()
+```
+
+3. **多处共享的工具** → 提升为公开 `static`/`class_name` API，或抽到独立工具脚本；不要让调用方摸 `_xxx`。
+
+## 自检
+
+- 写 `foo._bar(` / `TypeName._baz(` 时停一下：若 `_bar` 不在本文件，应改公开名或加公开包装。
+- `static` 工厂里对 `p` 只调用无 `_` 前缀的方法。
