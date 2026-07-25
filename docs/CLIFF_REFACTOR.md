@@ -118,10 +118,11 @@ Document：薄封装 → `cliff_logic.paint_*`，自身不堆传播实现。
 ### M0 — 契约与 Catalog 拆分（不改手感）
 
 1. 新建 `Wc3CliffCatalog`，从 `Wc3TerrainTiles` 迁 CliffTypes 加载与 resolve  
-2. `Wc3TerrainTiles` 仅保留地表；更新 Context / 自测  
-3. 文档：更新 [CLIFF.md](CLIFF.md) §8 路径表  
+2. **已落地**：TerrainArt 四表（CliffTypes / Terrain / Water / Weather）→ `definitions/*Def` + `Wc3DefStore.register_table`；`Wc3TerrainTiles` / `Wc3WaterParams` 只做资源路径映射，不再直读 JSON  
+3. `Wc3TerrainTiles` 仅保留地表；更新 Context / 自测  
+4. 文档：更新 [CLIFF.md](CLIFF.md) §8 路径表  
 
-**验收**：Lost Temple 崖外观与现网一致；`selftest_cliff_*` 绿。
+**验收**：Lost Temple 崖外观与现网一致；`selftest_cliff_*` / `selftest_def_store_cliff` 绿。
 
 ### M1 — Logic 迁出 Document
 

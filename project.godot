@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
 EditorI18n="*res://editor/scripts/ui/editor_i18n.gd"
+Wc3DefStore="*res://scripts/auto/wc3_def_store.gd"
 
 [display]
 

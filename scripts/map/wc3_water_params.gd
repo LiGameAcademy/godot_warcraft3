@@ -1,9 +1,9 @@
 class_name Wc3WaterParams
 extends RefCounted
-## 从 Water.slk 读取地形集水体参数（如 ISha），对齐 HiveWE / mdx-m3-viewer。
+## 水体运行时参数：表列来自 WaterTypeDef；帧 PNG 在此做资源映射。
 
 
-## HiveWE 深度阈值（tile 高度单位，1 tile = 128 WC3）
+## HiveWE 深度常量（tile 高度单位，1 tile = 128 WC3）
 const MIN_DEPTH := 10.0 / 128.0
 const DEEP_LEVEL := 64.0 / 128.0
 const MAX_DEPTH := 72.0 / 128.0
@@ -11,7 +11,7 @@ const MAX_DEPTH := 72.0 / 128.0
 var water_id: String = ""
 var height_offset_tiles: float = 0.0 ## Water.slk height（tile 单位）
 var num_tex: int = 0
-var tex_rate: float = 15.0 ## 约帧/秒；shader 用 TIME*tex_rate（viewer 等价于每帧 += texRate/60）
+var tex_rate: float = 15.0 ## 约帧/秒；shader 用 TIME*tex_rate
 ## Water.slk cells：一张水面贴图覆盖的格数（ISha=2 → UV 按格坐标 / 2）
 var cells: float = 2.0
 var tex_file_prefix: String = "ReplaceableTextures/Water/Water"
@@ -28,7 +28,7 @@ static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
 	if tid.is_empty():
 		tid = "I"
 	p.water_id = tid.substr(0, 1).to_upper() + "Sha"
-	p._load_slk(RuntimeAssets.slk_path("TerrainArt/Water.json"))
+	p._apply_from_def_store()
 	p._resolve_frames()
 	return p
 
@@ -37,49 +37,32 @@ func height_offset_wc3() -> float:
 	return height_offset_tiles * 128.0
 
 
-func _load_slk(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		push_warning("Wc3WaterParams: 缺少 %s" % path)
+## 表列：WaterTypeDef → 本对象字段（不做 PNG 解析）。
+func _apply_from_def_store() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3WaterParams: DefStore 不可用")
 		return
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return
-	var data: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(data) != TYPE_DICTIONARY:
-		return
-	var hit: Dictionary = {}
-	for rec in data.get("records", []):
-		if str(rec.get("waterID", "")) == water_id:
-			hit = rec
-			break
-	if hit.is_empty():
+	store.ensure_table(WaterTypeDef.TABLE_NAME)
+	var def: WaterTypeDef = store.get_row(WaterTypeDef.TABLE_NAME, water_id) as WaterTypeDef
+	if def == null:
 		push_warning("Wc3WaterParams: 未找到 waterID=%s，回退 ISha" % water_id)
 		water_id = "ISha"
-		for rec in data.get("records", []):
-			if str(rec.get("waterID", "")) == water_id:
-				hit = rec
-				break
-	if hit.is_empty():
+		def = store.get_row(WaterTypeDef.TABLE_NAME, water_id) as WaterTypeDef
+	if def == null:
 		return
-	height_offset_tiles = float(hit.get("height", 0.0))
-	num_tex = int(hit.get("numTex", 0))
-	tex_rate = float(hit.get("texRate", 15))
-	cells = maxf(float(hit.get("cells", 2)), 1.0)
-	tex_file_prefix = str(hit.get("texFile", "ReplaceableTextures\\Water\\Water")).replace("\\", "/")
-	shallow_min = _rgba(hit, "Smin")
-	shallow_max = _rgba(hit, "Smax")
-	deep_min = _rgba(hit, "Dmin")
-	deep_max = _rgba(hit, "Dmax")
+	height_offset_tiles = def.height
+	num_tex = def.num_tex
+	tex_rate = def.tex_rate
+	cells = maxf(def.cells, 1.0)
+	tex_file_prefix = def.tex_file
+	shallow_min = def.shallow_min
+	shallow_max = def.shallow_max
+	deep_min = def.deep_min
+	deep_max = def.deep_max
 
 
-static func _rgba(rec: Dictionary, prefix: String) -> Color:
-	var r := float(rec.get(prefix + "_R", 255)) / 255.0
-	var g := float(rec.get(prefix + "_G", 255)) / 255.0
-	var b := float(rec.get(prefix + "_B", 255)) / 255.0
-	var a := float(rec.get(prefix + "_A", 255)) / 255.0
-	return Color(r, g, b, a)
-
-
+## 资源映射：tex_file + num_tex → 各帧 converted PNG。
 func _resolve_frames() -> void:
 	frame_pngs.clear()
 	if num_tex <= 0:
@@ -106,6 +89,13 @@ func _resolve_frames() -> void:
 			push_warning("Wc3WaterParams: 缺水面帧 %s" % RuntimeAssets.converted_path(candidates[0]))
 			continue
 		frame_pngs.append(found)
+
+
+func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 func build_texture_array() -> Texture2DArray:

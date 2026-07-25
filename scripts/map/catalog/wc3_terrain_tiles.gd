@@ -1,81 +1,71 @@
 class_name Wc3TerrainTiles
 extends RefCounted
 
-## tileID / cliffID → 贴图路径与悬崖模型目录。
+## 地表 / 悬崖 Catalog：读 DefStore 表行 + 解析贴图资源路径。
 ##
-## 悬崖贴图路径在 SLK 里始终是 ReplaceableTextures/Cliff/Cliff0|1，
-## 但经典客户端按地图 mainTileset 从 A.mpq / I.mpq 等子包解析不同内容。
-## 解包时用 {tileset}_Cliff0.png 保存（如 I_Cliff1 = Icecrown）。
+## 两套逻辑分开：
+## - 表列：TerrainTileDef / CliffTypeDef（SLK → Resource）
+## - 资源：本类把 dir/file、texDir/texFile 解析成 converted PNG 路径
+##
+## 悬崖贴图在 SLK 里是 ReplaceableTextures/Cliff/Cliff0|1，
+## 经典客户端按 mainTileset 从子包解析；解包用 {tileset}_Cliff0.png。
 
-var _tile_to_png: Dictionary[String, String] = {}			## tileID → 贴图路径
-var _tile_name: Dictionary[String, String] = {} 			## tileID → WESTRING_TILE_* 或 comment
-var _tile_buildable: Dictionary[String, bool] = {} 			## tileID → bool（Terrain.slk buildable）
-var _tile_order: Array[String] = [] 						## Terrain.slk 记录顺序
-var _cliff_to_png: Dictionary[String, String] = {}			## cliffID → 贴图路径
-var _cliff_order: Array[String] = []						## cliffID 记录顺序
-var _cliff_model_dir: Dictionary[String, String] = {}		## cliffID → 模型目录
-var _cliff_ramp_dir: Dictionary[String, String] = {}		## cliffID → 斜坡模型目录
-var _cliff_ground_tile: Dictionary[String, String] = {}		## cliffID → 地面纹理集
+## 仅缓存「解析后的贴图路径」（资源映射，非 SLK 列副本）
+var _tile_to_png: Dictionary[String, String] = {}
+var _cliff_to_png: Dictionary[String, String] = {}
 
-## 加载默认数据
+
 func load_default() -> void:
 	_tile_to_png.clear()
-	_tile_name.clear()
-	_tile_buildable.clear()
-	_tile_order.clear()
 	_cliff_to_png.clear()
-	_cliff_order.clear()
-	_cliff_model_dir.clear()
-	_cliff_ramp_dir.clear()
-	_cliff_ground_tile.clear()
-	_load_terrain_slk(RuntimeAssets.slk_path("TerrainArt/Terrain.json"))
-	_load_cliff_slk(RuntimeAssets.slk_path("TerrainArt/CliffTypes.json"))
+	_rebuild_tile_png_cache()
+	_rebuild_cliff_png_cache()
 
 
-## 指定地形集字母（如 "L"）下的地表 tileID（Terrain.slk 顺序，跳过 cliff 小写 id）。
+## 指定地形集字母（如 "L"）下的地表 tileID（Terrain 表顺序）。
 func tile_ids_for_tileset(tileset_letter: String) -> PackedStringArray:
 	var letter := tileset_letter.strip_edges().to_upper()
 	if letter.is_empty():
 		letter = "L"
-	var out := PackedStringArray()
-	for id in _tile_order:
-		var tid := str(id)
-		if tid.length() != 4:
-			continue
-		if tid.substr(0, 1) != letter:
-			continue
-		# 跳过 cliff 辅助项（小写开头已不会进 letter 匹配）
-		out.append(tid)
-	return out
+	var store := _def_store()
+	if store == null:
+		return PackedStringArray()
+	return store.find_ids(
+		TerrainTileDef.TABLE_NAME,
+		func(id: String, row: Resource) -> bool:
+			var d := row as TerrainTileDef
+			return d != null and id.length() == 4 and d.get_tileset_letter() == letter
+	)
 
 
 ## 悬崖类型：cliffID 第 2 字符为地形集字母（如 CLdi → L）。
 func cliff_ids_for_tileset(tileset_letter: String) -> PackedStringArray:
 	var letter := tileset_letter.strip_edges().to_upper()
-	var out := PackedStringArray()
-	for id in _cliff_order:
-		var cid := str(id)
-		if cid.length() >= 2 and cid.substr(1, 1).to_upper() == letter:
-			out.append(cid)
-	return out
+	var store := _def_store()
+	if store == null:
+		return PackedStringArray()
+	return store.find_ids(
+		CliffTypeDef.TABLE_NAME,
+		func(_id: String, row: Resource) -> bool:
+			var d := row as CliffTypeDef
+			return d != null and d.get_tileset_letter() == letter
+	)
 
 
 func name_key_for_tile_id(tile_id: String) -> String:
-	return str(_tile_name.get(tile_id, ""))
+	var d := _terrain_def(tile_id)
+	return d.display_name_key() if d != null else ""
 
 
 func display_name_for_tile_id(tile_id: String) -> String:
-	var n := str(_tile_name.get(tile_id, ""))
-	if n.is_empty() or n == "_":
-		return tile_id
-	return n
+	var n := name_key_for_tile_id(tile_id)
+	return tile_id if n.is_empty() else n
 
 
 ## Terrain.slk `buildable`；缺省视为可建造。
 func is_buildable(tile_id: String) -> bool:
-	if not _tile_buildable.has(tile_id):
-		return true
-	return bool(_tile_buildable[tile_id])
+	var d := _terrain_def(tile_id)
+	return true if d == null else d.buildable
 
 
 func png_for_tile_id(tile_id: String) -> String:
@@ -87,98 +77,94 @@ func png_for_cliff_id(cliff_id: String) -> String:
 
 
 func ground_tile_for_cliff_id(cliff_id: String) -> String:
-	return str(_cliff_ground_tile.get(cliff_id, ""))
+	var d := _cliff_def(cliff_id)
+	return d.ground_tile if d != null else ""
 
 
 func cliff_model_dir(cliff_id: String) -> String:
-	return str(_cliff_model_dir.get(cliff_id, "Cliffs"))
+	var d := _cliff_def(cliff_id)
+	return d.cliff_model_dir if d != null else "Cliffs"
 
 
 func cliff_ramp_dir(cliff_id: String) -> String:
-	return str(_cliff_ramp_dir.get(cliff_id, "CliffTrans"))
+	var d := _cliff_def(cliff_id)
+	return d.ramp_model_dir if d != null else "CliffTrans"
 
 
-## 获取地面纹理路径
-## [param ground_tilesets: Array] 地面纹理集
-## [param index: int] 索引
-## [return String] 纹理路径
 func png_for_ground_index(ground_tilesets: Array, index: int) -> String:
 	if index < 0 or index >= ground_tilesets.size():
 		return ""
 	return png_for_tile_id(str(ground_tilesets[index]))
 
-## 获取悬崖纹理路径
-## [param cliff_tilesets: Array] 悬崖纹理集
-## [param index: int] 索引
-## [return String] 纹理路径
+
 func png_for_cliff_index(cliff_tilesets: Array, index: int) -> String:
 	if index < 0 or index >= cliff_tilesets.size():
 		return ""
 	return png_for_cliff_id(str(cliff_tilesets[index]))
 
 
-func _load_terrain_slk(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		push_warning("Wc3TerrainTiles: 缺少 %s" % path)
+## —— 资源映射：Def 列 → converted PNG ——
+
+func _rebuild_tile_png_cache() -> void:
+	var store := _def_store()
+	if store == null:
+		MapLog.warn(MapLog.Layer.CATALOG, "TerrainTiles", "DefStore 不可用，无法解析地表贴图")
 		return
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return
-	var data: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(data) != TYPE_DICTIONARY:
-		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("tileID", ""))
-		if id.is_empty():
+	store.ensure_table(TerrainTileDef.TABLE_NAME)
+	for id in store.get_ids(TerrainTileDef.TABLE_NAME):
+		var d: TerrainTileDef = store.get_row(TerrainTileDef.TABLE_NAME, id) as TerrainTileDef
+		if d == null or d.dir.is_empty() or d.file.is_empty():
 			continue
-		var dir := str(rec.get("dir", "")).replace("\\", "/")
-		var file := str(rec.get("file", ""))
-		if dir.is_empty() or file.is_empty():
-			continue
-		var png := RuntimeAssets.converted_path("%s/%s.png" % [dir, file])
-		_tile_to_png[id] = png
-		_tile_order.append(id)
-		var nm := str(rec.get("name", "")).strip_edges()
-		if nm.is_empty() or nm == "_":
-			nm = str(rec.get("comment", "")).strip_edges()
-		_tile_name[id] = nm
-		# Terrain.slk：1=可建造，0=不可建造（如岩石 Lrok）
-		_tile_buildable[id] = int(rec.get("buildable", 1)) != 0
+		_tile_to_png[id] = RuntimeAssets.converted_path("%s/%s.png" % [d.dir, d.file])
+	MapLog.debug(
+		MapLog.Layer.CATALOG,
+		"TerrainTiles",
+		"tile png cache from DefStore count=%d" % _tile_to_png.size()
+	)
 
 
-func _load_cliff_slk(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		push_warning("Wc3TerrainTiles: 缺少 %s" % path)
+func _rebuild_cliff_png_cache() -> void:
+	var store := _def_store()
+	if store == null:
+		MapLog.warn(MapLog.Layer.CATALOG, "TerrainTiles", "DefStore 不可用，无法解析悬崖贴图")
 		return
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return
-	var data: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(data) != TYPE_DICTIONARY:
-		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("cliffID", ""))
-		if id.is_empty():
+	store.ensure_table(CliffTypeDef.TABLE_NAME)
+	for id in store.get_ids(CliffTypeDef.TABLE_NAME):
+		var d: CliffTypeDef = store.get_row(CliffTypeDef.TABLE_NAME, id) as CliffTypeDef
+		if d == null or d.tex_dir.is_empty() or d.tex_file.is_empty():
 			continue
-		_cliff_order.append(id)
-		var dir := str(rec.get("texDir", "")).replace("\\", "/")
-		var file := str(rec.get("texFile", ""))
-		if not dir.is_empty() and not file.is_empty():
-			_cliff_to_png[id] = _resolve_cliff_png(dir, file, id)
-		var ground := str(rec.get("groundTile", "")).strip_edges()
-		if not ground.is_empty() and ground != "_":
-			_cliff_ground_tile[id] = ground
-		var model_dir := str(rec.get("cliffModelDir", "")).strip_edges()
-		var ramp_dir := str(rec.get("rampModelDir", "")).strip_edges()
-		if not model_dir.is_empty():
-			_cliff_model_dir[id] = model_dir
-		if not ramp_dir.is_empty():
-			_cliff_ramp_dir[id] = ramp_dir
+		_cliff_to_png[id] = _resolve_cliff_png(d.tex_dir, d.tex_file, id)
+	MapLog.debug(
+		MapLog.Layer.CATALOG,
+		"TerrainTiles",
+		"cliff png cache from DefStore count=%d" % _cliff_to_png.size()
+	)
+
+
+func _terrain_def(tile_id: String) -> TerrainTileDef:
+	var store := _def_store()
+	if store == null:
+		return null
+	return store.get_row(TerrainTileDef.TABLE_NAME, tile_id) as TerrainTileDef
+
+
+func _cliff_def(cliff_id: String) -> CliffTypeDef:
+	var store := _def_store()
+	if store == null:
+		return null
+	return store.get_row(CliffTypeDef.TABLE_NAME, cliff_id) as CliffTypeDef
+
+
+func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 ## cliffID 如 CIsn → 地形集字母 I；优先 I_Cliff1.png。
-## Icecrown（I）经典解包常无独立 I_Cliff*（嵌在 I.mpq），回退 Northrend（N）雪崖。
-## 洛丹伦夏天（L）常无 L_Cliff*，回退无前缀的 Cliff0/Cliff1（即默认洛丹伦崖壁）。
+## Icecrown（I）经典解包常无独立 I_Cliff*，回退 Northrend（N）。
+## 洛丹伦夏天（L）常无 L_Cliff*，回退无前缀 Cliff0/Cliff1。
 static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) -> String:
 	var tileset := ""
 	if cliff_id.length() >= 2:
@@ -191,7 +177,6 @@ static func _resolve_cliff_png(dir: String, tex_file: String, cliff_id: String) 
 		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file])
 		candidates.append("%s/%s_%s.png" % [dir, ts, tex_file.to_lower()])
 		candidates.append("%s/%s%s.png" % [dir, ts, tex_file])
-	# 无前缀：Lordaeron Summer 默认 Cliff0/Cliff1
 	candidates.append("%s/%s.png" % [dir, tex_file])
 	candidates.append("%s/%s.png" % [dir, tex_file.to_lower()])
 	for c in candidates:
