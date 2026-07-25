@@ -27,10 +27,10 @@ static func load_dir(dir_res_path: String) -> Wc3ParsedMap:
 
 
 static func _load_json_dict(res_path: String) -> Dictionary:
-	var abs := RuntimeAssets.project_abs(res_path)
-	if not FileAccess.file_exists(abs):
+	var disk_path := RuntimeAssets.project_abs(res_path)
+	if not FileAccess.file_exists(disk_path):
 		return {}
-	var f := FileAccess.open(abs, FileAccess.READ)
+	var f := FileAccess.open(disk_path, FileAccess.READ)
 	if f == null:
 		return {}
 	var parsed: Variant = JSON.parse_string(f.get_as_text())

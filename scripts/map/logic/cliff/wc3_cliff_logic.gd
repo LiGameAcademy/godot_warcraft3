@@ -512,15 +512,15 @@ static func cliff_slices_at(layer_heights: Array, width: int, ix: int, iy: int) 
 	var bl := int(layer_heights[i00])
 	var br := int(layer_heights[i10])
 	var tl := int(layer_heights[i01])
-	var tr := int(layer_heights[i11])
-	var lo := mini(mini(bl, br), mini(tl, tr))
-	var hi := maxi(maxi(bl, br), maxi(tl, tr))
+	var tr_c := int(layer_heights[i11])
+	var lo := mini(mini(bl, br), mini(tl, tr_c))
+	var hi := maxi(maxi(bl, br), maxi(tl, tr_c))
 	var out: Array = []
 	var base := lo
 	while base < hi:
 		var raw_bl := bl - base
 		var raw_tl := tl - base
-		var raw_tr := tr - base
+		var raw_tr := tr_c - base
 		var raw_br := br - base
 		var raw_hi := maxi(maxi(raw_bl, raw_br), maxi(raw_tl, raw_tr))
 		if raw_hi <= 2:

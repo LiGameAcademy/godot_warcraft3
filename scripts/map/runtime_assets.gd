@@ -61,29 +61,31 @@ static func resolve(logical_path: String) -> String:
 
 	# 无 Autoload 或未命中：converted → .cache/wc3-assets
 	var conv := converted_path(logical)
-	var abs := project_abs(conv)
-	if FileAccess.file_exists(abs):
-		return abs
+	var disk_path := project_abs(conv)
+	if FileAccess.file_exists(disk_path):
+		return disk_path
 	var cache_guess := ProjectSettings.globalize_path("res://").path_join(".cache/wc3-assets").path_join(logical)
 	cache_guess = cache_guess.replace("\\", "/")
 	if FileAccess.file_exists(cache_guess):
 		return cache_guess
 	return ""
 
-
+## 文件是否存在
+## [param res_or_abs] 资源或绝对路径
+## [return bool] 文件是否存在
 static func file_exists(res_or_abs: String) -> bool:
-	var abs := project_abs(res_or_abs)
-	return FileAccess.file_exists(abs)
+	var disk_path := project_abs(res_or_abs)
+	return FileAccess.file_exists(disk_path)
 
 
 static func load_image(res_or_abs: String) -> Image:
-	var abs := project_abs(res_or_abs)
-	if not FileAccess.file_exists(abs):
+	var disk_path := project_abs(res_or_abs)
+	if not FileAccess.file_exists(disk_path):
 		return null
 	var img := Image.new()
-	var err := img.load(abs)
+	var err := img.load(disk_path)
 	if err != OK:
-		push_warning("RuntimeAssets: 无法加载图片 %s (%s)" % [abs, error_string(err)])
+		push_warning("RuntimeAssets: 无法加载图片 %s (%s)" % [disk_path, error_string(err)])
 		return null
 	return img
 
@@ -100,20 +102,20 @@ static func load_converted_texture(relative: String) -> Texture2D:
 
 
 static func load_gltf_scene(res_or_abs: String) -> Node3D:
-	var abs := project_abs(res_or_abs)
-	if not FileAccess.file_exists(abs):
+	var disk_path := project_abs(res_or_abs)
+	if not FileAccess.file_exists(disk_path):
 		return null
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
-	var err := doc.append_from_file(abs, state)
+	var err := doc.append_from_file(disk_path, state)
 	if err != OK:
-		push_warning("RuntimeAssets: 无法加载 GLB %s (%s)" % [abs, error_string(err)])
+		push_warning("RuntimeAssets: 无法加载 GLB %s (%s)" % [disk_path, error_string(err)])
 		return null
 	var scene := doc.generate_scene(state)
 	if scene is Node3D:
 		return scene as Node3D
 	if scene:
-		var wrap := Node3D.new()
-		wrap.add_child(scene)
-		return wrap
+		var root3d := Node3D.new()
+		root3d.add_child(scene)
+		return root3d
 	return null

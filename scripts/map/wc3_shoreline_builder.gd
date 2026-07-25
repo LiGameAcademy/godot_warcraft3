@@ -317,7 +317,11 @@ static func _landward(d: Vector2i) -> Vector3:
 
 static func _over_water(mx: float, my: float, water_z: float, ground: Array, tp_w: int) -> bool:
 	var ix := clampi(int(floor(mx)), 0, tp_w - 1)
-	var iy := clampi(int(floor(my)), 0, int(ground.size() / tp_w) - 1 if tp_w > 0 else 0)
+	var iy := clampi(
+		int(floor(my)),
+		0,
+		floori(float(ground.size()) / float(tp_w)) - 1 if tp_w > 0 else 0
+	)
 	var i := iy * tp_w + ix
 	return i >= 0 and i < ground.size() and float(ground[i]) <= water_z + 8.0
 

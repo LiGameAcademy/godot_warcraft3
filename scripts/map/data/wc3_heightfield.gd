@@ -61,7 +61,7 @@ func vertex_at_index(index: int) -> Wc3TileVertex:
 	if index < 0 or index >= tilepoint_count():
 		return null
 	var ix: int = index % width
-	var iy: int = int(index / width)
+	var iy: int = floori(float(index) / float(width))
 	return Wc3TileVertex.create(self, ix, iy)
 
 
@@ -186,16 +186,16 @@ func to_dict() -> Dictionary:
 
 
 static func load_json_path(res_or_abs: String) -> Wc3Heightfield:
-	var abs := RuntimeAssets.project_abs(res_or_abs)
-	if not FileAccess.file_exists(abs):
-		push_error("Wc3Heightfield: 文件不存在 %s" % abs)
+	var disk_path := RuntimeAssets.project_abs(res_or_abs)
+	if not FileAccess.file_exists(disk_path):
+		push_error("Wc3Heightfield: 文件不存在 %s" % disk_path)
 		return null
-	var f := FileAccess.open(abs, FileAccess.READ)
+	var f := FileAccess.open(disk_path, FileAccess.READ)
 	if f == null:
-		push_error("Wc3Heightfield: 无法打开 %s" % abs)
+		push_error("Wc3Heightfield: 无法打开 %s" % disk_path)
 		return null
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
 	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("Wc3Heightfield: JSON 根不是对象 %s" % abs)
+		push_error("Wc3Heightfield: JSON 根不是对象 %s" % disk_path)
 		return null
 	return from_dict(parsed as Dictionary)

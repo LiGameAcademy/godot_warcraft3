@@ -53,10 +53,13 @@ static func collect_instances(
 				if tag.is_empty() or tag == "AAAA":
 					continue
 				var base_layer: int = int(slice.get("base_layer", 2))
-				var var_clamped := cliff_catalog.pick_cliff_variation(
+				if cliff_catalog == null:
+					missing += 1
+					continue
+				var var_clamped: int = cliff_catalog.pick_cliff_variation(
 					model_dir, tag, variation, ix, iy
 				)
-				var glb := cliff_catalog.resolve_glb(model_dir, tag, var_clamped)
+				var glb: String = cliff_catalog.resolve_glb(model_dir, tag, var_clamped)
 				if glb.is_empty():
 					if not missing_logged.has("C:" + tag):
 						missing_logged["C:" + tag] = true

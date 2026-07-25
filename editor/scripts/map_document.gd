@@ -582,7 +582,7 @@ func _ramp_neighbor_gap(spec: Dictionary, flags: Array, tp_w: int) -> float:
 				continue
 			# 邻列整列是脊，或邻条已刷满
 			if _vert_col_all(flags, tp_w, ncol, sy, true):
-				best_gap = mini(best_gap, 1.0)
+				best_gap = minf(best_gap, 1.0)
 			var left_ok := (
 				_vert_col_all(flags, tp_w, ncol, sy, true)
 				and _vert_col_all(flags, tp_w, ncol + 1, sy, false)
@@ -592,14 +592,14 @@ func _ramp_neighbor_gap(spec: Dictionary, flags: Array, tp_w: int) -> float:
 				and _vert_col_all(flags, tp_w, ncol + 1, sy, true)
 			)
 			if left_ok or right_ok:
-				best_gap = mini(best_gap, float(absi(dcol)))
+				best_gap = minf(best_gap, float(absi(dcol)))
 	else:
 		for drow in [-1, 1]:
 			var nrow: int = sy + drow
 			if nrow < 0:
 				continue
 			if _horiz_row_all(flags, tp_w, sx, nrow, true):
-				best_gap = mini(best_gap, 1.0)
+				best_gap = minf(best_gap, 1.0)
 	return best_gap
 
 
@@ -629,7 +629,7 @@ func _analyze_vertical_ramp_strip(
 	var bl := int(layers[sy * tp_w + sx])
 	var br := int(layers[sy * tp_w + sx + 1])
 	var tl := int(layers[(sy + 1) * tp_w + sx])
-	var tr := int(layers[(sy + 1) * tp_w + sx + 1])
+	var tr_c := int(layers[(sy + 1) * tp_w + sx + 1])
 	var ttl := int(layers[(sy + 2) * tp_w + sx])
 	var ttr := int(layers[(sy + 2) * tp_w + sx + 1])
 
@@ -672,7 +672,7 @@ func _analyze_vertical_ramp_strip(
 		var mid := mini(bl, ttl)
 		var hi := maxi(bl, ttl)
 		# 中间已在高台：再刷会把台面削成低台，破坏对侧已有坡 / 直崖（BUG 源）
-		if tl == hi and tr == hi:
+		if tl == hi and tr_c == hi:
 			return {
 				"ok": false,
 				"code": "carve",
@@ -707,11 +707,11 @@ func _analyze_horizontal_ramp_strip(
 	var br := int(layers[sy * tp_w + sx + 1])
 	var brr := int(layers[sy * tp_w + sx + 2])
 	var tl := int(layers[(sy + 1) * tp_w + sx])
-	var tr := int(layers[(sy + 1) * tp_w + sx + 1])
+	var tr_c := int(layers[(sy + 1) * tp_w + sx + 1])
 	var trr := int(layers[(sy + 1) * tp_w + sx + 2])
 
 	# 直崖面（东西走向崖）：上下行各自等高，行差=1
-	if bl == br and br == brr and tl == tr and tr == trr:
+	if bl == br and br == brr and tl == tr_c and tr_c == trr:
 		var d: int = absi(bl - tl)
 		if d == 0:
 			return {"ok": false, "code": "flat", "message": "无崖边（两侧同高）"}
@@ -748,7 +748,7 @@ func _analyze_horizontal_ramp_strip(
 		var mid := mini(bl, brr)
 		var hi := maxi(bl, brr)
 		# 中间列已在高台：禁止削切
-		if br == hi and tr == hi:
+		if br == hi and tr_c == hi:
 			return {
 				"ok": false,
 				"code": "carve",
@@ -766,7 +766,7 @@ func _analyze_horizontal_ramp_strip(
 		}
 
 	if absi(bl - tl) >= 1 or absi(brr - trr) >= 1 or absi(bl - brr) >= 1:
-		if not (bl == br and br == brr and tl == tr and tr == trr):
+		if not (bl == br and br == brr and tl == tr_c and tr_c == trr):
 			return {"ok": false, "code": "corner", "message": "角柱/碎折边，不能刷斜坡"}
 	return {"ok": false}
 
