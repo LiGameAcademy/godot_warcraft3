@@ -46,6 +46,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 
 var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTiles.new()
+var _cliff_catalog := Wc3CliffCatalog.new()
 var _cache := MapModelCache.new()
 var _status: Label
 ## 非空时优先于磁盘 JSON（编辑器内存文档）
@@ -56,6 +57,10 @@ var _tiles_ready: bool = false
 
 func get_tiles() -> Wc3TerrainTiles:
 	return _tiles
+
+
+func get_cliff_catalog() -> Wc3CliffCatalog:
+	return _cliff_catalog
 
 
 func get_terrain_layer() -> MapTerrainLayer:
@@ -92,6 +97,7 @@ func _ready() -> void:
 
 	_set_status("加载地形贴图索引…")
 	_tiles.load_default()
+	_cliff_catalog.load_default()
 	_tiles_ready = true
 	if place_units or place_doodads or show_pathing_debug_grid:
 		_catalog.load_default()
@@ -113,6 +119,7 @@ func reload_from_hf(hf: Dictionary, info: Dictionary = {}, p_map_dir: String = "
 		map_dir = "res://"
 	if not _tiles_ready:
 		_tiles.load_default()
+		_cliff_catalog.load_default()
 		_tiles_ready = true
 	await _load_all()
 
@@ -138,7 +145,8 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 		_external_info,
 		_tiles,
 		_catalog,
-		_cache
+		_cache,
+		_cliff_catalog
 	)
 	MapLog.info(
 		MapLog.Layer.PRESENT,
@@ -166,7 +174,8 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_external_info,
 		_tiles,
 		_catalog,
-		_cache
+		_cache,
+		_cliff_catalog
 	)
 	MapLog.info(
 		MapLog.Layer.PRESENT,
@@ -199,7 +208,7 @@ func _load_all() -> void:
 	var info: Dictionary = _external_info
 	if info.is_empty() and _external_hf.is_empty():
 		info = _read_json(map_dir.path_join("info.json"))
-	var ctx = MapBuildContextScript.create(map_dir, hf, info, _tiles, _catalog, _cache)
+	var ctx = MapBuildContextScript.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
 	ctx.ensure_cliff_topology()
 
 	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")

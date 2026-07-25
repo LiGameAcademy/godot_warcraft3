@@ -73,7 +73,7 @@ func _ready() -> void:
 
 	await get_tree().process_frame
 	if new_map_dialog != null:
-		new_map_dialog.setup(map_root.get_tiles(), null, _we_data)
+		new_map_dialog.setup(map_root.get_tiles(), map_root.get_cliff_catalog(), null, _we_data)
 		if not new_map_dialog.confirmed.is_connected(_on_new_map_confirmed):
 			new_map_dialog.confirmed.connect(_on_new_map_confirmed)
 	await _startup_new_map()
@@ -154,12 +154,14 @@ func _default_new_map_options() -> Dictionary:
 				ts_name = letter
 			break
 	var tiles: Wc3TerrainTiles = map_root.get_tiles()
+	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
 	var ground: Array = []
 	var cliffs: Array = []
 	if tiles != null:
 		for tid in tiles.tile_ids_for_tileset(letter):
 			ground.append(tid)
-		for cid in tiles.cliff_ids_for_tileset(letter):
+	if cliffs_cat != null:
+		for cid in cliffs_cat.cliff_ids_for_tileset(letter):
 			cliffs.append(cid)
 	if ground.is_empty():
 		ground = MapDocumentScript.DEFAULT_GROUND.duplicate()
@@ -295,7 +297,7 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	_tool_palettes.append(win)
-	win.rebuild_terrain(_doc, map_root.get_tiles())
+	win.rebuild_terrain(_doc, map_root.get_tiles(), map_root.get_cliff_catalog())
 	_palettes_visible = true
 	if menu != null and menu.has_method("set_show_palettes_checked"):
 		menu.set_show_palettes_checked(true)
@@ -361,9 +363,10 @@ func _on_tool_palette_exiting(win) -> void:
 
 func _refresh_all_tool_palettes() -> void:
 	var tiles: Wc3TerrainTiles = map_root.get_tiles()
+	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
 	for win in _tool_palettes:
 		if is_instance_valid(win):
-			win.rebuild_terrain(_doc, tiles)
+			win.rebuild_terrain(_doc, tiles, cliffs_cat)
 
 
 func _set_view_grid(level: int) -> void:

@@ -30,7 +30,7 @@ func build(ctx: MapBuildContext) -> void:
 		"romp": ctx.cliff_romp,
 		"placements": ctx.cliff_ramp_placements,
 	}
-	var collected := Wc3CliffBuilder.collect_instances(ctx.hf, ctx.tiles, ctx.meta, ramp_data)
+	var collected := Wc3CliffBuilder.collect_instances(ctx.hf, ctx.cliff_catalog, ctx.meta, ramp_data)
 	if collected.is_empty():
 		return
 
@@ -47,7 +47,9 @@ func build(ctx: MapBuildContext) -> void:
 			continue
 
 		if not tex_cache.has(tex_idx):
-			var png: String = ctx.tiles.png_for_cliff_index(cliff_tilesets, tex_idx)
+			var png: String = ""
+			if ctx.cliff_catalog != null:
+				png = ctx.cliff_catalog.png_for_cliff_index(cliff_tilesets, tex_idx)
 			tex_cache[tex_idx] = RuntimeAssets.load_texture(png) if not png.is_empty() else null
 			print(
 				"Cliff tex[%d] %s → %s (%s)"

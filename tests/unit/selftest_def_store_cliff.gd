@@ -10,7 +10,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var failed := 0
 	failed += _test_terrain_art_tables()
-	failed += _test_terrain_tiles_asset_map()
+	failed += _test_catalog_asset_map()
 	failed += _test_water_params_from_def()
 	if failed == 0:
 		print("selftest_def_store_cliff: PASS")
@@ -71,16 +71,18 @@ func _test_terrain_art_tables() -> int:
 	return 0
 
 
-func _test_terrain_tiles_asset_map() -> int:
+func _test_catalog_asset_map() -> int:
 	var tiles := Wc3TerrainTiles.new()
 	tiles.load_default()
-	if tiles.ground_tile_for_cliff_id("CLdi") != "Ldrt":
-		push_error("TerrainTiles CLdi ground mismatch")
+	var cliffs := Wc3CliffCatalog.new()
+	cliffs.load_default()
+	if cliffs.ground_tile_for_cliff_id("CLdi") != "Ldrt":
+		push_error("CliffCatalog CLdi ground mismatch")
 		return 1
-	if tiles.cliff_model_dir("CLdi") != "Cliffs":
-		push_error("TerrainTiles model dir mismatch")
+	if cliffs.cliff_model_dir("CLdi") != "Cliffs":
+		push_error("CliffCatalog model dir mismatch")
 		return 1
-	var cliff_png: String = tiles.png_for_cliff_id("CLdi")
+	var cliff_png: String = cliffs.png_for_cliff_id("CLdi")
 	if cliff_png.is_empty():
 		push_error("png_for_cliff_id empty")
 		return 1
@@ -95,7 +97,11 @@ func _test_terrain_tiles_asset_map() -> int:
 	if lordaeron.is_empty() or not "Ldrt" in lordaeron:
 		push_error("tile_ids_for_tileset(L) missing Ldrt")
 		return 1
-	print("  TerrainTiles asset map OK cliff=%s tile=%s" % [cliff_png.get_file(), tile_png.get_file()])
+	var cliff_ids := cliffs.cliff_ids_for_tileset("L")
+	if cliff_ids.is_empty() or not "CLdi" in cliff_ids:
+		push_error("cliff_ids_for_tileset(L) missing CLdi")
+		return 1
+	print("  Catalog asset map OK cliff=%s tile=%s" % [cliff_png.get_file(), tile_png.get_file()])
 	return 0
 
 

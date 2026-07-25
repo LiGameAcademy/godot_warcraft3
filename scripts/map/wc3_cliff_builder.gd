@@ -6,7 +6,7 @@ extends RefCounted
 
 static func collect_instances(
 	hf: Dictionary,
-	tiles: Wc3TerrainTiles,
+	cliff_catalog: Wc3CliffCatalog,
 	meta: Dictionary = {},
 	ramp_data: Dictionary = {}
 ) -> Dictionary:
@@ -25,7 +25,7 @@ static func collect_instances(
 		return {}
 
 	if ramp_data.is_empty():
-		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta, tiles)
+		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta, cliff_catalog)
 	var romp: PackedByteArray = ramp_data["romp"]
 
 	var buckets: Dictionary = {}
@@ -44,7 +44,9 @@ static func collect_instances(
 				continue
 			var tex_idx := _cliff_tex_index(cliff_tex, cliff_tilesets, tp_w, tp_h, ix, iy)
 			var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
-			var model_dir := tiles.cliff_model_dir(cliff_id)
+			var model_dir := "Cliffs"
+			if cliff_catalog != null:
+				model_dir = cliff_catalog.cliff_model_dir(cliff_id)
 			var variation := int(cliff_var[i00]) if i00 < cliff_var.size() else 0
 			for slice in slices:
 				var tag: String = str(slice.get("tag", ""))

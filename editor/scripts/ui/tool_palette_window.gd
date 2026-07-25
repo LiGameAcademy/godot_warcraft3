@@ -85,6 +85,7 @@ const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
 var _kind: int = PaletteKind.TERRAIN
 var _suppress_kind_signal: bool = false
 var _tiles: Wc3TerrainTiles
+var _cliff_catalog: Wc3CliffCatalog
 var _we_data: WorldEditData
 var _tile_ids: PackedStringArray = PackedStringArray()
 var _tile_buttons: Array = []
@@ -224,8 +225,9 @@ func _emit_cliff_settings() -> void:
 	cliff_settings_changed.emit(_apply_cliff, get_cliff_tool_id(), _selected_cliff_type)
 
 
-func rebuild_terrain(doc, tiles: Wc3TerrainTiles) -> void:
+func rebuild_terrain(doc, tiles: Wc3TerrainTiles, cliff_catalog: Wc3CliffCatalog = null) -> void:
 	_tiles = tiles
+	_cliff_catalog = cliff_catalog
 	_tile_ids = PackedStringArray()
 	if doc == null or doc.is_empty():
 		_rebuild_tile_grid()
@@ -677,18 +679,22 @@ func _load_tile_tex(tile_id: String) -> Texture2D:
 
 
 func _load_cliff_tex(cliff_id: String) -> Texture2D:
-	if _tiles == null:
+	if _cliff_catalog == null and _tiles == null:
 		return null
 	# WE：悬崖类型图标用 Cliffs.slk 的 groundTile（泥土/草地地表 atlas），不是崖壁 PNG
-	var ground_id: String = _tiles.ground_tile_for_cliff_id(cliff_id)
-	if not ground_id.is_empty():
+	var ground_id := ""
+	if _cliff_catalog != null:
+		ground_id = _cliff_catalog.ground_tile_for_cliff_id(cliff_id)
+	if not ground_id.is_empty() and _tiles != null:
 		var ground_path: String = _tiles.png_for_tile_id(ground_id)
 		if not ground_path.is_empty():
 			var ground_img := RuntimeAssets.load_image(ground_path)
 			if ground_img != null:
 				return ImageTexture.create_from_image(_atlas_first_cell(ground_img))
 	# 缺 groundTile 时回退：裁崖壁贴图左上角
-	var path: String = _tiles.png_for_cliff_id(cliff_id)
+	var path := ""
+	if _cliff_catalog != null:
+		path = _cliff_catalog.png_for_cliff_id(cliff_id)
 	if path.is_empty():
 		return null
 	var img := RuntimeAssets.load_image(path)

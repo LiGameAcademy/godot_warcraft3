@@ -1,30 +1,37 @@
 # 待办
 
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-07-24
+> 最后更新：2026-07-25
 
 ## 当前焦点：悬崖模块分层重构（⑦）
 
-地面纹理 + 编辑总管 + 命令模式已可测。下一波按 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)：
+按 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。地面纹理 + DefStore + 编辑总管已打 tag `milestone/terrain-art-defstore`。
 
-1. M0：`Wc3CliffCatalog` 从 `Wc3TerrainTiles` 拆出  
-2. M1：`Wc3CliffLogic` 承接 Document 蛋糕/策略 B  
-3. M2：Present 只消费 placements；恢复地面挖洞对接  
-4. 然后再开斜坡 [RAMP.md](RAMP.md)
-
----
-
-## Catalog 债（崖 M0）
-
-- [ ] **拆分 `Wc3TerrainTiles`** — 详见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) §4.2 / §5 M0
-  - 地表：仅 `Terrain.slk`
-  - 悬崖：`Wc3CliffCatalog`（CliffTypes → 贴图、groundTile、modelDir）
+| 里程碑 | 状态 | 要点 |
+|--------|------|------|
+| **M0 Catalog** | ✅ 代码侧完成 | `Wc3CliffCatalog` + Context/Loader；待 Lost Temple 手测 |
+| **M1 Logic** | 待开 | `Wc3CliffLogic` 承接 Document 蛋糕/策略 B |
+| **M2 Present** | 待开 | placements 契约；挖洞对接；Layer 迁 presentation |
+| **M3 命令/脏区** | 待开 | 崖笔划 label；局部重建 |
+| 然后斜坡 | 后置 | [RAMP.md](RAMP.md) |
 
 ---
 
-## 编辑层（⑤ — 已打通）
+## Catalog（崖 M0）
 
-- [x] **Editor 总管** + **命令模式** + 地表笔刷可见重建
+- [x] TerrainArt 四表 → `definitions/terrain_art/*Def` + `Wc3DefStore`
+- [x] `Wc3TerrainTiles` 仅地表；`Wc3WaterParams` 读 `WaterTypeDef`
+- [x] **`Wc3CliffCatalog`** — CliffTypes 表列 + 岩壁 PNG / modelDir 资源映射
+- [x] `MapBuildContext.cliff_catalog` / `MapLoader.get_cliff_catalog()`
+- [x] 更新 [CLIFF.md](CLIFF.md) §8 路径表
+- [x] `selftest_cliff_*` / `selftest_def_store_cliff` 绿（Catalog 接线后）
+- [ ] Lost Temple 手测：崖外观与拆分前一致
+
+---
+
+## 编辑层（⑤ — 地面已打通）
+
+- [x] Editor 总管 + 命令模式 + 地表笔刷可见重建
 - [ ] 脏区局部重建 Ground（接口已有 dirty rect）
 - [ ] 撤销 UI 灰显 / i18n
 - [ ] 悬崖笔刷全面委托 `Wc3CliffLogic`（M1）
@@ -35,18 +42,19 @@
 
 ## 地形 / 斜坡
 
-- [ ] **斜坡（崖边 A）**：设计与路线图见 [RAMP.md](RAMP.md)（M0–M4）。**实现按里程碑**；勿与「应用高度」纯高度坡（B）混淆。直崖见 [CLIFF.md](CLIFF.md)。排在 ⑦ 悬崖之后。
+- [ ] **斜坡（崖边 A）**：[RAMP.md](RAMP.md) M0–M4；排在 ⑦ 悬崖之后。勿与「应用高度」纯高度坡（B）混淆。
 
 ## 岸浪
 
-- [ ] 泡沫精调（偏移/贴图细节）暂搁，见 [WATER.md](WATER.md)。
+- [ ] 泡沫精调暂搁，见 [WATER.md](WATER.md)。
 
 ## 单位
 
 - [ ] 单位层：先有完整 tscn/资源管线再默认摆放（`place_units` 仍关）。
 
-## 架构债（摘自 MAP_ARCHITECTURE）
+## 架构债
 
-- [x] 调试栅格统一到 `MapDebugGridLayer` + `MapLoader.set_view_grid_level`
+- [x] 调试栅格 → `MapDebugGridLayer` + `MapLoader.set_view_grid_level`
+- [x] GDScript 可见性：禁止跨边界调 `_` 私有 API（`.cursor/rules/gdscript-visibility.mdc`）
 - [ ] Doodad/Unit `build(ctx)` 契约统一
-- [ ] 删除对第二份 meta Dictionary 手写逻辑的残余调用方（逐步只读 `ctx.heightfield` / `ctx.meta`）
+- [ ] 删除对第二份 meta Dictionary 手写逻辑的残余调用方（逐步只读 `ctx.heightfield`）

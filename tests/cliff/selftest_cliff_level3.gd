@@ -20,8 +20,8 @@ func _run() -> void:
 		"cliff_tilesets": ["CLdi", "CLgr"],
 		"cliff_level": 2,
 	})
-	var tiles := Wc3TerrainTiles.new()
-	tiles.load_default()
+	var cliffs := Wc3CliffCatalog.new()
+	cliffs.load_default()
 
 	var cx := 16
 	var cy := 16
@@ -83,14 +83,14 @@ func _run() -> void:
 				var base: int = int(s.get("base_layer", 0))
 				tag_strs.append("%s@%d" % [tag, base])
 				slice_count += 1
-				var model_dir := tiles.cliff_model_dir("CLdi")
+				var model_dir := cliffs.cliff_model_dir("CLdi")
 				var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, 0)
 				if glb.is_empty():
 					missing_tags[tag] = true
 					push_error("MISSING tile(%d,%d) corners=%s tag=%s" % [ix, iy, corners, tag])
 			print("tile(%d,%d) %s -> %s" % [ix, iy, corners, " ".join(tag_strs)])
 
-	var collected := Wc3CliffBuilder.collect_instances(doc.hf, tiles)
+	var collected := Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
 	print(
 		"builder placed=%d missing=%d groups=%d slices=%d missing_tags=%s"
 		% [
@@ -126,7 +126,7 @@ func _run() -> void:
 		for x in range(cx - 3, cx + 4):
 			row2 += "%d " % int(layers[y * tp_w + x])
 		print(row2)
-	collected = Wc3CliffBuilder.collect_instances(doc.hf, tiles)
+	collected = Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
 	print(
 		"cross builder placed=%d missing=%d"
 		% [int(collected.get("placed_cliffs", 0)), int(collected.get("missing", 0))]

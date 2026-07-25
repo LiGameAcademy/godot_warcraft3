@@ -31,17 +31,17 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var tiles := Wc3TerrainTiles.new()
-	tiles.load_default()
-	var model_dir := tiles.cliff_model_dir("CLdi")
+	var cliffs := Wc3CliffCatalog.new()
+	cliffs.load_default()
+	var model_dir := cliffs.cliff_model_dir("CLdi")
 	var failed := 0
 
 	failed += _case_tag_table_and_glbs(model_dir)
 	failed += _case_span2_single_slice()
 	failed += _case_asymmetric_aabc_family()
 	failed += _case_tall_stack_span_gt2()
-	failed += _case_paint_plateau_then_pillar(tiles)
-	failed += _case_paint_level2_edge_then_corner(tiles)
+	failed += _case_paint_plateau_then_pillar(cliffs)
+	failed += _case_paint_level2_edge_then_corner(cliffs)
 	failed += _case_remote_cliff_tex_isolation()
 	failed += _case_heterogeneous_contact_assimilate()
 
@@ -112,7 +112,7 @@ func _print_layers(doc, cx: int, cy: int, rad: int = 3) -> void:
 
 
 func _scan_missing_and_dup(
-	doc, tiles: Wc3TerrainTiles, cx: int, cy: int, rad: int = 4
+	doc, cliffs: Wc3CliffCatalog, cx: int, cy: int, rad: int = 4
 ) -> Dictionary:
 	var layers: Array = doc.hf["layerHeights"]
 	var tp_w: int = int(doc.hf["tilepointWidth"])
@@ -140,10 +140,10 @@ func _scan_missing_and_dup(
 				)
 			for s in slices:
 				var tag: String = str(s.get("tag", ""))
-				var glb := Wc3CliffTiles.resolve_glb(tiles.cliff_model_dir("CLdi"), tag, 0)
+				var glb := Wc3CliffTiles.resolve_glb(cliffs.cliff_model_dir("CLdi"), tag, 0)
 				if glb.is_empty():
 					missing[tag] = true
-	var collected := Wc3CliffBuilder.collect_instances(doc.hf, tiles)
+	var collected := Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
 	return {
 		"missing_tags": missing,
 		"multi_on_span2": multi_on_span2,
@@ -253,7 +253,7 @@ func _case_tall_stack_span_gt2() -> int:
 	return fail
 
 
-func _case_paint_plateau_then_pillar(tiles: Wc3TerrainTiles) -> int:
+func _case_paint_plateau_then_pillar(cliffs: Wc3CliffCatalog) -> int:
 	print("=== case: paint 2x2 plateau then center pillar (+1) ===")
 	var doc = _new_doc()
 	var cx := 16
@@ -265,7 +265,7 @@ func _case_paint_plateau_then_pillar(tiles: Wc3TerrainTiles) -> int:
 	# 中心再升一层 → 上层 footprint 更小，邻格易出 AABC 族
 	doc.paint_cliff_corner(cx, cy, "3", 0)
 	_print_layers(doc, cx, cy)
-	var scan := _scan_missing_and_dup(doc, tiles, cx, cy)
+	var scan := _scan_missing_and_dup(doc, cliffs, cx, cy)
 	print(
 		"plateau+pillar placed=%d slices=%d multi_span2=%d missing=%s"
 		% [
@@ -282,7 +282,7 @@ func _case_paint_plateau_then_pillar(tiles: Wc3TerrainTiles) -> int:
 	return 0
 
 
-func _case_paint_level2_edge_then_corner(tiles: Wc3TerrainTiles) -> int:
+func _case_paint_level2_edge_then_corner(cliffs: Wc3CliffCatalog) -> int:
 	print("=== case: level2 edge (2 verts) then one top corner ===")
 	var doc = _new_doc()
 	var cx := 16
@@ -324,7 +324,7 @@ func _case_paint_level2_edge_then_corner(tiles: Wc3TerrainTiles) -> int:
 					% [ix, iy, hi - lo, slices.size()]
 				)
 				fail += 1
-	var scan := _scan_missing_and_dup(doc, tiles, cx, cy)
+	var scan := _scan_missing_and_dup(doc, cliffs, cx, cy)
 	if int(scan["multi_on_span2"]) > 0:
 		fail += 1
 	if not (scan["missing_tags"] as Dictionary).is_empty() or int(scan["builder_missing"]) > 0:

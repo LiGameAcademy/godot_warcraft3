@@ -30,6 +30,7 @@ const TILE_ATLAS_ROWS := 4
 
 var _data
 var _tiles: Wc3TerrainTiles
+var _cliff_catalog: Wc3CliffCatalog
 
 var _tile_ids: PackedStringArray = PackedStringArray()
 var _selected_tile: int = 0
@@ -42,10 +43,17 @@ func _ready() -> void:
 
 ## 初始化对话框
 ## [param tiles] Wc3TerrainTiles
+## [param cliff_catalog] Wc3CliffCatalog
 ## [param _strings] String (optional)
 ## [param data] WorldEditData (optional)
-func setup(tiles: Wc3TerrainTiles, _strings = null, data = null) -> void:
+func setup(
+	tiles: Wc3TerrainTiles,
+	cliff_catalog: Wc3CliffCatalog = null,
+	_strings = null,
+	data = null
+) -> void:
 	_tiles = tiles
+	_cliff_catalog = cliff_catalog
 	_data = data if data != null else DataScript.load_default()
 	_wire_signals()
 	_water_buttons = [_water_none, _water_shallow, _water_deep]
@@ -250,8 +258,9 @@ func _on_ok() -> void:
 	for tid in _tile_ids:
 		ground.append(tid)
 	var cliffs: Array = []
-	for cid in _tiles.cliff_ids_for_tileset(letter):
-		cliffs.append(cid)
+	if _cliff_catalog != null:
+		for cid in _cliff_catalog.cliff_ids_for_tileset(letter):
+			cliffs.append(cid)
 	if cliffs.is_empty():
 		cliffs = ["C%sdi" % letter, "C%sgr" % letter]
 	var tile_index: int = clampi(_selected_tile, 0, maxi(ground.size() - 1, 0))

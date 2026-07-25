@@ -1163,9 +1163,9 @@ func _ground_index_for_cliff_type(ctype: int) -> int:
 		_cliff_ground_cache.fill(-2) # -2=未缓存
 	if _cliff_ground_cache[ctype] != -2:
 		return _cliff_ground_cache[ctype]
-	var tiles := Wc3TerrainTiles.new()
-	tiles.load_default()
-	var ground_id := tiles.ground_tile_for_cliff_id(str(cts[ctype]))
+	var cliffs := Wc3CliffCatalog.new()
+	cliffs.load_default()
+	var ground_id := cliffs.ground_tile_for_cliff_id(str(cts[ctype]))
 	var found := -1
 	if not ground_id.is_empty():
 		for gi in range(gs.size()):

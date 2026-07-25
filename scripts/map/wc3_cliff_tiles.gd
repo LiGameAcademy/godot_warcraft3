@@ -86,7 +86,7 @@ static func is_ramp_entrance(
 
 ## 斜坡选型入口（重建前返回空 placements + 全 0 romp）。
 static func collect_ramp_placements(
-	hf: Dictionary, meta: Dictionary = {}, _tiles: Wc3TerrainTiles = null
+	hf: Dictionary, meta: Dictionary = {}, _cliff_catalog: Wc3CliffCatalog = null
 ) -> Dictionary:
 	if meta.is_empty():
 		meta = Wc3Heightfield.build_meta_from_dict(hf)

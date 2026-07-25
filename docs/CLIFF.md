@@ -77,6 +77,9 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 
 | 文件 | 职责 |
 |------|------|
+| `scripts/definitions/terrain_art/cliff_type_def.gd` | CliffTypes.slk → Resource |
+| `scripts/map/catalog/wc3_cliff_catalog.gd` | 直崖 Catalog（贴图 / groundTile / modelDir） |
+| `scripts/map/catalog/wc3_terrain_tiles.gd` | 地表 Catalog（仅 Terrain） |
 | `editor/scripts/map_document.gd` | 笔刷、蛋糕、策略 B 同步 |
 | `scripts/map/wc3_cliff_tiles.gd` | TAG / 叠段 / 斜坡检测入口 |
 | `scripts/map/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |
@@ -84,3 +87,4 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 | `editor/scripts/ui/tool_palette_window.gd` | 类型图标 |
 | [EDITOR.md](EDITOR.md) §5.3 | 编辑器流程 |
 | [RAMP.md](RAMP.md) | 斜坡设计（实现门禁） |
+| [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) | 分层重构里程碑 |

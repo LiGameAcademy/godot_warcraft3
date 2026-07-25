@@ -80,7 +80,7 @@ func _resolve_frames() -> void:
 	if num_tex <= 0:
 		return
 	var tileset := water_id.substr(0, 1).to_upper() if water_id.length() >= 1 else "I"
-	var alt := Wc3TerrainTiles.tileset_texture_fallback(tileset)
+	var alt := Wc3CliffCatalog.tileset_texture_fallback(tileset)
 	var base_name := tex_file_prefix.get_file() # Water
 	var dir := tex_file_prefix.get_base_dir()
 	for i in range(num_tex):
