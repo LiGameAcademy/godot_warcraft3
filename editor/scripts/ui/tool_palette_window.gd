@@ -84,7 +84,7 @@ const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
 
 var _kind: int = PaletteKind.TERRAIN
 var _suppress_kind_signal: bool = false
-var _tiles: Wc3TerrainTiles
+var _tiles: Wc3TerrainTileCatalog
 var _cliff_catalog: Wc3CliffCatalog
 var _we_data: WorldEditData
 var _tile_ids: PackedStringArray = PackedStringArray()
@@ -225,7 +225,7 @@ func _emit_cliff_settings() -> void:
 	cliff_settings_changed.emit(_apply_cliff, get_cliff_tool_id(), _selected_cliff_type)
 
 
-func rebuild_terrain(doc, tiles: Wc3TerrainTiles, cliff_catalog: Wc3CliffCatalog = null) -> void:
+func rebuild_terrain(doc, tiles: Wc3TerrainTileCatalog, cliff_catalog: Wc3CliffCatalog = null) -> void:
 	_tiles = tiles
 	_cliff_catalog = cliff_catalog
 	_tile_ids = PackedStringArray()

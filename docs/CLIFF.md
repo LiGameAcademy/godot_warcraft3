@@ -79,7 +79,7 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 |------|------|
 | `scripts/definitions/terrain_art/cliff_type_def.gd` | CliffTypes.slk → Resource |
 | `scripts/map/catalog/wc3_cliff_catalog.gd` | 直崖 Catalog（贴图 / groundTile / modelDir） |
-| `scripts/map/catalog/wc3_terrain_tiles.gd` | 地表 Catalog（仅 Terrain） |
+| `scripts/map/catalog/wc3_terrain_tile_catalog.gd` | 地表 Catalog（仅 Terrain） |
 | `editor/scripts/map_document.gd` | 笔刷、蛋糕、策略 B 同步 |
 | `scripts/map/wc3_cliff_tiles.gd` | TAG / 叠段 / 斜坡检测入口 |
 | `scripts/map/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |

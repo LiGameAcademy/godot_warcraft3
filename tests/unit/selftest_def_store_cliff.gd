@@ -72,7 +72,7 @@ func _test_terrain_art_tables() -> int:
 
 
 func _test_catalog_asset_map() -> int:
-	var tiles := Wc3TerrainTiles.new()
+	var tiles := Wc3TerrainTileCatalog.new()
 	tiles.load_default()
 	var cliffs := Wc3CliffCatalog.new()
 	cliffs.load_default()

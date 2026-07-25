@@ -18,7 +18,7 @@ func _test_build_blank_ground() -> int:
 	var doc_script: GDScript = load("res://editor/scripts/map_document.gd") as GDScript
 	var doc = doc_script.new()
 	doc.create_blank(5)
-	var tiles := Wc3TerrainTiles.new()
+	var tiles := Wc3TerrainTileCatalog.new()
 	tiles.load_default()
 	var hf: Wc3Heightfield = doc.heightfield
 	var ground_tilesets: Array = hf.ground_tilesets

@@ -29,7 +29,7 @@ const TILE_ATLAS_ROWS := 4
 @onready var _cancel_btn: Button = %CancelBtn
 
 var _data
-var _tiles: Wc3TerrainTiles
+var _tiles: Wc3TerrainTileCatalog
 var _cliff_catalog: Wc3CliffCatalog
 
 var _tile_ids: PackedStringArray = PackedStringArray()
@@ -42,12 +42,12 @@ func _ready() -> void:
 	hide()
 
 ## 初始化对话框
-## [param tiles] Wc3TerrainTiles
+## [param tiles] Wc3TerrainTileCatalog
 ## [param cliff_catalog] Wc3CliffCatalog
 ## [param _strings] String (optional)
 ## [param data] WorldEditData (optional)
 func setup(
-	tiles: Wc3TerrainTiles,
+	tiles: Wc3TerrainTileCatalog,
 	cliff_catalog: Wc3CliffCatalog = null,
 	_strings = null,
 	data = null

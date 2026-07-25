@@ -18,7 +18,7 @@ func _apply_locale() -> void:
 	_title.text = EditorI18n.t("EDITOR_PALETTE_TITLE")
 
 
-func rebuild(doc, tiles: Wc3TerrainTiles, _strings = null) -> void:
+func rebuild(doc, tiles: Wc3TerrainTileCatalog, _strings = null) -> void:
 	_list.clear()
 	if doc == null or doc.is_empty():
 		return

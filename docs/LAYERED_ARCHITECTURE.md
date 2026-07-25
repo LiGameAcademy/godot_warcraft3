@@ -158,7 +158,7 @@ scripts/map/
 │
 ├── catalog/                       # 资源映射：运行时扫盘 / resolve（不检入 .tres 表）
 │   ├── wc3_id_catalog.gd
-│   ├── wc3_terrain_tiles.gd       # tileID / cliffID → PNG·模型目录
+│   ├── wc3_terrain_tile_catalog.gd       # tileID / cliffID → PNG·模型目录
 │   ├── wc3_ground_tile_catalog.gd # Texture2DArray
 │   ├── wc3_cliff_catalog.gd       # 目标（直崖）
 │   └── wc3_cliff_trans_catalog.gd

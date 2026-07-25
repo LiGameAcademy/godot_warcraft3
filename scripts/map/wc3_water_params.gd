@@ -1,9 +1,9 @@
 class_name Wc3WaterParams
 extends RefCounted
+
 ## 水体运行时参数：表列来自 WaterTypeDef；帧 PNG 在此做资源映射。
 
-
-## HiveWE 深度常量（tile 高度单位，1 tile = 128 WC3）
+# HiveWE 深度常量（tile 高度单位，1 tile = 128 WC3）
 const MIN_DEPTH := 10.0 / 128.0
 const DEEP_LEVEL := 64.0 / 128.0
 const MAX_DEPTH := 72.0 / 128.0
@@ -20,12 +20,6 @@ var shallow_max: Color = Color(0.94, 0.94, 0.94, 0.86)
 var deep_min: Color = Color(0.46, 0.46, 0.46, 0.86)
 var deep_max: Color = Color(0.59, 0.71, 0.86, 0.71)
 var frame_pngs: PackedStringArray = PackedStringArray()
-
-
-static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
-	var p := Wc3WaterParams.new()
-	p.setup_for_tileset(main_tileset)
-	return p
 
 
 ## 按地形集填充表列并解析水面帧（对外入口；内部再用私有步骤）。
@@ -144,3 +138,9 @@ static func depth_color(
 		return smin.lerp(smax, t)
 	var t2 := clampf(value - DEEP_LEVEL, 0.0, MAX_DEPTH - DEEP_LEVEL) / (MAX_DEPTH - DEEP_LEVEL)
 	return dmin.lerp(dmax, t2)
+
+static func load_for_tileset(main_tileset: String) -> Wc3WaterParams:
+	var p := Wc3WaterParams.new()
+	p.setup_for_tileset(main_tileset)
+	return p
+

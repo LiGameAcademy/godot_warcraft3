@@ -27,7 +27,7 @@ Data（层高 / cliffTextures）
 
 | 问题 | 现状落点 |
 |------|----------|
-| Catalog 混装 | `Wc3TerrainTiles` 同时吃 Terrain.slk + CliffTypes.slk |
+| Catalog 混装 | `Wc3TerrainTileCatalog` 同时吃 Terrain.slk + CliffTypes.slk |
 | Logic 散落 | `MapDocument.paint_cliff_corner` 蛋糕/策略 B；`wc3_cliff_tiles.gd` TAG/叠段；与 Document 强耦合 |
 | Present 纠缠 | `map_cliff_layer.gd` + `wc3_cliff_builder.gd` 仍读 `hf`/`meta` 字典 |
 | 地面阶段已注释 | `MapTerrainLayer` 挖洞 / `corner_texture` 暂关，恢复时需走 Logic 输出而非 Layer 内重算 |
@@ -50,7 +50,7 @@ Data（层高 / cliffTextures）
 scripts/map/
 ├── data/          # 已有 heightfield / coords（层、cliff_* 数组）
 ├── catalog/
-│   ├── wc3_terrain_tiles.gd      # 收缩为地表索引（或改名 GroundTileIndex）
+│   ├── wc3_terrain_tile_catalog.gd      # 收缩为地表索引（或改名 GroundTileIndex）
 │   ├── wc3_cliff_catalog.gd      # 【新建】CliffTypes → 贴图 / groundTile / Cliffs 目录
 │   └── wc3_cliff_trans_catalog.gd
 ├── logic/cliff/
@@ -85,7 +85,7 @@ editor/scripts/
 | `cliff_model_dir` | `Cliffs` 家族目录 |
 | `resolve_glb(tag, variation)` | → `…/Cliffs{TAG}{var}.glb`（或经 cache） |
 
-从 `Wc3TerrainTiles` **迁出** cliff 侧字段；`MapBuildContext` 增加 `cliff_catalog`（或过渡期 `tiles` 委托）。
+从 `Wc3TerrainTileCatalog` **迁出** cliff 侧字段；`MapBuildContext` 增加 `cliff_catalog`（或过渡期 `tiles` 委托）。
 
 ### 4.3 Logic — `Wc3CliffLogic`
 
@@ -118,8 +118,8 @@ Document：薄封装 → `cliff_logic.paint_*`，自身不堆传播实现。
 ### M0 — 契约与 Catalog 拆分（不改手感）
 
 1. ~~新建 `Wc3CliffCatalog`~~ ✅（`catalog/wc3_cliff_catalog.gd`；DefStore + PNG/modelDir）  
-2. ~~TerrainArt 四表 Def + DefStore~~ ✅；`Wc3TerrainTiles` / `Wc3WaterParams` 只做资源映射  
-3. ~~`Wc3TerrainTiles` 仅地表~~ ✅；Context / Loader / Builder / Editor 已接 `cliff_catalog`  
+2. ~~TerrainArt 四表 Def + DefStore~~ ✅；`Wc3TerrainTileCatalog` / `Wc3WaterParams` 只做资源映射  
+3. ~~`Wc3TerrainTileCatalog` 仅地表~~ ✅；Context / Loader / Builder / Editor 已接 `cliff_catalog`  
 4. 文档：更新 [CLIFF.md](CLIFF.md) §8 路径表  
 
 **验收**：Lost Temple 崖外观与现网一致；`selftest_cliff_*` / `selftest_def_store_cliff` 绿。

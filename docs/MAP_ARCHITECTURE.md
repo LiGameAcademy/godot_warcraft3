@@ -81,7 +81,7 @@ Infrastructure
 | ------ | ------ | ------------ |
 | `wc3_coords.gd` | 坐标变换、`TILE_SIZE`/`WORLD_SCALE`、flags | 缩放、坐标系 |
 | `heightfield_mesh_builder.gd` | `read_heightfield_meta`、`sample_vert` | hf 元数据字段 |
-| `wc3_terrain_tiles.gd` | tileID/cliffID → PNG、模型目录 | 贴图查找、悬崖模型路径 |
+| `wc3_terrain_tile_catalog.gd` | tileID/cliffID → PNG、模型目录 | 贴图查找、悬崖模型路径 |
 | `wc3_terrain_autotile.gd` | bitmask 地面网格、Texture2DArray | **改地面几何/留缝/斜坡甲板** |
 | `wc3_cliff_tiles.gd` | TAG、斜坡、romp、GAP、`resolve_glb` | **悬崖判定/斜坡选型** |
 | `wc3_cliff_builder.gd` | 收集悬崖/斜坡实例 transforms | **改实例放置/叠层** |
@@ -157,7 +157,7 @@ assets/
     │
     ▼ 运行时
 MapLoader._ready()
-  → Wc3TerrainTiles.load_default()
+  → Wc3TerrainTileCatalog.load_default()
   → [可选] Wc3IdCatalog.load_default()
   → [auto_load_on_ready] _load_all()
 ```
@@ -260,7 +260,7 @@ ctx.ensure_cliff_topology()
 | 岸浪落点 | `wc3_shoreline_builder.gd` |
 | 岸浪样子 | `wc3_shore_foam.gd`、`wc3_shore_foam.gdshader` |
 | 岸浪微调滑条 | `map_loader.gd` 的 `foam_*` export |
-| tile / cliff 贴图路径 | `wc3_terrain_tiles.gd` |
+| tile / cliff 贴图路径 | `wc3_terrain_tile_catalog.gd` |
 | 单位/装饰 GLB 路径 | `wc3_id_catalog.gd` |
 | 坐标与世界缩放 | `wc3_coords.gd` |
 | 加载开关与顺序 | `map_loader.gd` |

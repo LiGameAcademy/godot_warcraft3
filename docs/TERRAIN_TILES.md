@@ -24,7 +24,7 @@
 
 ## 资源与材质
 
-- `Wc3TerrainTiles`：tileID → PNG（SLK）  
+- `Wc3TerrainTileCatalog`：tileID → PNG（SLK）  
 - `Wc3GroundTileCatalog.build_texture_array`：运行时组 `Texture2DArray`  
 - `assets/materials/wc3_ground_material.tres` + `assets/shaders/wc3_ground.gdshader`：静态材质；场景 `@export` 注入 Layer，Mesh `duplicate` 后只设运行时参数  
 - 调试栅格：`MapDebugGridLayer`（不在 TerrainLayer 内）
@@ -33,7 +33,7 @@
 
 | 脚本 | 职责 |
 |------|------|
-| `catalog/wc3_terrain_tiles.gd` | Catalog：ID→路径 |
+| `catalog/wc3_terrain_tile_catalog.gd` | Catalog：ID→路径 |
 | `catalog/wc3_ground_tile_catalog.gd` | Catalog：Texture2DArray |
 | `presentation/mesh/heightfield_mesh.gd` | 底层：采样、Packed* 三角/四边形、`active_material` |
 | `presentation/layers/map_terrain_layer.gd` | 地面规则 + 组网；`@export ground_material` |

@@ -20,7 +20,7 @@ func _init() -> void:
 func _test_paint_then_rebuild() -> int:
 	var doc = DocScript.new()
 	doc.create_blank(5)
-	var tiles := Wc3TerrainTiles.new()
+	var tiles := Wc3TerrainTileCatalog.new()
 	tiles.load_default()
 
 	var ix := 2

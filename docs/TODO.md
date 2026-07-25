@@ -20,7 +20,7 @@
 ## Catalog（崖 M0）
 
 - [x] TerrainArt 四表 → `definitions/terrain_art/*Def` + `Wc3DefStore`
-- [x] `Wc3TerrainTiles` 仅地表；`Wc3WaterParams` 读 `WaterTypeDef`
+- [x] `Wc3TerrainTileCatalog` 仅地表；`Wc3WaterParams` 读 `WaterTypeDef`
 - [x] **`Wc3CliffCatalog`** — CliffTypes 表列 + 岩壁 PNG / modelDir 资源映射
 - [x] `MapBuildContext.cliff_catalog` / `MapLoader.get_cliff_catalog()`
 - [x] 更新 [CLIFF.md](CLIFF.md) §8 路径表

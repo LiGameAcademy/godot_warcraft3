@@ -153,7 +153,7 @@ func _default_new_map_options() -> Dictionary:
 			if ts_name == name_key:
 				ts_name = letter
 			break
-	var tiles: Wc3TerrainTiles = map_root.get_tiles()
+	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles()
 	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
 	var ground: Array = []
 	var cliffs: Array = []
@@ -362,7 +362,7 @@ func _on_tool_palette_exiting(win) -> void:
 
 
 func _refresh_all_tool_palettes() -> void:
-	var tiles: Wc3TerrainTiles = map_root.get_tiles()
+	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles()
 	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
 	for win in _tool_palettes:
 		if is_instance_valid(win):

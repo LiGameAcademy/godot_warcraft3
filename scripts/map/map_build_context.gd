@@ -20,7 +20,7 @@ var info: Dictionary = {}								## info.json（可空）
 var map_flags: Dictionary = {}							## info.flags（waterWavesCliff 等）
 var main_tileset: String = "I"							## 主 tileset（I=1，D=2，C=3）
 
-var tiles: Wc3TerrainTiles = null						## 地表瓷砖 Catalog
+var tiles: Wc3TerrainTileCatalog = null						## 地表瓷砖 Catalog
 var cliff_catalog: Wc3CliffCatalog = null				## 直崖 Catalog
 var catalog: Wc3IdCatalog = null						## 瓷砖 ID 目录
 var cache: MapModelCache = null							## 模型缓存
@@ -35,14 +35,14 @@ var _cliff_ready: bool = false							## 悬崖拓扑是否已准备好
 ## [param p_map_dir: String] 地图目录
 ## [param p_hf: Dictionary] 高度场
 ## [param p_info: Dictionary] info.json
-## [param p_tiles: Wc3TerrainTiles] 地表 Catalog
+## [param p_tiles: Wc3TerrainTileCatalog] 地表 Catalog
 ## [param p_catalog: Wc3IdCatalog] 瓷砖 ID 目录
 ## [param p_cache: MapModelCache] 模型缓存
 ## [param p_cliff_catalog: Wc3CliffCatalog] 直崖 Catalog（空则新建并 load）
 ## [return MapBuildContext] 上下文
 static func create(
 	p_map_dir: String, p_hf: Dictionary, p_info: Dictionary,
-	p_tiles: Wc3TerrainTiles, p_catalog: Wc3IdCatalog = null, p_cache: MapModelCache = null,
+	p_tiles: Wc3TerrainTileCatalog, p_catalog: Wc3IdCatalog = null, p_cache: MapModelCache = null,
 	p_cliff_catalog: Wc3CliffCatalog = null
 	) -> MapBuildContext:
 	# 不用 MapBuildContext.new()：headless 下 class_name 缓存可能尚未生成
