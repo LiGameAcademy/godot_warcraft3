@@ -1,8 +1,9 @@
 class_name Wc3CliffLogic
 extends RefCounted
 
-## 悬崖逻辑层：改 layerHeights / cliffTextures / groundTile（策略 B），不建 Mesh、不查 GLB。
-## 绑定 Wc3Heightfield；Catalog 仅用于 groundTile → groundTilesets 下标。
+## 悬崖逻辑层：改 layerHeights / cliffTextures / groundTile（策略 B）；
+## 以及直崖拓扑（is_cliff / TAG 叠段 / 挖洞统计）。不建 Mesh；GLB 路径归 Catalog。
+## 斜坡（Ramp / CliffTrans / romp）重建前 API 为空壳。
 
 const LAYER_MIN := 0
 const LAYER_MAX := 14
@@ -12,6 +13,14 @@ const WATER_SHALLOW_EXTRA := 48.0
 const WATER_DEEP_EXTRA := 128.0
 const FLAG_WATER := Wc3Coords.FLAG_WATER
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
+
+## 斜坡甲板开关（重建前恒 false）。
+const RAMP_SURFACE_DECK_ENABLED := false
+## romp 字节（重建前仅占位）：0 无。
+const ROMP_NONE := 0
+const ROMP_SINGLE := 1
+const ROMP_WIDE := 2
+const ROMP_SIDE := 3
 
 enum Propagate {
 	RAISE_LOWER = 0, ## 升：抬低邻
@@ -267,7 +276,7 @@ func _sync_corner_textures(
 				var ty: int = p.y + oy
 				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
 					continue
-				if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, tx, ty):
+				if not is_cliff_tile(layers, tp_w, tx, ty):
 					continue
 				for cy in range(0, 2):
 					for cx in range(0, 2):
@@ -396,3 +405,185 @@ func _enforce_tile_spans_at(
 				if did:
 					changed_pts.append(c)
 					queue.append(c)
+
+
+## —— 拓扑 / TAG（纯函数；不碰 Catalog）——
+
+static func is_cliff_tile(layer_heights: Array, width: int, ix: int, iy: int) -> bool:
+	if layer_heights.is_empty():
+		return false
+	var i00 := iy * width + ix
+	var i10 := i00 + 1
+	var i01 := i00 + width
+	var i11 := i01 + 1
+	if i11 >= layer_heights.size():
+		return false
+	var a := int(layer_heights[i00])
+	return a != int(layer_heights[i10]) or a != int(layer_heights[i01]) or a != int(layer_heights[i11])
+
+
+static func is_ramp_flag(flags: Array, i: int) -> bool:
+	if i < 0 or i >= flags.size():
+		return false
+	return (int(flags[i]) & FLAG_RAMP) != 0
+
+
+static func is_ramp_tile(flags: Array, width: int, ix: int, iy: int) -> bool:
+	if flags.is_empty():
+		return false
+	var i00 := iy * width + ix
+	var i10 := i00 + 1
+	var i01 := i00 + width
+	var i11 := i01 + 1
+	if i11 >= flags.size():
+		return false
+	return (
+		is_ramp_flag(flags, i00)
+		or is_ramp_flag(flags, i10)
+		or is_ramp_flag(flags, i01)
+		or is_ramp_flag(flags, i11)
+	)
+
+
+## 斜坡入口判定（重建前恒 false）。
+static func is_ramp_entrance(
+	_layer_heights: Array, _flags: Array, _width: int, _ix: int, _iy: int
+) -> bool:
+	return false
+
+
+## 斜坡选型入口（重建前返回空 placements + 全 0 romp）。
+static func collect_ramp_placements(
+	hf: Dictionary, meta: Dictionary = {}, _cliff_catalog: Wc3CliffCatalog = null
+) -> Dictionary:
+	if meta.is_empty():
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
+	var tp_w: int = int(meta.get("width", 0))
+	var tp_h: int = int(meta.get("height", 0))
+	var romp := PackedByteArray()
+	romp.resize(maxi(tp_w * tp_h, 0))
+	romp.fill(0)
+	return {"placements": [], "romp": romp}
+
+
+static func romp_kind_at(_romp: PackedByteArray, _tp_w: int, _ix: int, _iy: int) -> int:
+	return ROMP_NONE
+
+
+## 仅直崖挖洞；斜坡相关逻辑已移除。
+static func should_leave_gap(
+	layer_heights: Array,
+	_flags: Array,
+	tp_w: int,
+	_tp_h: int,
+	ix: int,
+	iy: int,
+	_romp: PackedByteArray = PackedByteArray()
+) -> bool:
+	return is_cliff_tile(layer_heights, tp_w, ix, iy)
+
+
+static func is_ramp_foot_cell(_romp: PackedByteArray, _tp_w: int, _ix: int, _iy: int) -> bool:
+	return false
+
+
+static func sample_ramp_plane_height(
+	_heights: Array, _placements: Array, _tp_w: int, _tp_h: int, _tx: float, _ty: float
+) -> float:
+	return NAN
+
+
+static func cliff_tag_at(layer_heights: Array, width: int, ix: int, iy: int) -> Dictionary:
+	var slices: Array = cliff_slices_at(layer_heights, width, ix, iy)
+	if slices.is_empty():
+		return {}
+	return slices[0]
+
+
+## 直崖 TAG 选型（BL,TL,TR,BR → 相对 base 的 A/B/C）。
+## 对齐 HiveWE / WE：跨度 ≤2 时只放一条完整变体；跨度 >2 时分段剥满 C。
+static func cliff_slices_at(layer_heights: Array, width: int, ix: int, iy: int) -> Array:
+	if not is_cliff_tile(layer_heights, width, ix, iy):
+		return []
+	var i00 := iy * width + ix
+	var i10 := i00 + 1
+	var i01 := i00 + width
+	var i11 := i01 + 1
+	var bl := int(layer_heights[i00])
+	var br := int(layer_heights[i10])
+	var tl := int(layer_heights[i01])
+	var tr := int(layer_heights[i11])
+	var lo := mini(mini(bl, br), mini(tl, tr))
+	var hi := maxi(maxi(bl, br), maxi(tl, tr))
+	var out: Array = []
+	var base := lo
+	while base < hi:
+		var raw_bl := bl - base
+		var raw_tl := tl - base
+		var raw_tr := tr - base
+		var raw_br := br - base
+		var raw_hi := maxi(maxi(raw_bl, raw_br), maxi(raw_tl, raw_tr))
+		if raw_hi <= 2:
+			var tag_exact := _cliff_tag_from_rels(raw_bl, raw_tl, raw_tr, raw_br)
+			if tag_exact != "AAAA":
+				out.append({"tag": tag_exact, "base_layer": base})
+			break
+		var rbl := clampi(raw_bl, 0, 2)
+		var rtl := clampi(raw_tl, 0, 2)
+		var rtr := clampi(raw_tr, 0, 2)
+		var rbr := clampi(raw_br, 0, 2)
+		var tag := _cliff_tag_from_rels(rbl, rtl, rtr, rbr)
+		if tag != "AAAA":
+			out.append({"tag": tag, "base_layer": base})
+		base += 2
+	return out
+
+
+static func _cliff_tag_from_rels(rbl: int, rtl: int, rtr: int, rbr: int) -> String:
+	return (
+		String.chr(65 + clampi(rbl, 0, 2))
+		+ String.chr(65 + clampi(rtl, 0, 2))
+		+ String.chr(65 + clampi(rtr, 0, 2))
+		+ String.chr(65 + clampi(rbr, 0, 2))
+	)
+
+
+## 斜坡入口抬高（重建前 no-op）。
+static func apply_ramp_entrance_heights(
+	heights: Array, _layers: Array, _flags: Array, _tp_w: int, _tp_h: int
+) -> Array:
+	return heights
+
+
+## gap / cliff / ramp-flag 统计（ramp_models 恒 0）。
+static func count_gaps(
+	hf: Dictionary, meta: Dictionary = {}, ramp_data: Dictionary = {}
+) -> Dictionary:
+	if meta.is_empty():
+		meta = Wc3Heightfield.build_meta_from_dict(hf)
+	var width: int = meta["width"]
+	var height: int = meta["height"]
+	var layers: Array = meta["layer_heights"]
+	var flags: Array = meta["flags"]
+	if ramp_data.is_empty():
+		ramp_data = collect_ramp_placements(hf, meta)
+	var romp: PackedByteArray = ramp_data["romp"]
+	var cliffs := 0
+	var ramps := 0
+	var gaps := 0
+	var tiles := (width - 1) * (height - 1)
+	for iy in range(height - 1):
+		for ix in range(width - 1):
+			if should_leave_gap(layers, flags, width, height, ix, iy, romp):
+				gaps += 1
+			if is_cliff_tile(layers, width, ix, iy):
+				cliffs += 1
+			if is_ramp_tile(flags, width, ix, iy):
+				ramps += 1
+	return {
+		"gaps": gaps,
+		"cliffs": cliffs,
+		"ramps": ramps,
+		"tiles": tiles,
+		"ramp_models": 0,
+	}

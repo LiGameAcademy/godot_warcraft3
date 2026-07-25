@@ -25,7 +25,7 @@ static func collect_instances(
 		return {}
 
 	if ramp_data.is_empty():
-		ramp_data = Wc3CliffTiles.collect_ramp_placements(hf, meta, cliff_catalog)
+		ramp_data = Wc3CliffLogic.collect_ramp_placements(hf, meta, cliff_catalog)
 	var romp: PackedByteArray = ramp_data["romp"]
 
 	var buckets: Dictionary = {}
@@ -36,10 +36,10 @@ static func collect_instances(
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
 			var i00 := iy * tp_w + ix
-			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
 
-			var slices: Array = Wc3CliffTiles.cliff_slices_at(layers, tp_w, ix, iy)
+			var slices: Array = Wc3CliffLogic.cliff_slices_at(layers, tp_w, ix, iy)
 			if slices.is_empty():
 				continue
 			var tex_idx := _cliff_tex_index(cliff_tex, cliff_tilesets, tp_w, tp_h, ix, iy)
@@ -53,10 +53,10 @@ static func collect_instances(
 				if tag.is_empty() or tag == "AAAA":
 					continue
 				var base_layer: int = int(slice.get("base_layer", 2))
-				var var_clamped := Wc3CliffTiles.pick_cliff_variation(
+				var var_clamped := cliff_catalog.pick_cliff_variation(
 					model_dir, tag, variation, ix, iy
 				)
-				var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, var_clamped)
+				var glb := cliff_catalog.resolve_glb(model_dir, tag, var_clamped)
 				if glb.is_empty():
 					if not missing_logged.has("C:" + tag):
 						missing_logged["C:" + tag] = true

@@ -1,5 +1,6 @@
 extends RefCounted
-## 可编辑地图文档：权威数据为 Wc3Heightfield；hf 为共享数组的兼容视图。
+
+## 可编辑地图文档：权威数据为 Wc3Heightfield。
 ## （不用 class_name；编辑器通过 preload 引用）
 
 signal changed
@@ -23,18 +24,6 @@ var heightfield: Wc3Heightfield = null
 var terrain: Wc3TerrainLogic = Wc3TerrainLogic.new()
 ## 悬崖逻辑（蛋糕 / 策略 B / 层高）
 var cliff: Wc3CliffLogic = Wc3CliffLogic.new()
-## 兼容旧调用：get → as_dict_view（共享数组）；set → from_dict
-var hf: Dictionary:
-	get:
-		if heightfield == null:
-			return {}
-		return heightfield.as_dict_view()
-	set(value):
-		if value == null or value.is_empty():
-			heightfield = null
-		else:
-			heightfield = Wc3Heightfield.from_dict(value, false)
-		_rebind_logic()
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
@@ -43,6 +32,13 @@ var brush_cliff_type: int = 0
 var _dirty: bool = false
 ## 最近一次斜坡笔刷结果（供状态栏 / 自测）
 var last_ramp_message: String = ""
+
+
+## Present / rebuild 过渡：共享数组的 JSON 形视图。Layer 全面吃 Heightfield 后删除。
+func as_build_dict() -> Dictionary:
+	if heightfield == null:
+		return {}
+	return heightfield.as_dict_view()
 
 
 func _rebind_logic() -> void:
@@ -151,7 +147,8 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return ERR_PARSE_ERROR
-	hf = parsed
+	heightfield = Wc3Heightfield.from_dict(parsed as Dictionary, false)
+	_rebind_logic()
 	info = {}
 	var info_path: String = path.path_join("info.json")
 	if FileAccess.file_exists(info_path):
@@ -163,7 +160,6 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 	map_dir = path
 	source_name = path.get_file()
 	_dirty = false
-	cliff.clear_ground_tile_cache()
 	ensure_brush_index_valid()
 	dirty_changed.emit(false)
 	changed.emit()
@@ -206,7 +202,6 @@ func create_from_options(options: Dictionary) -> void:
 		ground = DEFAULT_GROUND.duplicate()
 	if cliffs.is_empty():
 		cliffs = DEFAULT_CLIFF.duplicate()
-	cliff.clear_ground_tile_cache()
 	var tile_index: int = clampi(int(options.get("default_tile_index", 0)), 0, ground.size() - 1)
 	var cliff_level: int = clampi(int(options.get("cliff_level", FLAT_LAYER)), 0, 14)
 	var water_mode: int = clampi(int(options.get("water_mode", 0)), 0, 2)
@@ -250,7 +245,7 @@ func create_from_options(options: Dictionary) -> void:
 		layers[i] = cliff_level
 		flags[i] = FLAG_WATER if water_mode > 0 else 0
 
-	hf = {
+	heightfield = Wc3Heightfield.from_dict({
 		"tilepointWidth": tp_w,
 		"tilepointHeight": tp_h,
 		"mapWidth": map_w,
@@ -269,7 +264,8 @@ func create_from_options(options: Dictionary) -> void:
 		"layerHeights": layers,
 		"waterHeights": water_h,
 		"flagsPacked": flags,
-	}
+	}, false)
+	_rebind_logic()
 	info = {"name": "Untitled", "flags": {}}
 	map_dir = ""
 	source_name = "untitled"
@@ -345,14 +341,14 @@ func try_paint_ramp_at(ix: int, iy: int) -> Dictionary:
 		return {"ok": false, "changed": false, "message": msg}
 	if is_empty():
 		return fail.call("地图为空")
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
+	var tp_w: int = heightfield.width
+	var tp_h: int = heightfield.height
 	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
 		return fail.call("顶点越界")
-	var layers: Array = hf.get("layerHeights", []) as Array
-	var heights: Array = hf.get("heights", []) as Array
-	var water_h: Array = hf.get("waterHeights", []) as Array
-	var flags: Array = hf.get("flagsPacked", []) as Array
+	var layers: Array = heightfield.layer_heights
+	var heights: Array = heightfield.heights
+	var water_h: Array = heightfield.water_heights
+	var flags: Array = heightfield.flags_packed
 	if layers.is_empty() or flags.is_empty():
 		return fail.call("缺少层高/旗数据")
 
@@ -391,12 +387,12 @@ func try_paint_ramp_at(ix: int, iy: int) -> Dictionary:
 func peek_ramp_strip_at(ix: int, iy: int) -> Dictionary:
 	if is_empty():
 		return {}
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
+	var tp_w: int = heightfield.width
+	var tp_h: int = heightfield.height
 	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
 		return {}
-	var layers: Array = hf.get("layerHeights", []) as Array
-	var flags: Array = hf.get("flagsPacked", []) as Array
+	var layers: Array = heightfield.layer_heights
+	var flags: Array = heightfield.flags_packed
 	var spec: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h).get("spec", {})
 	if spec.is_empty():
 		return {}
@@ -426,7 +422,7 @@ func _resolve_ramp_strip_flags(
 func _find_best_ramp_strip(
 	ix: int, iy: int, layers: Array, tp_w: int, tp_h: int
 ) -> Dictionary:
-	var flags: Array = hf.get("flagsPacked", []) as Array
+	var flags: Array = heightfield.flags_packed if heightfield != null else []
 	var best: Dictionary = {}
 	# (already_complete, not_on_strip, flag_focus, neighbor_gap, face_pen)
 	var best_score := Vector4(999999.0, 999999.0, 999999.0, 999999.0)
@@ -1009,9 +1005,9 @@ func world_godot_to_tilepoint(godot_pos: Vector3) -> Vector2i:
 func sample_height_at_xy(fx: float, fy: float) -> float:
 	if is_empty():
 		return 0.0
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
-	var heights: Array = hf["heights"]
+	var tp_w: int = heightfield.width
+	var tp_h: int = heightfield.height
+	var heights: Array = heightfield.heights
 	var x0: int = int(floor(fx))
 	var y0: int = int(floor(fy))
 	var x1: int = x0 + 1

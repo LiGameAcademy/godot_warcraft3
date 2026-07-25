@@ -1,15 +1,24 @@
 class_name Wc3CliffCatalog
 extends RefCounted
 
-## 直崖 Catalog：CliffTypeDef（表列）+ 岩壁 PNG / 模型目录解析（资源映射）。
+## 直崖 Catalog：CliffTypeDef（表列）+ 岩壁 PNG / Cliffs GLB 变体解析（资源映射）。
 ## 与 Wc3TerrainTileCatalog（地表）分离；斜坡目录见 ramp_model_dir + Wc3CliffTransCatalog。
+## 变体上限不写死表：按磁盘探测 Cliffs{TAG}{n}.glb，结果缓存。
+
+const VAR_PROBE_MAX := 8 ## WE 直崖变体通常 ≤3；探测上限留余量
 
 ## 仅缓存解析后的岩壁贴图路径
 var _cliff_to_png: Dictionary[String, String] = {}
+## "modelDir/TAG" → 该 TAG 最大变体下标（无文件则为 -1）
+var _var_max_cache: Dictionary[String, int] = {}
+## modelDir → PackedStringArray(TAG…)
+var _tags_cache: Dictionary[String, PackedStringArray] = {}
 
 
 func load_default() -> void:
 	_cliff_to_png.clear()
+	_var_max_cache.clear()
+	_tags_cache.clear()
 	_rebuild_cliff_png_cache()
 
 
@@ -55,6 +64,108 @@ func png_for_cliff_index(cliff_tilesets: Array, index: int) -> String:
 ## 表行：DefStore → CliffTypeDef。
 func get_def(cliff_id: String) -> CliffTypeDef:
 	return _cliff_def(cliff_id)
+
+
+## —— 资源映射：Cliffs / CityCliffs GLB ——
+
+static func glb_path(model_dir: String, tag: String, variation: int) -> String:
+	return RuntimeAssets.converted_path(
+		"Doodads/Terrain/%s/%s%s%d.glb" % [model_dir, model_dir, tag, variation]
+	)
+
+
+## 该 TAG 磁盘上最大变体下标；无任何文件返回 -1。
+func max_variation(model_dir: String, tag: String) -> int:
+	if model_dir == "CliffTrans" or model_dir == "CityCliffTrans":
+		return 0 if RuntimeAssets.file_exists(glb_path(model_dir, tag, 0)) else -1
+	var key := "%s/%s" % [model_dir, tag]
+	if _var_max_cache.has(key):
+		return int(_var_max_cache[key])
+	var max_v := -1
+	for v in range(VAR_PROBE_MAX):
+		if RuntimeAssets.file_exists(glb_path(model_dir, tag, v)):
+			max_v = v
+		elif max_v >= 0:
+			break
+	_var_max_cache[key] = max_v
+	return max_v
+
+
+func clamp_variation(model_dir: String, tag: String, variation: int) -> int:
+	if model_dir == "CliffTrans" or model_dir == "CityCliffTrans":
+		return 0
+	var max_v: int = max_variation(model_dir, tag)
+	if max_v < 0:
+		return 0
+	return mini(maxi(variation, 0), max_v)
+
+
+## 直崖变体：优先存盘值；存盘为 0 时用格点哈希打散。
+func pick_cliff_variation(
+	model_dir: String, tag: String, stored: int, ix: int, iy: int
+) -> int:
+	var max_v: int = max_variation(model_dir, tag)
+	if max_v <= 0:
+		return 0
+	if stored > 0:
+		return mini(stored, max_v)
+	var h: int = absi((ix * 73856093) ^ (iy * 19349663) ^ tag.hash())
+	return h % (max_v + 1)
+
+
+func resolve_glb(model_dir: String, tag: String, variation: int) -> String:
+	if tag.is_empty():
+		return ""
+	variation = clamp_variation(model_dir, tag, variation)
+	var path := glb_path(model_dir, tag, variation)
+	if RuntimeAssets.file_exists(path):
+		return path
+	path = glb_path(model_dir, tag, 0)
+	if RuntimeAssets.file_exists(path):
+		return path
+	if model_dir == "CityCliffTrans":
+		return resolve_glb("CliffTrans", tag, variation)
+	return ""
+
+
+## 扫描 converted 目录得到该 modelDir 下全部 TAG（供自测 / 调试）。
+func list_model_tags(model_dir: String) -> PackedStringArray:
+	if _tags_cache.has(model_dir):
+		return _tags_cache[model_dir]
+	var found: Dictionary = {}
+	var prefix := model_dir
+	var dir_rel := "Doodads/Terrain/%s" % model_dir
+	var abs_dir := RuntimeAssets.project_abs(RuntimeAssets.converted_path(dir_rel))
+	var da := DirAccess.open(abs_dir)
+	if da != null:
+		da.list_dir_begin()
+		var fname := da.get_next()
+		while fname != "":
+			if not da.current_is_dir() and fname.begins_with(prefix) and fname.ends_with(".glb"):
+				var stem := fname.trim_suffix(".glb").substr(prefix.length())
+				# stem = TAG + variationDigit(s)；TAG 恒 4 字符 A–C
+				if stem.length() >= 5:
+					var tag := stem.substr(0, 4)
+					if _is_cliff_tag(tag):
+						found[tag] = true
+			fname = da.get_next()
+		da.list_dir_end()
+	var out := PackedStringArray()
+	for t in found.keys():
+		out.append(str(t))
+	out.sort()
+	_tags_cache[model_dir] = out
+	return out
+
+
+static func _is_cliff_tag(tag: String) -> bool:
+	if tag.length() != 4:
+		return false
+	for i in range(4):
+		var c := tag.unicode_at(i)
+		if c < 65 or c > 67: # A–C
+			return false
+	return true
 
 
 ## —— 资源映射：Def 列 → converted PNG ——

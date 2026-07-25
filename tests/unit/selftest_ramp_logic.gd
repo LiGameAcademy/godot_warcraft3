@@ -45,7 +45,7 @@ func _make_doc(tp_w: int, tp_h: int, layers: Array):
 		gvar[i] = 0
 		ctex[i] = 0
 		cvar[i] = 0
-	doc.hf = {
+	doc.heightfield = Wc3Heightfield.from_dict({
 		"tilepointWidth": tp_w,
 		"tilepointHeight": tp_h,
 		"layerHeights": layers,
@@ -58,13 +58,15 @@ func _make_doc(tp_w: int, tp_h: int, layers: Array):
 		"cliffVariations": cvar,
 		"groundTilesets": ["Ldrt"],
 		"cliffTilesets": ["CLdi"],
-	}
+	}, false)
+	doc.cliff.bind(doc.heightfield)
+	doc.terrain.bind(doc.heightfield)
 	return doc
 
 
 func _flag_col(doc, col: int, y0: int) -> String:
-	var tp_w: int = int(doc.hf["tilepointWidth"])
-	var flags: Array = doc.hf["flagsPacked"]
+	var tp_w: int = doc.heightfield.width
+	var flags: Array = doc.heightfield.flags_packed
 	var s := ""
 	for yy in range(y0, y0 + 3):
 		var i := yy * tp_w + col
@@ -73,8 +75,8 @@ func _flag_col(doc, col: int, y0: int) -> String:
 
 
 func _flag_row(doc, x0: int, row: int) -> String:
-	var tp_w: int = int(doc.hf["tilepointWidth"])
-	var flags: Array = doc.hf["flagsPacked"]
+	var tp_w: int = doc.heightfield.width
+	var flags: Array = doc.heightfield.flags_packed
 	var s := ""
 	for xx in range(x0, x0 + 3):
 		var i := row * tp_w + xx
@@ -178,7 +180,7 @@ func _test_u_gap_not_auto_fill() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if ix <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var flags: Array = doc.hf["flagsPacked"]
+	var flags: Array = doc.as_build_dict()["flagsPacked"]
 	for yy in range(1, 4):
 		flags[yy * tp_w + 1] = Wc3Coords.FLAG_RAMP
 		flags[yy * tp_w + 3] = Wc3Coords.FLAG_RAMP

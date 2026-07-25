@@ -32,11 +32,11 @@ func _run() -> void:
 		push_error("bad options size %s" % doc.map_size())
 		quit(1)
 		return
-	if int(doc.hf["groundTextures"][0]) != 1:
+	if int(doc.as_build_dict()["groundTextures"][0]) != 1:
 		push_error("default tile not applied")
 		quit(1)
 		return
-	var gv: Array = doc.hf["groundVariations"]
+	var gv: Array = doc.as_build_dict()["groundVariations"]
 	var seen_var := {}
 	for v in gv:
 		seen_var[int(v)] = true
@@ -56,7 +56,7 @@ func _run() -> void:
 		push_error("paint small failed")
 		quit(1)
 		return
-	var ground: Array = doc.hf["groundTextures"]
+	var ground: Array = doc.as_build_dict()["groundTextures"]
 	var tp_w := 5
 	var corners := [1 * tp_w + 1, 1 * tp_w + 2, 2 * tp_w + 1, 2 * tp_w + 2]
 	for i in corners:

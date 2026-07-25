@@ -137,7 +137,7 @@ func _build_ground_mesh(hf: Wc3Heightfield, extended_flags: PackedByteArray) -> 
 		for ix in range(width - 1):
 			var i00 := iy * width + ix
 			# 直崖挖洞 / 斜坡留缝：地面阶段暂关，整图铺高地面
-			# if Wc3CliffTiles.should_leave_gap(...):
+			# if Wc3CliffLogic.should_leave_gap(...):
 			# 	gap_count += 1
 			# 	continue
 

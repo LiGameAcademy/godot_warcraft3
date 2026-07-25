@@ -15,13 +15,13 @@ func _run() -> void:
 		return
 	var hf: Variant = JSON.parse_string(f.get_as_text())
 	var meta: Dictionary = Wc3Heightfield.build_meta_from_dict(hf as Dictionary)
-	var ramp_data: Dictionary = Wc3CliffTiles.collect_ramp_placements(hf as Dictionary, meta)
+	var ramp_data: Dictionary = Wc3CliffLogic.collect_ramp_placements(hf as Dictionary, meta)
 	var placements: Array = ramp_data.get("placements", []) as Array
 	if placements.is_empty():
 		push_error("no placements")
 		quit(1)
 		return
-	var heights: Array = Wc3CliffTiles.apply_ramp_entrance_heights(
+	var heights: Array = Wc3CliffLogic.apply_ramp_entrance_heights(
 		meta["heights"], meta["layer_heights"], meta["flags"],
 		int(meta["width"]), int(meta["height"])
 	)
@@ -41,7 +41,7 @@ func _run() -> void:
 		hi = (
 			float(heights[(iy + 2) * tp_w + ix]) + float(heights[(iy + 2) * tp_w + ix + 1])
 		) * 0.5
-		mid = Wc3CliffTiles.sample_ramp_plane_height(
+		mid = Wc3CliffLogic.sample_ramp_plane_height(
 			heights, placements, tp_w, tp_h, float(ix) + 0.5, float(iy) + 1.0
 		)
 	else:
@@ -51,7 +51,7 @@ func _run() -> void:
 		hi = (
 			float(heights[iy * tp_w + ix + 2]) + float(heights[(iy + 1) * tp_w + ix + 2])
 		) * 0.5
-		mid = Wc3CliffTiles.sample_ramp_plane_height(
+		mid = Wc3CliffLogic.sample_ramp_plane_height(
 			heights, placements, tp_w, tp_h, float(ix) + 1.0, float(iy) + 0.5
 		)
 	var expect := (lo + hi) * 0.5

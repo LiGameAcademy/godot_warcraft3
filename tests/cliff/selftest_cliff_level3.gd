@@ -29,9 +29,9 @@ func _run() -> void:
 	for _step in range(3):
 		doc.paint_cliff_corner(cx, cy, "3", 0)
 
-	var layers: Array = doc.hf["layerHeights"]
-	var heights: Array = doc.hf["heights"]
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var layers: Array = doc.as_build_dict()["layerHeights"]
+	var heights: Array = doc.as_build_dict()["heights"]
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	print("=== layers around (%d,%d) after +3 ===" % [cx, cy])
 	for y in range(cy - 2, cy + 3):
 		var row := ""
@@ -67,9 +67,9 @@ func _run() -> void:
 	var slice_count := 0
 	for iy in range(cy - 3, cy + 3):
 		for ix in range(cx - 3, cx + 3):
-			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
-			var slices: Array = Wc3CliffTiles.cliff_slices_at(layers, tp_w, ix, iy)
+			var slices: Array = Wc3CliffLogic.cliff_slices_at(layers, tp_w, ix, iy)
 			var i00 := iy * tp_w + ix
 			var corners := "%d/%d/%d/%d" % [
 				int(layers[i00]),
@@ -84,13 +84,13 @@ func _run() -> void:
 				tag_strs.append("%s@%d" % [tag, base])
 				slice_count += 1
 				var model_dir := cliffs.cliff_model_dir("CLdi")
-				var glb := Wc3CliffTiles.resolve_glb(model_dir, tag, 0)
+				var glb := cliffs.resolve_glb(model_dir, tag, 0)
 				if glb.is_empty():
 					missing_tags[tag] = true
 					push_error("MISSING tile(%d,%d) corners=%s tag=%s" % [ix, iy, corners, tag])
 			print("tile(%d,%d) %s -> %s" % [ix, iy, corners, " ".join(tag_strs)])
 
-	var collected := Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
+	var collected := Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
 	print(
 		"builder placed=%d missing=%d groups=%d slices=%d missing_tags=%s"
 		% [
@@ -119,14 +119,14 @@ func _run() -> void:
 	for _step2 in range(3):
 		for v in verts:
 			doc.paint_cliff_corner(int(v.x), int(v.y), "3", 0)
-	layers = doc.hf["layerHeights"]
+	layers = doc.as_build_dict()["layerHeights"]
 	print("=== cross brush layers ===")
 	for y in range(cy - 3, cy + 4):
 		var row2 := ""
 		for x in range(cx - 3, cx + 4):
 			row2 += "%d " % int(layers[y * tp_w + x])
 		print(row2)
-	collected = Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
+	collected = Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
 	print(
 		"cross builder placed=%d missing=%d"
 		% [int(collected.get("placed_cliffs", 0)), int(collected.get("missing", 0))]

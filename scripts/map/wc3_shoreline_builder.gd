@@ -374,8 +374,8 @@ static func _max_cliff_levels(
 		best = maxi(best, delta)
 		var nx := clampi(ix + d.x, 0, tp_w - 2)
 		var ny := clampi(iy + d.y, 0, tp_h - 2)
-		if Wc3CliffTiles.is_cliff_tile(layers, tp_w, nx, ny):
-			var info := Wc3CliffTiles.cliff_tag_at(layers, tp_w, nx, ny)
+		if Wc3CliffLogic.is_cliff_tile(layers, tp_w, nx, ny):
+			var info := Wc3CliffLogic.cliff_tag_at(layers, tp_w, nx, ny)
 			var tag := str(info.get("tag", "AAAA"))
 			var tag_lv := 0
 			for ci in range(mini(4, tag.length())):

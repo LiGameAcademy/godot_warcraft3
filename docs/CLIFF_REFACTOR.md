@@ -54,8 +54,9 @@ scripts/map/
 │   ├── wc3_cliff_catalog.gd      # 【新建】CliffTypes → 贴图 / groundTile / Cliffs 目录
 │   └── wc3_cliff_trans_catalog.gd
 ├── logic/cliff/
-│   ├── wc3_cliff_logic.gd        # 【新建】笔刷 API：升降、传播、策略 B、脏区
-│   └── wc3_cliff_tiles.gd        # 自 scripts/map/ 迁入；仅选型 / is_cliff / 挖洞集合
+│   └── wc3_cliff_logic.gd        # 笔刷 + 拓扑 TAG/叠段/挖洞（原 cliff_tiles 已并入）
+├── catalog/
+│   └── wc3_cliff_catalog.gd      # CliffTypes + PNG + Cliffs GLB 变体探测（无穷举表）
 ├── presentation/layers/
 │   └── map_cliff_layer.gd        # 自根目录迁入；只消费 placements + Catalog.resolve
 └── （builder）presentation/cliff/wc3_cliff_builder.gd  # 组 MultiMesh，不查拓扑
@@ -83,21 +84,17 @@ editor/scripts/
 | `load_default()` | 扫 `CliffTypes.json` + 解包贴图命名回退（现 `_resolve_cliff_png`） |
 | `png_for_cliff_id` / `ground_tile_for_cliff_id` | 贴图与台面 groundTile |
 | `cliff_model_dir` | `Cliffs` 家族目录 |
-| `resolve_glb(tag, variation)` | → `…/Cliffs{TAG}{var}.glb`（或经 cache） |
+| `resolve_glb(tag, variation)` / `pick_cliff_variation` | 磁盘探测变体上限并缓存；拼 `…/Cliffs{TAG}{var}.glb` |
 
-从 `Wc3TerrainTileCatalog` **迁出** cliff 侧字段；`MapBuildContext` 增加 `cliff_catalog`（或过渡期 `tiles` 委托）。
+从 `Wc3TerrainTileCatalog` **迁出** cliff 侧字段；`MapBuildContext` 增加 `cliff_catalog`。
 
 ### 4.3 Logic — `Wc3CliffLogic`
 
 | API（示意） | 含义 |
 |-------------|------|
-| `paint_corner(ix,iy,tool,ctype,anchor)` | 现 Document 蛋糕 + 策略 B |
-| `placements_for_map(hf)` / `gaps` | 现 `Wc3CliffTiles` + builder 的「算什么」 |
-| `dirty_rect` | 与 `Wc3TerrainLogic` 同形，供局部重建 |
-
-`Wc3CliffTiles`：**只留纯函数**（`is_cliff_tile`、`cliff_slices_at`、TAG 表）；路径查找进 Catalog。
-
-Document：薄封装 → `cliff_logic.paint_*`，自身不堆传播实现。
+| `paint_corner(ix,iy,tool,ctype,anchor)` | 蛋糕 + 策略 B |
+| `is_cliff_tile` / `cliff_slices_at` / `count_gaps` | 拓扑与挖洞（原 `Wc3CliffTiles`） |
+| `dirty_rect` | 与 `Wc3TerrainLogic` 同形 |
 
 ### 4.4 Present
 
@@ -128,7 +125,8 @@ Document：薄封装 → `cliff_logic.paint_*`，自身不堆传播实现。
 
 1. ~~`logic/cliff/wc3_cliff_logic.gd` 承接 `paint_cliff_corner` / 传播 / 策略 B~~ ✅  
 2. ~~Document 委托；笔刷仍调 Document~~ ✅（Ramp 仍在 Document）  
-3. ~~`wc3_cliff_tiles.gd` → `logic/cliff/`~~ ✅  
+3. ~~`wc3_cliff_tiles.gd` → 并入 Logic + Catalog 后删除~~ ✅（无独立脚本；变体表改为磁盘探测）  
+4. ~~Document 去掉 `hf` 兼容属性~~ ✅（仅留 `as_build_dict()` 给 Present 过渡）  
 
 **验收**：刷崖层高/异种同化与现网一致；撤销笔划仍可用。自测绿；Lost Temple 手测待补。
 

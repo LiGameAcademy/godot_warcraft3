@@ -63,7 +63,7 @@ func _layers_2x2(bl: int, br: int, tl: int, tr: int) -> Array:
 func _assert_slices(
 	name: String, layers: Array, width: int, ix: int, iy: int, expect: Array
 ) -> int:
-	var got: Array = Wc3CliffTiles.cliff_slices_at(layers, width, ix, iy)
+	var got: Array = Wc3CliffLogic.cliff_slices_at(layers, width, ix, iy)
 	var got_s: PackedStringArray = PackedStringArray()
 	for s in got:
 		got_s.append("%s@%d" % [str(s.get("tag", "")), int(s.get("base_layer", 0))])
@@ -101,8 +101,8 @@ func _new_doc() -> Object:
 
 
 func _print_layers(doc, cx: int, cy: int, rad: int = 3) -> void:
-	var layers: Array = doc.hf["layerHeights"]
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var layers: Array = doc.as_build_dict()["layerHeights"]
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	print("--- layers around (%d,%d) ---" % [cx, cy])
 	for y in range(cy - rad, cy + rad + 1):
 		var row := ""
@@ -114,14 +114,14 @@ func _print_layers(doc, cx: int, cy: int, rad: int = 3) -> void:
 func _scan_missing_and_dup(
 	doc, cliffs: Wc3CliffCatalog, cx: int, cy: int, rad: int = 4
 ) -> Dictionary:
-	var layers: Array = doc.hf["layerHeights"]
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var layers: Array = doc.as_build_dict()["layerHeights"]
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	var missing: Dictionary = {}
 	var multi_on_span2 := 0
 	var slice_n := 0
 	for iy in range(cy - rad, cy + rad):
 		for ix in range(cx - rad, cx + rad):
-			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
 			var i00 := iy * tp_w + ix
 			var bl := int(layers[i00])
@@ -130,7 +130,7 @@ func _scan_missing_and_dup(
 			var tr := int(layers[i00 + tp_w + 1])
 			var lo := mini(mini(bl, br), mini(tl, tr))
 			var hi := maxi(maxi(bl, br), maxi(tl, tr))
-			var slices: Array = Wc3CliffTiles.cliff_slices_at(layers, tp_w, ix, iy)
+			var slices: Array = Wc3CliffLogic.cliff_slices_at(layers, tp_w, ix, iy)
 			slice_n += slices.size()
 			if hi - lo <= 2 and slices.size() > 1:
 				multi_on_span2 += 1
@@ -140,10 +140,10 @@ func _scan_missing_and_dup(
 				)
 			for s in slices:
 				var tag: String = str(s.get("tag", ""))
-				var glb := Wc3CliffTiles.resolve_glb(cliffs.cliff_model_dir("CLdi"), tag, 0)
+				var glb := cliffs.resolve_glb(cliffs.cliff_model_dir("CLdi"), tag, 0)
 				if glb.is_empty():
 					missing[tag] = true
-	var collected := Wc3CliffBuilder.collect_instances(doc.hf, cliffs)
+	var collected := Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
 	return {
 		"missing_tags": missing,
 		"multi_on_span2": multi_on_span2,
@@ -156,15 +156,21 @@ func _scan_missing_and_dup(
 ## ---------- cases ----------
 
 func _case_tag_table_and_glbs(model_dir: String) -> int:
-	print("=== case: CLIFF_VAR_MAX tags resolve to GLB ===")
+	print("=== case: disk tags resolve to GLB ===")
 	var fail := 0
-	for tag in Wc3CliffTiles.CLIFF_VAR_MAX.keys():
-		var glb := Wc3CliffTiles.resolve_glb(model_dir, str(tag), 0)
+	var cat := Wc3CliffCatalog.new()
+	cat.load_default()
+	var tags: PackedStringArray = cat.list_model_tags(model_dir)
+	if tags.is_empty():
+		push_error("no cliff tags found under %s" % model_dir)
+		return 1
+	for tag in tags:
+		var glb := cat.resolve_glb(model_dir, str(tag), 0)
 		if glb.is_empty():
 			push_error("missing GLB for tag %s" % tag)
 			fail += 1
 	if fail == 0:
-		print("OK all %d tags have GLB" % Wc3CliffTiles.CLIFF_VAR_MAX.size())
+		print("OK all %d tags have GLB" % tags.size())
 	return fail
 
 
@@ -293,16 +299,16 @@ func _case_paint_level2_edge_then_corner(cliffs: Wc3CliffCatalog) -> int:
 	# 再只抬其中一个角到更高 → 「底两顶一」
 	doc.paint_cliff_corner(cx + 1, cy, "3", 0)
 	_print_layers(doc, cx, cy)
-	var layers: Array = doc.hf["layerHeights"]
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var layers: Array = doc.as_build_dict()["layerHeights"]
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	# 找含 AABC 族的格，断言单 slice
 	var found_asym := false
 	var fail := 0
 	for iy in range(cy - 2, cy + 2):
 		for ix in range(cx - 2, cx + 2):
-			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
-			var slices: Array = Wc3CliffTiles.cliff_slices_at(layers, tp_w, ix, iy)
+			var slices: Array = Wc3CliffLogic.cliff_slices_at(layers, tp_w, ix, iy)
 			for s in slices:
 				var tag: String = str(s.get("tag", ""))
 				# 三高度字母（含 A/B/C 各至少…简化：tag 同时含 B 与 C）
@@ -344,7 +350,7 @@ func _case_paint_level2_edge_then_corner(cliffs: Wc3CliffCatalog) -> int:
 func _case_remote_cliff_tex_isolation() -> int:
 	print("=== case: remote cliff texture isolation (A paint must not stomp B) ===")
 	var doc = _new_doc()
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	var ax := 16
 	var ay := 16
 	var bx := 20
@@ -356,9 +362,9 @@ func _case_remote_cliff_tex_isolation() -> int:
 			for ox in range(0, 2):
 				doc.paint_cliff_corner(bx + ox, by + oy, "3", 1)
 
-	var cliff_tex: Array = doc.hf["cliffTextures"]
-	var ground: Array = doc.hf["groundTextures"]
-	var layers: Array = doc.hf["layerHeights"]
+	var cliff_tex: Array = doc.as_build_dict()["cliffTextures"]
+	var ground: Array = doc.as_build_dict()["groundTextures"]
+	var layers: Array = doc.as_build_dict()["layerHeights"]
 	var snap_cliff: Dictionary = {}
 	var snap_ground: Dictionary = {}
 	var snap_layer: Dictionary = {}
@@ -378,9 +384,9 @@ func _case_remote_cliff_tex_isolation() -> int:
 	for _s2 in range(3):
 		doc.paint_cliff_corner(ax, ay, "3", 0)
 
-	cliff_tex = doc.hf["cliffTextures"]
-	ground = doc.hf["groundTextures"]
-	layers = doc.hf["layerHeights"]
+	cliff_tex = doc.as_build_dict()["cliffTextures"]
+	ground = doc.as_build_dict()["groundTextures"]
+	layers = doc.as_build_dict()["layerHeights"]
 	_print_layers(doc, ax, ay, 5)
 
 	var fail := 0
@@ -425,7 +431,7 @@ func _case_remote_cliff_tex_isolation() -> int:
 func _case_heterogeneous_contact_assimilate() -> int:
 	print("=== case: heterogeneous contact assimilates (policy B) ===")
 	var doc = _new_doc()
-	var tp_w: int = int(doc.hf["tilepointWidth"])
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
 	# 近处泥土崖台面
 	var nx := 16
 	var ny := 16
@@ -439,8 +445,8 @@ func _case_heterogeneous_contact_assimilate() -> int:
 		for ox2 in range(0, 2):
 			doc.paint_cliff_corner(fx + ox2, fy + oy2, "3", 0)
 
-	var cliff_tex: Array = doc.hf["cliffTextures"]
-	var ground: Array = doc.hf["groundTextures"]
+	var cliff_tex: Array = doc.as_build_dict()["cliffTextures"]
+	var ground: Array = doc.as_build_dict()["groundTextures"]
 	var far_i: int = fy * tp_w + fx
 	if int(cliff_tex[far_i]) != 0:
 		push_error("setup far cliff expected CLdi=0, got %d" % int(cliff_tex[far_i]))
@@ -452,15 +458,15 @@ func _case_heterogeneous_contact_assimilate() -> int:
 	doc.paint_cliff_corner(nx + 2, ny, "3", 1)
 	doc.paint_cliff_corner(nx + 2, ny + 1, "3", 1)
 
-	cliff_tex = doc.hf["cliffTextures"]
-	ground = doc.hf["groundTextures"]
-	var layers: Array = doc.hf["layerHeights"]
+	cliff_tex = doc.as_build_dict()["cliffTextures"]
+	ground = doc.as_build_dict()["groundTextures"]
+	var layers: Array = doc.as_build_dict()["layerHeights"]
 	var fail := 0
 	var assimilated := 0
 	# 检查含落笔角的直崖格四角是否已为 CLgr=1 / Lgrs
 	for iy in range(ny - 1, ny + 3):
 		for ix in range(nx - 1, nx + 3):
-			if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
 			var touches_seed := false
 			for cy in range(0, 2):

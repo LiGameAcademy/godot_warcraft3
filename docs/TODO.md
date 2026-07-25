@@ -35,6 +35,8 @@
 - [ ] 脏区局部重建 Ground（接口已有 dirty rect）
 - [ ] 撤销 UI 灰显 / i18n
 - [x] 悬崖笔刷全面委托 `Wc3CliffLogic`（M1；Ramp 仍在 Document）
+- [x] 删除 `Wc3CliffTiles`：拓扑→Logic，GLB/变体→Catalog（磁盘探测）
+- [x] Document 去掉 `hf` 属性（仅 `as_build_dict()` 过渡）
 
 **验收（地面）**：改地表 → 数据变 → Ground 更新；Ctrl+Z 可撤销。
 

@@ -240,7 +240,7 @@ func rebuild_terrain(doc, tiles: Wc3TerrainTileCatalog, cliff_catalog: Wc3CliffC
 	doc.ensure_brush_index_valid()
 	_selected_tile = doc.brush_tile_index
 	_rebuild_tile_grid()
-	_refresh_blight_icon(str(doc.hf.get("mainTileset", "L")))
+	_refresh_blight_icon(str(doc.heightfield.main_tileset if doc.heightfield else "L"))
 	_rebuild_cliff_type_grid(doc.cliff_tilesets())
 	_refresh_section_labels()
 	_highlight_special()

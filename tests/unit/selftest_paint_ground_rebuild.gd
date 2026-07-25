@@ -49,7 +49,7 @@ func _test_paint_then_rebuild() -> int:
 
 	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).create(
 		"res://",
-		doc.hf,
+		doc.as_build_dict(),
 		{},
 		tiles,
 		null,

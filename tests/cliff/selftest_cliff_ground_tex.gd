@@ -26,10 +26,10 @@ func _run() -> void:
 	for _s in range(2):
 		doc.paint_cliff_corner(cx, cy, "3", 1)
 
-	var tp_w: int = int(doc.hf["tilepointWidth"])
-	var ground: Array = doc.hf["groundTextures"]
-	var layers: Array = doc.hf["layerHeights"]
-	print("groundTilesets=", doc.hf["groundTilesets"])
+	var tp_w: int = int(doc.as_build_dict()["tilepointWidth"])
+	var ground: Array = doc.as_build_dict()["groundTextures"]
+	var layers: Array = doc.as_build_dict()["layerHeights"]
+	print("groundTilesets=", doc.as_build_dict()["groundTilesets"])
 	print("=== groundTextures (0=Ldrt 1=Lgrs) ===")
 	for y in range(cy - 3, cy + 4):
 		var row := ""
@@ -40,7 +40,7 @@ func _run() -> void:
 	var terrain := MapTerrainLayer.new()
 	for iy in range(cy - 3, cy + 3):
 		for ix in range(cx - 3, cx + 3):
-			if Wc3CliffTiles.is_cliff_tile(layers, tp_w, ix, iy):
+			if Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
 				continue
 			var bl := int(ground[iy * tp_w + ix])
 			var br := int(ground[iy * tp_w + ix + 1])

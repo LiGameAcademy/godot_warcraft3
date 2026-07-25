@@ -276,9 +276,9 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 		return
 	_rebuilding = true
 	if cmd.affects_cliffs_water():
-		map_root.rebuild_terrain_cliffs_water(_doc.hf, _doc.info)
+		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
 	else:
-		map_root.rebuild_terrain_only(_doc.hf, _doc.info)
+		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
 
 
@@ -464,9 +464,9 @@ func _on_brush_rebuild() -> void:
 	)
 	if cliff:
 		brush.cliff_dirty = false
-		map_root.rebuild_terrain_cliffs_water(_doc.hf, _doc.info)
+		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
 	else:
-		map_root.rebuild_terrain_only(_doc.hf, _doc.info)
+		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
 
 
@@ -487,9 +487,9 @@ func _apply_document(full_reload: bool) -> void:
 		brush.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
 	if full_reload:
 		var dir: String = _doc.map_dir if not _doc.map_dir.is_empty() else "res://"
-		await map_root.reload_from_hf(_doc.hf, _doc.info, dir)
+		await map_root.reload_from_hf(_doc.as_build_dict(), _doc.info, dir)
 	else:
-		map_root.rebuild_terrain_cliffs_water(_doc.hf, _doc.info)
+		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
 	if camera_rig != null and camera_rig.has_method("focus_map_extent"):
 		camera_rig.focus_map_extent(_doc.map_size())
 
