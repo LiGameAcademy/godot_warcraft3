@@ -330,18 +330,13 @@ func paint_cliff_corner(
 ## 非法（角柱、层差≠1、无直边）拒绝并写入 last_ramp_message。
 ## 表现层（CliffTrans / 挖洞）另做；本阶段以蓝菱形验收。
 func paint_ramp_at(ix: int, iy: int) -> bool:
-	var r: Wc3RampPaintResult = try_paint_ramp_result_at(ix, iy)
+	var r: Wc3RampPaintResult = try_paint_ramp_at(ix, iy)
 	last_ramp_message = r.message
 	return r.changed
 
 
-## 返回 { ok, changed, message, axis, sx, sy }（兼容旧调用方）。
-func try_paint_ramp_at(ix: int, iy: int) -> Dictionary:
-	return try_paint_ramp_result_at(ix, iy).to_dict()
-
-
-## 结构化笔刷结果（数据层契约）。
-func try_paint_ramp_result_at(ix: int, iy: int) -> Wc3RampPaintResult:
+## 笔刷结果（数据层契约 Wc3RampPaintResult）。
+func try_paint_ramp_at(ix: int, iy: int) -> Wc3RampPaintResult:
 	if is_empty():
 		return Wc3RampPaintResult.fail("地图为空")
 	var tp_w: int = heightfield.width
@@ -355,16 +350,12 @@ func try_paint_ramp_result_at(ix: int, iy: int) -> Wc3RampPaintResult:
 	if layers.is_empty() or flags.is_empty():
 		return Wc3RampPaintResult.fail("缺少层高/旗数据")
 
-	var found: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h)
-	var best: Dictionary = found.get("spec", {}) as Dictionary
-	var nearest_reject: String = str(found.get("reject", "附近没有层差为 1 的直线崖边"))
+	var found: Wc3RampStripSearchResult = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h)
+	if not found.has_strip():
+		return Wc3RampPaintResult.fail(found.reject_message)
 
-	if best.is_empty():
-		return Wc3RampPaintResult.fail(nearest_reject)
-
-	var resolved: Dictionary = _resolve_ramp_strip_flags(best, flags, tp_w, ix, iy)
-	var strip := Wc3RampStripSpec.from_dict(resolved)
-	var did_change := _apply_ramp_strip(resolved, layers, heights, water_h, flags, tp_w)
+	var strip: Wc3RampStripSpec = _resolve_ramp_strip_flags(found.strip, flags, tp_w, ix, iy)
+	var did_change := _apply_ramp_strip(strip, layers, heights, water_h, flags, tp_w)
 	if did_change:
 		mark_dirty()
 		return Wc3RampPaintResult.success(
@@ -375,16 +366,8 @@ func try_paint_ramp_result_at(ix: int, iy: int) -> Wc3RampPaintResult:
 	return Wc3RampPaintResult.success(false, "斜坡已存在", strip)
 
 
-## 预览：光标将刷到的条带（已解析 L|R / 底顶旗向，与 apply 一致）。
-func peek_ramp_strip_at(ix: int, iy: int) -> Dictionary:
-	var spec := peek_ramp_strip_spec_at(ix, iy)
-	if spec == null or not spec.ok:
-		return {}
-	return spec.to_dict()
-
-
-## 结构化预览（数据层契约）；空/非法返回 ok=false 的 spec。
-func peek_ramp_strip_spec_at(ix: int, iy: int) -> Wc3RampStripSpec:
+## 悬停预览条带（已解析旗向，与 apply 一致）；非法返回 ok=false。
+func peek_ramp_strip_at(ix: int, iy: int) -> Wc3RampStripSpec:
 	if is_empty():
 		return Wc3RampStripSpec.fail("地图为空")
 	var tp_w: int = heightfield.width
@@ -393,111 +376,106 @@ func peek_ramp_strip_spec_at(ix: int, iy: int) -> Wc3RampStripSpec:
 		return Wc3RampStripSpec.fail("顶点越界")
 	var layers: Array = heightfield.layer_heights
 	var flags: Array = heightfield.flags_packed
-	var raw: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h).get("spec", {})
-	if raw.is_empty():
-		return Wc3RampStripSpec.fail()
-	var resolved: Dictionary = _resolve_ramp_strip_flags(raw, flags, tp_w, ix, iy)
-	return Wc3RampStripSpec.from_dict(resolved)
+	var found: Wc3RampStripSearchResult = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h)
+	if not found.has_strip():
+		return Wc3RampStripSpec.fail(found.reject_message)
+	return _resolve_ramp_strip_flags(found.strip, flags, tp_w, ix, iy)
 
 
-## 与 _apply_ramp_strip 相同的旗向解析，供预览与落点对齐。
-## cursor_ix/iy：光标顶点，用于邻列续宽时选对侧脊。
+## 与 apply 相同的旗向解析；返回新 StripSpec，不改入参。
 func _resolve_ramp_strip_flags(
-	spec: Dictionary, flags: Array, tp_w: int, cursor_ix: int = -1, cursor_iy: int = -1
-) -> Dictionary:
-	var out: Dictionary = spec.duplicate()
-	var axis := str(out.get("axis", ""))
-	var sx: int = int(out.get("sx", 0))
-	var sy: int = int(out.get("sy", 0))
-	if axis == "v":
-		var prefer_left: bool = bool(out.get("ramp_left", true))
-		out["ramp_left"] = _choose_vertical_ramp_left(sx, sy, flags, tp_w, prefer_left, cursor_ix)
-	elif axis == "h":
-		var prefer_bottom: bool = bool(out.get("ramp_bottom", true))
-		out["ramp_bottom"] = _choose_horizontal_ramp_bottom(
-			sx, sy, flags, tp_w, prefer_bottom, cursor_iy
+	spec: Wc3RampStripSpec, flags: Array, tp_w: int, cursor_ix: int = -1, cursor_iy: int = -1
+) -> Wc3RampStripSpec:
+	var out: Wc3RampStripSpec = spec.duplicate_spec()
+	if out.axis == Wc3RampKinds.AXIS_V:
+		out.ramp_left = _choose_vertical_ramp_left(
+			out.sx, out.sy, flags, tp_w, out.ramp_left, cursor_ix
+		)
+	elif out.axis == Wc3RampKinds.AXIS_H:
+		out.ramp_bottom = _choose_horizontal_ramp_bottom(
+			out.sx, out.sy, flags, tp_w, out.ramp_bottom, cursor_iy
 		)
 	return out
 
 
 func _find_best_ramp_strip(
 	ix: int, iy: int, layers: Array, tp_w: int, tp_h: int
-) -> Dictionary:
+) -> Wc3RampStripSearchResult:
 	var flags: Array = heightfield.flags_packed if heightfield != null else []
-	var best: Dictionary = {}
-	# (already_complete, not_on_strip, flag_focus, neighbor_gap, face_pen)
+	var best: Wc3RampStripSpec = null
 	var best_score := Vector4(999999.0, 999999.0, 999999.0, 999999.0)
 	var nearest_reject := "附近没有层差为 1 的直线崖边"
 	for sy in range(iy - 2, iy + 1):
 		for sx in range(ix - 1, ix + 1):
-			var av: Dictionary = _analyze_vertical_ramp_strip(sx, sy, layers, flags, tp_w, tp_h)
-			if bool(av.get("ok", false)):
+			var av: Wc3RampStripSpec = _analyze_vertical_ramp_strip(sx, sy, layers, flags, tp_w, tp_h)
+			if av.ok:
 				var score := _ramp_strip_score(av, ix, iy, flags, tp_w)
 				if _ramp_score_better(score, best_score):
 					best_score = score
 					best = av
-			elif str(av.get("code", "")) != "":
-				nearest_reject = str(av.get("message", nearest_reject))
+			elif not av.kind.is_empty():
+				nearest_reject = av.message if not av.message.is_empty() else nearest_reject
 	for sy2 in range(iy - 1, iy + 1):
 		for sx2 in range(ix - 2, ix + 1):
-			var ah: Dictionary = _analyze_horizontal_ramp_strip(sx2, sy2, layers, flags, tp_w, tp_h)
-			if bool(ah.get("ok", false)):
+			var ah: Wc3RampStripSpec = _analyze_horizontal_ramp_strip(
+				sx2, sy2, layers, flags, tp_w, tp_h
+			)
+			if ah.ok:
 				var score_h := _ramp_strip_score(ah, ix, iy, flags, tp_w)
 				if _ramp_score_better(score_h, best_score):
 					best_score = score_h
 					best = ah
-			elif str(ah.get("code", "")) != "":
-				nearest_reject = str(ah.get("message", nearest_reject))
-	return {"spec": best, "reject": nearest_reject}
+			elif not ah.kind.is_empty():
+				nearest_reject = ah.message if not ah.message.is_empty() else nearest_reject
+	if best == null or not best.ok:
+		return Wc3RampStripSearchResult.none(nearest_reject)
+	return Wc3RampStripSearchResult.found(best)
 
 
 ## 评分越小越好：
 ## ①已完整刷过的条带重罚（避免卡在「斜坡已存在」、跳过邻条）
 ## ②光标须在条带上
-## ③优先「紧贴已有同向斜坡」(neighbor_gap==1)——宽2；避免崖沿横 face 抢走邻接竖条
+## ③优先「紧贴已有同向斜坡」——宽2；避免崖沿横 face 抢走邻接竖条
 ## ④靠近将落 FLAG 的脊线列/行
-## ⑤face 略优于 slope（直线崖边优先；沿坡需已有旗）
+## ⑤face 略优于 slope
 func _ramp_strip_score(
-	spec: Dictionary, ix: int, iy: int, flags: Array, tp_w: int
+	spec: Wc3RampStripSpec, ix: int, iy: int, flags: Array, tp_w: int
 ) -> Vector4:
-	var resolved: Dictionary = _resolve_ramp_strip_flags(spec, flags, tp_w, ix, iy)
-	var sx: int = int(resolved.get("sx", 0))
-	var sy: int = int(resolved.get("sy", 0))
-	var axis := str(resolved.get("axis", "v"))
+	var resolved: Wc3RampStripSpec = _resolve_ramp_strip_flags(spec, flags, tp_w, ix, iy)
+	var sx: int = resolved.sx
+	var sy: int = resolved.sy
+	var axis := resolved.axis
 	var already := 0.0
 	if _ramp_strip_already_applied(resolved, flags, tp_w):
-		# 光标落在本脊上 → 允许选中（no-op）；否则重罚，好去刷邻条续宽
 		var on_spine := false
-		if axis == "v":
-			var ramp_col: int = sx if bool(resolved.get("ramp_left", true)) else sx + 1
+		if axis == Wc3RampKinds.AXIS_V:
+			var ramp_col: int = sx if resolved.ramp_left else sx + 1
 			on_spine = ix == ramp_col and iy >= sy and iy <= sy + 2
 		else:
-			var ramp_row: int = sy if bool(resolved.get("ramp_bottom", true)) else sy + 1
+			var ramp_row: int = sy if resolved.ramp_bottom else sy + 1
 			on_spine = iy == ramp_row and ix >= sx and ix <= sx + 2
 		already = 0.0 if on_spine else 1.0
 	var on_strip := 0.0
 	var flag_focus := 0.0
-	if axis == "v":
+	if axis == Wc3RampKinds.AXIS_V:
 		if ix < sx or ix > sx + 1 or iy < sy or iy > sy + 2:
 			on_strip = 1.0
-		var ramp_col2: int = sx if bool(resolved.get("ramp_left", true)) else sx + 1
+		var ramp_col2: int = sx if resolved.ramp_left else sx + 1
 		var dx := float(ix) - float(ramp_col2)
 		var dy := float(iy) - (float(sy) + 1.0)
 		flag_focus = dx * dx + dy * dy
 	else:
 		if ix < sx or ix > sx + 2 or iy < sy or iy > sy + 1:
 			on_strip = 1.0
-		var ramp_row2: int = sy if bool(resolved.get("ramp_bottom", true)) else sy + 1
+		var ramp_row2: int = sy if resolved.ramp_bottom else sy + 1
 		var dxh := float(ix) - (float(sx) + 1.0)
 		var dyh := float(iy) - float(ramp_row2)
 		flag_focus = dxh * dxh + dyh * dyh
 	var neighbor_gap := _ramp_neighbor_gap(resolved, flags, tp_w)
-	# 仅当光标落在「紧邻已有脊的那一列/行」时才优先续宽；
-	# 点在隔一列（想刷独立 U 凹）时不得抢成连续 111|111。
 	var extends_pen := 1.0
 	if neighbor_gap <= 1.01:
-		if axis == "v":
-			var ramp_col: int = sx if bool(resolved.get("ramp_left", true)) else sx + 1
+		if axis == Wc3RampKinds.AXIS_V:
+			var ramp_col: int = sx if resolved.ramp_left else sx + 1
 			var touches_existing := (
 				(ramp_col > 0 and _vert_col_all(flags, tp_w, ramp_col - 1, sy, true))
 				or _vert_col_all(flags, tp_w, ramp_col + 1, sy, true)
@@ -505,16 +483,14 @@ func _ramp_strip_score(
 			if touches_existing and ix == ramp_col:
 				extends_pen = 0.0
 		else:
-			var ramp_row: int = sy if bool(resolved.get("ramp_bottom", true)) else sy + 1
+			var ramp_row: int = sy if resolved.ramp_bottom else sy + 1
 			var touches_h := (
 				(ramp_row > 0 and _horiz_row_all(flags, tp_w, sx, ramp_row - 1, true))
 				or _horiz_row_all(flags, tp_w, sx, ramp_row + 1, true)
 			)
 			if touches_h and iy == ramp_row:
 				extends_pen = 0.0
-	# U 凹中间列/行：光标落在两脊之间的空列 → 强制优先同向条带填实；
-	# 否则崖沿横 face 会抢走落点并清掉竖脊旗。
-	if axis == "v" and ix > 0:
+	if axis == Wc3RampKinds.AXIS_V and ix > 0:
 		if (
 			not _vert_col_all(flags, tp_w, ix, sy, true)
 			and _vert_col_all(flags, tp_w, ix - 1, sy, true)
@@ -522,12 +498,12 @@ func _ramp_strip_score(
 			and (ix == sx or ix == sx + 1)
 		):
 			var fill_left := ix == sx
-			if bool(resolved.get("ramp_left", true)) == fill_left:
+			if resolved.ramp_left == fill_left:
 				already = 0.0
 				on_strip = 0.0
 				extends_pen = 0.0
 				flag_focus = 0.0
-	elif axis == "h" and iy > 0:
+	elif axis == Wc3RampKinds.AXIS_H and iy > 0:
 		if (
 			not _horiz_row_all(flags, tp_w, sx, iy, true)
 			and _horiz_row_all(flags, tp_w, sx, iy - 1, true)
@@ -535,53 +511,48 @@ func _ramp_strip_score(
 			and (iy == sy or iy == sy + 1)
 		):
 			var fill_bottom := iy == sy
-			if bool(resolved.get("ramp_bottom", true)) == fill_bottom:
+			if resolved.ramp_bottom == fill_bottom:
 				already = 0.0
 				on_strip = 0.0
 				extends_pen = 0.0
 				flag_focus = 0.0
-	# 同分时略优先 face（直线崖边）；slope 仅用于沿已有斜坡续刷
-	var kind_pen := 0.0 if str(spec.get("kind", "")) == "face" else 0.02
-	if str(spec.get("kind", "")) == "face":
-		if axis == "v":
-			var high_col: int = sx + 1 if bool(resolved.get("ramp_left", true)) else sx
+	var kind_pen := 0.0 if spec.kind == Wc3RampKinds.STRIP_FACE else 0.02
+	if spec.kind == Wc3RampKinds.STRIP_FACE:
+		if axis == Wc3RampKinds.AXIS_V:
+			var high_col: int = sx + 1 if resolved.ramp_left else sx
 			if ix == high_col:
 				flag_focus = maxf(0.0, flag_focus - 1.0)
 		else:
-			var high_row: int = sy + 1 if bool(resolved.get("ramp_bottom", true)) else sy
+			var high_row: int = sy + 1 if resolved.ramp_bottom else sy
 			if iy == high_row:
 				flag_focus = maxf(0.0, flag_focus - 1.0)
 	return Vector4(already, on_strip, extends_pen, flag_focus + kind_pen)
 
 
-func _ramp_strip_already_applied(spec: Dictionary, flags: Array, tp_w: int) -> bool:
-	var axis := str(spec.get("axis", ""))
-	var sx: int = int(spec.get("sx", 0))
-	var sy: int = int(spec.get("sy", 0))
-	if axis == "v":
-		var rl: bool = bool(spec.get("ramp_left", true))
-		return _vert_col_all(flags, tp_w, sx, sy, rl) and _vert_col_all(flags, tp_w, sx + 1, sy, not rl)
-	if axis == "h":
-		var rb: bool = bool(spec.get("ramp_bottom", true))
+func _ramp_strip_already_applied(spec: Wc3RampStripSpec, flags: Array, tp_w: int) -> bool:
+	if spec.axis == Wc3RampKinds.AXIS_V:
 		return (
-			_horiz_row_all(flags, tp_w, sx, sy, rb)
-			and _horiz_row_all(flags, tp_w, sx, sy + 1, not rb)
+			_vert_col_all(flags, tp_w, spec.sx, spec.sy, spec.ramp_left)
+			and _vert_col_all(flags, tp_w, spec.sx + 1, spec.sy, not spec.ramp_left)
+		)
+	if spec.axis == Wc3RampKinds.AXIS_H:
+		return (
+			_horiz_row_all(flags, tp_w, spec.sx, spec.sy, spec.ramp_bottom)
+			and _horiz_row_all(flags, tp_w, spec.sx, spec.sy + 1, not spec.ramp_bottom)
 		)
 	return false
 
 
 ## 到最近已有脊列/行的距离；邻列差=1 → WE 宽 2。
-func _ramp_neighbor_gap(spec: Dictionary, flags: Array, tp_w: int) -> float:
-	var axis := str(spec.get("axis", ""))
-	var sx: int = int(spec.get("sx", 0))
-	var sy: int = int(spec.get("sy", 0))
+func _ramp_neighbor_gap(spec: Wc3RampStripSpec, flags: Array, tp_w: int) -> float:
+	var sx: int = spec.sx
+	var sy: int = spec.sy
 	var best_gap := 100.0
-	if axis == "v":
+	if spec.axis == Wc3RampKinds.AXIS_V:
 		for dcol in [-1, 1]:
 			var ncol: int = sx + dcol
 			if ncol < 0:
 				continue
-			# 邻列整列是脊，或邻条已刷满
 			if _vert_col_all(flags, tp_w, ncol, sy, true):
 				best_gap = minf(best_gap, 1.0)
 			var left_ok := (
@@ -621,12 +592,11 @@ static func _ramp_score_better(score: Vector4, best: Vector4) -> bool:
 
 
 ## 竖 1×2：直线崖边（列等高且列差=1）或沿坡（行两端差=1、中间=min）。
-## 沿坡仅在附近已有 FLAG_RAMP 时启用，避免南北崖被误判成东西沿坡。
 func _analyze_vertical_ramp_strip(
 	sx: int, sy: int, layers: Array, flags: Array, tp_w: int, tp_h: int
-) -> Dictionary:
+) -> Wc3RampStripSpec:
 	if sx < 0 or sy < 0 or sx + 1 >= tp_w or sy + 2 >= tp_h:
-		return {"ok": false}
+		return Wc3RampStripSpec.fail()
 	var bl := int(layers[sy * tp_w + sx])
 	var br := int(layers[sy * tp_w + sx + 1])
 	var tl := int(layers[(sy + 1) * tp_w + sx])
@@ -634,76 +604,44 @@ func _analyze_vertical_ramp_strip(
 	var ttl := int(layers[(sy + 2) * tp_w + sx])
 	var ttr := int(layers[(sy + 2) * tp_w + sx + 1])
 
-	# 直崖面（南北走向崖）：左右列各自等高，列差必须为 1
 	if bl == ttl and br == ttr:
 		var d: int = absi(bl - br)
 		if d == 0:
-			return {"ok": false, "code": "flat", "message": "无崖边（两侧同高）"}
+			return Wc3RampStripSpec.fail("无崖边（两侧同高）", "flat")
 		if d != 1:
-			return {
-				"ok": false,
-				"code": "delta",
-				"message": "层差必须为 1（当前 %d）" % d,
-			}
-		# 中间若已偏离列高，仍可刷（R5 会修）
-		return {
-			"ok": true,
-			"axis": "v",
-			"sx": sx,
-			"sy": sy,
-			"kind": "face",
-			"ramp_left": bl < br,
-			"mid_l": bl,
-			"mid_r": br,
-		}
+			return Wc3RampStripSpec.fail("层差必须为 1（当前 %d）" % d, "delta")
+		return Wc3RampStripSpec.make_vertical(
+			sx, sy, Wc3RampKinds.STRIP_FACE, bl < br, bl, br
+		)
 
-	# 沿坡（南北高差）：南行/北行各自同高，行差=1；禁止列内折角
 	if bl == br and ttl == ttr:
 		if not _ramp_flags_near_vertical_strip(flags, tp_w, sx, sy):
-			return {"ok": false}
+			return Wc3RampStripSpec.fail()
 		var ds: int = absi(bl - ttl)
 		if ds == 0:
-			return {"ok": false}
+			return Wc3RampStripSpec.fail()
 		if ds != 1:
-			return {
-				"ok": false,
-				"code": "delta",
-				"message": "层差必须为 1（当前 %d）" % ds,
-			}
+			return Wc3RampStripSpec.fail("层差必须为 1（当前 %d）" % ds, "delta")
 		var mid := mini(bl, ttl)
 		var hi := maxi(bl, ttl)
-		# 中间已在高台：再刷会把台面削成低台，破坏对侧已有坡 / 直崖（BUG 源）
 		if tl == hi and tr_c == hi:
-			return {
-				"ok": false,
-				"code": "carve",
-				"message": "高台侧会削切台面，请从低处入口刷斜坡",
-			}
-		return {
-			"ok": true,
-			"axis": "v",
-			"sx": sx,
-			"sy": sy,
-			"kind": "slope",
-			"ramp_left": true, # apply 时按邻接 L|R 重选
-			"mid_l": mid,
-			"mid_r": mid,
-		}
+			return Wc3RampStripSpec.fail("高台侧会削切台面，请从低处入口刷斜坡", "carve")
+		return Wc3RampStripSpec.make_vertical(
+			sx, sy, Wc3RampKinds.STRIP_SLOPE, true, mid, mid
+		)
 
-	# 近直边但列不齐 → 角柱/碎折
 	if absi(bl - br) >= 1 or absi(ttl - ttr) >= 1 or absi(bl - ttl) >= 1 or absi(br - ttr) >= 1:
 		if bl != ttl or br != ttr:
-			return {"ok": false, "code": "corner", "message": "角柱/碎折边，不能刷斜坡"}
-	return {"ok": false}
+			return Wc3RampStripSpec.fail("角柱/碎折边，不能刷斜坡", "corner")
+	return Wc3RampStripSpec.fail()
 
 
 ## 横 2×1：直线崖边（行等高且行差=1）或沿坡（列两端差=1、中间=min）。
-## 沿坡仅在附近已有 FLAG_RAMP 时启用，避免东西崖被误判成南北沿坡。
 func _analyze_horizontal_ramp_strip(
 	sx: int, sy: int, layers: Array, flags: Array, tp_w: int, tp_h: int
-) -> Dictionary:
+) -> Wc3RampStripSpec:
 	if sx < 0 or sy < 0 or sx + 2 >= tp_w or sy + 1 >= tp_h:
-		return {"ok": false}
+		return Wc3RampStripSpec.fail()
 	var bl := int(layers[sy * tp_w + sx])
 	var br := int(layers[sy * tp_w + sx + 1])
 	var brr := int(layers[sy * tp_w + sx + 2])
@@ -711,65 +649,36 @@ func _analyze_horizontal_ramp_strip(
 	var tr_c := int(layers[(sy + 1) * tp_w + sx + 1])
 	var trr := int(layers[(sy + 1) * tp_w + sx + 2])
 
-	# 直崖面（东西走向崖）：上下行各自等高，行差=1
 	if bl == br and br == brr and tl == tr_c and tr_c == trr:
 		var d: int = absi(bl - tl)
 		if d == 0:
-			return {"ok": false, "code": "flat", "message": "无崖边（两侧同高）"}
+			return Wc3RampStripSpec.fail("无崖边（两侧同高）", "flat")
 		if d != 1:
-			return {
-				"ok": false,
-				"code": "delta",
-				"message": "层差必须为 1（当前 %d）" % d,
-			}
-		return {
-			"ok": true,
-			"axis": "h",
-			"sx": sx,
-			"sy": sy,
-			"kind": "face",
-			"ramp_bottom": bl < tl,
-			"mid_b": bl,
-			"mid_t": tl,
-		}
+			return Wc3RampStripSpec.fail("层差必须为 1（当前 %d）" % d, "delta")
+		return Wc3RampStripSpec.make_horizontal(
+			sx, sy, Wc3RampKinds.STRIP_FACE, bl < tl, bl, tl
+		)
 
-	# 沿坡（东西高差）
 	if bl == tl and brr == trr:
 		if not _ramp_flags_near_horizontal_strip(flags, tp_w, sx, sy):
-			return {"ok": false}
+			return Wc3RampStripSpec.fail()
 		var ds: int = absi(bl - brr)
 		if ds == 0:
-			return {"ok": false}
+			return Wc3RampStripSpec.fail()
 		if ds != 1:
-			return {
-				"ok": false,
-				"code": "delta",
-				"message": "层差必须为 1（当前 %d）" % ds,
-			}
+			return Wc3RampStripSpec.fail("层差必须为 1（当前 %d）" % ds, "delta")
 		var mid := mini(bl, brr)
 		var hi := maxi(bl, brr)
-		# 中间列已在高台：禁止削切
 		if br == hi and tr_c == hi:
-			return {
-				"ok": false,
-				"code": "carve",
-				"message": "高台侧会削切台面，请从低处入口刷斜坡",
-			}
-		return {
-			"ok": true,
-			"axis": "h",
-			"sx": sx,
-			"sy": sy,
-			"kind": "slope",
-			"ramp_bottom": true, # apply 时按邻接重选
-			"mid_b": mid,
-			"mid_t": mid,
-		}
+			return Wc3RampStripSpec.fail("高台侧会削切台面，请从低处入口刷斜坡", "carve")
+		return Wc3RampStripSpec.make_horizontal(
+			sx, sy, Wc3RampKinds.STRIP_SLOPE, true, mid, mid
+		)
 
 	if absi(bl - tl) >= 1 or absi(brr - trr) >= 1 or absi(bl - brr) >= 1:
 		if not (bl == br and br == brr and tl == tr_c and tr_c == trr):
-			return {"ok": false, "code": "corner", "message": "角柱/碎折边，不能刷斜坡"}
-	return {"ok": false}
+			return Wc3RampStripSpec.fail("角柱/碎折边，不能刷斜坡", "corner")
+	return Wc3RampStripSpec.fail()
 
 
 ## 竖条带沿坡门禁：邻列（或本列）已有完整竖脊 111。
@@ -802,28 +711,24 @@ func _has_ramp_at(flags: Array, tp_w: int, ix: int, iy: int) -> bool:
 
 
 func _apply_ramp_strip(
-	spec: Dictionary,
+	spec: Wc3RampStripSpec,
 	layers: Array,
 	heights: Array,
 	water_h: Array,
 	flags: Array,
 	tp_w: int
 ) -> bool:
-	var axis := str(spec.get("axis", ""))
-	var sx: int = int(spec.get("sx", 0))
-	var sy: int = int(spec.get("sy", 0))
+	var sx: int = spec.sx
+	var sy: int = spec.sy
 	var did_change := false
-	if axis == "v":
-		var mid_l: int = int(spec.get("mid_l", 0))
-		var mid_r: int = int(spec.get("mid_r", 0))
+	if spec.axis == Wc3RampKinds.AXIS_V:
 		var i_tl: int = (sy + 1) * tp_w + sx
 		var i_tr: int = i_tl + 1
-		if cliff.set_layer(i_tl, layers, heights, water_h, mid_l):
+		if cliff.set_layer(i_tl, layers, heights, water_h, spec.mid_l):
 			did_change = true
-		if cliff.set_layer(i_tr, layers, heights, water_h, mid_r):
+		if cliff.set_layer(i_tr, layers, heights, water_h, spec.mid_r):
 			did_change = true
-		# 旗向已定稿。宽2=相邻列菱形(111|111)；勿清掉已是完整脊的邻列
-		var ramp_left: bool = bool(spec.get("ramp_left", true))
+		var ramp_left: bool = spec.ramp_left
 		for yy in range(sy, sy + 3):
 			if ramp_left:
 				if _set_ramp_flag(flags, yy * tp_w + sx, true):
@@ -841,16 +746,16 @@ func _apply_ramp_strip(
 				for yy3 in range(sy, sy + 3):
 					if _set_ramp_flag(flags, yy3 * tp_w + sx, false):
 						did_change = true
-	elif axis == "h":
-		var mid_b: int = int(spec.get("mid_b", 0))
-		var mid_t: int = int(spec.get("mid_t", 0))
+	elif spec.axis == Wc3RampKinds.AXIS_H:
+		var mid_b: int = spec.mid_l
+		var mid_t: int = spec.mid_r
 		var i_br: int = sy * tp_w + sx + 1
 		var i_tr2: int = (sy + 1) * tp_w + sx + 1
 		if cliff.set_layer(i_br, layers, heights, water_h, mid_b):
 			did_change = true
 		if cliff.set_layer(i_tr2, layers, heights, water_h, mid_t):
 			did_change = true
-		var ramp_bottom: bool = bool(spec.get("ramp_bottom", true))
+		var ramp_bottom: bool = spec.ramp_bottom
 		for xx in range(sx, sx + 3):
 			if ramp_bottom:
 				if _set_ramp_flag(flags, sy * tp_w + xx, true):

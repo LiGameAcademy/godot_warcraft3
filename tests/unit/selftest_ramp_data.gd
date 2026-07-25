@@ -1,5 +1,5 @@
 extends SceneTree
-## 斜坡数据层契约：Placement / CollectResult / StripSpec / Topology 强类型。
+## 斜坡数据层契约：Placement / Collect / Strip / Topology 强类型。
 ## godot --headless -s res://tests/unit/selftest_ramp_data.gd
 
 
@@ -7,9 +7,9 @@ func _init() -> void:
 	var failed := 0
 	failed += _test_placement_make()
 	failed += _test_collect_empty()
-	failed += _test_strip_roundtrip()
-	failed += _test_paint_result_dict()
-	failed += _test_topology_types()
+	failed += _test_strip_spine()
+	failed += _test_paint_and_search()
+	failed += _test_topology_ramp_embed()
 	failed += _test_vertex_has_ramp()
 	if failed == 0:
 		print("selftest_ramp_data: PASS")
@@ -40,9 +40,6 @@ func _test_collect_empty() -> int:
 	if r.romp[0] != Wc3RampKinds.ROMP_NONE:
 		push_error("romp fill")
 		return 1
-	if r.placement_count() != 0 or r.non_phantom_count() != 0:
-		push_error("empty counts")
-		return 1
 	var stub: Wc3RampCollectResult = Wc3CliffLogic.collect_ramp_placements(
 		{
 			"tilepointWidth": 3,
@@ -58,45 +55,56 @@ func _test_collect_empty() -> int:
 	return 0
 
 
-func _test_strip_roundtrip() -> int:
+func _test_strip_spine() -> int:
 	var s := Wc3RampStripSpec.make_vertical(1, 2, Wc3RampKinds.STRIP_FACE, true, 2, 3)
-	var d := s.to_dict()
-	var back := Wc3RampStripSpec.from_dict(d)
-	if not back.ok or back.sx != 1 or back.sy != 2 or back.axis != Wc3RampKinds.AXIS_V:
-		push_error("strip roundtrip")
+	var verts := s.spine_vertices()
+	if verts.size() != 3 or verts[0] != Vector2i(1, 2) or verts[2] != Vector2i(1, 4):
+		push_error("vertical spine %s" % str(verts))
 		return 1
-	var bad := Wc3RampStripSpec.from_dict({"ok": false, "message": "x", "code": "corner"})
-	if bad.ok or bad.message != "x":
-		push_error("strip fail parse")
+	var h := Wc3RampStripSpec.make_horizontal(0, 1, Wc3RampKinds.STRIP_SLOPE, false, 2, 2)
+	var hv := h.spine_vertices()
+	if hv.size() != 3 or hv[0] != Vector2i(0, 2):
+		push_error("horizontal spine top %s" % str(hv))
+		return 1
+	var dup := s.duplicate_spec()
+	dup.ramp_left = false
+	if s.ramp_left == false:
+		push_error("duplicate mutated source")
 		return 1
 	return 0
 
 
-func _test_paint_result_dict() -> int:
+func _test_paint_and_search() -> int:
 	var strip := Wc3RampStripSpec.make_horizontal(0, 1, Wc3RampKinds.STRIP_SLOPE, false, 2, 2)
 	var r := Wc3RampPaintResult.success(true, "ok", strip)
-	var d := r.to_dict()
-	if not bool(d.get("ok")) or not bool(d.get("changed")):
-		push_error("paint dict flags")
+	if not r.ok or not r.changed or r.strip.axis != Wc3RampKinds.AXIS_H:
+		push_error("paint result")
 		return 1
-	if str(d.get("axis")) != Wc3RampKinds.AXIS_H or int(d.get("sx")) != 0:
-		push_error("paint dict strip")
+	var none := Wc3RampStripSearchResult.none("x")
+	if none.has_strip() or none.reject_message != "x":
+		push_error("search none")
+		return 1
+	var found := Wc3RampStripSearchResult.found(strip)
+	if not found.has_strip():
+		push_error("search found")
 		return 1
 	return 0
 
 
-func _test_topology_types() -> int:
+func _test_topology_ramp_embed() -> int:
 	var topo := Wc3CliffTopologyResult.new()
+	var collect := Wc3RampCollectResult.empty_for_size(2, 2)
 	var p := Wc3RampPlacement.make(0, 0, "AHHL", 2, 0, "CliffTrans")
-	topo.ramp_placements.append(p)
-	topo.romp = PackedByteArray([Wc3RampKinds.ROMP_SINGLE])
-	if topo.ramp_placements.size() != 1:
-		push_error("topo typed array")
+	collect.placements.append(p)
+	collect.romp[0] = Wc3RampKinds.ROMP_SINGLE
+	topo.ramp = collect
+	if topo.ensure_ramp().placements[0].tag != "AHHL":
+		push_error("topo embed")
 		return 1
 	var ctx := MapBuildContext.new()
-	ctx.cliff_ramp_placements = topo.ramp_placements
-	if ctx.cliff_ramp_placements[0].tag != "AHHL":
-		push_error("ctx typed cache")
+	ctx.ramp = topo.ramp
+	if ctx.ramp.placements[0].tag != "AHHL":
+		push_error("ctx ramp cache")
 		return 1
 	return 0
 

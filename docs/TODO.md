@@ -45,7 +45,7 @@
 ## 地形 / 斜坡
 
 - [ ] **斜坡（崖边 A）**：[RAMP.md](RAMP.md) M0–M4。勿与「应用高度」纯高度坡（B）混淆。
-- [x] 数据层：`Wc3RampPlacement` / `CollectResult` / `StripSpec` / `PaintResult`（`selftest_ramp_data`）
+- [x] 数据层：StripSpec 贯通笔刷路径；`Topology.ramp` / `Context.ramp`；`selftest_ramp_data`  
 - [ ] M0：`logic/ramp/wc3_ramp_logic.gd`；`selftest_ramp_logic` 绿
 - [ ] M1：直线 4 向 placements；缺模警告
 - [ ] M2：`MapRampLayer`（或 CliffLayer 通道）+ 坡格 gap

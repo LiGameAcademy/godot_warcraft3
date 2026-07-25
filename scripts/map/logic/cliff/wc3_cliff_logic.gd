@@ -421,11 +421,10 @@ static func build_topology(
 	var ramp_data: Wc3RampCollectResult = collect_ramp_placements(
 		hf.as_dict_view(), hf.to_build_meta(), cliff_catalog
 	)
-	result.romp = ramp_data.romp
-	result.ramp_placements = ramp_data.placements
+	result.ramp = ramp_data
 	result.placements = collect_placements(hf, cliff_catalog)
 	result.gap_stats = count_gaps(hf.as_dict_view(), hf.to_build_meta(), ramp_data)
-	result.gap_mask = build_gap_mask(hf, result.romp)
+	result.gap_mask = build_gap_mask(hf, ramp_data.romp)
 	return result
 
 

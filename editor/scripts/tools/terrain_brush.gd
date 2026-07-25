@@ -423,8 +423,8 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	var edge: ArrayMesh
 	# 斜坡：悬停预览将落 FLAG_RAMP 的脊线顶点（与蓝菱形对齐）
 	if apply_cliff and cliff_tool_id == "Ramp":
-		var strip: Dictionary = document.peek_ramp_strip_at(vert.x, vert.y)
-		if strip.is_empty():
+		var strip: Wc3RampStripSpec = document.peek_ramp_strip_at(vert.x, vert.y)
+		if strip == null or not strip.ok:
 			fill = _make_vertex_fill_mesh(vert.x, vert.y)
 			edge = _make_vertex_edge_mesh(vert.x, vert.y)
 		else:
@@ -482,23 +482,16 @@ func _make_vertex_edge_mesh(ix: int, iy: int) -> ArrayMesh:
 
 
 ## 斜坡预览：将落 FLAG_RAMP 的 3 个顶点小框（对齐蓝菱形，不盖崖面格）。
-func _ramp_flag_vertices(strip: Dictionary) -> Array:
-	var sx: int = int(strip.get("sx", 0))
-	var sy: int = int(strip.get("sy", 0))
-	var axis := str(strip.get("axis", "v"))
+func _ramp_flag_vertices(strip: Wc3RampStripSpec) -> Array:
+	if strip == null or not strip.ok:
+		return []
 	var out: Array = []
-	if axis == "v":
-		var col: int = sx if bool(strip.get("ramp_left", true)) else sx + 1
-		for yy in range(sy, sy + 3):
-			out.append(Vector2i(col, yy))
-	else:
-		var row: int = sy if bool(strip.get("ramp_bottom", true)) else sy + 1
-		for xx in range(sx, sx + 3):
-			out.append(Vector2i(xx, row))
+	for v in strip.spine_vertices():
+		out.append(v)
 	return out
 
 
-func _make_ramp_flag_verts_fill_mesh(strip: Dictionary) -> ArrayMesh:
+func _make_ramp_flag_verts_fill_mesh(strip: Wc3RampStripSpec) -> ArrayMesh:
 	var verts: Array = _ramp_flag_vertices(strip)
 	if verts.is_empty():
 		return null
@@ -517,7 +510,7 @@ func _make_ramp_flag_verts_fill_mesh(strip: Dictionary) -> ArrayMesh:
 	return st.commit()
 
 
-func _make_ramp_flag_verts_edge_mesh(strip: Dictionary) -> ArrayMesh:
+func _make_ramp_flag_verts_edge_mesh(strip: Wc3RampStripSpec) -> ArrayMesh:
 	var verts: Array = _ramp_flag_vertices(strip)
 	if verts.is_empty():
 		return null

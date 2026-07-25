@@ -94,14 +94,14 @@ func _test_vertical_single() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if ix <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r: Dictionary = doc.try_paint_ramp_at(1, 2)
-	if not bool(r.get("ok", false)):
-		push_error("vertical_single: reject %s" % str(r.get("message", "")))
+	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
+	if not r.ok:
+		push_error("vertical_single: reject %s" % r.message)
 		return 1
-	if str(r.get("axis", "")) != "v":
-		push_error("vertical_single: want axis=v got %s" % str(r))
+	if r.strip == null or r.strip.axis != Wc3RampKinds.AXIS_V:
+		push_error("vertical_single: want axis=v")
 		return 1
-	var sy: int = int(r.get("sy", 0))
+	var sy: int = r.strip.sy
 	var left := _flag_col(doc, 1, sy)
 	var right := _flag_col(doc, 2, sy)
 	var ok := (left == "111" and right == "000") or (left == "000" and right == "111")
@@ -122,14 +122,14 @@ func _test_horizontal_single() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if iy <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r: Dictionary = doc.try_paint_ramp_at(2, 1)
-	if not bool(r.get("ok", false)):
-		push_error("horizontal_single: reject %s" % str(r.get("message", "")))
+	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(2, 1)
+	if not r.ok:
+		push_error("horizontal_single: reject %s" % r.message)
 		return 1
-	if str(r.get("axis", "")) != "h":
-		push_error("horizontal_single: want axis=h got %s" % str(r))
+	if r.strip == null or r.strip.axis != Wc3RampKinds.AXIS_H:
+		push_error("horizontal_single: want axis=h")
 		return 1
-	var sx: int = int(r.get("sx", 0))
+	var sx: int = r.strip.sx
 	var bot := _flag_row(doc, sx, 1)
 	var top := _flag_row(doc, sx, 2)
 	var ok := (bot == "111" and top == "000") or (bot == "000" and top == "111")
@@ -150,16 +150,16 @@ func _test_vertical_wide() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if ix <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r1: Dictionary = doc.try_paint_ramp_at(1, 2)
-	if not bool(r1.get("changed", false)) or str(r1.get("axis", "")) != "v":
-		push_error("vertical_wide: first paint failed %s" % str(r1))
+	var r1: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
+	if not r1.changed or r1.strip == null or r1.strip.axis != Wc3RampKinds.AXIS_V:
+		push_error("vertical_wide: first paint failed %s" % r1.message)
 		return 1
-	var sy: int = int(r1.get("sy", 0))
+	var sy: int = r1.strip.sy
 	var left1 := _flag_col(doc, 1, sy)
 	var next_x := 2 if left1 == "111" else 1
-	var r2: Dictionary = doc.try_paint_ramp_at(next_x, 2)
-	if not bool(r2.get("ok", false)):
-		push_error("vertical_wide: second paint reject %s" % str(r2.get("message", "")))
+	var r2: Wc3RampPaintResult = doc.try_paint_ramp_at(next_x, 2)
+	if not r2.ok:
+		push_error("vertical_wide: second paint reject %s" % r2.message)
 		return 1
 	var left := _flag_col(doc, 1, sy)
 	var right := _flag_col(doc, 2, sy)
@@ -184,9 +184,9 @@ func _test_u_gap_not_auto_fill() -> int:
 	for yy in range(1, 4):
 		flags[yy * tp_w + 1] = Wc3Coords.FLAG_RAMP
 		flags[yy * tp_w + 3] = Wc3Coords.FLAG_RAMP
-	var r: Dictionary = doc.try_paint_ramp_at(1, 2)
-	if not bool(r.get("ok", false)):
-		push_error("u_gap: unexpected reject %s" % str(r.get("message", "")))
+	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
+	if not r.ok:
+		push_error("u_gap: unexpected reject %s" % r.message)
 		return 1
 	var c1 := _flag_col(doc, 1, 1)
 	var c2 := _flag_col(doc, 2, 1)
