@@ -3,17 +3,17 @@
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
 > 最后更新：2026-07-25
 
-## 当前焦点：悬崖模块分层重构（⑦）
+## 当前焦点：斜坡模块分层重构（⑧）
 
-按 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。地面纹理 + DefStore + 编辑总管已打 tag `milestone/terrain-art-defstore`。
+悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。按 [RAMP.md](RAMP.md)。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
-| **M0 Catalog** | ✅ 代码侧完成 | `Wc3CliffCatalog` + Context/Loader；待 Lost Temple 手测 |
-| **M1 Logic** | ✅ 代码侧完成 | `Wc3CliffLogic` + `logic/cliff/`；Document 委托；待 Lost Temple 手测 |
-| **M2 Present** | ✅ 代码侧完成 | placements 契约；Layer 迁 presentation；挖洞 mask |
-| **M3 命令/脏区** | 待开 | 崖笔划 label；局部重建 |
-| 然后斜坡 | 后置 | [RAMP.md](RAMP.md) |
+| **崖 M0–M2** | ✅ + tag | `milestone/cliff-layered`；M3 脏区可选 |
+| **坡 M0 笔刷迁出** | 待开 | Document → `Wc3RampLogic`；蓝菱形手感不变 |
+| **坡 M1 Dispatcher** | 待开 | `collect_ramp_placements` + romp + CliffTrans TAG |
+| **坡 M2 Present** | 待开 | placements → Layer；挖洞 |
+| **坡 M3/M4** | 后置 | 转角/对角；脏区；`milestone/ramp-layered` |
 
 ---
 
@@ -44,7 +44,11 @@
 
 ## 地形 / 斜坡
 
-- [ ] **斜坡（崖边 A）**：[RAMP.md](RAMP.md) M0–M4；排在 ⑦ 悬崖之后。勿与「应用高度」纯高度坡（B）混淆。
+- [ ] **斜坡（崖边 A）**：[RAMP.md](RAMP.md) M0–M4。勿与「应用高度」纯高度坡（B）混淆。
+- [ ] M0：`logic/ramp/wc3_ramp_logic.gd` + `Wc3RampPlacement`；`selftest_ramp_logic` 绿
+- [ ] M1：直线 4 向 placements；缺模警告
+- [ ] M2：`MapRampLayer`（或 CliffLayer 通道）+ 坡格 gap
+- [ ] M3：外/内转角 → 对角线锯齿
 
 ## 岸浪
 

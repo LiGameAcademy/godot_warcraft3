@@ -98,18 +98,22 @@
 
 ### ⑦ 悬崖层
 
-> 计划全文：[CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)
+> 计划全文：[CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)  
+> Tag：`milestone/cliff-layered`
 
 - [x] M0 Catalog：`Wc3CliffCatalog`；收缩 `Wc3TerrainTileCatalog`
 - [x] M1 Logic：`Wc3CliffLogic` + `logic/cliff/`；Document 委托
 - [x] M2 Present：placements 驱动；恢复地面挖洞对接
-- [ ] M3 脏区 / 命令标签；再开 ⑧ 斜坡
+- [ ] M3 脏区 / 命令标签（可选；不挡 ⑧）
 
 ### ⑧ 斜坡层
 
-- [ ] 服从 `docs/RAMP.md`；**在悬崖 Catalog/Logic 稳定之后**再做
-- [ ] CliffTrans 已有 Catalog；补 Logic Dispatcher + 表现 L1–L3
-- [ ] 编辑门禁与蓝菱形调试层
+> 计划全文：[RAMP.md](RAMP.md)（五层重构 + 拓扑 / CliffTrans）
+
+- [ ] M0：条带笔刷迁 `Wc3RampLogic`；Document 委托；蓝菱形不变
+- [ ] M1：`collect_ramp_placements` 真输出 + romp
+- [ ] M2：Present 消费 placements；坡格挖洞
+- [ ] M3：内外转角 / 对角线；M4 可选脏区 + tag
 
 ### ⑨ 水体（深水 / 浅水）
 

@@ -1,295 +1,331 @@
-# 斜坡（Ramp）重建说明
+# 斜坡（Ramp）模块重构计划
 
-> **分支：`feature/ramp-rebuild`**  
-> **分层：逻辑层（FLAG_RAMP / 蓝菱形）→ 表现层（拓扑变体 + 三层生成结构）**  
-> 直崖见 [CLIFF.md](CLIFF.md)。
-
----
-
-## 1. 目标与非目标
-
-**目标**：先把逻辑层（蓝菱形 / `FLAG_RAMP`）做对，再按拓扑变体实现表现层；生成脚本采用三层结构，并注入对地形高度图 mesh 的依赖。
-
-**非目标（本阶段不做）**：一次性恢复旧的 romp / CliffTrans 耦合实现；不在分发器里画 mesh，不在底层绘制函数里写悬崖业务规则。
+> **前置里程碑**：悬崖 Catalog / Logic / Present 已打 tag `milestone/cliff-layered`（见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)）。  
+> **分支**：`feature/ramp-rebuild`  
+> **领域规则**（拓扑形态、CliffTrans 命名）以本文 §6–§8 为准；本文前半只定 **怎么按五层拆** 与验收顺序。  
+> **分层总纲**：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)；Present 纪律：`.cursor/rules/presentation-no-logic.mdc`  
+> 最后更新：2026-07-25
 
 ---
 
-## 2. 拓扑形态与方向变体
+## 1. 目标
 
-斜坡最终会有哪些拓扑形态和方向变体，必须先对齐再写代码。
+把「崖边斜坡」做成与 **直崖** 同构的可测闭环：
 
-### 2.1 直线型变体（Straight）
+```text
+Data（FLAG_RAMP / 层高）
+  → Logic（条带笔刷 + 拓扑 Dispatcher → RampPlacement / romp / 挖洞）
+  → Catalog（CliffTrans TAG → GLB；族目录由 CliffTypes.ramp_model_dir）
+  → Present（MapRampLayer 或并入 CliffLayer；只 resolve + 挂 MultiMesh）
+  → Editor（笔刷命令 → History → 分路径重建；蓝菱形只读旗位）
+```
 
-最基础形态，用于连接**正南北**或**正东西**走向的直悬崖。
+**禁止**：Layer 内改 `flags` / 层高；Builder 内扫 Mask 选型；笔刷绕过 Logic；Present 写 Heightfield。
 
-| 边 | 含义 |
-|----|------|
-| 两条平行边 | **侧脊（Edge）** |
-| 另外两条平行边 | **坡顶（High）** / **坡底（Low）** |
+**非目标（本波次）**：一次性恢复旧 romp / CliffTrans 耦合实现；水体岸浪精调；W3E 对角切分 Flag 全量编码锁定（可先锯齿拼接）。
 
-方向：北向 / 南向 / 东向 / 西向（共 4）。
+---
 
-### 2.2 外转角变体（Outer Corner）
+## 2. 现状债（为何要拆）
 
-4 个凸角方向。当高地悬崖形成一个凸出的 90° 角（像城堡的凸角塔楼），玩家在转角处刷斜坡时触发。
+| 问题 | 现状落点 |
+|------|----------|
+| 笔刷 Logic 仍在 Document | `MapDocument.paint_ramp_at` / `peek_ramp_strip_at` + ~600 行私有条带分析（`_find_best_ramp_strip` 等） |
+| 拓扑选型旁路 | `Wc3CliffLogic.collect_ramp_placements` 恒空；`romp` 全 0；`is_ramp_entrance` / 坡面采样恒 no-op |
+| Present 未接 | 无独立 Ramp Layer；地面仅直崖挖洞；`cliff_ramp_placements` 缓存为空 |
+| 岸线债 | `wc3_shoreline_builder` 仍忽略 `FLAG_RAMP`（水体重开时再接） |
+| Catalog 已就绪 | `Wc3CliffTransCatalog`（32 / City 16）；`Wc3CliffCatalog.ramp_model_dir` |
 
-- 坡面：**扇形展开**
-- 坡顶：只有 **1** 个顶点属于高地最尖端
-- 坡底：**3** 个顶点环绕在低地
+参考直崖已落地形态：
 
-### 2.3 内转角变体（Inner Corner）
+| Cliff（已完成） | Ramp 目标对称物 |
+|-----------------|-----------------|
+| `Wc3CliffLogic.paint_corner` | `Wc3RampLogic.paint_at` / `peek_strip`（从 Document 迁出） |
+| `Wc3CliffPlacement` + `build_topology` | `Wc3RampPlacement` + `collect_ramp_placements` 实装 |
+| `Wc3CliffCatalog.resolve_glb` | `Wc3CliffTransCatalog.resolve_*`（族目录可经 CliffCatalog） |
+| `MapCliffLayer` + thin Builder | `MapRampLayer`（或同层第二通道）+ L1 Place |
+| 蓝菱形 `MapRampDebugLayer` | 保留；只读 flags，不写数据 |
 
-4 个凹角方向。当高地呈现凹字形的 90° 拐角（像山谷深入高地的凹槽）时触发。
+---
 
-- 与外转角相反：坡面呈**漏斗状收敛**
-- 坡顶：占据 **3** 个高地顶点
-- 坡底：只有 **1** 个顶点在最深处的低地
+## 3. 目标目录
 
-### 2.4 对角线变体（Diagonal / 45°）
+```text
+scripts/map/
+├── data/
+│   ├── wc3_ramp_placement.gd       # 【新建】ix,iy,tag,model_dir,variation,拓扑元数据
+│   └── （romp / topology 可挂在 Wc3CliffTopologyResult.ramp_*）
+├── catalog/
+│   ├── wc3_cliff_trans_catalog.gd  # 已有；可选薄封装 Wc3RampCatalog 若需统一入口
+│   └── wc3_cliff_catalog.gd        # ramp_model_dir(cliff_id)
+├── logic/
+│   ├── cliff/wc3_cliff_logic.gd    # 保留 ramp 查询桩的公开转发，或委托 RampLogic
+│   └── ramp/
+│       └── wc3_ramp_logic.gd       # 【新建】笔刷条带 + Dispatcher（Mask→变体→placements）
+├── presentation/
+│   ├── layers/map_ramp_layer.gd    # 【新建】或扩展 map_cliff_layer
+│   └── ramp/
+│       ├── wc3_ramp_builder.gd     # L1：placements → MultiMesh / 实例
+│       └── （可选）variants_*.gd   # L2：直坡 / 内外转角；由 Logic 产出参数，Present 只变换
 
-实际制图常遇到斜着 45° 延伸的山脊。WC3 对对角线斜坡有两种拓扑实现：
+editor/scripts/
+├── map_document.gd                 # 委托 RampLogic；删私有条带实现
+├── map_ramp_debug_layer.gd         # 已有蓝菱形
+└── tools/terrain_brush.gd          # 仍调 Document 公共 API
+```
+
+---
+
+## 4. 分层契约
+
+### 4.1 Data
+
+- 权威：`Wc3Heightfield.flags` 的 `FLAG_RAMP`；层高仍由崖/笔刷维护
+- 结构化：`Wc3RampPlacement`（忌长期裸 Dictionary 键穿过 Logic→Present）
+- `romp: PackedByteArray`（格级斜坡种类）由 Logic 写入拓扑结果，Present / 地面挖洞只读
+
+### 4.2 Catalog
+
+| API | 含义 |
+|-----|------|
+| `Wc3CliffTransCatalog.load_cliff_trans()` / `load_city_cliff_trans()` | 运行时扫盘 |
+| `resolve_path_for_tag` / `resolve_path_for_corners` | 仅登记且存在时返回路径 |
+| `Wc3CliffCatalog.ramp_model_dir(cliff_id)` | `CliffTrans` vs `CityCliffTrans` |
+
+Dispatcher / Variant **只通过 Catalog 取模型**，禁止散落 `CliffTrans%s%d.glb`。
+
+### 4.3 Logic — `Wc3RampLogic`（目标）
+
+| API（示意） | 含义 |
+|-------------|------|
+| `paint_at` / `try_paint_at` / `peek_strip_at` | 条带门禁 + 写 `FLAG_RAMP`（现 Document 语义） |
+| `collect_placements(hf, meta, catalogs)` | 扫格 → 四角字符 → TAG → placements + romp |
+| `should_leave_gap` 协作 | 坡格挖洞规则；地面 Layer 只读 mask |
+| `dirty_rect` | 与崖同形（可选） |
+
+与 `Wc3CliffLogic` 的关系：
+
+- **短线**：Ramp API 先落在 `logic/ramp/`，`CliffLogic.collect_ramp_placements` 改为转发，避免 Present/Context 双入口
+- **禁止**：Present 调 Logic 拓扑；Logic 不 `load()` GLB
+
+### 4.4 Present — 三层生成结构（表现侧）
+
+领域选型在 Logic；Present 只做「已决定的 placement → 几何」：
+
+```text
+L3 曾称 Dispatcher  → 现归 Logic（Mask / 拓扑 / 路由）
+L2 变体参数         → Logic 写入 RampPlacement（方向、侧脊次数等）
+L1 基础放置         → Present Builder（变换 + MultiMesh，无业务）
+```
+
+依赖注入：坡面与地面缝合时，高度采样来自 **同一套 Heightfield / 已缓存高度图**，Present 只读不写。
+
+### 4.5 Editor
+
+- 笔刷：`Document.paint_ramp_at` 委托 Logic；`PaintStrokeCommand` 快照已含 flags
+- 悬停：`peek_ramp_strip_at` → 蓝菱形预览
+- 重建：走 `rebuild_terrain_cliffs_water`；Context `ensure_cliff_topology` 填满 `ramp_placements`
+- 验收调试：先开 `show_ramp_debug`，确认旗位再看 mesh
+
+---
+
+## 5. 实施里程碑
+
+### M0 — 契约与笔刷迁出（不改手感）
+
+1. 新建 `logic/ramp/wc3_ramp_logic.gd`，迁入 Document 条带笔刷 / 评分 / 落旗  
+2. Document 仅委托；蓝菱形与 `selftest_ramp_logic` 行为不变  
+3. 定义 `Wc3RampPlacement`（字段可先最小：`ix,iy,tag,model_dir,variation`）  
+4. 文档：本文 + ROADMAP ⑧ 勾选进度  
+
+**验收**：WE 同位置刷坡 → 同列/同行蓝菱形；非法处拒绝；自测绿。
+
+### M1 — Logic Dispatcher：空壳 → 真 placements
+
+1. 实装 `collect_ramp_placements`：直线变体优先（4 向）  
+2. 层高 + `FLAG_RAMP` → CliffTrans 四角字符（角序 **TL,TR,BR,BL**）→ Catalog  
+3. 输出 `romp` + `Array[Wc3RampPlacement]`；接入 `Wc3CliffTopologyResult` / Context  
+4. 缺模：警告 + 跳过，禁止静默乱替  
+
+**验收**：有 `FLAG_RAMP` 的 Lost Temple / 手刷图，placements 非空且 TAG 合理；`ramp_models` 统计 > 0。
+
+### M2 — Present L1：只消费 placements
+
+1. `MapRampLayer`（或 CliffLayer 第二通道）+ thin Builder  
+2. 恢复坡格挖洞 / 与直崖 gap 协作（TerrainLayer 只读 mask）  
+3. 高度图采样只读，用于缝合对齐（若本步需要）  
+
+**验收**：直线坡视觉可辨；无 Present 写 hf；自测 + 手测。
+
+### M3 — 变体补全
+
+1. 外转角 / 内转角（各 4 向）  
+2. 对角线：锯齿拼接优先；对角切分 Flag 对照后再锁  
+3. 侧脊多块 CliffTrans（1×2 / 2×1 条带）由 Logic 拆成多次 placement  
+
+**验收**：常见转角与 45° 锯齿不穿模；调试时只改对应变体参数，不动笔刷。
+
+### M4 — 编辑增强与收尾（可选）
+
+1. 斜坡笔划 label / 脏区局部重建  
+2. 岸线重新识别 `FLAG_RAMP`（属水体债，可另开）  
+3. 打 tag（建议 `milestone/ramp-layered`）  
+
+---
+
+## 6. 拓扑形态与方向变体（领域）
+
+实现前必须对齐；选型在 **Logic**，不在 Layer。
+
+### 6.1 直线型（Straight）
+
+连接正南北或正东西直崖。两条平行边为侧脊（Edge），另两边为坡顶（High）/ 坡底（Low）。方向：北 / 南 / 东 / 西（4）。
+
+### 6.2 外转角（Outer Corner）
+
+凸 90°：坡面扇形；坡顶 1 顶点、坡底 3 顶点。
+
+### 6.3 内转角（Inner Corner）
+
+凹 90°：漏斗状；坡顶 3、坡底 1。
+
+### 6.4 对角线（Diagonal）
 
 | 方式 | 说明 |
 |------|------|
-| **梯级锯齿拼接（Staircase Steps）** | 「直线变体 + 转角变体」交替排列（例：北向坡 → 东北外转角 → 东向坡）。微观锯齿，宏观 45°。 |
-| **对角切分变体（Diagonal Split）** | 在一个 1×1 网格内沿对角线切成两个三角形：一个为平缓坡面，另一个归两侧悬崖缝合面。`war3map.w3e` bitmask 中有专门的对角切分标记（Diagonal Cliff Flag）。 |
+| 梯级锯齿 | 直线 + 转角交替，宏观 45°（优先） |
+| 对角切分 | 格内对角切分；对应 W3E Diagonal Cliff Flag / TAG 中 `X`（后锁） |
 
-实现顺序建议：先直线 → 外/内转角 → 再对角线（锯齿拼接优先于对角切分，除非对照图明确要求 Split）。
-
----
-
-## 3. 表现层：三层生成结构
-
-斜坡生成脚本实现**三层结构**，并**注入对地形高度图 mesh 的依赖**（坡面/侧脊与地面缝合时需要同一套高度采样，而不是各算各的）。
-
-```
-┌─────────────────────────────────────────┐
-│  L3  Dispatcher（路由器 / 分发器）        │  ← 唯一对外入口
-│  读 4-bit Mask → 识别拓扑 → 调变体       │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│  L2  Variants（具体变体渲染）             │
-│  直坡 / 外转角 / 内转角 / …               │
-│  模块拼接、侧脊遮盖、与高度图对齐         │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│  L1  基础放置（模型 / 网格）              │
-│  只做几何与空间变换，无业务逻辑           │
-└─────────────────────────────────────────┘
-         ▲
-         │ 依赖注入：Heightfield / Ground Mesh 采样
-```
-
-### 3.1 第一层：基础放置（draw / place）
-
-只关心几何与空间变换，**完全不含业务逻辑**。
-
-职责一句话：**给你数据/Mesh，正确塞进 SurfaceTool 或挂到 3D 节点上**。
-
-例如：`draw_mesh_block(mesh, transform, …)`、`place_glb_instance(path, xf)`。  
-不读 Mask，不算拓扑，不判断侧脊/坡顶。
-
-### 3.2 第二层：变体实现（Variants）
-
-处理某一种变体的模块拼接与侧脊遮盖，例如：
-
-- `render_straight_ramp_variant(…)`
-- `render_outer_corner_variant(…)`
-- `render_inner_corner_variant(…)`
-
-本层知道「北向直坡左侧侧脊要旋多少度、偏多少」，但**不负责**从整张地图扫 Mask、也不做路由。
-
-### 3.3 第三层：分发器（Dispatcher）
-
-**对外唯一入口**。无论是编辑器点击，还是运行时从 JSON 加载地图，全部走这里。
-
-职责：
-
-1. 读取顶点的 **4 位二进制 Mask**（与周围层高 / `FLAG_RAMP` 等组合，具体编码另表）
-2. 识别拓扑形态（直线 / 外转角 / 内转角 / …）与方向
-3. 路由到对应的变体方法
-
-分发器**不知道** Mesh 怎么画；底层绘制**不关心**悬崖规则，只吃参数画 Mesh。
-
-### 3.4 为何这样拆
-
-| 目的 | 效果 |
-|------|------|
-| **绝对解耦** | Dispatcher ↔ Variants ↔ Place 单向依赖；改画法不动路由，改规则不动 Place |
-| **方便调试** | 「北向斜坡左侧穿模」→ 只进 `render_straight_ramp_variant` 查 `RAMP_EDGE_LEFT` 的旋转/偏移，不动分发逻辑 |
-| **统一入口** | 笔刷与读档同一条路径，避免两套拓扑判断分叉 |
+顺序：直线 → 外/内转角 → 对角线。
 
 ---
 
-## 4. CliffTrans 文件命名与模型目录（Resource）
+## 7. CliffTrans 文件命名与 Catalog
 
 路径：
 
-- `res://assets/asset-converted/Doodads/Terrain/CliffTrans/`（通用，当前 **32** 个 `.glb`）
-- `…/CityCliffTrans/`（城市崖，当前 **16** 个，是前者的子集、无 `X`/`C` 复杂缝）
+- `res://assets/asset-converted/Doodads/Terrain/CliffTrans/`（约 **32** 个 `.glb`）
+- `…/CityCliffTrans/`（约 **16**，前者子集，无 `X`/`C` 复杂缝）
 
-代码：`Wc3CliffTransCatalog`（`scripts/map/catalog/wc3_cliff_trans_catalog.gd`）
-入口：运行时 `load_cliff_trans()` / `load_city_cliff_trans()`（扫盘，**不**检入 `resources/*.tres`）
+代码：`scripts/map/catalog/wc3_cliff_trans_catalog.gd`  
 自测：`tests/unit/selftest_cliff_trans_catalog.gd`
 
-### 4.1 文件名结构
+### 7.1 文件名
 
-```
+```text
 CliffTrans  AAHL  0  .glb
 └─family─┘ └TAG┘ └variation┘
 ```
 
-| 段 | 含义 |
-|----|------|
-| **CliffTrans** | Cliff Transition（悬崖过渡 / 缝合模型）。城市族为 `CityCliffTrans`。 |
-| **末尾数字** | Variation Index。同一种拓扑的随机外观变体（0、1、2…）；本仓库转换资源目前均为 **0**。 |
-| **中间 4 字 TAG** | 一个 1×1 格四角的逻辑状态（见下）。 |
+### 7.2 TAG 角序（与直崖不同）
 
-### 4.2 TAG 四角角序（核心）
+四字：**TL → TR → BR → BL**（直崖 Cliffs 为 **BL → TL → TR → BR**）。
 
-四字依次为：**TL → TR → BR → BL**（与直崖 Cliffs 的 **BL → TL → TR → BR** 不同，对照时勿混用）。
-
-```
+```text
         TL ---- TR
          |  格  |
         BL ---- BR
-文件名顺序：TL, TR, BR, BL
 ```
 
 例：`CliffTransAAHL0` → TL=A, TR=A, BR=H, BL=L。
 
-### 4.3 单角字符含义
+### 7.3 单角字符
 
-| 字符 | 含义 | 高程 / 逻辑 |
-|------|------|-------------|
-| **A** | Cliff Level 1 (High) | 标准悬崖高地顶点 |
-| **B** | Cliff Level 2 (Higher) | 再高一层（多层崖） |
-| **C** | Cliff Level 3 (Highest) | 再高一层；**本仓库资产中有**（如 `ACXH`），与直崖 A/B/C 相对高度同族 |
-| **L** | Low Ground | 普通低地 / 平地顶点 |
-| **H** | High Ramp / Edge | 斜坡高位过渡（接坡顶悬崖） |
-| **X** | Complex Transition / Void | 特殊缝合切口（内外转角对角线切面等） |
-
-> 说明：官方/HiveWE 文档有时只列 A/B/L/H/X；打开本仓库 `CliffTrans` 目录后，**C 与 X 均出现**，查表必须认 C。
-
-### 4.4 Catalog API
-
-```gdscript
-var cat := Wc3CliffTransCatalog.load_cliff_trans()  # 运行时扫盘
-var tag := Wc3CliffTransCatalog.tag_from_corners("A", "A", "H", "L")  # → "AAHL"
-var path := cat.resolve_path_for_corners("A", "A", "H", "L")  # 磁盘存在才返回
-var path2 := cat.resolve_path_for_tag("AAHL", 0)
-```
-
-| 方法 | 作用 |
+| 字符 | 含义 |
 |------|------|
-| `rebuild_from_disk()` | 扫描 family 目录，登记 tag → 变体列表 |
-| `tag_from_corners(tl,tr,br,bl)` | 四角状态 → 4 字 TAG |
-| `path_for_tag` / `basename_for_tag` | 拼逻辑路径 / 文件名（不校验存在） |
-| `resolve_path_for_tag` / `resolve_path_for_corners` | 仅已登记且磁盘存在时返回路径，否则 `""` |
-| `has_tag` / `list_tags` / `variations_for` | 查询登记表 |
+| **A/B/C** | 崖层高相对阶（与直崖同族） |
+| **L** | 低地 |
+| **H** | 斜坡高位过渡 |
+| **X** | 复杂缝 / 切口 |
 
-Dispatcher / Variant **只通过 Catalog 取模型**，不要手写 `CliffTrans%s%d.glb` 字符串散落各处。
+### 7.4 实现注意
 
-### 4.5 开放问题 / 实现注意（补充）
-
-1. **不是所有 6⁴ 组合都有模型**  
-   当前 CliffTrans 仅 32 个 TAG。查表失败应明确失败或走回退策略（缺模警告），禁止静默乱替。
-
-2. **角序与直崖 TAG 不同**  
-   Cliffs 用 BL,TL,TR,BR + A/B/C；CliffTrans 用 TL,TR,BR,BL + A/B/C/H/L/X。从层高推 CliffTrans 字符时，先换算到本角序再查 Catalog。
-
-3. **1×1 TAG ≠ 整条斜坡**  
-   直线坡常跨 1×2 / 2×1 条带，侧脊可能要 **两块** CliffTrans（主条 + 对侧）。Catalog 只解决「四角 → 一块模」；条带如何拆成多次放置是 L2/L3 的事。
-
-4. **CityCliffTrans 子集**  
-   城市族无 `X`/`C` 复杂缝；缺模时是否回退到 `CliffTrans` 同 TAG，由 Variant 策略决定（Catalog 保持家族隔离，不自动跨族）。
-
-5. **Variation**  
-   现资源只有 `0`；API 已预留多变体。随机外观可在 L2 用 `variations_for` 选取。
-
-6. **与逻辑层 FLAG_RAMP 的关系**  
-   蓝菱形 / `FLAG_RAMP` 描述「哪些顶点在坡上」；四字 TAG 描述「这一格缝合模吃什么角状态」。Dispatcher 负责从层高 + 旗位 → 四角字符，再问 Catalog。
-
-7. **对角切分 Flag**  
-   W3E Diagonal Cliff Flag 与 TAG 中的 `X` 如何对应，需对照官方图/HiveWE 后再锁编码表（本阶段只登记模型，不定映射）。
+1. 不是所有组合都有模 → 失败要显式  
+2. 角序与直崖 TAG 勿混用  
+3. 1×1 TAG ≠ 整条坡；条带拆多块是 Logic 的事  
+4. City 族缺模是否回退通用族由策略决定；Catalog 不自动跨族  
+5. `FLAG_RAMP` 描述「哪些顶点在坡上」；四字 TAG 描述「这一格缝合模」；Logic 负责二者映射  
 
 ---
 
-## 5. 与「逻辑层 / 表现层」的关系
-
-| 阶段 | 职责 | 验收 |
-|------|------|------|
-| **逻辑层** | 笔刷写 `FLAG_RAMP`；可选修正条带中间层高；蓝菱形只读旗位 | WE 同位置出现同列/同行蓝菱形 |
-| **表现层** | 上节三层结构 + 各拓扑变体；挖洞 / CliffTrans / 甲板 / 与高度图缝合 | 视觉对齐 WE |
-
-逻辑层产出的旗位与层高，是 Dispatcher 识别 Mask / 拓扑的输入之一；表现层不得回头改「乱写旗」来补视觉。
-
----
-
-## 6. 当前进度
-
-- [x] 清空旧斜坡表现耦合（基线 `948c979`）
-- [x] **逻辑层**：条带笔刷 + 蓝菱形调试层（`4b05702`）
-- [x] **CliffTrans Catalog**：命名解码 + Resource 查表（32 / City 16）
-- [ ] 表现层 L1：基础放置 API + 高度图依赖注入
-- [ ] 表现层 L3：Dispatcher（Mask / 四角状态 → 拓扑 → Catalog）
-- [ ] 表现层 L2：直线变体（4 向）
-- [ ] 表现层 L2：外转角 / 内转角（各 4 向）
-- [ ] 表现层 L2：对角线（锯齿拼接 → 对角切分）
-
-表现层仍旁路：`collect_ramp_placements` 恒空；地面仅直崖挖洞；水体忽略 ramp。
-
----
-
-## 7. 逻辑层规则（蓝菱形）
-
-对齐 WE / 已验证的条带语义：
+## 8. 逻辑层规则（蓝菱形）— 已验证基线
 
 | 情况 | 旗位形态 | 蓝菱形 |
 |------|----------|--------|
 | 单脊竖 | 一列 3 点 | 该列 3 个菱形 |
 | 单脊横 | 一行 3 点 | 该行 3 个菱形 |
-| 宽坡 | 邻列 `111\|111` | 两列并排菱形 |
-| U 凹 | `111\|000\|111` | 两列独立；中间空列不填（除非再刷中间） |
+| 宽坡 | 邻列 `111\|111` | 两列并排 |
+| U 凹 | `111\|000\|111` | 两列独立；中间空列不填 |
 
-| API | 作用 |
-|-----|------|
-| `MapDocument.paint_ramp_at` / `try_paint_ramp_at` | 落旗 |
-| `peek_ramp_strip_at` | 悬停预览将写旗的顶点 |
+| API（现状 → 目标） | 作用 |
+|--------------------|------|
+| `MapDocument.paint_ramp_at` → 委托 `Wc3RampLogic` | 落旗 |
+| `peek_ramp_strip_at` | 悬停预览 |
 | `MapRampDebugLayer`（`show_ramp_debug`） | 蓝菱形 |
 
 自测：`tests/unit/selftest_ramp_logic.gd`。
 
-### 逻辑层验收
+### 逻辑层验收（M0）
 
-1. 悬崖工具 → 斜坡，在直线崖边点击/拖动  
-2. 蓝菱形在脊线顶点（竖=一列 3 点，横=一行 3 点）  
-3. 邻列续刷 → 宽 2；隔列刷 → 独立 U，中间无菱形  
-4. 非法处（角柱、层差≠1）拒绝并提示，不写乱旗  
-
----
-
-## 8. 术语对照（便于对照 WE / 代码命名）
-
-| 中文 | 英文建议 | 备注 |
-|------|----------|------|
-| 侧脊 | Edge / Side ridge | 直线变体两侧，常对应 CliffTrans |
-| 坡顶 / 坡底 | High / Low | 层高较高 / 较低一侧 |
-| 外转角 | Outer corner | 凸 90°，扇形 |
-| 内转角 | Inner corner | 凹 90°，漏斗 |
-| 对角切分 | Diagonal split | W3E Diagonal Cliff Flag |
-| 分发器 | Dispatcher | L3 唯一入口 |
-| 基础放置 | Place / draw mesh block | L1 无业务 |
-| 缝合模目录 | CliffTrans catalog | `Wc3CliffTransCatalog` |
-| TAG 四字 | Corner tag | TL,TR,BR,BL |
+1. 悬崖工具 → 斜坡，直线崖边点击/拖动  
+2. 蓝菱形在脊线顶点  
+3. 邻列续刷 → 宽 2；隔列 → 独立 U  
+4. 非法（角柱、层差≠1）拒绝，不写乱旗  
 
 ---
 
-## 9. 实现约定
+## 9. 当前进度
+
+- [x] 清空旧斜坡表现耦合（基线 `948c979`）  
+- [x] 逻辑层条带笔刷 + 蓝菱形（仍在 Document；待 M0 迁出）  
+- [x] CliffTrans Catalog  
+- [x] 直崖五层闭环 + tag `milestone/cliff-layered`  
+- [ ] **M0** 笔刷 → `Wc3RampLogic`  
+- [ ] **M1** `collect_ramp_placements` 真输出  
+- [ ] **M2** Present 消费 placements + 挖洞  
+- [ ] **M3** 内外转角 / 对角线  
+- [ ] **M4** 脏区 / tag `milestone/ramp-layered`  
+
+---
+
+## 10. 实现约定
 
 1. **一次只做一步**，由用户指定；每步可独立验收。  
-2. 新表现层按本文拓扑 + 三层结构接入，不恢复旧耦合实现。  
-3. 调试穿模 / 错位时：先确认逻辑层蓝菱形，再只改对应 Variant，不动 Dispatcher。  
-4. 取 CliffTrans 模型一律走 Catalog，禁止散落硬编码路径。  
+2. 新表现层按本文拓扑接入，**不**恢复旧耦合实现。  
+3. 调试穿模：先确认蓝菱形，再只查对应变体 / placement 参数。  
+4. 取模一律 Catalog；跨边界禁止调 `_` 私有 API。  
+5. Present **不得**写 Heightfield（写了即为 BUG）。  
+
+---
+
+## 11. 回归清单
+
+```text
+godot --headless --path . -s res://tests/unit/selftest_ramp_logic.gd
+godot --headless --path . -s res://tests/unit/selftest_cliff_trans_catalog.gd
+godot --headless --path . -s res://tests/cliff/selftest_cliff_variants.gd
+godot --headless --path . -s res://tests/unit/selftest_paint_ground_rebuild.gd
+```
+
+编辑器手测：直线崖边刷坡 → 蓝菱形 →（M2 后）CliffTrans 可见 → 撤销/重做 → 栅格仍在。
+
+---
+
+## 12. 明确不做（本重构波次）
+
+- 以「先好看」驱动、跳过 M0/M1  
+- 水体 / 岸浪精调（⑨）  
+- 导出 w3e  
+- 与「应用高度」纯高度坡（B）混为一谈（那是 ⑩）  
+
+---
+
+## 13. 相关文档
+
+| 文档 | 角色 |
+|------|------|
+| [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) / [CLIFF.md](CLIFF.md) | 直崖；本模块前置 |
+| [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层总纲 |
+| [ROADMAP.md](ROADMAP.md) | ⑧ 斜坡层勾选 |
+| [TODO.md](TODO.md) | 细项 |
+| [EDITOR.md](EDITOR.md) | 总管 / 命令 / 重建 |
