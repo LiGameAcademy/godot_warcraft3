@@ -330,73 +330,74 @@ func paint_cliff_corner(
 ## 非法（角柱、层差≠1、无直边）拒绝并写入 last_ramp_message。
 ## 表现层（CliffTrans / 挖洞）另做；本阶段以蓝菱形验收。
 func paint_ramp_at(ix: int, iy: int) -> bool:
-	var r: Dictionary = try_paint_ramp_at(ix, iy)
-	last_ramp_message = str(r.get("message", ""))
-	return bool(r.get("changed", false))
+	var r: Wc3RampPaintResult = try_paint_ramp_result_at(ix, iy)
+	last_ramp_message = r.message
+	return r.changed
 
 
-## 返回 { ok, changed, message, axis, sx, sy }。ok=几何合法；changed=数据有改动。
+## 返回 { ok, changed, message, axis, sx, sy }（兼容旧调用方）。
 func try_paint_ramp_at(ix: int, iy: int) -> Dictionary:
-	var fail := func(msg: String) -> Dictionary:
-		return {"ok": false, "changed": false, "message": msg}
+	return try_paint_ramp_result_at(ix, iy).to_dict()
+
+
+## 结构化笔刷结果（数据层契约）。
+func try_paint_ramp_result_at(ix: int, iy: int) -> Wc3RampPaintResult:
 	if is_empty():
-		return fail.call("地图为空")
+		return Wc3RampPaintResult.fail("地图为空")
 	var tp_w: int = heightfield.width
 	var tp_h: int = heightfield.height
 	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
-		return fail.call("顶点越界")
+		return Wc3RampPaintResult.fail("顶点越界")
 	var layers: Array = heightfield.layer_heights
 	var heights: Array = heightfield.heights
 	var water_h: Array = heightfield.water_heights
 	var flags: Array = heightfield.flags_packed
 	if layers.is_empty() or flags.is_empty():
-		return fail.call("缺少层高/旗数据")
+		return Wc3RampPaintResult.fail("缺少层高/旗数据")
 
 	var found: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h)
 	var best: Dictionary = found.get("spec", {}) as Dictionary
 	var nearest_reject: String = str(found.get("reject", "附近没有层差为 1 的直线崖边"))
 
 	if best.is_empty():
-		return fail.call(nearest_reject)
+		return Wc3RampPaintResult.fail(nearest_reject)
 
 	var resolved: Dictionary = _resolve_ramp_strip_flags(best, flags, tp_w, ix, iy)
+	var strip := Wc3RampStripSpec.from_dict(resolved)
 	var did_change := _apply_ramp_strip(resolved, layers, heights, water_h, flags, tp_w)
 	if did_change:
 		mark_dirty()
-		return {
-			"ok": true,
-			"changed": true,
-			"message": "已刷斜坡 %s@(%d,%d)" % [str(resolved.get("axis", "")), int(resolved.get("sx", 0)), int(resolved.get("sy", 0))],
-			"axis": resolved.get("axis", ""),
-			"sx": int(resolved.get("sx", 0)),
-			"sy": int(resolved.get("sy", 0)),
-			"ramp_left": resolved.get("ramp_left", true),
-			"ramp_bottom": resolved.get("ramp_bottom", true),
-		}
-	return {
-		"ok": true,
-		"changed": false,
-		"message": "斜坡已存在",
-		"axis": resolved.get("axis", ""),
-		"sx": int(resolved.get("sx", 0)),
-		"sy": int(resolved.get("sy", 0)),
-	}
+		return Wc3RampPaintResult.success(
+			true,
+			"已刷斜坡 %s@(%d,%d)" % [strip.axis, strip.sx, strip.sy],
+			strip
+		)
+	return Wc3RampPaintResult.success(false, "斜坡已存在", strip)
 
 
 ## 预览：光标将刷到的条带（已解析 L|R / 底顶旗向，与 apply 一致）。
 func peek_ramp_strip_at(ix: int, iy: int) -> Dictionary:
-	if is_empty():
+	var spec := peek_ramp_strip_spec_at(ix, iy)
+	if spec == null or not spec.ok:
 		return {}
+	return spec.to_dict()
+
+
+## 结构化预览（数据层契约）；空/非法返回 ok=false 的 spec。
+func peek_ramp_strip_spec_at(ix: int, iy: int) -> Wc3RampStripSpec:
+	if is_empty():
+		return Wc3RampStripSpec.fail("地图为空")
 	var tp_w: int = heightfield.width
 	var tp_h: int = heightfield.height
 	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
-		return {}
+		return Wc3RampStripSpec.fail("顶点越界")
 	var layers: Array = heightfield.layer_heights
 	var flags: Array = heightfield.flags_packed
-	var spec: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h).get("spec", {})
-	if spec.is_empty():
-		return {}
-	return _resolve_ramp_strip_flags(spec, flags, tp_w, ix, iy)
+	var raw: Dictionary = _find_best_ramp_strip(ix, iy, layers, tp_w, tp_h).get("spec", {})
+	if raw.is_empty():
+		return Wc3RampStripSpec.fail()
+	var resolved: Dictionary = _resolve_ramp_strip_flags(raw, flags, tp_w, ix, iy)
+	return Wc3RampStripSpec.from_dict(resolved)
 
 
 ## 与 _apply_ramp_strip 相同的旗向解析，供预览与落点对齐。

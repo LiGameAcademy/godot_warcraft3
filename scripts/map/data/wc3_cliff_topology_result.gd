@@ -5,6 +5,7 @@ extends RefCounted
 
 var placements: Array[Wc3CliffPlacement] = []
 var gap_mask: PackedByteArray = PackedByteArray() ## 地表格 (w-1)*(h-1)；1=挖洞
+## tilepoint 网格 romp（Wc3RampKinds.ROMP_*）；由 Ramp collect 填
 var romp: PackedByteArray = PackedByteArray()
-var ramp_placements: Array = []
+var ramp_placements: Array[Wc3RampPlacement] = []
 var gap_stats: Dictionary = {}

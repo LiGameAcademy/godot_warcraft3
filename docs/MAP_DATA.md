@@ -119,11 +119,17 @@ scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
   wc3_tile_vertex.gd
   wc3_heightfield.gd
   wc3_parsed_map.gd
+  wc3_cliff_placement.gd
+  wc3_ramp_kinds.gd           # romp / 轴 / 拓扑常量
+  wc3_ramp_placement.gd       # Logic→Present CliffTrans 放置
+  wc3_ramp_collect_result.gd
+  wc3_ramp_strip_spec.gd      # 笔刷条带
+  wc3_ramp_paint_result.gd
 
 scripts/map/catalog/          # 资源映射（非 map-parsed）
   wc3_id_catalog.gd
   wc3_cliff_trans_catalog.gd
-  # 目标：Wc3CliffCatalog / Wc3GroundTileCatalog
+  wc3_cliff_catalog.gd
 
 docs/MAP_DATA.md              # 本文
 docs/LAYERED_ARCHITECTURE.md  # 分层总纲
@@ -134,9 +140,27 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 
 ---
 
-## 7. 验收
+## 7. 斜坡派生结构（非 JSON 权威）
+
+地图存盘权威仍是 `flagsPacked` 的 `FLAG_RAMP`（顶点级）。下列类型是 **Logic 派生 → Present/Editor 消费** 的契约，不进 `terrain-heightfield.json`：
+
+| 类型 | 职责 |
+|------|------|
+| `Wc3RampKinds` | romp 字节 / 轴 / 拓扑形态常量 |
+| `Wc3RampPlacement` | 一格 CliffTrans 放置（TAG、model_dir、axis、phantom…） |
+| `Wc3RampCollectResult` | `placements` + `romp`（替代裸 Dictionary） |
+| `Wc3RampStripSpec` | 笔刷条带几何（axis/sx/sy/旗向） |
+| `Wc3RampPaintResult` | 一次刷坡尝试结果 |
+| `Wc3CliffTopologyResult.ramp_*` | 与直崖同次拓扑扫描缓存 |
+
+`Wc3TileVertex.has_ramp` 读写 `FLAG_RAMP`（与水互斥）。Catalog 侧模型目录见 `CliffTypeDef.ramp_model_dir` + `Wc3CliffTransCatalog`。
+
+---
+
+## 8. 验收
 
 1. `Wc3ParsedMap.load_dir("res://assets/map-parsed/losttemple")` 成功，`heightfield.width==161`  
 2. `vertex_at(0,0).height` 与 JSON `heights[0]` 一致  
 3. 修改 `vertex_at` 的 `layer` / `flags` 后，`to_dict()["layerHeights"]` 同步变化  
 4. 不默认分配 width×height 个 `Wc3TileVertex` 常驻实例  
+5. `selftest_ramp_data`：Placement / Collect / Strip 强类型绿  

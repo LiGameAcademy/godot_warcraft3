@@ -25,7 +25,7 @@ var catalog: Wc3IdCatalog = null
 var cache: MapModelCache = null
 
 var cliff_romp: PackedByteArray = PackedByteArray()
-var cliff_ramp_placements: Array = []
+var cliff_ramp_placements: Array[Wc3RampPlacement] = []
 var cliff_placements: Array[Wc3CliffPlacement] = []
 var cliff_gap_mask: PackedByteArray = PackedByteArray()
 var cliff_gap_stats: Dictionary = {}

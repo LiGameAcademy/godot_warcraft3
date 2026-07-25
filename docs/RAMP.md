@@ -135,7 +135,7 @@ L1 基础放置         → Present Builder（变换 + MultiMesh，无业务）
 
 1. 新建 `logic/ramp/wc3_ramp_logic.gd`，迁入 Document 条带笔刷 / 评分 / 落旗  
 2. Document 仅委托；蓝菱形与 `selftest_ramp_logic` 行为不变  
-3. 定义 `Wc3RampPlacement`（字段可先最小：`ix,iy,tag,model_dir,variation`）  
+3. ~~定义 `Wc3RampPlacement`~~ ✅（含 CollectResult / StripSpec / PaintResult；Topology+Context 已强类型）  
 4. 文档：本文 + ROADMAP ⑧ 勾选进度  
 
 **验收**：WE 同位置刷坡 → 同列/同行蓝菱形；非法处拒绝；自测绿。
@@ -280,7 +280,8 @@ CliffTrans  AAHL  0  .glb
 - [x] 逻辑层条带笔刷 + 蓝菱形（仍在 Document；待 M0 迁出）  
 - [x] CliffTrans Catalog  
 - [x] 直崖五层闭环 + tag `milestone/cliff-layered`  
-- [ ] **M0** 笔刷 → `Wc3RampLogic`  
+- [x] **数据层**：`Wc3RampPlacement` / `CollectResult` / `StripSpec` / `PaintResult` + Topology/Context 强类型  
+- [ ] **M0** 笔刷 → `Wc3RampLogic`（Document 私有条带实现迁出）  
 - [ ] **M1** `collect_ramp_placements` 真输出  
 - [ ] **M2** Present 消费 placements + 挖洞  
 - [ ] **M3** 内外转角 / 对角线  
