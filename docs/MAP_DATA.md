@@ -123,9 +123,6 @@ scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
   wc3_ramp_kinds.gd           # romp / 轴 / 拓扑常量
   wc3_ramp_placement.gd       # Logic→Present CliffTrans 放置
   wc3_ramp_collect_result.gd
-  wc3_ramp_strip_spec.gd      # 笔刷条带
-  wc3_ramp_strip_search_result.gd
-  wc3_ramp_paint_result.gd
 
 scripts/map/catalog/          # 资源映射（非 map-parsed）
   wc3_id_catalog.gd
@@ -148,12 +145,11 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 | 类型 | 职责 |
 |------|------|
 | `Wc3RampKinds` | romp 字节 / 轴 / 拓扑形态常量 |
-| `Wc3RampPlacement` | 一格 CliffTrans 放置（TAG、model_dir、axis、phantom…） |
-| `Wc3RampCollectResult` | `placements` + `romp`（替代裸 Dictionary） |
-| `Wc3RampStripSpec` | 笔刷条带几何（axis/sx/sy/旗向）；`spine_vertices()` |
-| `Wc3RampStripSearchResult` | 光标附近最佳条带 + reject |
-| `Wc3RampPaintResult` | 一次刷坡尝试结果 |
-| `Wc3CliffTopologyResult.ramp` | 嵌入 `Wc3RampCollectResult`（与直崖同次扫描） |
+| `Wc3RampPlacement` | 一格 CliffTrans 放置（TAG、model_dir、axis…） |
+| `Wc3RampCollectResult` | `placements` + `romp` |
+| `Wc3CliffTopologyResult.ramp` | 嵌入 CollectResult |
+
+笔刷条带几何**不属于 Data**：在 `Wc3RampLogic` 私有实现；对外 `paint_at` / `peek_spine_at` / `PaintResult`。
 
 `Wc3TileVertex.has_ramp` 读写 `FLAG_RAMP`（与水互斥）。Catalog 侧模型目录见 `CliffTypeDef.ramp_model_dir` + `Wc3CliffTransCatalog`。
 

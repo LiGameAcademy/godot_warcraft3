@@ -10,7 +10,7 @@
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
 | **崖 M0–M2** | ✅ + tag | `milestone/cliff-layered`；M3 脏区可选 |
-| **坡 M0 笔刷迁出** | 数据契约 ✅；Logic 迁出待开 | Placement/Collect/Strip 已落地；Document → `Wc3RampLogic` 仍待 |
+| **坡 M0 笔刷迁出** | ✅ | `Wc3RampLogic`；删 StripSpec/Search/Paint 独立脚本 |
 | **坡 M1 Dispatcher** | 待开 | `collect_ramp_placements` + romp + CliffTrans TAG |
 | **坡 M2 Present** | 待开 | placements → Layer；挖洞 |
 | **坡 M3/M4** | 后置 | 转角/对角；脏区；`milestone/ramp-layered` |
@@ -45,8 +45,8 @@
 ## 地形 / 斜坡
 
 - [ ] **斜坡（崖边 A）**：[RAMP.md](RAMP.md) M0–M4。勿与「应用高度」纯高度坡（B）混淆。
-- [x] 数据层：StripSpec 贯通笔刷路径；`Topology.ramp` / `Context.ramp`；`selftest_ramp_data`  
-- [ ] M0：`logic/ramp/wc3_ramp_logic.gd`；`selftest_ramp_logic` 绿
+- [x] 数据层：仅 `Placement` / `CollectResult` / `Kinds`（笔刷不进 Data）
+- [x] M0：`logic/ramp/wc3_ramp_logic.gd`；Document 委托；`selftest_ramp_logic` 绿
 - [ ] M1：直线 4 向 placements；缺模警告
 - [ ] M2：`MapRampLayer`（或 CliffLayer 通道）+ 坡格 gap
 - [ ] M3：外/内转角 → 对角线锯齿

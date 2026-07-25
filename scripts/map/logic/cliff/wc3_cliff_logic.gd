@@ -569,15 +569,11 @@ static func is_ramp_entrance(
 	return false
 
 
-## 斜坡选型入口（重建前返回空 placements + 全 NONE romp）。
+## 斜坡选型入口：转发 Wc3RampLogic（重建前仍为空 placements）。
 static func collect_ramp_placements(
-	hf: Dictionary, meta: Dictionary = {}, _cliff_catalog: Wc3CliffCatalog = null
+	hf: Dictionary, meta: Dictionary = {}, cliff_catalog: Wc3CliffCatalog = null
 ) -> Wc3RampCollectResult:
-	if meta.is_empty():
-		meta = Wc3Heightfield.build_meta_from_dict(hf)
-	var tp_w: int = int(meta.get("width", 0))
-	var tp_h: int = int(meta.get("height", 0))
-	return Wc3RampCollectResult.empty_for_size(tp_w, tp_h)
+	return Wc3RampLogic.collect_placements(hf, meta, cliff_catalog)
 
 
 static func romp_kind_at(_romp: PackedByteArray, _tp_w: int, _ix: int, _iy: int) -> int:

@@ -1,6 +1,6 @@
 extends SceneTree
-## 逻辑层自测：条带写 FLAG_RAMP 的形状（不测 CliffTrans）。
-## 用法：godot --headless -s res://tests/unit/selftest_ramp_logic.gd
+## 逻辑层自测：条带写 FLAG_RAMP（不测 CliffTrans）。
+## godot --headless -s res://tests/unit/selftest_ramp_logic.gd
 
 
 const DocScript := preload("res://editor/scripts/map_document.gd")
@@ -61,6 +61,7 @@ func _make_doc(tp_w: int, tp_h: int, layers: Array):
 	}, false)
 	doc.cliff.bind(doc.heightfield)
 	doc.terrain.bind(doc.heightfield)
+	doc.ramp.bind(doc.heightfield, doc.cliff)
 	return doc
 
 
@@ -84,7 +85,6 @@ func _flag_row(doc, x0: int, row: int) -> String:
 	return s
 
 
-## 南北走向崖 → 竖脊一列 111。
 func _test_vertical_single() -> int:
 	var tp_w := 4
 	var tp_h := 5
@@ -94,14 +94,14 @@ func _test_vertical_single() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if ix <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
+	var r: Wc3RampLogic.PaintResult = doc.try_paint_ramp_at(1, 2)
 	if not r.ok:
 		push_error("vertical_single: reject %s" % r.message)
 		return 1
-	if r.strip == null or r.strip.axis != Wc3RampKinds.AXIS_V:
+	if r.axis != Wc3RampKinds.AXIS_V:
 		push_error("vertical_single: want axis=v")
 		return 1
-	var sy: int = r.strip.sy
+	var sy: int = r.sy
 	var left := _flag_col(doc, 1, sy)
 	var right := _flag_col(doc, 2, sy)
 	var ok := (left == "111" and right == "000") or (left == "000" and right == "111")
@@ -112,7 +112,6 @@ func _test_vertical_single() -> int:
 	return 0
 
 
-## 东西走向崖 → 横脊一行 111。
 func _test_horizontal_single() -> int:
 	var tp_w := 5
 	var tp_h := 4
@@ -122,14 +121,14 @@ func _test_horizontal_single() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if iy <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(2, 1)
+	var r: Wc3RampLogic.PaintResult = doc.try_paint_ramp_at(2, 1)
 	if not r.ok:
 		push_error("horizontal_single: reject %s" % r.message)
 		return 1
-	if r.strip == null or r.strip.axis != Wc3RampKinds.AXIS_H:
+	if r.axis != Wc3RampKinds.AXIS_H:
 		push_error("horizontal_single: want axis=h")
 		return 1
-	var sx: int = r.strip.sx
+	var sx: int = r.sx
 	var bot := _flag_row(doc, sx, 1)
 	var top := _flag_row(doc, sx, 2)
 	var ok := (bot == "111" and top == "000") or (bot == "000" and top == "111")
@@ -140,7 +139,6 @@ func _test_horizontal_single() -> int:
 	return 0
 
 
-## 邻列再刷 → 两列皆 111（宽坡）。
 func _test_vertical_wide() -> int:
 	var tp_w := 5
 	var tp_h := 5
@@ -150,27 +148,26 @@ func _test_vertical_wide() -> int:
 		for ix in range(tp_w):
 			layers[iy * tp_w + ix] = 2 if ix <= 1 else 3
 	var doc = _make_doc(tp_w, tp_h, layers)
-	var r1: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
-	if not r1.changed or r1.strip == null or r1.strip.axis != Wc3RampKinds.AXIS_V:
+	var r1: Wc3RampLogic.PaintResult = doc.try_paint_ramp_at(1, 2)
+	if not r1.changed or r1.axis != Wc3RampKinds.AXIS_V:
 		push_error("vertical_wide: first paint failed %s" % r1.message)
 		return 1
-	var sy: int = r1.strip.sy
+	var sy: int = r1.sy
 	var left1 := _flag_col(doc, 1, sy)
 	var next_x := 2 if left1 == "111" else 1
-	var r2: Wc3RampPaintResult = doc.try_paint_ramp_at(next_x, 2)
+	var r2: Wc3RampLogic.PaintResult = doc.try_paint_ramp_at(next_x, 2)
 	if not r2.ok:
 		push_error("vertical_wide: second paint reject %s" % r2.message)
 		return 1
 	var left := _flag_col(doc, 1, sy)
 	var right := _flag_col(doc, 2, sy)
 	if left != "111" or right != "111":
-		push_error("vertical_wide: want 111|111 got %s|%s (first L=%s)" % [left, right, left1])
+		push_error("vertical_wide: want 111|111 got %s|%s" % [left, right])
 		return 1
 	print("  vertical_wide OK 111|111")
 	return 0
 
 
-## 已有 111|000|111 时，点在已完整脊上不应把中间自动填满。
 func _test_u_gap_not_auto_fill() -> int:
 	var tp_w := 6
 	var tp_h := 5
@@ -184,7 +181,7 @@ func _test_u_gap_not_auto_fill() -> int:
 	for yy in range(1, 4):
 		flags[yy * tp_w + 1] = Wc3Coords.FLAG_RAMP
 		flags[yy * tp_w + 3] = Wc3Coords.FLAG_RAMP
-	var r: Wc3RampPaintResult = doc.try_paint_ramp_at(1, 2)
+	var r: Wc3RampLogic.PaintResult = doc.try_paint_ramp_at(1, 2)
 	if not r.ok:
 		push_error("u_gap: unexpected reject %s" % r.message)
 		return 1

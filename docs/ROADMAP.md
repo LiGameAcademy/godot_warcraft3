@@ -110,7 +110,7 @@
 
 > 计划全文：[RAMP.md](RAMP.md)（五层重构 + 拓扑 / CliffTrans）
 
-- [ ] M0：条带笔刷迁 `Wc3RampLogic`；Document 委托；蓝菱形不变
+- [x] M0：条带笔刷迁 `Wc3RampLogic`；Document 委托；蓝菱形不变
 - [ ] M1：`collect_ramp_placements` 真输出 + romp
 - [ ] M2：Present 消费 placements；坡格挖洞
 - [ ] M3：内外转角 / 对角线；M4 可选脏区 + tag

@@ -280,8 +280,8 @@ CliffTrans  AAHL  0  .glb
 - [x] 逻辑层条带笔刷 + 蓝菱形（仍在 Document；待 M0 迁出）  
 - [x] CliffTrans Catalog  
 - [x] 直崖五层闭环 + tag `milestone/cliff-layered`  
-- [x] **数据层**：StripSpec 贯通 Document 条带路径；Topology/Context 嵌入 `ramp: CollectResult`；去掉 Dictionary 过渡 API  
-- [ ] **M0** 笔刷 → `Wc3RampLogic`（Document 私有条带实现迁出）  
+- [x] **数据层**：仅 Placement / Collect / Kinds；笔刷 DTO 不进 Data  
+- [x] **M0** 笔刷 → `Wc3RampLogic`（Document 委托；条带私有）  
 - [ ] **M1** `collect_ramp_placements` 真输出  
 - [ ] **M2** Present 消费 placements + 挖洞  
 - [ ] **M3** 内外转角 / 对角线  
