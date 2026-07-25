@@ -1,0 +1,25 @@
+---
+description: 表现层禁止领域判断与写运行时地图数据
+globs: scripts/map/presentation/**/*.gd,scripts/map/map_*_layer.gd,scripts/map/wc3_*_builder.gd
+alwaysApply: false
+---
+
+# 表现层纪律（Present）
+
+## 职责
+
+只根据 **运行时状态**（Heightfield / placements / gap_mask）+ **配置**（Def / Catalog 表列）+ **资产**（PNG/GLB）做渲染与挂接。
+
+## 禁止
+
+- 改 `Wc3Heightfield` / flags / layerHeights / cliffTextures 等运行时数据（写了即为 BUG）
+- 做领域判断：`is_cliff_tile`、TAG 选型、变体选型、挖洞判定、蛋糕传播
+- 直接调用 `Wc3CliffLogic` 的拓扑 API（应读 Context 已缓存的 Logic 输出）
+
+## 允许
+
+- Catalog.`resolve_glb` / `png_for_*` / 加载纹理与 Mesh
+- 坐标映射（placement → Transform3D）
+- MultiMesh / 材质 / shader 参数
+
+拓扑一律由 Logic.`build_topology` 产出。

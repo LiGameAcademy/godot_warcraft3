@@ -1,7 +1,8 @@
 class_name MapCliffLayer
 extends Node3D
 
-## 悬崖表现层：消费 Context 上的 placements + Catalog，经 MapModelCache 挂 MultiMesh。
+## 悬崖表现层：只读 Context.placements + Catalog 资产 → MultiMesh。
+## 禁止改 Heightfield；禁止做 TAG / 挖洞 / 变体选型（一律 Logic）。
 
 var _shader: Shader
 var _height_tex: Texture2D
@@ -32,7 +33,6 @@ func build(ctx: MapBuildContext) -> void:
 	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
 		ctx.cliff_placements,
 		ctx.cliff_catalog,
-		hf.cliff_tilesets,
 		hf.center_offset,
 		hf.tile_size
 	)
@@ -41,7 +41,7 @@ func build(ctx: MapBuildContext) -> void:
 
 	var cliff_tilesets: Array = hf.cliff_tilesets
 	var tex_cache: Dictionary = {}
-	var mesh_by_key: Dictionary = {} # "glb|tex_idx" → Mesh
+	var mesh_by_key: Dictionary = {}
 
 	for g in collected.groups:
 		var glb: String = g.glb

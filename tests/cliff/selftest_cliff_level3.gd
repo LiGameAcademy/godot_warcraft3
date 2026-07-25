@@ -92,7 +92,7 @@ func _run() -> void:
 
 	var _pls: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(doc.heightfield, cliffs)
 	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
-		_pls, cliffs, doc.heightfield.cliff_tilesets,
+		_pls, cliffs,
 		doc.heightfield.center_offset, doc.heightfield.tile_size
 	)
 	print(
@@ -132,7 +132,7 @@ func _run() -> void:
 		print(row2)
 	_pls = Wc3CliffLogic.collect_placements(doc.heightfield, cliffs)
 	collected = Wc3CliffBuilder.build_from_placements(
-		_pls, cliffs, doc.heightfield.cliff_tilesets,
+		_pls, cliffs,
 		doc.heightfield.center_offset, doc.heightfield.tile_size
 	)
 	print(

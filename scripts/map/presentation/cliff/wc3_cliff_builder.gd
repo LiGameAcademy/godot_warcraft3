@@ -1,37 +1,31 @@
 class_name Wc3CliffBuilder
 extends RefCounted
 
-## 悬崖表现装配：只消费 Logic 的 placements + Catalog 资源映射，不扫描拓扑。
+## 悬崖表现装配：只读 placements + Catalog 资产路径 → MultiMesh 分组。
+## 禁止：拓扑判断、改 Heightfield、过滤 TAG（Logic 已保证列表可渲染）。
 
 
 static func build_from_placements(
 	placements: Array[Wc3CliffPlacement],
 	cliff_catalog: Wc3CliffCatalog,
-	cliff_tilesets: Array,
 	center: Vector2,
 	tile_size: float
 ) -> Wc3CliffBuildResult:
 	var result := Wc3CliffBuildResult.new()
-	if placements.is_empty() or cliff_tilesets.is_empty() or cliff_catalog == null:
+	if placements.is_empty() or cliff_catalog == null:
 		return result
 
 	var buckets: Dictionary = {} # key → Group
 	var missing_logged: Dictionary = {}
 
 	for p in placements:
-		if p == null or p.tag.is_empty() or p.tag == "AAAA":
+		if p == null:
 			continue
-		var cliff_id := (
-			str(cliff_tilesets[p.cliff_tex_index])
-			if p.cliff_tex_index >= 0 and p.cliff_tex_index < cliff_tilesets.size()
-			else ""
-		)
-		var model_dir: String = cliff_catalog.cliff_model_dir(cliff_id)
-		var glb: String = cliff_catalog.resolve_glb(model_dir, p.tag, p.variation)
+		var glb: String = cliff_catalog.resolve_glb(p.model_dir, p.tag, p.variation)
 		if glb.is_empty():
 			if not missing_logged.has("C:" + p.tag):
 				missing_logged["C:" + p.tag] = true
-				push_warning("悬崖模型缺失: %s/%s" % [model_dir, p.tag])
+				push_warning("悬崖模型缺失: %s/%s" % [p.model_dir, p.tag])
 			result.missing += 1
 			continue
 		var xf := instance_transform(p.ix, p.iy, p.base_layer, center, tile_size)
@@ -55,7 +49,7 @@ static func _bucket_add(
 	(buckets[key] as Wc3CliffBuildResult.Group).transforms.append(xf)
 
 
-## Cliffs：局部 X∈[-128,0]，锚 (ix+1, iy)；Z=(base-2)*128。
+## 坐标映射（表现）：Cliffs 局部 X∈[-128,0]，锚 (ix+1, iy)；Z=(base-2)*128。
 static func instance_transform(
 	ix: int,
 	iy: int,

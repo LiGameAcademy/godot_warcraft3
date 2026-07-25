@@ -1,40 +1,37 @@
 class_name MapBuildContext
 extends RefCounted
 
-## 单次地图构建会话（Presentation 装配状态），不是数据权威。
+## 单次地图构建会话（Presentation 装配缓存），不是数据权威，也不含领域判断。
 ##
 ## 权威地形态：`Wc3Heightfield`（Data）与 `MapDocument`（Editor）。
 ## 本类职责：
-## - 持有本次 rebuild 要用的 Catalog / Cache / tiles
-## - 缓存悬崖拓扑（romp / placements），避免各 Layer 重复算
+## - 持有本次 rebuild 要用的 Catalog / Cache
+## - 缓存 Logic 已算好的 placements / gap_mask（只赋值，不重算拓扑）
 ## - 过渡期保留 `hf` / `meta` 字典视图，供尚未改完的水体层
 ##
-## 与 Data 不重叠：Heightfield 描述「地图是什么」；Context 描述「这一次怎么建」。
-## 长期方向：Layer 优先读 `heightfield` 字段；`meta`/`hf` 随水重构删掉。
+## 禁止：在本类写 Heightfield；禁止在本类做 TAG / 挖洞判断（一律 Logic）。
 
 var map_dir: String = ""
-var heightfield: Wc3Heightfield = null					## 权威 SoA（与 Document / 磁盘共用或自持平行数组）
-var hf: Dictionary = {}									## 与 heightfield 共享数组的 JSON 形视图（兼容尚未改完的 Domain）
-var meta: Dictionary = {}								## 构建器用 meta（heightfield.to_build_meta，数组共享）——过渡期
-var info: Dictionary = {}								## info.json（可空）
-var map_flags: Dictionary = {}							## info.flags（waterWavesCliff 等）
-var main_tileset: String = "I"							## 主 tileset（I=1，D=2，C=3）
+var heightfield: Wc3Heightfield = null
+var hf: Dictionary = {}
+var meta: Dictionary = {}
+var info: Dictionary = {}
+var map_flags: Dictionary = {}
+var main_tileset: String = "I"
 
-var tiles: Wc3TerrainTileCatalog = null					## 地表瓷砖 Catalog
-var cliff_catalog: Wc3CliffCatalog = null				## 直崖 Catalog
-var catalog: Wc3IdCatalog = null						## 瓷砖 ID 目录
-var cache: MapModelCache = null							## 模型缓存
+var tiles: Wc3TerrainTileCatalog = null
+var cliff_catalog: Wc3CliffCatalog = null
+var catalog: Wc3IdCatalog = null
+var cache: MapModelCache = null
 
-# 悬崖拓扑（ensure_cliff_topology 后有效）
-var cliff_romp: PackedByteArray = PackedByteArray()		## 斜坡 romp（重建前全 0）
-var cliff_ramp_placements: Array = []					## 斜坡放置（重建前空）
-var cliff_placements: Array[Wc3CliffPlacement] = []		## 直崖 Logic 输出
-var cliff_gap_mask: PackedByteArray = PackedByteArray()	## 地表格挖洞：1=留缝（Logic 预计算）
-var cliff_gap_stats: Dictionary = {}					## 悬崖 gap 统计
-var _cliff_ready: bool = false							## 悬崖拓扑是否已准备好
+var cliff_romp: PackedByteArray = PackedByteArray()
+var cliff_ramp_placements: Array = []
+var cliff_placements: Array[Wc3CliffPlacement] = []
+var cliff_gap_mask: PackedByteArray = PackedByteArray()
+var cliff_gap_stats: Dictionary = {}
+var _cliff_ready: bool = false
 
 
-## 创建上下文
 static func create(
 	p_map_dir: String, p_hf: Dictionary, p_info: Dictionary,
 	p_tiles: Wc3TerrainTileCatalog, p_catalog: Wc3IdCatalog = null, p_cache: MapModelCache = null,
@@ -65,38 +62,19 @@ static func create(
 	return ctx
 
 
-## Logic 算 placements / gaps；Present Layer 只读缓存（不回调 Logic）。
+## 向 Logic 要拓扑结果并缓存；本函数不含判断。
 func ensure_cliff_topology() -> void:
 	if _cliff_ready:
 		return
-	var ramp_data := Wc3CliffLogic.collect_ramp_placements(hf, meta, cliff_catalog)
-	cliff_romp = ramp_data.get("romp", PackedByteArray()) as PackedByteArray
-	cliff_ramp_placements = ramp_data.get("placements", []) as Array
-	cliff_placements = Wc3CliffLogic.collect_placements(heightfield, cliff_catalog)
-	cliff_gap_stats = Wc3CliffLogic.count_gaps(hf, meta, ramp_data)
-	cliff_gap_mask = _build_gap_mask()
+	var topo: Wc3CliffTopologyResult = Wc3CliffLogic.build_topology(
+		heightfield, cliff_catalog
+	)
+	cliff_romp = topo.romp
+	cliff_ramp_placements = topo.ramp_placements
+	cliff_placements = topo.placements
+	cliff_gap_mask = topo.gap_mask
+	cliff_gap_stats = topo.gap_stats
 	_cliff_ready = true
-
-
-func _build_gap_mask() -> PackedByteArray:
-	var mask := PackedByteArray()
-	if heightfield == null or not heightfield.is_valid():
-		return mask
-	var tp_w: int = heightfield.width
-	var tp_h: int = heightfield.height
-	var layers: Array = heightfield.layer_heights
-	var flags: Array = heightfield.flags_packed
-	mask.resize(maxi((tp_w - 1) * (tp_h - 1), 0))
-	mask.fill(0)
-	var i := 0
-	for iy in range(tp_h - 1):
-		for ix in range(tp_w - 1):
-			if Wc3CliffLogic.should_leave_gap(
-				layers, flags, tp_w, tp_h, ix, iy, cliff_romp
-			):
-				mask[i] = 1
-			i += 1
-	return mask
 
 
 func width() -> int:

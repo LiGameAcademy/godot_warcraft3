@@ -149,7 +149,6 @@ func _scan_missing_and_dup(
 	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
 		placements,
 		cliffs,
-		doc.heightfield.cliff_tilesets,
 		doc.heightfield.center_offset,
 		doc.heightfield.tile_size
 	)

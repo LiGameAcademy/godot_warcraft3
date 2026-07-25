@@ -2,7 +2,8 @@ class_name Wc3CliffLogic
 extends RefCounted
 
 ## 悬崖逻辑层：改 layerHeights / cliffTextures / groundTile（策略 B）；
-## 以及直崖拓扑（is_cliff / TAG 叠段 / 挖洞统计）。不建 Mesh；GLB 路径归 Catalog。
+## 拓扑选型 / placements / gap_mask。不建 Mesh、不 resolve GLB。
+## Present 只消费 build_topology 输出；若 Present 写 Heightfield 即为 BUG。
 ## 斜坡（Ramp / CliffTrans / romp）重建前 API 为空壳。
 
 const LAYER_MIN := 0
@@ -407,10 +408,48 @@ func _enforce_tile_spans_at(
 					queue.append(c)
 
 
-## —— 拓扑 / TAG（纯函数）——
-## Catalog 仅用于变体上限 / modelDir（配置）；不解析 GLB。
+## —— 拓扑 / TAG ——
+## Catalog 仅用于 modelDir / 变体上限（配置）；不解析 GLB、不建 Mesh。
 
-## 从 Heightfield 算出直崖 placements（Present 只消费此列表 + Catalog.resolve）。
+## 一次扫完：placements + gap_mask + romp 空壳。Present / Context 只消费本结果。
+static func build_topology(
+	hf: Wc3Heightfield, cliff_catalog: Wc3CliffCatalog
+) -> Wc3CliffTopologyResult:
+	var result := Wc3CliffTopologyResult.new()
+	if hf == null or not hf.is_valid():
+		return result
+	var ramp_data := collect_ramp_placements(
+		hf.as_dict_view(), hf.to_build_meta(), cliff_catalog
+	)
+	result.romp = ramp_data.get("romp", PackedByteArray()) as PackedByteArray
+	result.ramp_placements = ramp_data.get("placements", []) as Array
+	result.placements = collect_placements(hf, cliff_catalog)
+	result.gap_stats = count_gaps(hf.as_dict_view(), hf.to_build_meta(), ramp_data)
+	result.gap_mask = build_gap_mask(hf, result.romp)
+	return result
+
+
+## 地表格挖洞 mask：1=Present 跳过地面四边形。
+static func build_gap_mask(hf: Wc3Heightfield, romp: PackedByteArray) -> PackedByteArray:
+	var mask := PackedByteArray()
+	if hf == null or not hf.is_valid():
+		return mask
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	var layers: Array = hf.layer_heights
+	var flags: Array = hf.flags_packed
+	mask.resize(maxi((tp_w - 1) * (tp_h - 1), 0))
+	mask.fill(0)
+	var i := 0
+	for iy in range(tp_h - 1):
+		for ix in range(tp_w - 1):
+			if should_leave_gap(layers, flags, tp_w, tp_h, ix, iy, romp):
+				mask[i] = 1
+			i += 1
+	return mask
+
+
+## 从 Heightfield 算出直崖 placements（已过滤无效 TAG；含 model_dir / variation）。
 static func collect_placements(
 	hf: Wc3Heightfield, cliff_catalog: Wc3CliffCatalog
 ) -> Array[Wc3CliffPlacement]:
@@ -451,7 +490,9 @@ static func collect_placements(
 						model_dir, tag, stored, ix, iy
 					)
 				out.append(
-					Wc3CliffPlacement.make(ix, iy, tag, base_layer, tex_idx, variation)
+					Wc3CliffPlacement.make(
+						ix, iy, tag, base_layer, tex_idx, model_dir, variation
+					)
 				)
 	return out
 

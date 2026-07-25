@@ -1,8 +1,8 @@
 class_name MapTerrainLayer
 extends Node3D
 
-## 地面表现层：根据 Wc3Heightfield 画网格 + Catalog 贴图。
-## 直崖挖洞读 Logic 规则（should_leave_gap），不在本层重算 TAG。
+## 地面表现层：只读 Heightfield + Catalog 贴图 + Context.gap_mask → 网格。
+## 禁止改 Heightfield；挖洞只读 Logic 预计算的 mask，本层不做崖判定。
 
 ## 官方图集角 bit（非教学口诀 BL=1）。用于过渡块编号。
 enum AtlasCornerBit {
