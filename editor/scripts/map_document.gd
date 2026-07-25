@@ -14,23 +14,6 @@ const DEFAULT_CLIFF := ["CIsn", "CIrb"]
 ## layerHeight=2 时 groundHeightRaw=0x2000 → 高度 0
 const FLAT_HEIGHT := 0.0
 const FLAT_LAYER := 2
-const LAYER_MIN := 0
-const LAYER_MAX := 14
-## 悬崖层差上限（WE / 官方模型仅 A/B/C）：
-## 1) 正交相邻顶点最多差 2；2) 同一地表格四角 max−min 也不得超过 2
-## （仅约束正交时，对角可差 3 → 出现 D 级相对高、叠片碎柱）。
-## 再升高则把较低点抬到 high-2（叠蛋糕外扩）；再降低则把较高点压到 low+2。
-const MAX_CLIFF_ADJ_DELTA := 2
-## 悬崖层差 1 → WC3 高度 128（与 W3E / create_from_options 一致）
-const LAYER_HEIGHT_STEP := 128.0
-
-enum CliffPropagate {
-	RAISE_LOWER = 0, ## 升：抬低邻
-	LOWER_HIGHER = 1, ## 降：压高邻
-	BOTH = 2,
-}
-const WATER_SHALLOW_EXTRA := 48.0
-const WATER_DEEP_EXTRA := 128.0
 const FLAG_WATER := Wc3Coords.FLAG_WATER
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 
@@ -38,6 +21,8 @@ const FLAG_RAMP := Wc3Coords.FLAG_RAMP
 var heightfield: Wc3Heightfield = null
 ## 高度图 / 地表逻辑（绑定 heightfield）
 var terrain: Wc3TerrainLogic = Wc3TerrainLogic.new()
+## 悬崖逻辑（蛋糕 / 策略 B / 层高）
+var cliff: Wc3CliffLogic = Wc3CliffLogic.new()
 ## 兼容旧调用：get → as_dict_view（共享数组）；set → from_dict
 var hf: Dictionary:
 	get:
@@ -49,21 +34,22 @@ var hf: Dictionary:
 			heightfield = null
 		else:
 			heightfield = Wc3Heightfield.from_dict(value, false)
-		_rebind_terrain()
+		_rebind_logic()
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
 var brush_cliff_type: int = 0
 var _dirty: bool = false
-## cliffTilesets 下标 → groundTilesets 下标（CliffTypes.groundTile）；-1=未解析
-var _cliff_ground_cache: PackedInt32Array = PackedInt32Array()
 ## 最近一次斜坡笔刷结果（供状态栏 / 自测）
 var last_ramp_message: String = ""
 
 
-func _rebind_terrain() -> void:
+func _rebind_logic() -> void:
 	terrain.bind(heightfield)
+	cliff.bind(heightfield)
+	cliff.ensure_catalog()
+	cliff.clear_ground_tile_cache()
 
 
 func is_dirty() -> bool:
@@ -177,7 +163,7 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 	map_dir = path
 	source_name = path.get_file()
 	_dirty = false
-	_cliff_ground_cache = PackedInt32Array()
+	cliff.clear_ground_tile_cache()
 	ensure_brush_index_valid()
 	dirty_changed.emit(false)
 	changed.emit()
@@ -220,7 +206,7 @@ func create_from_options(options: Dictionary) -> void:
 		ground = DEFAULT_GROUND.duplicate()
 	if cliffs.is_empty():
 		cliffs = DEFAULT_CLIFF.duplicate()
-	_cliff_ground_cache = PackedInt32Array()
+	cliff.clear_ground_tile_cache()
 	var tile_index: int = clampi(int(options.get("default_tile_index", 0)), 0, ground.size() - 1)
 	var cliff_level: int = clampi(int(options.get("cliff_level", FLAT_LAYER)), 0, 14)
 	var water_mode: int = clampi(int(options.get("water_mode", 0)), 0, 2)
@@ -324,9 +310,8 @@ func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	return true
 
 
-## 悬崖笔刷：按 WorldEditData 工具 id 改 layerHeights / heights / 水 / 斜坡 / 悬崖类型。
+## 悬崖笔刷：委托 Wc3CliffLogic；Ramp 仍由本类处理。
 ## tool_id: "0".."4"（降两/降一/整平/升一/升两）| "ShallowWater" | "DeepWater" | "Ramp"
-## level_layer: 整平目标层；<0 时用当前顶点层（无效果）。
 func paint_cliff_corner(
 	ix: int,
 	iy: int,
@@ -334,100 +319,15 @@ func paint_cliff_corner(
 	cliff_type_idx: int = -1,
 	level_layer: int = -1
 ) -> bool:
+	if tool_id == "Ramp":
+		return paint_ramp_at(ix, iy)
 	if is_empty():
 		return false
-	var tp_w: int = int(hf["tilepointWidth"])
-	var tp_h: int = int(hf["tilepointHeight"])
-	if ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
-		return false
-	var i: int = iy * tp_w + ix
-	var layers: Array = hf.get("layerHeights", []) as Array
-	var heights: Array = hf.get("heights", []) as Array
-	var water_h: Array = hf.get("waterHeights", []) as Array
-	var flags: Array = hf.get("flagsPacked", []) as Array
-	var cliff_tex: Array = hf.get("cliffTextures", []) as Array
-	var cliff_var: Array = hf.get("cliffVariations", []) as Array
-	if i < 0 or i >= layers.size() or i >= heights.size() or i >= flags.size():
-		return false
-
 	var ctype: int = cliff_type_idx if cliff_type_idx >= 0 else brush_cliff_type
-	var cts: Array = cliff_tilesets()
-	if not cts.is_empty():
-		ctype = clampi(ctype, 0, cts.size() - 1)
-
-	var changed_any := false
-	var propagate := -1
-	var touched: Array = [] ## Vector2i：层高被改动的顶点，用于同步 cliff/ground 贴图
-	match tool_id:
-		"0":
-			if _apply_layer_delta(i, layers, heights, water_h, -2):
-				changed_any = true
-				touched.append(Vector2i(ix, iy))
-			propagate = CliffPropagate.LOWER_HIGHER
-		"1":
-			if _apply_layer_delta(i, layers, heights, water_h, -1):
-				changed_any = true
-				touched.append(Vector2i(ix, iy))
-			propagate = CliffPropagate.LOWER_HIGHER
-		"2":
-			var target: int = level_layer if level_layer >= 0 else int(layers[i])
-			if _set_layer(i, layers, heights, water_h, target):
-				changed_any = true
-				touched.append(Vector2i(ix, iy))
-			propagate = CliffPropagate.BOTH
-		"3":
-			if _apply_layer_delta(i, layers, heights, water_h, 1):
-				changed_any = true
-				touched.append(Vector2i(ix, iy))
-			propagate = CliffPropagate.RAISE_LOWER
-		"4":
-			if _apply_layer_delta(i, layers, heights, water_h, 2):
-				changed_any = true
-				touched.append(Vector2i(ix, iy))
-			propagate = CliffPropagate.RAISE_LOWER
-		"ShallowWater":
-			changed_any = _paint_water(i, heights, water_h, flags, WATER_SHALLOW_EXTRA) or changed_any
-		"DeepWater":
-			changed_any = _paint_water(i, heights, water_h, flags, WATER_DEEP_EXTRA) or changed_any
-		"Ramp":
-			# 逻辑层：写 FLAG_RAMP（蓝菱形）；表现层另做
-			return paint_ramp_at(ix, iy)
-		_:
-			return false
-
-	if changed_any and propagate >= 0:
-		var raised: Array = _propagate_cliff_adjacency(
-			ix, iy, tp_w, tp_h, layers, heights, water_h, propagate
-		)
-		if not raised.is_empty():
-			changed_any = true
-			touched.append_array(raised)
-
-	# 策略 B（异种崖折中）：
-	# - 本笔种子角 ∪「至少含一个种子角的直崖格」四角 → 强制当前 ctype + groundTile（接触即同化）
-	# - 不按 AABB 扫无关旧崖（远处隔离）；接触旧异种崖是「转换类型」，不是远程删除
-	# - 蛋糕外扩仍可能改层高而抹平旧形（与 WE 一致）
-	# 只写笔刷 2×2 时，外扩崖格 i00 仍是默认泥土崖 → _corner_texture 会强制 Ldrt 硬边。
-	var ground_tex: Array = hf.get("groundTextures", []) as Array
-	var ground_var: Array = hf.get("groundVariations", []) as Array
-	var gti: int = _ground_index_for_cliff_type(ctype)
-	# 仅在层/水实际有改动时同化 groundTile；否则整平空操作也会把地表刷成崖默认贴图，盖住纹理笔刷
-	if changed_any and (not cts.is_empty() or gti >= 0) and (
-		propagate >= 0 or tool_id in ["0", "1", "2", "3", "4"]
-	):
-		if _sync_cliff_corner_textures(
-			ix, iy, tp_w, tp_h, layers, cliff_tex, cliff_var, ground_tex, ground_var, ctype, gti, touched
-		):
-			changed_any = true
-			MapLog.debug(
-				MapLog.Layer.EDITOR,
-				"Document",
-				"cliff sync ground @(%d,%d) gti=%d ctype=%d" % [ix, iy, gti, ctype]
-			)
-
-	if changed_any:
+	if cliff.paint_corner(ix, iy, tool_id, ctype, level_layer):
 		mark_dirty()
-	return changed_any
+		return true
+	return false
 
 
 ## 逻辑层：在顶点附近找合格 1×2 / 2×1 崖边条带，写 FLAG_RAMP（并修正中间层高）。
@@ -921,9 +821,9 @@ func _apply_ramp_strip(
 		var mid_r: int = int(spec.get("mid_r", 0))
 		var i_tl: int = (sy + 1) * tp_w + sx
 		var i_tr: int = i_tl + 1
-		if _set_layer(i_tl, layers, heights, water_h, mid_l):
+		if cliff.set_layer(i_tl, layers, heights, water_h, mid_l):
 			did_change = true
-		if _set_layer(i_tr, layers, heights, water_h, mid_r):
+		if cliff.set_layer(i_tr, layers, heights, water_h, mid_r):
 			did_change = true
 		# 旗向已定稿。宽2=相邻列菱形(111|111)；勿清掉已是完整脊的邻列
 		var ramp_left: bool = bool(spec.get("ramp_left", true))
@@ -949,9 +849,9 @@ func _apply_ramp_strip(
 		var mid_t: int = int(spec.get("mid_t", 0))
 		var i_br: int = sy * tp_w + sx + 1
 		var i_tr2: int = (sy + 1) * tp_w + sx + 1
-		if _set_layer(i_br, layers, heights, water_h, mid_b):
+		if cliff.set_layer(i_br, layers, heights, water_h, mid_b):
 			did_change = true
-		if _set_layer(i_tr2, layers, heights, water_h, mid_t):
+		if cliff.set_layer(i_tr2, layers, heights, water_h, mid_t):
 			did_change = true
 		var ramp_bottom: bool = bool(spec.get("ramp_bottom", true))
 		for xx in range(sx, sx + 3):
@@ -1067,248 +967,13 @@ func _set_ramp_flag(flags: Array, i: int, want_ramp: bool) -> bool:
 		return false
 	var fl: int = int(flags[i])
 	var nf: int = (fl | FLAG_RAMP) if want_ramp else (fl & ~FLAG_RAMP)
-	# 斜坡与水面互斥（与 _paint_water 对称）
+	# 斜坡与水面互斥（与 CliffLogic.paint_water 对称）
 	if want_ramp:
 		nf = nf & ~FLAG_WATER
 	if nf == fl:
 		return false
 	flags[i] = nf
 	return true
-
-
-## 策略 B：同步与落笔/层高变更相关的直崖格四角（cliffTextures + groundTile）。
-## 种子 = touched ∪ 落笔 2×2；再并入「至少含一个种子角」的直崖格之四角（整格同化，避免混角）。
-## 禁止用 AABB 扫区域内所有直崖（会误改邻近另一座未触及的悬崖）。
-func _sync_cliff_corner_textures(
-	ix: int,
-	iy: int,
-	tp_w: int,
-	tp_h: int,
-	layers: Array,
-	cliff_tex: Array,
-	cliff_var: Array,
-	ground_tex: Array,
-	ground_var: Array,
-	ctype: int,
-	gti: int,
-	touched: Array
-) -> bool:
-	var seed_corners: Dictionary = {}
-	for p in touched:
-		seed_corners[Vector2i(int(p.x), int(p.y))] = true
-	# 落笔点邻域（整平未改层时仍要刷类型/地表）
-	for oy in range(-1, 1):
-		for ox in range(-1, 1):
-			seed_corners[Vector2i(ix + ox, iy + oy)] = true
-
-	var corner_pts: Dictionary = {}
-	for key in seed_corners.keys():
-		var p: Vector2i = key
-		corner_pts[p] = true
-		# 以该角为顶点的最多 4 个地表格：若是直崖则并入其四角
-		for oy in range(-1, 1):
-			for ox in range(-1, 1):
-				var tx: int = p.x + ox
-				var ty: int = p.y + oy
-				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
-					continue
-				if not Wc3CliffTiles.is_cliff_tile(layers, tp_w, tx, ty):
-					continue
-				for cy in range(0, 2):
-					for cx in range(0, 2):
-						corner_pts[Vector2i(tx + cx, ty + cy)] = true
-
-	var any := false
-	for key2 in corner_pts.keys():
-		var q: Vector2i = key2
-		if q.x < 0 or q.y < 0 or q.x >= tp_w or q.y >= tp_h:
-			continue
-		var ci: int = q.y * tp_w + q.x
-		if ctype >= 0 and ci < cliff_tex.size():
-			var prev_tex: int = int(cliff_tex[ci])
-			if prev_tex != ctype:
-				cliff_tex[ci] = ctype
-				any = true
-			# 类型变化时随机变体；同类型但变体为 0 时写 1..max 避免整墙同模
-			if ci < cliff_var.size():
-				if prev_tex != ctype:
-					cliff_var[ci] = (randi() % 3) + 1
-					any = true
-				elif int(cliff_var[ci]) == 0:
-					cliff_var[ci] = (absi(ci * 2654435761) % 3) + 1
-					any = true
-		if gti >= 0 and ci < ground_tex.size() and int(ground_tex[ci]) != gti:
-			ground_tex[ci] = gti
-			any = true
-			if ci < ground_var.size():
-				ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
-	return any
-
-
-func _apply_layer_delta(
-	i: int, layers: Array, heights: Array, water_h: Array, delta: int
-) -> bool:
-	return _set_layer(i, layers, heights, water_h, int(layers[i]) + delta)
-
-
-## 返回 cliffTilesets[ctype] 对应的 groundTilesets 下标；找不到则 -1。
-func _ground_index_for_cliff_type(ctype: int) -> int:
-	var cts: Array = cliff_tilesets()
-	var gs: Array = ground_tilesets()
-	if ctype < 0 or ctype >= cts.size() or gs.is_empty():
-		return -1
-	if _cliff_ground_cache.size() != cts.size():
-		_cliff_ground_cache = PackedInt32Array()
-		_cliff_ground_cache.resize(cts.size())
-		_cliff_ground_cache.fill(-2) # -2=未缓存
-	if _cliff_ground_cache[ctype] != -2:
-		return _cliff_ground_cache[ctype]
-	var cliffs := Wc3CliffCatalog.new()
-	cliffs.load_default()
-	var ground_id := cliffs.ground_tile_for_cliff_id(str(cts[ctype]))
-	var found := -1
-	if not ground_id.is_empty():
-		for gi in range(gs.size()):
-			if str(gs[gi]) == ground_id:
-				found = gi
-				break
-	_cliff_ground_cache[ctype] = found
-	return found
-
-
-## WE：相邻顶点层差不得超过 2，且每个地表格四角跨度 ≤2。
-## 升崖：过低点抬到 high−2（蛋糕外扩）；降崖：过高点压到 low+2。BFS 扩散。
-## 返回本次被改层高的顶点列表。
-func _propagate_cliff_adjacency(
-	ix: int,
-	iy: int,
-	tp_w: int,
-	tp_h: int,
-	layers: Array,
-	heights: Array,
-	water_h: Array,
-	mode: int
-) -> Array:
-	var queue: Array = [Vector2i(ix, iy)]
-	var changed_pts: Array = []
-	var guard := 0
-	var guard_max: int = tp_w * tp_h * 16
-	var dirs: Array = [
-		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)
-	]
-	while not queue.is_empty() and guard < guard_max:
-		guard += 1
-		var p: Vector2i = queue.pop_front()
-		var i: int = p.y * tp_w + p.x
-		if i < 0 or i >= layers.size():
-			continue
-		var lv: int = int(layers[i])
-		for d in dirs:
-			var nx: int = p.x + int(d.x)
-			var ny: int = p.y + int(d.y)
-			if nx < 0 or ny < 0 or nx >= tp_w or ny >= tp_h:
-				continue
-			var ni: int = ny * tp_w + nx
-			if ni < 0 or ni >= layers.size():
-				continue
-			var ln: int = int(layers[ni])
-			var did := false
-			if mode != CliffPropagate.LOWER_HIGHER and lv > ln + MAX_CLIFF_ADJ_DELTA:
-				did = _set_layer(ni, layers, heights, water_h, lv - MAX_CLIFF_ADJ_DELTA)
-			elif mode != CliffPropagate.RAISE_LOWER and ln > lv + MAX_CLIFF_ADJ_DELTA:
-				did = _set_layer(ni, layers, heights, water_h, lv + MAX_CLIFF_ADJ_DELTA)
-			if did:
-				var np := Vector2i(nx, ny)
-				changed_pts.append(np)
-				queue.append(np)
-		# 以本顶点为角的最多 4 个地表格：强制四角 max−min ≤ 2（补上对角约束）
-		_enforce_tile_spans_at(
-			p.x, p.y, tp_w, tp_h, layers, heights, water_h, mode, queue, changed_pts
-		)
-	return changed_pts
-
-
-## 检查以 (vx,vy) 为角的地表格；若跨度 >2 则按 mode 抬低/压高角点，变更入队。
-func _enforce_tile_spans_at(
-	vx: int,
-	vy: int,
-	tp_w: int,
-	tp_h: int,
-	layers: Array,
-	heights: Array,
-	water_h: Array,
-	mode: int,
-	queue: Array,
-	changed_pts: Array
-) -> void:
-	for oy in range(-1, 1):
-		for ox in range(-1, 1):
-			var tx: int = vx + ox
-			var ty: int = vy + oy
-			if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
-				continue
-			var i00: int = ty * tp_w + tx
-			var i10: int = i00 + 1
-			var i01: int = i00 + tp_w
-			var i11: int = i01 + 1
-			var c0: int = int(layers[i00])
-			var c1: int = int(layers[i10])
-			var c2: int = int(layers[i01])
-			var c3: int = int(layers[i11])
-			var lo: int = mini(mini(c0, c1), mini(c2, c3))
-			var hi: int = maxi(maxi(c0, c1), maxi(c2, c3))
-			if hi - lo <= MAX_CLIFF_ADJ_DELTA:
-				continue
-			var corners: Array = [
-				Vector2i(tx, ty),
-				Vector2i(tx + 1, ty),
-				Vector2i(tx, ty + 1),
-				Vector2i(tx + 1, ty + 1),
-			]
-			var floor_l: int = hi - MAX_CLIFF_ADJ_DELTA
-			var ceil_l: int = lo + MAX_CLIFF_ADJ_DELTA
-			for c in corners:
-				var ci: int = int(c.y) * tp_w + int(c.x)
-				var lv: int = int(layers[ci])
-				var did := false
-				if mode != CliffPropagate.LOWER_HIGHER and lv < floor_l:
-					did = _set_layer(ci, layers, heights, water_h, floor_l)
-				elif mode != CliffPropagate.RAISE_LOWER and lv > ceil_l:
-					did = _set_layer(ci, layers, heights, water_h, ceil_l)
-				if did:
-					changed_pts.append(c)
-					queue.append(c)
-
-
-func _set_layer(
-	i: int, layers: Array, heights: Array, water_h: Array, new_layer: int
-) -> bool:
-	var clamped: int = clampi(new_layer, LAYER_MIN, LAYER_MAX)
-	var old_layer: int = int(layers[i])
-	if clamped == old_layer:
-		return false
-	var dh: float = float(clamped - old_layer) * LAYER_HEIGHT_STEP
-	layers[i] = clamped
-	heights[i] = float(heights[i]) + dh
-	if i < water_h.size():
-		water_h[i] = float(water_h[i]) + dh
-	return true
-
-
-func _paint_water(
-	i: int, heights: Array, water_h: Array, flags: Array, water_extra: float
-) -> bool:
-	var did := false
-	var fl: int = int(flags[i])
-	var nf: int = (fl | FLAG_WATER) & ~FLAG_RAMP
-	if nf != fl:
-		flags[i] = nf
-		did = true
-	var target_w: float = float(heights[i]) + water_extra
-	if i < water_h.size() and not is_equal_approx(float(water_h[i]), target_w):
-		water_h[i] = target_w
-		did = true
-	return did
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:

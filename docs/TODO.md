@@ -10,7 +10,7 @@
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
 | **M0 Catalog** | ✅ 代码侧完成 | `Wc3CliffCatalog` + Context/Loader；待 Lost Temple 手测 |
-| **M1 Logic** | 待开 | `Wc3CliffLogic` 承接 Document 蛋糕/策略 B |
+| **M1 Logic** | ✅ 代码侧完成 | `Wc3CliffLogic` + `logic/cliff/`；Document 委托；待 Lost Temple 手测 |
 | **M2 Present** | 待开 | placements 契约；挖洞对接；Layer 迁 presentation |
 | **M3 命令/脏区** | 待开 | 崖笔划 label；局部重建 |
 | 然后斜坡 | 后置 | [RAMP.md](RAMP.md) |
@@ -34,7 +34,7 @@
 - [x] Editor 总管 + 命令模式 + 地表笔刷可见重建
 - [ ] 脏区局部重建 Ground（接口已有 dirty rect）
 - [ ] 撤销 UI 灰显 / i18n
-- [ ] 悬崖笔刷全面委托 `Wc3CliffLogic`（M1）
+- [x] 悬崖笔刷全面委托 `Wc3CliffLogic`（M1；Ramp 仍在 Document）
 
 **验收（地面）**：改地表 → 数据变 → Ground 更新；Ctrl+Z 可撤销。
 

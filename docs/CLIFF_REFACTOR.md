@@ -126,11 +126,11 @@ Document：薄封装 → `cliff_logic.paint_*`，自身不堆传播实现。
 
 ### M1 — Logic 迁出 Document
 
-1. `logic/cliff/wc3_cliff_logic.gd` 承接 `paint_cliff_corner` / 传播 / 策略 B  
-2. Document 委托；笔刷仍调 Document 或直接 Logic  
-3. `wc3_cliff_tiles.gd` → `logic/cliff/`  
+1. ~~`logic/cliff/wc3_cliff_logic.gd` 承接 `paint_cliff_corner` / 传播 / 策略 B~~ ✅  
+2. ~~Document 委托；笔刷仍调 Document~~ ✅（Ramp 仍在 Document）  
+3. ~~`wc3_cliff_tiles.gd` → `logic/cliff/`~~ ✅  
 
-**验收**：刷崖层高/异种同化与现网一致；撤销笔划仍可用。
+**验收**：刷崖层高/异种同化与现网一致；撤销笔划仍可用。自测绿；Lost Temple 手测待补。
 
 ### M2 — Present 只消费 placements
 
