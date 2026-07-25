@@ -143,13 +143,22 @@ func _scan_missing_and_dup(
 				var glb := cliffs.resolve_glb(cliffs.cliff_model_dir("CLdi"), tag, 0)
 				if glb.is_empty():
 					missing[tag] = true
-	var collected := Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
+	var placements: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(
+		doc.heightfield, cliffs
+	)
+	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
+		placements,
+		cliffs,
+		doc.heightfield.cliff_tilesets,
+		doc.heightfield.center_offset,
+		doc.heightfield.tile_size
+	)
 	return {
 		"missing_tags": missing,
 		"multi_on_span2": multi_on_span2,
 		"slice_n": slice_n,
-		"builder_missing": int(collected.get("missing", 0)),
-		"placed": int(collected.get("placed_cliffs", 0)),
+		"builder_missing": collected.missing,
+		"placed": collected.placed_cliffs,
 	}
 
 

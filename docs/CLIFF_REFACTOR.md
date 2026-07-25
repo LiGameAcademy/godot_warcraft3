@@ -132,11 +132,11 @@ editor/scripts/
 
 ### M2 — Present 只消费 placements
 
-1. Builder 去掉拓扑扫描，改为吃 Logic 输出  
-2. `MapCliffLayer` 迁 `presentation/layers/`；shader 路径已在 `assets/`  
-3. 恢复 `MapTerrainLayer` 挖洞 / `corner_texture`（读 Logic/Catalog，不复制规则）  
+1. ~~Builder 去掉拓扑扫描，改为吃 Logic 输出~~ ✅  
+2. ~~MapCliffLayer 迁 presentation/layers/~~ ✅  
+3. ~~恢复 MapTerrainLayer 直崖挖洞（读 Context gap mask）~~ ✅  
 
-**验收**：崖+地面接缝正确；无水地图不误报；DebugGrid 崖材质可收集。
+**验收**：崖+地面接缝正确；无水地图不误报；DebugGrid 崖材质可收集。自测绿；Lost Temple 手测待补。
 
 ### M3 — 命令与脏区（可选增强）
 

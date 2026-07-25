@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://bqng5hhmqcl4" path="res://scripts/map/map_loader.gd" id="1_loader"]
 [ext_resource type="Script" uid="uid://mkkge4i7j6f3" path="res://scripts/map/presentation/layers/map_terrain_layer.gd" id="2_terrain"]
 [ext_resource type="Script" uid="uid://buk24dgmctru7" path="res://scripts/map/map_water_layer.gd" id="3_water"]
-[ext_resource type="Script" uid="uid://ciepo2qrybmca" path="res://scripts/map/map_cliff_layer.gd" id="4_cliff"]
+[ext_resource type="Script" path="res://scripts/map/presentation/layers/map_cliff_layer.gd" id="4_cliff"]
 [ext_resource type="Script" uid="uid://cttbeh64gagpo" path="res://scripts/map/map_doodad_layer.gd" id="5_doodad"]
 [ext_resource type="Script" uid="uid://4ju3bbspw18r" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
 [ext_resource type="Script" uid="uid://bu2uneabbpiey" path="res://scripts/map/presentation/mesh/heightfield_mesh.gd" id="7_hfmesh"]

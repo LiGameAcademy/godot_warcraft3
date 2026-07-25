@@ -35,7 +35,7 @@ func _test_build_blank_ground() -> int:
 	layer.add_child(ground)
 	layer._ground = ground
 
-	var gap_count: int = layer._build_ground_mesh(hf, extended)
+	var gap_count: int = layer._build_ground_mesh(hf, extended, PackedByteArray())
 	if ground.mesh == null or ground.mesh.get_surface_count() < 1:
 		push_error("ground mesh empty")
 		return 1

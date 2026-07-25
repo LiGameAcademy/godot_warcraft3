@@ -407,7 +407,84 @@ func _enforce_tile_spans_at(
 					queue.append(c)
 
 
-## —— 拓扑 / TAG（纯函数；不碰 Catalog）——
+## —— 拓扑 / TAG（纯函数）——
+## Catalog 仅用于变体上限 / modelDir（配置）；不解析 GLB。
+
+## 从 Heightfield 算出直崖 placements（Present 只消费此列表 + Catalog.resolve）。
+static func collect_placements(
+	hf: Wc3Heightfield, cliff_catalog: Wc3CliffCatalog
+) -> Array[Wc3CliffPlacement]:
+	var out: Array[Wc3CliffPlacement] = []
+	if hf == null or not hf.is_valid():
+		return out
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	var layers: Array = hf.layer_heights
+	var cliff_tex: Array = hf.cliff_textures
+	var cliff_var: Array = hf.cliff_variations
+	var cliff_tilesets: Array = hf.cliff_tilesets
+	if layers.is_empty() or cliff_tilesets.is_empty():
+		return out
+
+	for iy in range(tp_h - 1):
+		for ix in range(tp_w - 1):
+			if not is_cliff_tile(layers, tp_w, ix, iy):
+				continue
+			var slices: Array = cliff_slices_at(layers, tp_w, ix, iy)
+			if slices.is_empty():
+				continue
+			var tex_idx: int = cliff_tex_index(cliff_tex, cliff_tilesets, tp_w, tp_h, ix, iy)
+			var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
+			var model_dir := "Cliffs"
+			if cliff_catalog != null:
+				model_dir = cliff_catalog.cliff_model_dir(cliff_id)
+			var i00: int = iy * tp_w + ix
+			var stored: int = int(cliff_var[i00]) if i00 < cliff_var.size() else 0
+			for slice in slices:
+				var tag: String = str(slice.get("tag", ""))
+				if tag.is_empty() or tag == "AAAA":
+					continue
+				var base_layer: int = int(slice.get("base_layer", 2))
+				var variation: int = 0
+				if cliff_catalog != null:
+					variation = cliff_catalog.pick_cliff_variation(
+						model_dir, tag, stored, ix, iy
+					)
+				out.append(
+					Wc3CliffPlacement.make(ix, iy, tag, base_layer, tex_idx, variation)
+				)
+	return out
+
+
+## 从格子四角选悬崖类型：优先非 0 索引（草地等），避免只读 i00 时落成默认泥土。
+static func cliff_tex_index(
+	cliff_tex: Array, cliff_tilesets: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> int:
+	var best := 0
+	var found_nonzero := false
+	for oy in range(0, 2):
+		for ox in range(0, 2):
+			var cx: int = ix + ox
+			var cy: int = iy + oy
+			if cx < 0 or cy < 0 or cx >= tp_w or cy >= tp_h:
+				continue
+			var i: int = cy * tp_w + cx
+			if i < 0 or i >= cliff_tex.size():
+				continue
+			var tex_idx := int(cliff_tex[i])
+			if tex_idx == 15:
+				tex_idx = 1
+			if tex_idx < 0 or tex_idx >= cliff_tilesets.size():
+				continue
+			if not found_nonzero:
+				best = tex_idx
+			if tex_idx != 0:
+				best = tex_idx
+				found_nonzero = true
+	if best < 0 or best >= cliff_tilesets.size():
+		best = clampi(best, 0, maxi(cliff_tilesets.size() - 1, 0))
+	return best
+
 
 static func is_cliff_tile(layer_heights: Array, width: int, ix: int, iy: int) -> bool:
 	if layer_heights.is_empty():

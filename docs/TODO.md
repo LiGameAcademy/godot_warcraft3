@@ -11,7 +11,7 @@
 |--------|------|------|
 | **M0 Catalog** | ✅ 代码侧完成 | `Wc3CliffCatalog` + Context/Loader；待 Lost Temple 手测 |
 | **M1 Logic** | ✅ 代码侧完成 | `Wc3CliffLogic` + `logic/cliff/`；Document 委托；待 Lost Temple 手测 |
-| **M2 Present** | 待开 | placements 契约；挖洞对接；Layer 迁 presentation |
+| **M2 Present** | ✅ 代码侧完成 | placements 契约；Layer 迁 presentation；挖洞 mask |
 | **M3 命令/脏区** | 待开 | 崖笔划 label；局部重建 |
 | 然后斜坡 | 后置 | [RAMP.md](RAMP.md) |
 

@@ -2,7 +2,7 @@ class_name MapTerrainLayer
 extends Node3D
 
 ## 地面表现层：根据 Wc3Heightfield 画网格 + Catalog 贴图。
-## 现阶段只做高度图地面；悬崖/斜坡相关逻辑暂时注释，便于后续恢复。
+## 直崖挖洞读 Logic 规则（should_leave_gap），不在本层重算 TAG。
 
 ## 官方图集角 bit（非教学口诀 BL=1）。用于过渡块编号。
 enum AtlasCornerBit {
@@ -43,10 +43,12 @@ func build(ctx: MapBuildContext) -> void:
 		MapLog.warn(MapLog.Layer.PRESENT, "Terrain", "groundTilesets 为空")
 		return
 
+	ctx.ensure_cliff_topology()
+
 	var extended: PackedByteArray = Wc3GroundTileCatalog.build_extended_flags(
 		ground_tilesets, ctx.tiles
 	)
-	last_gap_count = _build_ground_mesh(hf, extended)
+	last_gap_count = _build_ground_mesh(hf, extended, ctx.cliff_gap_mask)
 
 	var tex_array: Texture2DArray = Wc3GroundTileCatalog.build_texture_array(
 		ground_tilesets, ctx.tiles
@@ -117,8 +119,10 @@ func corner_mask_for_type(t_bl: int, t_br: int, t_tl: int, t_tr: int, terrain_ty
 # 	...
 
 
-## 返回 gap_count；网格写在 _ground 上。
-func _build_ground_mesh(hf: Wc3Heightfield, extended_flags: PackedByteArray) -> int:
+## 返回 gap_count；网格写在 _ground 上。挖洞读 Context 预计算 mask，不调 Logic。
+func _build_ground_mesh(
+	hf: Wc3Heightfield, extended_flags: PackedByteArray, gap_mask: PackedByteArray
+) -> int:
 	var width: int = hf.width
 	var height: int = hf.height
 	if width < 2 or height < 2:
@@ -129,24 +133,20 @@ func _build_ground_mesh(hf: Wc3Heightfield, extended_flags: PackedByteArray) -> 
 	var gap_count := 0
 	var center: Vector2 = hf.center_offset
 	var tile_size: float = hf.tile_size
-
-	# var cliff_to_ground: PackedInt32Array = _build_cliff_to_ground(...)
-	# var romp: PackedByteArray = ctx.cliff_romp
+	var map_w: int = width - 1
 
 	for iy in range(height - 1):
 		for ix in range(width - 1):
 			var i00 := iy * width + ix
-			# 直崖挖洞 / 斜坡留缝：地面阶段暂关，整图铺高地面
-			# if Wc3CliffLogic.should_leave_gap(...):
-			# 	gap_count += 1
-			# 	continue
+			var gi: int = iy * map_w + ix
+			if gi >= 0 and gi < gap_mask.size() and gap_mask[gi] != 0:
+				gap_count += 1
+				continue
 
-			# 纯地面四角（悬崖旁 groundTile 覆盖暂关）
 			var t_bl: int = _tex_at(hf.ground_textures, i00)
 			var t_br: int = _tex_at(hf.ground_textures, i00 + 1)
 			var t_tl: int = _tex_at(hf.ground_textures, i00 + width)
 			var t_tr: int = _tex_at(hf.ground_textures, i00 + width + 1)
-			# t_bl = corner_texture(...)  # 悬崖阶段恢复
 
 			var slots: LayerSlots = _build_layers(
 				t_bl, t_br, t_tl, t_tr,

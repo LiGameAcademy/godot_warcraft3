@@ -90,19 +90,23 @@ func _run() -> void:
 					push_error("MISSING tile(%d,%d) corners=%s tag=%s" % [ix, iy, corners, tag])
 			print("tile(%d,%d) %s -> %s" % [ix, iy, corners, " ".join(tag_strs)])
 
-	var collected := Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
+	var _pls: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(doc.heightfield, cliffs)
+	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
+		_pls, cliffs, doc.heightfield.cliff_tilesets,
+		doc.heightfield.center_offset, doc.heightfield.tile_size
+	)
 	print(
 		"builder placed=%d missing=%d groups=%d slices=%d missing_tags=%s"
 		% [
-			int(collected.get("placed_cliffs", 0)),
-			int(collected.get("missing", 0)),
-			(collected.get("groups", []) as Array).size(),
+			collected.placed_cliffs,
+			collected.missing,
+			collected.groups.size(),
 			slice_count,
 			str(missing_tags.keys()),
 		]
 	)
 
-	# 十字笔刷再测一轮
+	# ????????
 	doc.create_from_options({
 		"width": 32,
 		"height": 32,
@@ -126,10 +130,14 @@ func _run() -> void:
 		for x in range(cx - 3, cx + 4):
 			row2 += "%d " % int(layers[y * tp_w + x])
 		print(row2)
-	collected = Wc3CliffBuilder.collect_instances(doc.as_build_dict(), cliffs)
+	_pls = Wc3CliffLogic.collect_placements(doc.heightfield, cliffs)
+	collected = Wc3CliffBuilder.build_from_placements(
+		_pls, cliffs, doc.heightfield.cliff_tilesets,
+		doc.heightfield.center_offset, doc.heightfield.tile_size
+	)
 	print(
 		"cross builder placed=%d missing=%d"
-		% [int(collected.get("placed_cliffs", 0)), int(collected.get("missing", 0))]
+		% [collected.placed_cliffs, collected.missing]
 	)
 
-	quit(1 if not missing_tags.is_empty() or int(collected.get("missing", 0)) > 0 else 0)
+	quit(1 if not missing_tags.is_empty() or collected.missing > 0 else 0)

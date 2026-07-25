@@ -102,7 +102,7 @@
 
 - [x] M0 Catalog：`Wc3CliffCatalog`；收缩 `Wc3TerrainTileCatalog`
 - [x] M1 Logic：`Wc3CliffLogic` + `logic/cliff/`；Document 委托
-- [ ] M2 Present：placements 驱动；恢复地面挖洞对接
+- [x] M2 Present：placements 驱动；恢复地面挖洞对接
 - [ ] M3 脏区 / 命令标签；再开 ⑧ 斜坡
 
 ### ⑧ 斜坡层
