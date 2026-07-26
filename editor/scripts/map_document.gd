@@ -23,16 +23,12 @@ var heightfield: Wc3Heightfield = null
 var terrain: Wc3TerrainLogic = Wc3TerrainLogic.new()
 ## 悬崖逻辑（蛋糕 / 策略 B / 层高）
 var cliff: Wc3CliffLogic = Wc3CliffLogic.new()
-## 斜坡逻辑（条带 FLAG_RAMP）
-var ramp: Wc3RampLogic = Wc3RampLogic.new()
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
 var brush_cliff_type: int = 0
 var _dirty: bool = false
-## 最近一次斜坡笔刷结果（供状态栏 / 自测）
-var last_ramp_message: String = ""
 
 
 ## Present / rebuild 过渡：共享数组的 JSON 形视图。Layer 全面吃 Heightfield 后删除。
@@ -47,7 +43,6 @@ func _rebind_logic() -> void:
 	cliff.bind(heightfield)
 	cliff.ensure_catalog()
 	cliff.clear_ground_tile_cache()
-	ramp.bind(heightfield, cliff)
 
 
 func is_dirty() -> bool:
@@ -308,8 +303,8 @@ func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	return true
 
 
-## 悬崖笔刷：委托 Wc3CliffLogic；Ramp 仍由本类处理。
-## tool_id: "0".."4"（降两/降一/整平/升一/升两）| "ShallowWater" | "DeepWater" | "Ramp"
+## 悬崖笔刷：委托 Wc3CliffLogic。
+## tool_id: "0".."4"（降两/降一/整平/升一/升两）| "ShallowWater" | "DeepWater"
 func paint_cliff_corner(
 	ix: int,
 	iy: int,
@@ -317,8 +312,6 @@ func paint_cliff_corner(
 	cliff_type_idx: int = -1,
 	level_layer: int = -1
 ) -> bool:
-	if tool_id == "Ramp":
-		return paint_ramp_at(ix, iy)
 	if is_empty():
 		return false
 	var ctype: int = cliff_type_idx if cliff_type_idx >= 0 else brush_cliff_type
@@ -326,30 +319,6 @@ func paint_cliff_corner(
 		mark_dirty()
 		return true
 	return false
-
-
-## 斜坡笔刷：委托 Wc3RampLogic（条带规则在 Logic，不在 Document）。
-func paint_ramp_at(ix: int, iy: int) -> bool:
-	var r: Wc3RampLogic.PaintResult = try_paint_ramp_at(ix, iy)
-	last_ramp_message = r.message
-	return r.changed
-
-
-func try_paint_ramp_at(ix: int, iy: int) -> Wc3RampLogic.PaintResult:
-	if is_empty():
-		return Wc3RampLogic.PaintResult.fail("地图为空")
-	var r: Wc3RampLogic.PaintResult = ramp.try_paint_at(ix, iy)
-	if r.changed:
-		mark_dirty()
-	return r
-
-
-## 悬停脊线顶点（空=无效）。
-func peek_ramp_spine_at(ix: int, iy: int) -> Array[Vector2i]:
-	if is_empty():
-		var empty: Array[Vector2i] = []
-		return empty
-	return ramp.peek_spine_at(ix, iy)
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:

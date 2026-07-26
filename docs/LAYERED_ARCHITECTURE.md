@@ -167,7 +167,7 @@ scripts/map/
 │   ├── terrain/
 │   │   └── wc3_terrain_logic.gd   # 地表/高度 API + 脏矩形
 │   ├── cliff/                     # is_cliff_tile、TAG 选型、挖洞集合
-│   ├── ramp/                      # 门禁、Dispatcher（后置）
+│   # ramp/ 已清空，待按 HiveWE 重做
 │   ├── water/                     # 深浅判定等（后置）
 │   └── …                          # doodad / unit 放置规则（后置）
 │

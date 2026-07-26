@@ -35,3 +35,6 @@ mods/**
 # Local developer settings (absolute paths, etc.)
 user_settings.local.json
 /.vscode
+
+# Local reference clones (e.g. HiveWE for analysis)
+_ref/

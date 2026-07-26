@@ -1,6 +1,6 @@
 # 悬崖（Cliff）
 
-> 编辑器直崖数据、选型、异种策略与回归。斜坡见 [RAMP.md](RAMP.md)。  
+> 编辑器直崖数据、选型、异种策略与回归。斜坡实现已清空，待重做。  
 > **分层重构计划**见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。  
 > HiveWE 路径见 [`.cursor/rules/hivewe-cliff-reference.mdc`](../.cursor/rules/hivewe-cliff-reference.mdc)。
 
@@ -86,5 +86,4 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 | `scripts/map/presentation/layers/map_terrain_layer.gd` | 挖洞、`corner_texture` |
 | `editor/scripts/ui/tool_palette_window.gd` | 类型图标 |
 | [EDITOR.md](EDITOR.md) §5.3 | 编辑器流程 |
-| [RAMP.md](RAMP.md) | 斜坡设计（实现门禁） |
 | [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) | 分层重构里程碑 |

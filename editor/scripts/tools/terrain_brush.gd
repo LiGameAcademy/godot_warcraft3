@@ -6,8 +6,6 @@ signal tile_hovered(tile: Vector2i) ## 实为顶点坐标 (ix, iy)
 signal painted
 signal rebuild_requested
 ## 斜坡笔刷反馈（成功/拒绝原因），供状态栏
-signal ramp_feedback(message: String)
-
 const REBUILD_INTERVAL_MS := 80
 ## 略抬高，避免与地面 z-fight（Godot 单位）
 const HOVER_LIFT := 0.015
@@ -32,7 +30,7 @@ var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
 var apply_texture: bool = true
 var apply_cliff: bool = true
-## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater / Ramp
+## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater
 var cliff_tool_id: String = "2"
 var cliff_type_index: int = 0
 ## 本笔划是否改过悬崖数据（决定重建是否含悬崖/水面）
@@ -258,33 +256,21 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	var cliff_any := false
 
 	# 先悬崖后地表：cliff sync 会写 groundTile，必须让 paint_corner 最后盖住笔刷纹理
-	if apply_cliff and cliff_tool_id == "Ramp":
-		_stroke.capture_before_at(vert.x, vert.y)
-		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y))
-		_stroke.capture_after_at(vert.x, vert.y)
-		var msg: String = str(document.last_ramp_message)
-		if not msg.is_empty():
-			ramp_feedback.emit(msg)
-		if ramp_changed:
+	for p in _brush_offsets():
+		var ix: int = vert.x + p.x
+		var iy: int = vert.y + p.y
+		_stroke.capture_before_at(ix, iy)
+		if apply_cliff and bool(
+			document.paint_cliff_corner(
+				ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
+			)
+		):
 			painted_any = true
 			cliff_any = true
 			_stroke.mark_cliff()
-	else:
-		for p in _brush_offsets():
-			var ix: int = vert.x + p.x
-			var iy: int = vert.y + p.y
-			_stroke.capture_before_at(ix, iy)
-			if apply_cliff and bool(
-				document.paint_cliff_corner(
-					ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
-				)
-			):
-				painted_any = true
-				cliff_any = true
-				_stroke.mark_cliff()
-			if apply_texture and bool(document.paint_corner(ix, iy)):
-				painted_any = true
-			_stroke.capture_after_at(ix, iy)
+		if apply_texture and bool(document.paint_corner(ix, iy)):
+			painted_any = true
+		_stroke.capture_after_at(ix, iy)
 	if painted_any:
 		_dirty_paint = true
 		if cliff_any:
@@ -310,9 +296,7 @@ func _end_stroke() -> void:
 		_stroke.cancel()
 		return
 	var label := "Paint"
-	if apply_cliff and cliff_tool_id == "Ramp":
-		label = "Ramp"
-	elif apply_cliff and not apply_texture:
+	if apply_cliff and not apply_texture:
 		label = "Cliff"
 	elif apply_texture and not apply_cliff:
 		label = "Ground"
@@ -421,19 +405,14 @@ func _update_hover_preview(vert: Vector2i) -> void:
 		return
 	var fill: ArrayMesh
 	var edge: ArrayMesh
-	# 斜坡：悬停预览将落 FLAG_RAMP 的脊线顶点（与蓝菱形对齐）
-	if apply_cliff and cliff_tool_id == "Ramp":
-		var spine: Array[Vector2i] = document.peek_ramp_spine_at(vert.x, vert.y)
-		if spine.is_empty():
-			fill = _make_vertex_fill_mesh(vert.x, vert.y)
-			edge = _make_vertex_edge_mesh(vert.x, vert.y)
-		else:
-			fill = _make_ramp_flag_verts_fill_mesh(spine)
-			edge = _make_ramp_flag_verts_edge_mesh(spine)
-	elif brush_shape == 0:
+	if brush_shape == 0:
+		_hover_mat.albedo_color = HOVER_COLOR
+		_edge_mat.albedo_color = HOVER_EDGE
 		fill = _make_offsets_fill_mesh(vert.x, vert.y)
 		edge = _make_offsets_edge_mesh(vert.x, vert.y)
 	else:
+		_hover_mat.albedo_color = HOVER_COLOR
+		_edge_mat.albedo_color = HOVER_EDGE
 		var corners: Array = _brush_aabb_corners_godot(vert.x, vert.y)
 		if corners.is_empty():
 			_hide_hover_preview()
@@ -478,45 +457,6 @@ func _make_vertex_edge_mesh(ix: int, iy: int) -> ArrayMesh:
 	_add_line(st, br, p_tr)
 	_add_line(st, p_tr, tl)
 	_add_line(st, tl, bl)
-	return st.commit()
-
-
-## 斜坡预览：将落 FLAG_RAMP 的顶点小框（对齐蓝菱形）。
-func _make_ramp_flag_verts_fill_mesh(verts: Array[Vector2i]) -> ArrayMesh:
-	if verts.is_empty():
-		return null
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var half := 0.28
-	for v in verts:
-		var ix: int = v.x
-		var iy: int = v.y
-		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
-		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
-		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
-		var p_tr := _tp_to_godot(float(ix) + half, float(iy) + half)
-		_add_tri(st, bl, br, p_tr)
-		_add_tri(st, bl, p_tr, tl)
-	return st.commit()
-
-
-func _make_ramp_flag_verts_edge_mesh(verts: Array[Vector2i]) -> ArrayMesh:
-	if verts.is_empty():
-		return null
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_LINES)
-	var half := 0.28
-	for v in verts:
-		var ix: int = v.x
-		var iy: int = v.y
-		var bl := _tp_to_godot(float(ix) - half, float(iy) - half)
-		var br := _tp_to_godot(float(ix) + half, float(iy) - half)
-		var tl := _tp_to_godot(float(ix) - half, float(iy) + half)
-		var p_tr := _tp_to_godot(float(ix) + half, float(iy) + half)
-		_add_line(st, bl, br)
-		_add_line(st, br, p_tr)
-		_add_line(st, p_tr, tl)
-		_add_line(st, tl, bl)
 	return st.commit()
 
 

@@ -66,8 +66,6 @@ func _ready() -> void:
 			brush.tile_hovered.connect(_on_tile_hovered)
 		if brush.has_signal("rebuild_requested"):
 			brush.rebuild_requested.connect(_on_brush_rebuild)
-		if brush.has_signal("ramp_feedback"):
-			brush.ramp_feedback.connect(_on_ramp_feedback)
 	EditorI18n.locale_changed.connect(_on_locale_changed)
 	_apply_chrome_locale()
 
@@ -438,12 +436,6 @@ func _on_tile_hovered(tile: Vector2i) -> void:
 	_hover_tile = tile
 	if hover_label != null:
 		hover_label.text = EditorI18n.t("EDITOR_HOVER_CELL", [tile.x, tile.y])
-
-
-func _on_ramp_feedback(message: String) -> void:
-	if message.is_empty():
-		return
-	_set_status(message)
 
 
 func _on_dirty_changed(dirty: bool) -> void:

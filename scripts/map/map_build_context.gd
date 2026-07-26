@@ -27,8 +27,6 @@ var cache: MapModelCache = null
 var cliff_placements: Array[Wc3CliffPlacement] = []
 var cliff_gap_mask: PackedByteArray = PackedByteArray()
 var cliff_gap_stats: Dictionary = {}
-## 斜坡拓扑缓存（与 cliff 同次 ensure）；Present 只读
-var ramp: Wc3RampCollectResult = null
 var _cliff_ready: bool = false
 
 
@@ -69,7 +67,6 @@ func ensure_cliff_topology() -> void:
 	var topo: Wc3CliffTopologyResult = Wc3CliffLogic.build_topology(
 		heightfield, cliff_catalog
 	)
-	ramp = topo.ramp if topo.ramp != null else Wc3RampCollectResult.new()
 	cliff_placements = topo.placements
 	cliff_gap_mask = topo.gap_mask
 	cliff_gap_stats = topo.gap_stats

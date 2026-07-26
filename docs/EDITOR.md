@@ -132,7 +132,7 @@ ToolPalette → cliff_settings_changed → TerrainBrush.set_cliff_settings()
        → Terrain + Cliffs + Water
 ```
 
-专项文档：[CLIFF.md](CLIFF.md)、[RAMP.md](RAMP.md)。悬崖回归见 `tests/cliff/selftest_cliff_*.gd`。
+专项文档：[CLIFF.md](CLIFF.md)。悬崖回归见 `tests/cliff/selftest_cliff_*.gd`。斜坡待重做。
 
 偏好：`EditorSettingsStore` → `user://editor_settings.cfg`；语言 `user://editor_locale.cfg`。
 

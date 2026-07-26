@@ -113,7 +113,7 @@ item_9/metadata = "edit_props"
 metadata/_title_key = "WESTRING_MENU_EDIT"
 
 [node name="View" type="PopupMenu" parent="."]
-item_count = 23
+item_count = 24
 item_0/text = "WESTRING_MENU_TEXTURED"
 item_0/id = 30
 item_0/disabled = true

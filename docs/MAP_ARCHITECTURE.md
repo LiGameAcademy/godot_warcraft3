@@ -2,7 +2,7 @@
 
 > 范围：`scenes/map/map_root.tscn` + `scripts/map/*` — Godot 侧如何把预解析地图数据变成可预览场景。  
 > **分层总纲（优先）**：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)（Data / Catalog / Logic / Presentation / Editor）。  
-> 编辑器如何复用本结构见 [EDITOR.md](EDITOR.md)。水体细节见 [WATER.md](WATER.md)。悬崖/斜坡见 [CLIFF.md](CLIFF.md) / [RAMP.md](RAMP.md)。  
+> 编辑器如何复用本结构见 [EDITOR.md](EDITOR.md)。水体细节见 [WATER.md](WATER.md)。悬崖见 [CLIFF.md](CLIFF.md)（斜坡待重做）。  
 > 路线图见 [ROADMAP.md](ROADMAP.md)。  
 > 最后更新：2026-07-24
 
@@ -251,7 +251,7 @@ ctx.ensure_cliff_topology()
 |----------|------------|
 | 地面三角形 / 悬崖留缝 / 斜坡甲板 | `wc3_terrain_autotile.gd` |
 | 地面 shader、图集混合 | `shaders/wc3_ground.gdshader`、`map_terrain_layer.gd` |
-| 悬崖是否出现、TAG、斜坡 romp | `wc3_cliff_tiles.gd`（策略/层高见 [CLIFF.md](CLIFF.md)；斜坡设计见 [RAMP.md](RAMP.md)） |
+| 悬崖是否出现、TAG、斜坡 romp | `wc3_cliff_tiles.gd`（策略/层高见 [CLIFF.md](CLIFF.md)；斜坡待重做） |
 | 悬崖放哪、叠几段、缺模警告 | `wc3_cliff_builder.gd` |
 | 编辑器崖笔刷 / 异种同化 B | `editor/scripts/map_document.gd` |
 | 悬崖 MultiMesh / 贴图 / 立面栅格 | `map_cliff_layer.gd`、`wc3_cliff.gdshader` |
@@ -315,7 +315,6 @@ ctx.ensure_cliff_topology()
 |------|------|
 | [EDITOR.md](EDITOR.md) | 地图编辑器 Presentation 架构 |
 | [CLIFF.md](CLIFF.md) | 直崖数据、策略 B、层高与回归 |
-| [RAMP.md](RAMP.md) | 斜坡双通道设计门禁（实现前对齐） |
 | [ROADMAP.md](ROADMAP.md) | MapRoot + Editor 开发路线 |
 | [WATER.md](WATER.md) | 水体与岸浪 |
 | [TODO.md](TODO.md) | 具体缺陷清单（斜坡等） |

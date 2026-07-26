@@ -11,5 +11,4 @@ class Group extends RefCounted:
 
 var groups: Array[Group] = []
 var placed_cliffs: int = 0
-var placed_ramps: int = 0
 var missing: int = 0

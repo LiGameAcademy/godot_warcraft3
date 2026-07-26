@@ -115,18 +115,17 @@ Wc3TileVertex                         ← RefCounted 视图
 
 ```text
 scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
-  wc3_coords.gd               # FLAG / TILE / 坐标
-  wc3_tile_vertex.gd
+  wc3_coords.gd               # FLAG / TILE / 坐标（含 FLAG_RAMP）
+  wc3_tile_vertex.gd          # has_ramp 读写旗位
   wc3_heightfield.gd
   wc3_parsed_map.gd
   wc3_cliff_placement.gd
-  wc3_ramp_kinds.gd           # romp / 轴 / 拓扑常量
-  wc3_ramp_placement.gd       # Logic→Present CliffTrans 放置
-  wc3_ramp_collect_result.gd
+  wc3_cliff_topology_result.gd
 
+scripts/map/logic/cliff/      # 直崖 Logic
 scripts/map/catalog/          # 资源映射（非 map-parsed）
   wc3_id_catalog.gd
-  wc3_cliff_trans_catalog.gd
+  wc3_cliff_trans_catalog.gd  # CliffTrans（斜坡 mesh 待重做时再用）
   wc3_cliff_catalog.gd
 
 docs/MAP_DATA.md              # 本文
@@ -138,22 +137,16 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 
 ---
 
-## 7. 斜坡派生结构（非 JSON 权威）
+## 7. 斜坡数据位（实现已清空）
 
-地图存盘权威仍是 `flagsPacked` 的 `FLAG_RAMP`（顶点级）。下列类型是 **Logic 派生 → Present/Editor 消费** 的契约，不进 `terrain-heightfield.json`：
+存盘权威仍是 `flagsPacked` 的 `FLAG_RAMP`（顶点级）。斜坡笔刷 / Placement / romp / 调试层已删除，待按 HiveWE 重做。
 
-| 类型 | 职责 |
+| 保留 | 职责 |
 |------|------|
-| `Wc3RampKinds` | romp 字节 / 轴 / 拓扑形态常量 |
-| `Wc3RampPlacement` | 一格 CliffTrans 放置（TAG、model_dir、axis…） |
-| `Wc3RampCollectResult` | `placements` + `romp` |
-| `Wc3CliffTopologyResult.ramp` | 嵌入 CollectResult |
+| `Wc3Coords.FLAG_RAMP` | W3E 旗位 |
+| `Wc3TileVertex.has_ramp` | 顶点读写（与水互斥） |
+| `CliffTypeDef.ramp_model_dir` / `Wc3CliffTransCatalog` | 资源映射，留给以后 |
 
-笔刷条带几何**不属于 Data**：在 `Wc3RampLogic` 私有实现；对外 `paint_at` / `peek_spine_at` / `PaintResult`。
-
-`Wc3TileVertex.has_ramp` 读写 `FLAG_RAMP`（与水互斥）。Catalog 侧模型目录见 `CliffTypeDef.ramp_model_dir` + `Wc3CliffTransCatalog`。
-
----
 
 ## 8. 验收
 
@@ -161,4 +154,3 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 2. `vertex_at(0,0).height` 与 JSON `heights[0]` 一致  
 3. 修改 `vertex_at` 的 `layer` / `flags` 后，`to_dict()["layerHeights"]` 同步变化  
 4. 不默认分配 width×height 个 `Wc3TileVertex` 常驻实例  
-5. `selftest_ramp_data`：Placement / Collect / Strip 强类型绿  

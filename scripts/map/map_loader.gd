@@ -19,8 +19,6 @@ extends Node3D
 @export_group("寻路调试")
 ## GPU 三级栅格：小灰(32) / 中白(128) / 大黄(512)（地图场景自动开；编辑器改用 set_view_grid_level）
 @export var show_pathing_debug_grid: bool = true
-## FLAG_RAMP 蓝菱形（M1 斜坡调试）
-@export var show_ramp_debug: bool = true
 
 ## 查看→栅格：0无 / 1大黄 / 2大+中白 / 3大+中+小灰
 enum ViewGridLevel { NONE = 0, LARGE = 1, MEDIUM = 2, SMALL = 3 }
@@ -29,7 +27,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @export_group("岸浪微调")
 ## 悬崖泡沫额外退入水面（格）。全悬崖共用。
 @export_range(0.0, 0.40, 0.01) var foam_cliff_out_extra: float = 0.08
-## 斜坡泡沫向岸拉近（格）。越大越贴坡脚。
+## 斜坡泡沫向岸拉近（格）。越大越贴坡脚（FLAG_RAMP 邻岸；坡模未实现前 builder 可能恒 0）。
 @export_range(0.0, 0.55, 0.01) var foam_ramp_pull_tiles: float = 0.38
 ## 普通平缓岸向岸拉近（格）
 @export_range(0.0, 0.40, 0.01) var foam_shore_pull_tiles: float = 0.10
@@ -40,7 +38,6 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @onready var _doodads: MapDoodadLayer = $Doodads
 @onready var _units: MapUnitLayer = $Units
 @onready var _debug_grid: Node = $DebugGrid
-@onready var _ramp_debug: Node = $RampDebug
 
 var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTileCatalog.new()
@@ -122,13 +119,6 @@ func reload_from_hf(hf: Dictionary, info: Dictionary = {}, p_map_dir: String = "
 	await _load_all()
 
 
-func _build_ramp_debug(ctx) -> void:
-	if _ramp_debug == null or not _ramp_debug.has_method("build"):
-		return
-	_ramp_debug.enabled = show_ramp_debug
-	_ramp_debug.build(ctx)
-
-
 ## 仅重建地面（笔刷脏更新）；不重载装饰/单位。
 func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
@@ -191,7 +181,6 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		_water.build(ctx)
-	_build_ramp_debug(ctx)
 	_apply_view_grid()
 
 func _load_all() -> void:
@@ -209,7 +198,7 @@ func _load_all() -> void:
 	var ctx = MapBuildContext.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
 	ctx.ensure_cliff_topology()
 
-	_set_status("生成贴图地形高度图（悬崖/斜坡留缝）…")
+	_set_status("生成贴图地形高度图（悬崖留缝）…")
 	_terrain.build(ctx)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
@@ -219,7 +208,6 @@ func _load_all() -> void:
 		_set_status("放置悬崖模型…")
 		_cliffs.build(ctx)
 		await get_tree().process_frame
-	_build_ramp_debug(ctx)
 	_apply_view_grid()
 	if build_water:
 		_set_status("生成水体…")

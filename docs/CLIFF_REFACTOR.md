@@ -2,7 +2,7 @@
 
 > 前置：地面纹理管线 + 编辑总管 + 命令模式已打通（见 [TERRAIN_TILES.md](TERRAIN_TILES.md)、[EDITOR.md](EDITOR.md)）。  
 > 领域规则仍以 [CLIFF.md](CLIFF.md) 为准；本文只定 **怎么按五层拆** 与验收顺序。  
-> 斜坡（[RAMP.md](RAMP.md)）在本模块 Catalog/Logic/Present 稳定后开；代码侧 M0–M2 已打 tag `milestone/cliff-layered`。  
+> 斜坡待重做；代码侧崖 M0–M2 已打 tag `milestone/cliff-layered`。  
 > 最后更新：2026-07-25
 
 ---
@@ -142,7 +142,7 @@ editor/scripts/
 
 1. 明确崖笔划 label / `affects_cliffs_water`  
 2. 脏矩形驱动局部崖重建（可先全量）  
-3. ~~再开 [RAMP.md](RAMP.md) M0+~~ → 已开文档；实现按 RAMP 里程碑单独推进  
+3. ~~再开 斜坡（待重做） M0+~~ → 已开文档；实现按 RAMP 里程碑单独推进  
 
 **Tag**：`milestone/cliff-layered` @ `77648e5`（Catalog + Logic + Present 纯度）。
 
@@ -185,7 +185,6 @@ godot --headless --path . -s res://tests/unit/selftest_paint_ground_rebuild.gd
 | 文档 | 角色 |
 |------|------|
 | [CLIFF.md](CLIFF.md) | 领域规则（蛋糕、策略 B、TAG） |
-| [RAMP.md](RAMP.md) | 斜坡；本模块之后 |
 | [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层总纲 |
 | [ROADMAP.md](ROADMAP.md) | ⑦ 悬崖层勾选 |
 | [TODO.md](TODO.md) | 细项勾选 |

@@ -92,11 +92,9 @@ func build(ctx: MapBuildContext) -> void:
 	_apply_debug_grid_to_mats()
 
 	print(
-		"Cliffs: placed=%d (cliff=%d ramp=%d) missing=%d groups=%d"
+		"Cliffs: placed=%d missing=%d groups=%d"
 		% [
 			last_placed,
-			collected.placed_cliffs,
-			collected.placed_ramps,
 			collected.missing,
 			collected.groups.size(),
 		]

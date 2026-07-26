@@ -1,6 +1,6 @@
 ---
 description: 悬崖/斜坡开发时参考 HiveWE 与经典 WC3；策略 B 与文档门禁
-globs: scripts/map/wc3_cliff*.gd,editor/scripts/map_document.gd,tools/selftest_cliff*.gd,docs/CLIFF.md,docs/RAMP.md,docs/MAP_ARCHITECTURE.md,docs/EDITOR.md
+globs: scripts/map/wc3_cliff*.gd,editor/scripts/map_document.gd,tools/selftest_cliff*.gd,docs/CLIFF.md,docs/MAP_ARCHITECTURE.md,docs/EDITOR.md
 alwaysApply: false
 ---
 
@@ -25,7 +25,7 @@ alwaysApply: false
 ## 开发时
 
 1. 改悬崖网格/选型/笔刷拓扑前，对照 `HiveWE-classic/HiveWE/Terrain.cpp` 的 cliff 选型与 `CliffMesh.*`；读 `docs/CLIFF.md`。
-2. **斜坡**：以 `docs/RAMP.md` 为门禁与路线图（A 崖边拖动坡 vs B 纯高度；独立调试层蓝菱形；M0–M4）。CliffTrans 已启用；甲板开关 `RAMP_SURFACE_DECK_ENABLED`（当前关）。
+2. **斜坡**：实现已清空，待按 HiveWE 重做。保留 `FLAG_RAMP` 与 CliffTrans Catalog。
 3. 有重置版后优先用 **HiveWE 0.6+** 做视觉对照；现阶段用 **0.3 + YDWE**。
 4. 回归跑 `tools/selftest_cliff_*.gd`（含 AABC、远程隔离、异种接触同化）。
 5. 直崖不要再对跨度≤2 做 min_up 叠段。

@@ -163,8 +163,8 @@ func _load() -> void:
 				brush_sizes_square.append(_parse_brush_entry(key, val))
 			"MiscBrushes":
 				misc_raw[key] = _parse_brush_entry(key, val)
-	# 悬崖第二行：浅水、深水、斜坡（对齐经典 WE 面板）
-	for mk in ["ShallowWater", "DeepWater", "Ramp"]:
+	# 悬崖第二行：浅水、深水（斜坡工具已移除，待重做）
+	for mk in ["ShallowWater", "DeepWater"]:
 		if misc_raw.has(mk):
 			cliff_misc_brushes.append(misc_raw[mk])
 	misc_brushes = misc_raw
@@ -235,7 +235,6 @@ func _apply_fallback() -> void:
 	cliff_misc_brushes = [
 		_parse_brush_entry("ShallowWater", "WESTRING_SHALLOWWATER,ReplaceableTextures\\WorldEditUI\\CliffBrush01"),
 		_parse_brush_entry("DeepWater", "WESTRING_DEEPWATER,ReplaceableTextures\\WorldEditUI\\CliffBrush00"),
-		_parse_brush_entry("Ramp", "WESTRING_BRUSH_RAMP,ReplaceableTextures\\WorldEditUI\\RampBrush00"),
 	]
 	height_brushes = [
 		_parse_brush_entry("0", "WESTRING_BRUSH_RAISE,ReplaceableTextures\\WorldEditUI\\HeightBrush00"),

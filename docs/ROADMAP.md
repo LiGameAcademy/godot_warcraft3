@@ -106,14 +106,9 @@
 - [x] M2 Present：placements 驱动；恢复地面挖洞对接
 - [ ] M3 脏区 / 命令标签（可选；不挡 ⑧）
 
-### ⑧ 斜坡层
+### ⑧ 斜坡层（待重做）
 
-> 计划全文：[RAMP.md](RAMP.md)（五层重构 + 拓扑 / CliffTrans）
-
-- [x] M0：条带笔刷迁 `Wc3RampLogic`；Document 委托；蓝菱形不变
-- [ ] M1：`collect_ramp_placements` 真输出 + romp
-- [ ] M2：Present 消费 placements；坡格挖洞
-- [ ] M3：内外转角 / 对角线；M4 可选脏区 + tag
+实现与专用文档已清空；仅保留 `FLAG_RAMP` 数据位与 CliffTrans Catalog。重开时对齐 HiveWE `update_ramp` / `update_cliff_meshes`。
 
 ### ⑨ 水体（深水 / 浅水）
 

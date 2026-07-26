@@ -60,7 +60,6 @@ const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
 @onready var _cliff_inc_two: TextureButton = %CliffIncTwo
 @onready var _cliff_shallow: TextureButton = %CliffShallow
 @onready var _cliff_deep: TextureButton = %CliffDeep
-@onready var _cliff_ramp: TextureButton = %CliffRamp
 @onready var _cliff_type_label: Label = %CliffTypeLabel
 @onready var _cliff_type_grid: HBoxContainer = %CliffTypeGrid
 @onready var _height_check: CheckBox = %HeightCheck
@@ -280,7 +279,7 @@ func _wire_static_tool_buttons() -> void:
 func _wire_cliff_tool_buttons() -> void:
 	var buttons: Array = [
 		_cliff_dec_two, _cliff_dec_one, _cliff_same_level, _cliff_inc_one, _cliff_inc_two,
-		_cliff_shallow, _cliff_deep, _cliff_ramp,
+		_cliff_shallow, _cliff_deep,
 	]
 	var first_wire: bool = _cliff_buttons.is_empty()
 	_cliff_buttons = buttons
