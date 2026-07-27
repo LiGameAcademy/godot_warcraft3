@@ -499,16 +499,13 @@ func _case_heterogeneous_contact_assimilate() -> int:
 						fail = 1
 					else:
 						assimilated += 1
-					# groundTile 仅低侧；台顶高侧保持原地表（对齐 WE）
-					var gx: int = ix + cx2
-					var gy: int = iy + cy2
-					if Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, int(doc.as_build_dict()["tilepointHeight"]), gx, gy):
-						if int(ground[qi]) != 1:
-							push_error(
-								"contact low corner(%d,%d) groundTextures=%d want 1(Lgrs)"
-								% [gx, gy, int(ground[qi])]
-							)
-							fail = 1
+					# groundTile for CLgr is Lgrs → index 1；直崖格四角均同化
+					if int(ground[qi]) != 1:
+						push_error(
+							"contact corner(%d,%d) groundTextures=%d want 1(Lgrs)"
+							% [ix + cx2, iy + cy2, int(ground[qi])]
+						)
+						fail = 1
 
 	if assimilated == 0:
 		push_error("no contact cliff corners assimilated (brush may have missed old cliff)")
@@ -566,7 +563,7 @@ func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
 	return 0
 
 
-## 草地悬崖抬台后，台顶内侧应仍为泥土（groundTile 只写崖脚低侧）。
+## 草地悬崖抬台后：台心保持泥土；贴崖缘角点为 groundTile（与泥土形成过渡）。
 func _case_plateau_top_keeps_dirt_for_grass_cliff() -> int:
 	var doc = DocScript.new()
 	doc.create_from_options({
@@ -586,26 +583,38 @@ func _case_plateau_top_keeps_dirt_for_grass_cliff() -> int:
 	var tp_h: int = int(d["tilepointHeight"])
 	var ground: Array = d["groundTextures"]
 	var layers: Array = d["layerHeights"]
-	# 台顶中心 (8,8) 应为高侧，保持 Ldrt=0
-	if Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, tp_h, 8, 8):
-		push_error("plateau center unexpectedly low-side")
+	# 台顶中心 (8,8) 不贴直崖 → 泥土
+	if Wc3CliffLogic.is_cliff_tile_corner(layers, tp_w, tp_h, 8, 8):
+		push_error("plateau center unexpectedly on cliff tile corner")
 		return 1
 	if int(ground[8 * tp_w + 8]) != 0:
 		push_error("plateau top ground=%d want 0(Ldrt)" % int(ground[8 * tp_w + 8]))
 		return 1
-	# Present corner_texture 也不应把台顶强制成草
+	# 缘角（贴直崖）应为 Lgrs，与台心泥土形成过渡
+	if not Wc3CliffLogic.is_cliff_tile_corner(layers, tp_w, tp_h, 6, 6):
+		push_error("plateau rim (6,6) should be cliff tile corner")
+		return 1
+	if int(ground[6 * tp_w + 6]) != 1:
+		push_error("plateau rim ground=%d want 1(Lgrs)" % int(ground[6 * tp_w + 6]))
+		return 1
 	var cat := Wc3CliffCatalog.new()
 	cat.load_default()
 	var c2g: PackedInt32Array = cat.build_cliff_to_ground_map(d["cliffTilesets"], d["groundTilesets"])
 	var terrain := MapTerrainLayer.new()
-	var forced: int = terrain.corner_texture(
+	var center_t: int = terrain.corner_texture(
 		ground, layers, d["cliffTextures"], c2g, tp_w, tp_h, 8, 8
 	)
+	var rim_t: int = terrain.corner_texture(
+		ground, layers, d["cliffTextures"], c2g, tp_w, tp_h, 6, 6
+	)
 	terrain.free()
-	if forced != 0:
-		push_error("corner_texture forced plateau top to %d want 0" % forced)
+	if center_t != 0:
+		push_error("corner_texture forced plateau center to %d want 0" % center_t)
 		return 1
-	print("plateau_top_keeps_dirt OK")
+	if rim_t != 1:
+		push_error("corner_texture rim=%d want 1(Lgrs)" % rim_t)
+		return 1
+	print("plateau_top_center_dirt_rim_grass OK")
 	return 0
 
 

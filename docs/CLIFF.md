@@ -28,7 +28,7 @@
 
 **Variation（岩壁）**：同 TAG 共边墙段统一变体（Catalog 空间哈希 / 存盘一致值）；不同墙面 TAG 各自哈希 → 自然差异。勿对 cliff mesh UV 做实例抖动（易采到贴图白边导致岩壁发白）。
 
-**groundTile**：只写/强制**崖脚低侧**角点；台顶高侧保持原地表（对齐经典 WE）。
+**groundTile**：直崖格四角写入/强制 `cliff.groundTile`（对齐 viewer `cornerTexture`）。台心不贴直崖则保持原地表；台缘/崖脚与泥土靠四角 bitmask 过渡。
 
 ## 3. 笔刷拓扑（蛋糕）
 

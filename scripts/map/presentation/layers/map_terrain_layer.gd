@@ -178,7 +178,8 @@ func corner_mask_for_type(t_bl: int, t_br: int, t_tl: int, t_tr: int, terrain_ty
 	return mask
 
 
-## 邻近悬崖格时：仅低侧角强制 cliff.groundTile（台顶高侧保持原地表，对齐 WE）。
+## 邻近直崖格时改用 cliff.groundTile（对齐 mdx-m3-viewer cornerTexture）。
+## 只影响贴着直崖的角点：台缘/崖脚与泥土形成 atlas 过渡；台心不贴崖则保持原地表。
 func corner_texture(
 	ground_tex: Array,
 	layer_heights: Array,
@@ -190,21 +191,20 @@ func corner_texture(
 	row: int
 ) -> int:
 	if not cliff_to_ground.is_empty():
-		if Wc3CliffLogic.is_low_side_cliff_corner(layer_heights, tp_w, tp_h, col, row):
-			for dy in range(-1, 1):
-				for dx in range(-1, 1):
-					var tx := col + dx
-					var ty := row + dy
-					if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
-						continue
-					if not Wc3CliffLogic.is_cliff_tile(layer_heights, tp_w, tx, ty):
-						continue
-					var i00 := ty * tp_w + tx
-					var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
-					if ci == 15:
-						ci = 1
-					if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
-						return cliff_to_ground[ci]
+		for dy in range(-1, 1):
+			for dx in range(-1, 1):
+				var tx := col + dx
+				var ty := row + dy
+				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+					continue
+				if not Wc3CliffLogic.is_cliff_tile(layer_heights, tp_w, tx, ty):
+					continue
+				var i00 := ty * tp_w + tx
+				var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
+				if ci == 15:
+					ci = 1
+				if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
+					return cliff_to_ground[ci]
 	return _tex_at(ground_tex, row * tp_w + col)
 
 

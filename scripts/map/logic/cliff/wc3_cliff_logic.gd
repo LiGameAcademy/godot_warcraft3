@@ -260,8 +260,25 @@ func _mark_dirty_point(ix: int, iy: int) -> void:
 	dirty_max = Vector2i(maxi(dirty_max.x, ix), maxi(dirty_max.y, iy))
 
 
+## 角点是否落在某直崖格的四角上（用于 groundTile 崖缘过渡圈）。
+## 台顶内侧不贴直崖的角点不会命中 → 保持原地表。
+static func is_cliff_tile_corner(
+	layers: Array, tp_w: int, tp_h: int, col: int, row: int
+) -> bool:
+	if layers.is_empty() or col < 0 or row < 0 or col >= tp_w or row >= tp_h:
+		return false
+	for dy in range(-1, 1):
+		for dx in range(-1, 1):
+			var tx: int = col + dx
+			var ty: int = row + dy
+			if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+				continue
+			if is_cliff_tile(layers, tp_w, tx, ty):
+				return true
+	return false
+
+
 ## 角点是否落在某直崖格的「低侧」（层高 < 该格四角 max）。
-## 用于对齐 WE：groundTile 只铺崖脚过渡，不刷台顶内侧。
 static func is_low_side_cliff_corner(
 	layers: Array, tp_w: int, tp_h: int, col: int, row: int
 ) -> bool:
@@ -340,17 +357,42 @@ func _sync_corner_textures(
 			if ci < cliff_var.size() and prev_tex != ctype and int(cliff_var[ci]) != 0:
 				cliff_var[ci] = 0
 				any = true
-		# groundTile：低侧写入；高侧若仍是本崖 groundTile 则清回默认（抬台过程误写残留）
-		if gti >= 0 and ci < ground_tex.size():
-			if is_low_side_cliff_corner(layers, tp_w, tp_h, q.x, q.y):
-				if int(ground_tex[ci]) != gti:
-					ground_tex[ci] = gti
+		# 直崖格四角写 groundTile → 台顶缘/崖脚与泥土形成 bitmask 过渡（对齐 WE / viewer）
+		if gti >= 0 and ci < ground_tex.size() and int(ground_tex[ci]) != gti:
+			ground_tex[ci] = gti
+			any = true
+			if ci < ground_var.size():
+				ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
+
+	# 抬台过程中曾落在崖缘的角点，填平后不再贴直崖 → 清回默认地表，避免台心整片残留草
+	if gti >= 0 and not ground_tex.is_empty():
+		var min_x: int = ix
+		var max_x: int = ix
+		var min_y: int = iy
+		var max_y: int = iy
+		for p4 in touched:
+			min_x = mini(min_x, int(p4.x))
+			max_x = maxi(max_x, int(p4.x))
+			min_y = mini(min_y, int(p4.y))
+			max_y = maxi(max_y, int(p4.y))
+		for key3 in corner_pts.keys():
+			var q3: Vector2i = key3
+			min_x = mini(min_x, q3.x)
+			max_x = maxi(max_x, q3.x)
+			min_y = mini(min_y, q3.y)
+			max_y = maxi(max_y, q3.y)
+		min_x = clampi(min_x - 2, 0, tp_w - 1)
+		max_x = clampi(max_x + 2, 0, tp_w - 1)
+		min_y = clampi(min_y - 2, 0, tp_h - 1)
+		max_y = clampi(max_y + 2, 0, tp_h - 1)
+		for cy3 in range(min_y, max_y + 1):
+			for cx3 in range(min_x, max_x + 1):
+				if is_cliff_tile_corner(layers, tp_w, tp_h, cx3, cy3):
+					continue
+				var ci3: int = cy3 * tp_w + cx3
+				if ci3 < ground_tex.size() and int(ground_tex[ci3]) == gti:
+					ground_tex[ci3] = 0
 					any = true
-					if ci < ground_var.size():
-						ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
-			elif int(ground_tex[ci]) == gti:
-				ground_tex[ci] = 0
-				any = true
 	return any
 
 
