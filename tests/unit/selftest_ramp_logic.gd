@@ -24,7 +24,7 @@ func _run() -> void:
 	_test_expand_straight_to_diagonal()
 	_test_intent_not_opposite()
 	_test_low_side_mouse_pref_not_far_side()
-	_test_forbid_opposite_face_ramp()
+	_test_allow_opposite_face_ramp()
 	_test_l_then_diagonal_half_side()
 	_test_single_axis_promotes_to_diagonal()
 	_test_far_empty_still_paintable()
@@ -358,8 +358,8 @@ func _test_low_side_mouse_pref_not_far_side() -> void:
 	print("  low_side_mouse_pref_not_far_side OK origin=(%d,%d)" % [sx, sy])
 
 
-func _test_forbid_opposite_face_ramp() -> void:
-	# 截图1：细高台脊（两侧皆低）。先朝 +Y 落坡，再朝 -Y 必须拒绝（对侧无模）。
+func _test_allow_opposite_face_ramp() -> void:
+	# 细高台脊（两侧皆低）。对齐经典 WE：先 +Y 再 -Y 应都能落旗。
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -380,13 +380,16 @@ func _test_forbid_opposite_face_ramp() -> void:
 		_fail("opposite_face setup +Y fail: %s" % str(r1))
 		return
 	var r2: Dictionary = doc.try_paint_ramp_at(5, 5, 0, -1)
-	if bool(r2.get("ok", false)) and bool(r2.get("changed", false)):
-		_fail("opposite_face must reject -Y after +Y: %s" % str(r2))
+	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
+		_fail("opposite_face expect allow -Y after +Y: %s" % str(r2))
 		return
-	if _flag_ramp(doc, 5, 4) or _flag_ramp(doc, 5, 3):
-		_fail("opposite_face must not mark -Y side")
+	if not (_flag_ramp(doc, 5, 4) and _flag_ramp(doc, 5, 3)):
+		_fail("opposite_face missing -Y side marks")
 		return
-	print("  forbid_opposite_face_ramp OK")
+	if not (_flag_ramp(doc, 5, 6) and _flag_ramp(doc, 5, 7)):
+		_fail("opposite_face missing +Y side marks")
+		return
+	print("  allow_opposite_face_ramp OK")
 
 
 func _test_l_then_diagonal_half_side() -> void:

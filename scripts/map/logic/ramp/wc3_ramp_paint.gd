@@ -456,15 +456,16 @@ static func _check_column(
 		if int(layers[(iy + ny2) * tp_w + (ix + nx2)]) > origin_level:
 			return false
 
-	## 对侧斜坡禁止：原点反方向已有落在低层的 ramp（同一崖脊双向落坡，无对应模型）
-	var back_x: int = ix - dir_x
-	var back_y: int = iy - dir_y
-	if _in_bounds(back_x, back_y, tp_w, tp_h):
-		if (
-			_has_ramp(ramp, tp_w, tp_h, back_x, back_y)
-			and int(layers[back_y * tp_w + back_x]) == target_level
-		):
-			return false
+	## 对侧斜坡：经典 WE 允许细脊两侧双向落坡，故不在此拒绝。
+	## （Collect 仍可能「有旗无模」；Present 另议。旧禁门保留注释备查。）
+	# var back_x: int = ix - dir_x
+	# var back_y: int = iy - dir_y
+	# if _in_bounds(back_x, back_y, tp_w, tp_h):
+	# 	if (
+	# 		_has_ramp(ramp, tp_w, tp_h, back_x, back_y)
+	# 		and int(layers[back_y * tp_w + back_x]) == target_level
+	# 	):
+	# 		return false
 
 	## 侧翼禁贴：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
 	for side in [-1, 1]:
