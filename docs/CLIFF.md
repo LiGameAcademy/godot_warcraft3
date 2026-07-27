@@ -24,9 +24,11 @@
 - **跨度 ≤2**：只放 **一片**完整 TAG（含 `AABC`「底两边顶一边」）。禁止再按 `min_up` 叠第二段。
 - **跨度 >2**（旧图/异常）：每次剥满 C（+2），再收尾剩余 ≤2。
 
-选型表：`Wc3CliffTiles.CLIFF_VAR_MAX` → `Doodads/Terrain/Cliffs/Cliffs{TAG}{var}.glb`。
+选型表：`Wc3CliffCatalog` → `Doodads/Terrain/Cliffs/Cliffs{TAG}{var}.glb`。
 
-关键代码：`scripts/map/wc3_cliff_tiles.gd`（`cliff_slices_at`）、`wc3_cliff_builder.gd`、`map_cliff_layer.gd`。
+**Variation（岩壁竖缝）**：`collect_placements` 对同 TAG、同崖贴图、四连通共边的 placement **统一 variation**；笔刷 `_sync_corner_textures` 同一次接触写入共享 `cliffVariations`。
+
+核心代码：`scripts/map/logic/cliff/wc3_cliff_logic.gd`、`presentation/cliff/wc3_cliff_builder.gd`、`map_cliff_layer.gd`。`MapTerrainLayer.corner_texture` 邻崖角强制 `cliff.groundTile`。
 
 ## 3. 笔刷拓扑（蛋糕）
 
@@ -71,7 +73,7 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_level3.gd
 godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 ```
 
-`selftest_cliff_variants.gd` 覆盖：TAG/GLB、AABC 单片、叠段、台面+柱、远程隔离、异种接触同化。
+`selftest_cliff_variants.gd` 覆盖：TAG/GLB、AABC 单片、叠段、台面+柱、远程隔离、异种接触同化、直墙 variation 统一。
 
 ## 8. 相关文件
 
@@ -81,8 +83,8 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 | `scripts/map/catalog/wc3_cliff_catalog.gd` | 直崖 Catalog（贴图 / groundTile / modelDir） |
 | `scripts/map/catalog/wc3_terrain_tile_catalog.gd` | 地表 Catalog（仅 Terrain） |
 | `editor/scripts/map_document.gd` | 笔刷、蛋糕、策略 B 同步 |
-| `scripts/map/wc3_cliff_tiles.gd` | TAG / 叠段 / 斜坡检测入口 |
-| `scripts/map/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |
+| `scripts/map/logic/cliff/wc3_cliff_logic.gd` | TAG / 叠段 / placements / 同步 |
+| `scripts/map/presentation/cliff/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |
 | `scripts/map/presentation/layers/map_terrain_layer.gd` | 挖洞、`corner_texture` |
 | `editor/scripts/ui/tool_palette_window.gd` | 类型图标 |
 | [EDITOR.md](EDITOR.md) §5.3 | 编辑器流程 |

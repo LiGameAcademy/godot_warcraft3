@@ -23,6 +23,7 @@ var _last_extended: PackedByteArray = PackedByteArray()
 var _base_gap: PackedByteArray = PackedByteArray()
 var _extra_dig: PackedByteArray = PackedByteArray()
 var _undig: PackedByteArray = PackedByteArray()
+var _last_cliff_to_ground: PackedInt32Array = PackedInt32Array()
 
 ## 四角 bitmask 结果（避免裸 Dictionary 键）。
 class CornerMask extends RefCounted:
@@ -44,6 +45,7 @@ func build(ctx: MapBuildContext) -> void:
 	_base_gap = PackedByteArray()
 	_extra_dig = PackedByteArray()
 	_undig = PackedByteArray()
+	_last_cliff_to_ground = PackedInt32Array()
 
 	var hf: Wc3Heightfield = ctx.heightfield
 	if hf == null or not hf.is_valid():
@@ -63,7 +65,14 @@ func build(ctx: MapBuildContext) -> void:
 	_last_hf = hf
 	_last_extended = extended
 	_base_gap = ctx.cliff_gap_mask
-	last_gap_count = _build_ground_mesh(hf, extended, _compose_gap_mask())
+	_last_cliff_to_ground = PackedInt32Array()
+	if ctx.cliff_catalog != null:
+		_last_cliff_to_ground = ctx.cliff_catalog.build_cliff_to_ground_map(
+			hf.cliff_tilesets, ground_tilesets
+		)
+	last_gap_count = _build_ground_mesh(
+		hf, extended, _compose_gap_mask(), _last_cliff_to_ground
+	)
 
 	var tex_array: Texture2DArray = Wc3GroundTileCatalog.build_texture_array(
 		ground_tilesets, ctx.tiles
@@ -124,7 +133,9 @@ func undig_tiles(tiles: Array[Vector2i]) -> void:
 func _rebuild_ground_mesh_only() -> void:
 	if _last_hf == null or not _last_hf.is_valid():
 		return
-	last_gap_count = _build_ground_mesh(_last_hf, _last_extended, _compose_gap_mask())
+	last_gap_count = _build_ground_mesh(
+		_last_hf, _last_extended, _compose_gap_mask(), _last_cliff_to_ground
+	)
 
 
 func _compose_gap_mask() -> PackedByteArray:
@@ -167,22 +178,46 @@ func corner_mask_for_type(t_bl: int, t_br: int, t_tl: int, t_tr: int, terrain_ty
 	return mask
 
 
-# --- 悬崖阶段恢复：邻近崖格改用 cliff.groundTile ---
-# func corner_texture(
-# 	ground_tex: Array, layer_heights: Array, cliff_tex: Array,
-# 	cliff_to_ground: PackedInt32Array, tp_w: int, tp_h: int, col: int, row: int
-# ) -> int:
-# 	...
+## 邻近悬崖格时改用 cliff.groundTile（对齐 mdx-m3-viewer cornerTexture）。
+func corner_texture(
+	ground_tex: Array,
+	layer_heights: Array,
+	cliff_tex: Array,
+	cliff_to_ground: PackedInt32Array,
+	tp_w: int,
+	tp_h: int,
+	col: int,
+	row: int
+) -> int:
+	if not cliff_to_ground.is_empty():
+		for dy in range(-1, 1):
+			for dx in range(-1, 1):
+				var tx := col + dx
+				var ty := row + dy
+				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+					continue
+				if not Wc3CliffLogic.is_cliff_tile(layer_heights, tp_w, tx, ty):
+					continue
+				var i00 := ty * tp_w + tx
+				var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
+				if ci == 15:
+					ci = 1
+				if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
+					return cliff_to_ground[ci]
+	return _tex_at(ground_tex, row * tp_w + col)
 
 
 ## 返回 gap_count；网格写在 _ground 上。挖洞只消费传入 mask（直崖 ± 斜坡 API 合成）。
 func _build_ground_mesh(
-	hf: Wc3Heightfield, extended_flags: PackedByteArray, gap_mask: PackedByteArray
+	hf: Wc3Heightfield,
+	extended_flags: PackedByteArray,
+	gap_mask: PackedByteArray,
+	cliff_to_ground: PackedInt32Array = PackedInt32Array()
 ) -> int:
 	var width: int = hf.width
 	var height: int = hf.height
 	if width < 2 or height < 2:
-		push_error("MapTerrainLayer: heightfield 尺寸无效")
+		push_error("MapTerrainLayer: heightfield 无效")
 		return 0
 
 	_ground.begin_build(true)
@@ -190,6 +225,9 @@ func _build_ground_mesh(
 	var center: Vector2 = hf.center_offset
 	var tile_size: float = hf.tile_size
 	var map_w: int = width - 1
+	var ground_tex: Array = hf.ground_textures
+	var layer_heights: Array = hf.layer_heights
+	var cliff_tex: Array = hf.cliff_textures
 
 	for iy in range(height - 1):
 		for ix in range(width - 1):
@@ -199,10 +237,18 @@ func _build_ground_mesh(
 				gap_count += 1
 				continue
 
-			var t_bl: int = _tex_at(hf.ground_textures, i00)
-			var t_br: int = _tex_at(hf.ground_textures, i00 + 1)
-			var t_tl: int = _tex_at(hf.ground_textures, i00 + width)
-			var t_tr: int = _tex_at(hf.ground_textures, i00 + width + 1)
+			var t_bl: int = corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy
+			)
+			var t_br: int = corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy
+			)
+			var t_tl: int = corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy + 1
+			)
+			var t_tr: int = corner_texture(
+				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy + 1
+			)
 
 			var slots: LayerSlots = _build_layers(
 				t_bl, t_br, t_tl, t_tr,
@@ -267,8 +313,6 @@ func _fill_variation(ground_texture: int, variation: int, extended_flags: Packed
 		return 0
 	return 15
 
-# --- 悬崖阶段恢复：cliffTileset → groundTileset 下标 ---
-# func _build_cliff_to_ground(...) -> PackedInt32Array:
 
 func _tex_at(ground_tex: Array, i: int) -> int:
 	if i < 0 or i >= ground_tex.size():

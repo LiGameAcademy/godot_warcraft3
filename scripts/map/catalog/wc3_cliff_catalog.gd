@@ -100,7 +100,7 @@ func clamp_variation(model_dir: String, tag: String, variation: int) -> int:
 	return mini(maxi(variation, 0), max_v)
 
 
-## 直崖变体：优先存盘值；存盘为 0 时用格点哈希打散。
+## 直崖变体：优先存盘值；存盘为 0 时用「墙段锚点」哈希（collect 会再按共边统一）。
 func pick_cliff_variation(
 	model_dir: String, tag: String, stored: int, ix: int, iy: int
 ) -> int:
@@ -109,8 +109,25 @@ func pick_cliff_variation(
 		return 0
 	if stored > 0:
 		return mini(stored, max_v)
-	var h: int = absi((ix * 73856093) ^ (iy * 19349663) ^ tag.hash())
+	# 仅用 tag + 较小轴坐标，使同行/同列更易落到同变体；最终以 collect 共边统一为准
+	var h: int = absi((mini(ix, iy) * 73856093) ^ tag.hash())
 	return h % (max_v + 1)
+
+
+## cliffTilesets 下标 → groundTilesets 下标；无映射为 -1。
+func build_cliff_to_ground_map(cliff_tilesets: Array, ground_tilesets: Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(cliff_tilesets.size())
+	out.fill(-1)
+	for i in range(cliff_tilesets.size()):
+		var ground_id := ground_tile_for_cliff_id(str(cliff_tilesets[i]))
+		if ground_id.is_empty():
+			continue
+		for gi in range(ground_tilesets.size()):
+			if str(ground_tilesets[gi]) == ground_id:
+				out[i] = gi
+				break
+	return out
 
 
 func resolve_glb(model_dir: String, tag: String, variation: int) -> String:

@@ -44,6 +44,7 @@ func _run() -> void:
 	failed += _case_paint_level2_edge_then_corner(cliffs)
 	failed += _case_remote_cliff_tex_isolation()
 	failed += _case_heterogeneous_contact_assimilate()
+	failed += _case_unified_variation_along_wall(cliffs)
 
 	if failed > 0:
 		push_error("selftest_cliff_variants FAILED cases=%d" % failed)
@@ -520,3 +521,41 @@ func _case_heterogeneous_contact_assimilate() -> int:
 		% [assimilated, str(int(cliff_tex[far_i]) == far_cliff), fail]
 	)
 	return fail
+
+
+## 同一条 AABB 直墙共边 placement 必须共用 variation（消除竖缝）。
+func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
+	var doc = DocScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 16,
+		"main_tileset": "L",
+		"ground_tilesets": ["Ldrt", "Lgrs", "Lrok"],
+		"cliff_tilesets": ["CLdi", "CLgr"],
+		"cliff_level": 2,
+		"default_tile_index": 0,
+	})
+	# 抬升矩形高台 → 西侧直墙为 AABB 多格共边
+	for y in range(5, 12):
+		for x in range(8, 12):
+			doc.paint_cliff_corner(x, y, "3", 0)
+	var hf := Wc3Heightfield.from_dict(doc.as_build_dict(), false)
+	var placements: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(hf, cliffs)
+	var aabb_vars: Dictionary = {}
+	var aabb_count := 0
+	for p in placements:
+		if p.tag != "AABB":
+			continue
+		aabb_count += 1
+		aabb_vars[p.variation] = true
+	if aabb_count < 2:
+		push_error("unified_variation: expected multiple AABB along wall, got %d" % aabb_count)
+		return 1
+	if aabb_vars.size() != 1:
+		push_error(
+			"unified_variation: AABB wall must share 1 variation, got %s (n=%d)"
+			% [str(aabb_vars.keys()), aabb_count]
+		)
+		return 1
+	print("unified_variation AABB n=%d var=%d OK" % [aabb_count, int(aabb_vars.keys()[0])])
+	return 0

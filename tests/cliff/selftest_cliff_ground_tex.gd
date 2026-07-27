@@ -54,5 +54,27 @@ func _run() -> void:
 				% [ix, iy, bl, br, tl, tr, mask.atlas, mask.pedagogical]
 			)
 	terrain.free()
-	# corner_texture（悬崖旁同化）暂关，待悬崖阶段恢复后再测
+	# corner_texture：邻崖角应强制 cliff.groundTile（CLgr→Lgrs=1）
+	var cat := Wc3CliffCatalog.new()
+	cat.load_default()
+	var c2g: PackedInt32Array = cat.build_cliff_to_ground_map(
+		doc.as_build_dict()["cliffTilesets"],
+		doc.as_build_dict()["groundTilesets"]
+	)
+	var terrain2 := MapTerrainLayer.new()
+	var forced := 0
+	var cliff_tex: Array = doc.as_build_dict()["cliffTextures"]
+	for y in range(cy - 2, cy + 3):
+		for x in range(cx - 2, cx + 3):
+			var t: int = terrain2.corner_texture(
+				ground, layers, cliff_tex, c2g, tp_w, int(doc.as_build_dict()["tilepointHeight"]), x, y
+			)
+			if t == 1:
+				forced += 1
+	terrain2.free()
+	if forced < 4:
+		push_error("corner_texture expected grass forced near cliff, got forced=%d" % forced)
+		quit(1)
+		return
+	print("corner_texture forced_grass=%d OK" % forced)
 	quit(0)

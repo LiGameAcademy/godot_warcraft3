@@ -298,6 +298,19 @@ func _sync_corner_textures(
 						corner_pts[Vector2i(tx + cx, ty + cy)] = true
 
 	var any := false
+	## 同一次接触同步共用一个 variation，减少邻格岩壁竖缝
+	var shared_var := 0
+	for key_scan in corner_pts.keys():
+		var qs: Vector2i = key_scan
+		if qs.x < 0 or qs.y < 0 or qs.x >= tp_w or qs.y >= tp_h:
+			continue
+		var si: int = qs.y * tp_w + qs.x
+		if si < cliff_var.size() and int(cliff_var[si]) > 0:
+			shared_var = int(cliff_var[si])
+			break
+	if shared_var <= 0:
+		shared_var = (randi() % 3) + 1
+
 	for key2 in corner_pts.keys():
 		var q: Vector2i = key2
 		if q.x < 0 or q.y < 0 or q.x >= tp_w or q.y >= tp_h:
@@ -309,12 +322,10 @@ func _sync_corner_textures(
 				cliff_tex[ci] = ctype
 				any = true
 			if ci < cliff_var.size():
-				if prev_tex != ctype:
-					cliff_var[ci] = (randi() % 3) + 1
-					any = true
-				elif int(cliff_var[ci]) == 0:
-					cliff_var[ci] = (absi(ci * 2654435761) % 3) + 1
-					any = true
+				if prev_tex != ctype or int(cliff_var[ci]) == 0:
+					if int(cliff_var[ci]) != shared_var:
+						cliff_var[ci] = shared_var
+						any = true
 		if gti >= 0 and ci < ground_tex.size() and int(ground_tex[ci]) != gti:
 			ground_tex[ci] = gti
 			any = true
@@ -459,6 +470,7 @@ static func build_gap_mask(hf: Wc3Heightfield) -> PackedByteArray:
 
 
 ## 从 Heightfield 算出直崖 placements（已过滤无效 TAG；含 model_dir / variation）。
+## 同 TAG + 同 cliff_tex + 四连通共边的 placement 共用 variation，避免直墙竖缝。
 static func collect_placements(
 	hf: Wc3Heightfield, catalog: Wc3CliffCatalog
 ) -> Array[Wc3CliffPlacement]:
@@ -474,6 +486,8 @@ static func collect_placements(
 	if layers.is_empty() or cliff_tilesets.is_empty():
 		return out
 
+	## 暂存：便于共边统一 variation
+	var raw: Array[Dictionary] = []
 	for iy in range(tp_h - 1):
 		for ix in range(tp_w - 1):
 			if not is_cliff_tile(layers, tp_w, ix, iy):
@@ -486,24 +500,164 @@ static func collect_placements(
 			var model_dir := "Cliffs"
 			if catalog != null:
 				model_dir = catalog.cliff_model_dir(cliff_id)
-			var i00: int = iy * tp_w + ix
-			var stored: int = int(cliff_var[i00]) if i00 < cliff_var.size() else 0
+			var stored: int = _tile_stored_variation(cliff_var, tp_w, tp_h, ix, iy)
 			for slice in slices:
 				var tag: String = str(slice.get("tag", ""))
 				if tag.is_empty() or tag == "AAAA":
 					continue
 				var base_layer: int = int(slice.get("base_layer", 2))
-				var variation: int = 0
-				if catalog != null:
-					variation = catalog.pick_cliff_variation(
-						model_dir, tag, stored, ix, iy
-					)
-				out.append(
-					Wc3CliffPlacement.make(
-						ix, iy, tag, base_layer, tex_idx, model_dir, variation
-					)
-				)
+				raw.append({
+					"ix": ix,
+					"iy": iy,
+					"tag": tag,
+					"base_layer": base_layer,
+					"tex_idx": tex_idx,
+					"model_dir": model_dir,
+					"stored": stored,
+					"variation": 0,
+				})
+
+	_assign_unified_variations(raw, catalog)
+
+	for item in raw:
+		out.append(
+			Wc3CliffPlacement.make(
+				int(item["ix"]),
+				int(item["iy"]),
+				str(item["tag"]),
+				int(item["base_layer"]),
+				int(item["tex_idx"]),
+				str(item["model_dir"]),
+				int(item["variation"])
+			)
+		)
 	return out
+
+
+## 四角 cliffVariations：取非 0 众数；并列取较大值；全 0 返回 0。
+static func _tile_stored_variation(
+	cliff_var: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> int:
+	if cliff_var.is_empty():
+		return 0
+	var counts: Dictionary = {}
+	for oy in range(0, 2):
+		for ox in range(0, 2):
+			var cx: int = ix + ox
+			var cy: int = iy + oy
+			if cx < 0 or cy < 0 or cx >= tp_w or cy >= tp_h:
+				continue
+			var i: int = cy * tp_w + cx
+			if i < 0 or i >= cliff_var.size():
+				continue
+			var v: int = int(cliff_var[i])
+			if v <= 0:
+				continue
+			counts[v] = int(counts.get(v, 0)) + 1
+	if counts.is_empty():
+		return 0
+	var best_v := 0
+	var best_n := -1
+	for k in counts.keys():
+		var n: int = int(counts[k])
+		var kv: int = int(k)
+		if n > best_n or (n == best_n and kv > best_v):
+			best_n = n
+			best_v = kv
+	return best_v
+
+
+## 同 tag + tex_idx + model_dir 且四连通共边 → 同一 variation。
+static func _assign_unified_variations(raw: Array[Dictionary], catalog: Wc3CliffCatalog) -> void:
+	var n: int = raw.size()
+	if n == 0:
+		return
+	var parent: PackedInt32Array = PackedInt32Array()
+	parent.resize(n)
+	for i in range(n):
+		parent[i] = i
+
+	for i in range(n):
+		var ai: Dictionary = raw[i]
+		for j in range(i + 1, n):
+			var bj: Dictionary = raw[j]
+			if str(ai["tag"]) != str(bj["tag"]):
+				continue
+			if int(ai["tex_idx"]) != int(bj["tex_idx"]):
+				continue
+			if str(ai["model_dir"]) != str(bj["model_dir"]):
+				continue
+			var d: int = absi(int(ai["ix"]) - int(bj["ix"])) + absi(int(ai["iy"]) - int(bj["iy"]))
+			if d == 1:
+				_uf_unite(parent, i, j)
+
+	## 每连通分量：优先众数 stored；否则用分量锚点哈希
+	var comp_stored: Dictionary = {} # root → {v → count}
+	var comp_anchor: Dictionary = {} # root → Vector2i 最小 (ix,iy)
+	for i in range(n):
+		var r: int = _uf_find(parent, i)
+		var item: Dictionary = raw[i]
+		var st: int = int(item["stored"])
+		if st > 0:
+			if not comp_stored.has(r):
+				comp_stored[r] = {}
+			var bag: Dictionary = comp_stored[r]
+			bag[st] = int(bag.get(st, 0)) + 1
+			comp_stored[r] = bag
+		var pt := Vector2i(int(item["ix"]), int(item["iy"]))
+		if not comp_anchor.has(r):
+			comp_anchor[r] = pt
+		else:
+			var cur: Vector2i = comp_anchor[r]
+			if pt.y < cur.y or (pt.y == cur.y and pt.x < cur.x):
+				comp_anchor[r] = pt
+
+	var comp_var: Dictionary = {}
+	for i in range(n):
+		var r2: int = _uf_find(parent, i)
+		if comp_var.has(r2):
+			continue
+		var chosen := 0
+		if comp_stored.has(r2):
+			var bag2: Dictionary = comp_stored[r2]
+			var best_v2 := 0
+			var best_n2 := -1
+			for k2 in bag2.keys():
+				var n2: int = int(bag2[k2])
+				var kv2: int = int(k2)
+				if n2 > best_n2 or (n2 == best_n2 and kv2 > best_v2):
+					best_n2 = n2
+					best_v2 = kv2
+			chosen = best_v2
+		var sample: Dictionary = raw[i]
+		var tag: String = str(sample["tag"])
+		var model_dir: String = str(sample["model_dir"])
+		var anchor: Vector2i = comp_anchor.get(r2, Vector2i(int(sample["ix"]), int(sample["iy"])))
+		if catalog != null:
+			chosen = catalog.pick_cliff_variation(
+				model_dir, tag, chosen, anchor.x, anchor.y
+			)
+		else:
+			chosen = maxi(chosen, 0)
+		comp_var[r2] = chosen
+
+	for i in range(n):
+		raw[i]["variation"] = int(comp_var[_uf_find(parent, i)])
+
+
+static func _uf_find(parent: PackedInt32Array, a: int) -> int:
+	var x: int = a
+	while parent[x] != x:
+		parent[x] = parent[parent[x]]
+		x = parent[x]
+	return x
+
+
+static func _uf_unite(parent: PackedInt32Array, a: int, b: int) -> void:
+	var ra: int = _uf_find(parent, a)
+	var rb: int = _uf_find(parent, b)
+	if ra != rb:
+		parent[rb] = ra
 
 
 ## 从格子四角选悬崖类型：优先非 0 索引（草地等），避免只读 i00 时落成默认泥土。
