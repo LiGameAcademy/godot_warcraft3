@@ -1,6 +1,6 @@
 # 悬崖（Cliff）
 
-> 编辑器直崖数据、选型、异种策略与回归。斜坡实现已清空，待重做。  
+> 编辑器直崖数据、选型、异种策略与回归。斜坡见 [RAMP_WE.md](RAMP_WE.md)（WE 思路；实现待重做）。  
 > **分层重构计划**见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。  
 > HiveWE 路径见 [`.cursor/rules/hivewe-cliff-reference.mdc`](../.cursor/rules/hivewe-cliff-reference.mdc)。
 

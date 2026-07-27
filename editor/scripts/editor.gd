@@ -66,6 +66,8 @@ func _ready() -> void:
 			brush.tile_hovered.connect(_on_tile_hovered)
 		if brush.has_signal("rebuild_requested"):
 			brush.rebuild_requested.connect(_on_brush_rebuild)
+		if brush.has_signal("ramp_feedback"):
+			brush.ramp_feedback.connect(_on_ramp_feedback)
 	EditorI18n.locale_changed.connect(_on_locale_changed)
 	_apply_chrome_locale()
 
@@ -76,7 +78,12 @@ func _ready() -> void:
 			new_map_dialog.confirmed.connect(_on_new_map_confirmed)
 	await _startup_new_map()
 	_set_view_grid(EditorSettingsStore.load_view_grid_level())
+	if menu != null and menu.has_method("set_ramp_debug_checked") and map_root != null:
+		menu.set_ramp_debug_checked(map_root.get_show_ramp_debug())
 	_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.TERRAIN)
+	if not _history.changed.is_connected(_refresh_undo_redo_menu):
+		_history.changed.connect(_refresh_undo_redo_menu)
+	_refresh_undo_redo_menu()
 
 
 func get_history() -> EditorCommandHistory:
@@ -216,6 +223,13 @@ func _on_menu_action(action_id: StringName) -> void:
 			_set_view_grid(MapLoader.ViewGridLevel.MEDIUM)
 		"view_grid_small":
 			_set_view_grid(MapLoader.ViewGridLevel.SMALL)
+		"view_ramp_debug":
+			if map_root != null:
+				var on := not map_root.get_show_ramp_debug()
+				map_root.set_show_ramp_debug(on)
+				if menu != null and menu.has_method("set_ramp_debug_checked"):
+					menu.set_ramp_debug_checked(on)
+				_set_status("斜坡标记：开" if on else "斜坡标记：关")
 		"view_grid", "window_new_palette":
 			pass
 		"window_new_palette_terrain":
@@ -258,6 +272,11 @@ func _redo() -> void:
 	_set_status("Redo: %s" % cmd.get_label())
 
 
+func _refresh_undo_redo_menu() -> void:
+	if menu != null and menu.has_method("set_undo_redo_enabled"):
+		menu.set_undo_redo_enabled(_history.can_undo(), _history.can_redo())
+
+
 func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool) -> void:
 	MapLog.info(
 		MapLog.Layer.EDITOR,
@@ -294,6 +313,10 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
+	if win.has_signal("edit_undo_requested"):
+		win.edit_undo_requested.connect(_undo)
+	if win.has_signal("edit_redo_requested"):
+		win.edit_redo_requested.connect(_redo)
 	_tool_palettes.append(win)
 	win.rebuild_terrain(_doc, map_root.get_tiles(), map_root.get_cliff_catalog())
 	_palettes_visible = true
@@ -301,11 +324,16 @@ func _spawn_tool_palette(kind: int) -> void:
 		menu.set_show_palettes_checked(true)
 	var offset := _palette_spawn_index * 28
 	_palette_spawn_index += 1
-	win.position = Vector2i(24 + offset, 72 + offset)
+	# 相对主编辑窗口定位；transient=true 时引擎沿父节点 viewport 自动绑定主窗
+	var main_win := get_viewport().get_window()
+	win.transient = true
+	if main_win != null:
+		win.position = main_win.position + Vector2i(24 + offset, 72 + offset)
+	else:
+		win.position = Vector2i(24 + offset, 72 + offset)
 	win.transparent = false
 	win.unfocusable = false
 	win.always_on_top = true
-	win.transient = false
 	win.visible = true
 	win.show()
 
@@ -436,6 +464,12 @@ func _on_tile_hovered(tile: Vector2i) -> void:
 	_hover_tile = tile
 	if hover_label != null:
 		hover_label.text = EditorI18n.t("EDITOR_HOVER_CELL", [tile.x, tile.y])
+
+
+func _on_ramp_feedback(message: String) -> void:
+	if message.is_empty():
+		return
+	_set_status(message)
 
 
 func _on_dirty_changed(dirty: bool) -> void:

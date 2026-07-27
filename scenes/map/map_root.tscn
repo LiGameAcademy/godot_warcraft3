@@ -8,6 +8,7 @@
 [ext_resource type="Script" uid="uid://4ju3bbspw18r" path="res://scripts/map/map_unit_layer.gd" id="6_unit"]
 [ext_resource type="Script" uid="uid://bu2uneabbpiey" path="res://scripts/map/presentation/mesh/heightfield_mesh.gd" id="7_hfmesh"]
 [ext_resource type="Script" uid="uid://y12m4h6fuy53" path="res://scripts/map/presentation/layers/map_debug_grid_layer.gd" id="8_dbggrid"]
+[ext_resource type="Script" path="res://scripts/map/map_ramp_debug_layer.gd" id="9_rampdbg"]
 [ext_resource type="Material" path="res://assets/materials/wc3_ground_material.tres" id="10_gmat"]
 
 [node name="MapRoot" type="Node3D" unique_id=1421899306]
@@ -39,3 +40,6 @@ script = ExtResource("6_unit")
 script = ExtResource("8_dbggrid")
 terrain_layer = NodePath("../Terrain")
 cliffs_layer = NodePath("../Cliffs")
+
+[node name="RampDebug" type="Node3D" parent="." unique_id=1865397034]
+script = ExtResource("9_rampdbg")

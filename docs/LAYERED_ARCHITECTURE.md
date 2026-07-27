@@ -2,8 +2,8 @@
 
 > 目标：用 **WC3 数据 + 资产** 建映射，再在其上写逻辑，最后在逻辑正确的前提下做渲染。  
 > 难点与终点都在「映射正确」；表现层只消费映射结果。  
-> 相关：[MAP_DATA.md](MAP_DATA.md) · [ROADMAP.md](ROADMAP.md) · [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) · [EDITOR.md](EDITOR.md)  
-> 最后更新：2026-07-24
+> 相关：[MAP_DATA.md](MAP_DATA.md) · [ROADMAP.md](ROADMAP.md) · [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) · [EDITOR.md](EDITOR.md) · [HEX_MAP_LESSONS.md](HEX_MAP_LESSONS.md)  
+> 最后更新：2026-07-27
 
 ---
 
@@ -167,7 +167,7 @@ scripts/map/
 │   ├── terrain/
 │   │   └── wc3_terrain_logic.gd   # 地表/高度 API + 脏矩形
 │   ├── cliff/                     # is_cliff_tile、TAG 选型、挖洞集合
-│   # ramp/ 已清空，待按 HiveWE 重做
+│   ├── ramp/                      # logic + paint + collect（对齐 HiveWE）
 │   ├── water/                     # 深浅判定等（后置）
 │   └── …                          # doodad / unit 放置规则（后置）
 │

@@ -106,9 +106,15 @@
 - [x] M2 Present：placements 驱动；恢复地面挖洞对接
 - [ ] M3 脏区 / 命令标签（可选；不挡 ⑧）
 
-### ⑧ 斜坡层（待重做）
+### ⑧ 斜坡层（Logic ✅ / Present 后置）
 
-实现与专用文档已清空；仅保留 `FLAG_RAMP` 数据位与 CliffTrans Catalog。重开时对齐 HiveWE `update_ramp` / `update_cliff_meshes`。
+> **WE 思路权威**：[RAMP_WE.md](RAMP_WE.md)
+
+- [x] Paint ≈ `update_ramp`（`logic/ramp/`；Document 委托；蓝菱形）
+- [x] Collect ≈ `update_cliff_meshes` 数据侧（placements + romp；与 cliff 拓扑分离）
+- [x] 分层：cliff `gap_mask` 不含坡；挖洞/藏崖 API 由 `MapRampLayer` 调用（Present 未启用副作用）
+- [ ] Present：挂 CliffTrans + `undig` 入口 + romp dig + hide 直崖 + 入口 +0.5
+- [ ] 脏区 / tag `milestone/ramp-layered`
 
 ### ⑨ 水体（深水 / 浅水）
 

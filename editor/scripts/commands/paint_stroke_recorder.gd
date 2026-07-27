@@ -48,6 +48,17 @@ func capture_before_at(ix: int, iy: int, radius: int = CAPTURE_RADIUS) -> void:
 				_before[i] = snap
 
 
+## 仅采集给定顶点（半径 0）；用于斜坡 marked 精确快照。
+func capture_before_points(points: Array[Vector2i]) -> void:
+	for p in points:
+		capture_before_at(p.x, p.y, 0)
+
+
+func capture_after_points(points: Array[Vector2i]) -> void:
+	for p in points:
+		capture_after_at(p.x, p.y, 0)
+
+
 ## 绘制后：写入 after（仅相对 before 有变化的）。
 func capture_after_at(ix: int, iy: int, radius: int = CAPTURE_RADIUS) -> void:
 	if not _active or _doc == null or _doc.heightfield == null:

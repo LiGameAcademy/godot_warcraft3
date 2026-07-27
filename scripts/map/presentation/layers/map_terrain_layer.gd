@@ -1,8 +1,9 @@
 class_name MapTerrainLayer
 extends Node3D
 
-## 地面表现层：只读 Heightfield + Catalog 贴图 + Context.gap_mask → 网格。
-## 禁止改 Heightfield；挖洞只读 Logic 预计算的 mask，本层不做崖判定。
+## 地面表现层：只读 Heightfield + Catalog 贴图 + 直崖 gap_mask → 网格。
+## 禁止改 Heightfield；禁止读斜坡 Collect。
+## 斜坡挖洞由 Ramp Present 调 apply_dig_mask / undig_tiles。
 
 ## 官方图集角 bit（非教学口诀 BL=1）。用于过渡块编号。
 enum AtlasCornerBit {
@@ -16,6 +17,12 @@ enum AtlasCornerBit {
 @onready var _ground: HeightfieldMesh = $Ground		## 地面网格
 
 var last_gap_count: int = 0							## 上次 gap 计数
+## 上次 build 缓存，供斜坡 Present 增量挖洞 / 恢复入口地面
+var _last_hf: Wc3Heightfield = null
+var _last_extended: PackedByteArray = PackedByteArray()
+var _base_gap: PackedByteArray = PackedByteArray()
+var _extra_dig: PackedByteArray = PackedByteArray()
+var _undig: PackedByteArray = PackedByteArray()
 
 ## 四角 bitmask 结果（避免裸 Dictionary 键）。
 class CornerMask extends RefCounted:
@@ -32,6 +39,11 @@ class LayerSlots extends RefCounted:
 func build(ctx: MapBuildContext) -> void:
 	_ground.clear_mesh()
 	last_gap_count = 0
+	_last_hf = null
+	_last_extended = PackedByteArray()
+	_base_gap = PackedByteArray()
+	_extra_dig = PackedByteArray()
+	_undig = PackedByteArray()
 
 	var hf: Wc3Heightfield = ctx.heightfield
 	if hf == null or not hf.is_valid():
@@ -48,7 +60,10 @@ func build(ctx: MapBuildContext) -> void:
 	var extended: PackedByteArray = Wc3GroundTileCatalog.build_extended_flags(
 		ground_tilesets, ctx.tiles
 	)
-	last_gap_count = _build_ground_mesh(hf, extended, ctx.cliff_gap_mask)
+	_last_hf = hf
+	_last_extended = extended
+	_base_gap = ctx.cliff_gap_mask
+	last_gap_count = _build_ground_mesh(hf, extended, _compose_gap_mask())
 
 	var tex_array: Texture2DArray = Wc3GroundTileCatalog.build_texture_array(
 		ground_tilesets, ctx.tiles
@@ -85,6 +100,47 @@ func build(ctx: MapBuildContext) -> void:
 	)
 
 
+## 斜坡 Present API：追加挖洞（与直崖 gap OR）。不读 ramp 数据。
+func apply_dig_mask(extra: PackedByteArray) -> void:
+	_extra_dig = extra.duplicate() if not extra.is_empty() else PackedByteArray()
+	_rebuild_ground_mesh_only()
+
+
+## 斜坡 Present API：强制保留地面（入口格）。优先级高于 dig。
+func undig_tiles(tiles: Array[Vector2i]) -> void:
+	if _last_hf == null or not _last_hf.is_valid():
+		return
+	var map_w: int = _last_hf.width - 1
+	var map_h: int = _last_hf.height - 1
+	_undig.resize(maxi(map_w * map_h, 0))
+	_undig.fill(0)
+	for t in tiles:
+		if t.x < 0 or t.y < 0 or t.x >= map_w or t.y >= map_h:
+			continue
+		_undig[t.y * map_w + t.x] = 1
+	_rebuild_ground_mesh_only()
+
+
+func _rebuild_ground_mesh_only() -> void:
+	if _last_hf == null or not _last_hf.is_valid():
+		return
+	last_gap_count = _build_ground_mesh(_last_hf, _last_extended, _compose_gap_mask())
+
+
+func _compose_gap_mask() -> PackedByteArray:
+	var n: int = _base_gap.size()
+	var out := _base_gap.duplicate()
+	if out.is_empty():
+		return out
+	for i in range(mini(n, _extra_dig.size())):
+		if _extra_dig[i] != 0:
+			out[i] = 1
+	for i in range(mini(n, _undig.size())):
+		if _undig[i] != 0:
+			out[i] = 0
+	return out
+
+
 ## 供 DebugGrid 层收集可调 shader 材质。
 func get_debug_materials() -> Array[ShaderMaterial]:
 	var out: Array[ShaderMaterial] = []
@@ -119,7 +175,7 @@ func corner_mask_for_type(t_bl: int, t_br: int, t_tl: int, t_tr: int, terrain_ty
 # 	...
 
 
-## 返回 gap_count；网格写在 _ground 上。挖洞读 Context 预计算 mask，不调 Logic。
+## 返回 gap_count；网格写在 _ground 上。挖洞只消费传入 mask（直崖 ± 斜坡 API 合成）。
 func _build_ground_mesh(
 	hf: Wc3Heightfield, extended_flags: PackedByteArray, gap_mask: PackedByteArray
 ) -> int:

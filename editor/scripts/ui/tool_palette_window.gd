@@ -9,6 +9,9 @@ signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
 signal closed_by_user
+## 面板获焦时主窗收不到快捷键，转发撤销/重做
+signal edit_undo_requested
+signal edit_redo_requested
 
 enum PaletteKind { TERRAIN, UNITS, DOODADS, REGIONS, CAMERAS }
 enum BrushShape { CIRCLE, SQUARE }
@@ -60,6 +63,7 @@ const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
 @onready var _cliff_inc_two: TextureButton = %CliffIncTwo
 @onready var _cliff_shallow: TextureButton = %CliffShallow
 @onready var _cliff_deep: TextureButton = %CliffDeep
+@onready var _cliff_ramp: TextureButton = %CliffRamp
 @onready var _cliff_type_label: Label = %CliffTypeLabel
 @onready var _cliff_type_grid: HBoxContainer = %CliffTypeGrid
 @onready var _height_check: CheckBox = %HeightCheck
@@ -133,6 +137,21 @@ func _ready() -> void:
 	_show_kind(_kind)
 	_highlight_all_tools()
 	EditorI18n.locale_changed.connect(func(_loc: String) -> void: _apply_locale())
+
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	var k := event as InputEventKey
+	if k.ctrl_pressed and k.keycode == KEY_Z and not k.shift_pressed:
+		edit_undo_requested.emit()
+		set_input_as_handled()
+	elif (
+		(k.ctrl_pressed and k.keycode == KEY_Y)
+		or (k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_Z)
+	):
+		edit_redo_requested.emit()
+		set_input_as_handled()
 
 
 func setup_we_data(data) -> void:
@@ -279,7 +298,7 @@ func _wire_static_tool_buttons() -> void:
 func _wire_cliff_tool_buttons() -> void:
 	var buttons: Array = [
 		_cliff_dec_two, _cliff_dec_one, _cliff_same_level, _cliff_inc_one, _cliff_inc_two,
-		_cliff_shallow, _cliff_deep,
+		_cliff_shallow, _cliff_deep, _cliff_ramp,
 	]
 	var first_wire: bool = _cliff_buttons.is_empty()
 	_cliff_buttons = buttons

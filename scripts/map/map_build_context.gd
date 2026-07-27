@@ -27,7 +27,10 @@ var cache: MapModelCache = null
 var cliff_placements: Array[Wc3CliffPlacement] = []
 var cliff_gap_mask: PackedByteArray = PackedByteArray()
 var cliff_gap_stats: Dictionary = {}
+## 斜坡 Collect 缓存；与 cliff 拓扑分离，由 ensure_ramp_topology 填充
+var ramp: Wc3RampCollectResult = null
 var _cliff_ready: bool = false
+var _ramp_ready: bool = false
 
 
 static func create(
@@ -60,7 +63,7 @@ static func create(
 	return ctx
 
 
-## 向 Logic 要拓扑结果并缓存；本函数不含判断。
+## 向 Logic 要直崖拓扑并缓存；不含斜坡 Collect / 挖洞合并。
 func ensure_cliff_topology() -> void:
 	if _cliff_ready:
 		return
@@ -71,6 +74,16 @@ func ensure_cliff_topology() -> void:
 	cliff_gap_mask = topo.gap_mask
 	cliff_gap_stats = topo.gap_stats
 	_cliff_ready = true
+
+
+## 斜坡 Collect（placements + romp）；不改 cliff_gap_mask。
+func ensure_ramp_topology() -> void:
+	if _ramp_ready:
+		return
+	ramp = Wc3RampLogic.collect_placements(heightfield, {}, cliff_catalog)
+	if ramp == null:
+		ramp = Wc3RampCollectResult.empty_for_size(width(), height())
+	_ramp_ready = true
 
 
 func width() -> int:

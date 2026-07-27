@@ -5,7 +5,8 @@ extends Node3D
 signal tile_hovered(tile: Vector2i) ## 实为顶点坐标 (ix, iy)
 signal painted
 signal rebuild_requested
-## 斜坡笔刷反馈（成功/拒绝原因），供状态栏
+signal ramp_feedback(message: String)
+
 const REBUILD_INTERVAL_MS := 80
 ## 略抬高，避免与地面 z-fight（Godot 单位）
 const HOVER_LIFT := 0.015
@@ -30,7 +31,7 @@ var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
 var apply_texture: bool = true
 var apply_cliff: bool = true
-## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater
+## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater / Ramp
 var cliff_tool_id: String = "2"
 var cliff_type_index: int = 0
 ## 本笔划是否改过悬崖数据（决定重建是否含悬崖/水面）
@@ -256,21 +257,47 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	var cliff_any := false
 
 	# 先悬崖后地表：cliff sync 会写 groundTile，必须让 paint_corner 最后盖住笔刷纹理
-	for p in _brush_offsets():
-		var ix: int = vert.x + p.x
-		var iy: int = vert.y + p.y
-		_stroke.capture_before_at(ix, iy)
-		if apply_cliff and bool(
-			document.paint_cliff_corner(
-				ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
-			)
-		):
+	if apply_cliff and cliff_tool_id == "Ramp":
+		# 鼠标相对角点的坡向（对齐 HiveWE apply_ramps）
+		var dirs: Vector2i = _ramp_dirs_from_mouse(vert, screen_pos)
+		var hx: int = dirs.x
+		var hy: int = dirs.y
+		# 按实际 marked 采集快照（低侧 fallback / 对角可超出固定半径）
+		var marked: Array[Vector2i] = document.peek_ramp_spine_at(vert.x, vert.y, hx, hy)
+		if marked.is_empty():
+			_stroke.capture_before_at(vert.x, vert.y, 5)
+		else:
+			_stroke.capture_before_points(marked)
+			_stroke.capture_before_at(vert.x, vert.y, 0)
+		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y, hx, hy))
+		if marked.is_empty():
+			_stroke.capture_after_at(vert.x, vert.y, 5)
+		else:
+			_stroke.capture_after_points(marked)
+			_stroke.capture_after_at(vert.x, vert.y, 0)
+		var msg: String = str(document.last_ramp_message)
+		if not msg.is_empty():
+			ramp_feedback.emit(msg)
+		if ramp_changed:
 			painted_any = true
 			cliff_any = true
 			_stroke.mark_cliff()
-		if apply_texture and bool(document.paint_corner(ix, iy)):
-			painted_any = true
-		_stroke.capture_after_at(ix, iy)
+	else:
+		for p in _brush_offsets():
+			var ix: int = vert.x + p.x
+			var iy: int = vert.y + p.y
+			_stroke.capture_before_at(ix, iy)
+			if apply_cliff and bool(
+				document.paint_cliff_corner(
+					ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
+				)
+			):
+				painted_any = true
+				cliff_any = true
+				_stroke.mark_cliff()
+			if apply_texture and bool(document.paint_corner(ix, iy)):
+				painted_any = true
+			_stroke.capture_after_at(ix, iy)
 	if painted_any:
 		_dirty_paint = true
 		if cliff_any:
@@ -296,7 +323,9 @@ func _end_stroke() -> void:
 		_stroke.cancel()
 		return
 	var label := "Paint"
-	if apply_cliff and not apply_texture:
+	if apply_cliff and cliff_tool_id == "Ramp":
+		label = "Ramp"
+	elif apply_cliff and not apply_texture:
 		label = "Cliff"
 	elif apply_texture and not apply_cliff:
 		label = "Ground"
@@ -339,6 +368,25 @@ func _pick_vertex(screen_pos: Vector2) -> Vector2i:
 	if vert.x < 0 or vert.y < 0 or vert.x >= tp.x or vert.y >= tp.y:
 		return INVALID_VERT
 	return vert
+
+
+## 鼠标相对 tilepoint 的 ±1 坡向（HiveWE：mouse 与角点比较；本仓库加轴向主导以降单列难度）。
+func _ramp_dirs_from_mouse(vert: Vector2i, screen_pos: Vector2) -> Vector2i:
+	if document == null or camera == null:
+		return Vector2i.ZERO
+	var hit: Vector3 = _raycast_heightfield(screen_pos)
+	if hit == Vector3.INF:
+		hit = _raycast_ground(screen_pos)
+	if hit == Vector3.INF:
+		hit = _ray_plane_fallback(screen_pos)
+	if hit == Vector3.INF:
+		return Vector2i.ZERO
+	var ws: float = Wc3Coords.WORLD_SCALE
+	var mouse_wc3 := Vector2(hit.x / ws, -hit.z / ws)
+	var corner: Vector2 = Wc3Coords.tilepoint_wc3(
+		vert.x, vert.y, document.center_offset(), document.tile_size()
+	)
+	return Wc3RampPaint.soften_dirs(mouse_wc3.x - corner.x, mouse_wc3.y - corner.y)
 
 
 ## 沿视线与 heightfield（含层高）求交；悬崖挖洞处仍可命中台顶。

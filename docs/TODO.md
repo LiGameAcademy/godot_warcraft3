@@ -5,12 +5,13 @@
 
 ## 当前焦点：悬崖收尾 + 水体
 
-悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡实现已清空，待按 HiveWE 重做。
+悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic 已按 [RAMP_WE.md](RAMP_WE.md) 落地（Paint+Collect）；Present 后置。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
 | **崖 M0–M2** | ✅ + tag | `milestone/cliff-layered`；M3 脏区可选 |
-| **坡** | 清空待重做 | 仅保留 `FLAG_RAMP` 数据位 + CliffTrans Catalog |
+| **坡 Paint / Collect** | ✅ | HiveWE 同构；蓝菱形验收 |
+| **坡 Present** | 待开 | CliffTrans 挂模 + 入口 +0.5 |
 | **水体** | 待开 | 见 [WATER.md](WATER.md) |
 
 ---
@@ -42,9 +43,10 @@
 
 ## 地形 / 斜坡
 
-- [ ] **斜坡（崖边 A）**：实现已删干净；勿与「应用高度」纯高度坡（B）混淆。重开时对齐 HiveWE `update_ramp` / `update_cliff_meshes`。
-- [x] 存盘权威：`flagsPacked` 的 `FLAG_RAMP` / `Wc3TileVertex.has_ramp`（保留）
-- [x] Catalog：`Wc3CliffTransCatalog` + `ramp_model_dir`（保留，留给以后）
+- [x] **斜坡 Logic（崖边 A）**：Paint + Collect 对齐 [RAMP_WE.md](RAMP_WE.md)。勿与「应用高度」纯高度坡（B）混淆。
+- [x] 存盘权威：`FLAG_RAMP` / `has_ramp`
+- [x] Catalog：`Wc3CliffTransCatalog` + `ramp_model_dir`
+- [ ] Present：`MapRampLayer`（或 Cliff 通道）消费 placements；入口 +0.5
 
 ## 岸浪
 

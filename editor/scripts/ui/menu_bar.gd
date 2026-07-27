@@ -52,6 +52,7 @@ const ID_TO_ACTION := {
 	431: &"view_grid_large",
 	432: &"view_grid_medium",
 	433: &"view_grid_small",
+	434: &"view_ramp_debug",
 	53: &"layer_terrain",
 	54: &"layer_doodads",
 	55: &"layer_units",
@@ -160,6 +161,16 @@ func set_grid_level_checked(level: int) -> void:
 	_set_grid_level_checked(level)
 
 
+func set_ramp_debug_checked(on: bool) -> void:
+	var view := get_node_or_null("View") as PopupMenu
+	if view == null:
+		return
+	for i in range(view.item_count):
+		if view.get_item_id(i) == 434:
+			view.set_item_checked(i, on)
+			break
+
+
 func _set_grid_level_checked(level: int) -> void:
 	if _grid_popup == null:
 		return
@@ -175,6 +186,18 @@ func set_show_palettes_checked(visible_on: bool) -> void:
 		if _window_popup.get_item_id(i) == 103:
 			_window_popup.set_item_checked(i, visible_on)
 			break
+
+
+func set_undo_redo_enabled(can_undo: bool, can_redo: bool) -> void:
+	var edit := get_node_or_null("Edit") as PopupMenu
+	if edit == null:
+		return
+	for i in range(edit.item_count):
+		var id: int = edit.get_item_id(i)
+		if id == 20:
+			edit.set_item_disabled(i, not can_undo)
+		elif id == 21:
+			edit.set_item_disabled(i, not can_redo)
 
 
 func _wire_popups() -> void:

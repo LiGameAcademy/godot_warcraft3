@@ -137,15 +137,17 @@ docs/LAYERED_ARCHITECTURE.md  # 分层总纲
 
 ---
 
-## 7. 斜坡数据位（实现已清空）
+## 7. 斜坡派生（Logic；非 JSON 权威）
 
-存盘权威仍是 `flagsPacked` 的 `FLAG_RAMP`（顶点级）。斜坡笔刷 / Placement / romp / 调试层已删除，待按 HiveWE 重做。
+存盘权威仍是 `FLAG_RAMP`。Paint/Collect 契约见 [RAMP_WE.md](RAMP_WE.md)。
 
-| 保留 | 职责 |
+| 类型 | 职责 |
 |------|------|
-| `Wc3Coords.FLAG_RAMP` | W3E 旗位 |
-| `Wc3TileVertex.has_ramp` | 顶点读写（与水互斥） |
-| `CliffTypeDef.ramp_model_dir` / `Wc3CliffTransCatalog` | 资源映射，留给以后 |
+| `Wc3RampPlacement` | 一格 CliffTrans（TAG / model_dir / axis）；`AXIS_*` / `VARIANT_*` |
+| `Wc3RampCollectResult` | `placements` + `romp`；`ROMP_*` |
+| `Wc3RampLogic` | 门面：`paint_*` / `collect_placements` + 落旗；常量转发自 Data |
+| `Wc3RampPaint` | 笔刷规划（只算标记） |
+| `Wc3RampCollect` | 拓扑匹配 / dig / entrance |
 
 
 ## 8. 验收

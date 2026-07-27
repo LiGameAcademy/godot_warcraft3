@@ -1,10 +1,11 @@
 class_name Wc3CliffLogic
 extends RefCounted
 
-## 悬崖逻辑层：改 layerHeights / cliffTextures / groundTile（策略 B）；
+## 悬崖逻辑层：改 layerHeights / cliffTextures / groundTile（策略 A 清坡）；
 ## 拓扑选型 / placements / gap_mask。不建 Mesh、不 resolve GLB。
 ## Present 只消费 build_topology 输出；若 Present 写 Heightfield 即为 BUG。
-## 斜坡笔刷 / 拓扑待重做；本类只管直崖。
+## 斜坡笔刷 / Collect 在 Wc3RampLogic；此处嵌 Collect 供拓扑与挖洞。
+## 策略 A：层高变更自动清除 ramp flag（不对斜坡模块产生导入依赖）。
 
 const LAYER_MIN := 0
 const LAYER_MAX := 14
@@ -14,6 +15,8 @@ const WATER_SHALLOW_EXTRA := 48.0
 const WATER_DEEP_EXTRA := 128.0
 const FLAG_WATER := Wc3Coords.FLAG_WATER
 const FLAG_RAMP := Wc3Coords.FLAG_RAMP
+## _RAMP_BIT 仅在层高变更清除 ramp 时内联使用；不引用斜坡模块以保持解耦。
+const _RAMP_BIT: int = 4
 
 enum Propagate {
 	RAISE_LOWER = 0, ## 升：抬低邻
@@ -143,6 +146,10 @@ func paint_corner(
 			changed_any = true
 			touched.append_array(raised)
 
+	## 策略 A：层高变更自动清除 ramp flag（不对斜坡模块产生导入依赖）
+	if changed_any and propagate >= 0:
+		_clear_ramp_flags_at(flags, touched)
+
 	var ground_tex: Array = heightfield.ground_textures
 	var ground_var: Array = heightfield.ground_variations
 	var gti: int = ground_index_for_cliff_type(ctype)
@@ -164,6 +171,21 @@ func paint_corner(
 		for p in touched:
 			_mark_dirty_point(int(p.x), int(p.y))
 	return changed_any
+
+
+## 策略 A 实现：层高变更时清除 touched 列表中各角的 ramp flag。
+## 仅使用内联常量 _RAMP_BIT（=4），不引用任何斜坡模块符号。
+func _clear_ramp_flags_at(flags: Array, touched: Array) -> void:
+	for p in touched:
+		var x: int = int(p.x)
+		var y: int = int(p.y)
+		if x < 0 or y < 0:
+			continue
+		var i: int = y * heightfield.width + x
+		if i < 0 or i >= flags.size():
+			continue
+		if (int(flags[i]) & _RAMP_BIT) != 0:
+			flags[i] = int(flags[i]) & ~_RAMP_BIT
 
 
 func apply_layer_delta(
@@ -403,20 +425,21 @@ func _enforce_tile_spans_at(
 ## —— 拓扑 / TAG ——
 ## Catalog 仅用于 modelDir / 变体上限（配置）；不解析 GLB、不建 Mesh。
 
-## 一次扫完：直崖 placements + gap_mask。
+## 一次扫完：直崖 placements + 直崖 gap_mask。
+## 斜坡 Collect / 入口挖洞例外不在此合并——由 Ramp Present 调地形/悬崖 API（见 RAMP_WE §8）。
 static func build_topology(
-	hf: Wc3Heightfield, cliff_catalog: Wc3CliffCatalog
+	hf: Wc3Heightfield, catalog: Wc3CliffCatalog
 ) -> Wc3CliffTopologyResult:
 	var result := Wc3CliffTopologyResult.new()
 	if hf == null or not hf.is_valid():
 		return result
-	result.placements = collect_placements(hf, cliff_catalog)
-	result.gap_stats = count_gaps(hf.as_dict_view(), hf.to_build_meta())
+	result.placements = collect_placements(hf, catalog)
 	result.gap_mask = build_gap_mask(hf)
+	result.gap_stats = count_gaps(hf.as_dict_view(), hf.to_build_meta())
 	return result
 
 
-## 地表格挖洞 mask：1=Present 跳过地面四边形（当前仅直崖）。
+## 地表格挖洞 mask：1=Present 跳过地面四边形（仅直崖；不含斜坡 romp/入口）。
 static func build_gap_mask(hf: Wc3Heightfield) -> PackedByteArray:
 	var mask := PackedByteArray()
 	if hf == null or not hf.is_valid():
@@ -437,7 +460,7 @@ static func build_gap_mask(hf: Wc3Heightfield) -> PackedByteArray:
 
 ## 从 Heightfield 算出直崖 placements（已过滤无效 TAG；含 model_dir / variation）。
 static func collect_placements(
-	hf: Wc3Heightfield, cliff_catalog: Wc3CliffCatalog
+	hf: Wc3Heightfield, catalog: Wc3CliffCatalog
 ) -> Array[Wc3CliffPlacement]:
 	var out: Array[Wc3CliffPlacement] = []
 	if hf == null or not hf.is_valid():
@@ -461,8 +484,8 @@ static func collect_placements(
 			var tex_idx: int = cliff_tex_index(cliff_tex, cliff_tilesets, tp_w, tp_h, ix, iy)
 			var cliff_id := str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else ""
 			var model_dir := "Cliffs"
-			if cliff_catalog != null:
-				model_dir = cliff_catalog.cliff_model_dir(cliff_id)
+			if catalog != null:
+				model_dir = catalog.cliff_model_dir(cliff_id)
 			var i00: int = iy * tp_w + ix
 			var stored: int = int(cliff_var[i00]) if i00 < cliff_var.size() else 0
 			for slice in slices:
@@ -471,8 +494,8 @@ static func collect_placements(
 					continue
 				var base_layer: int = int(slice.get("base_layer", 2))
 				var variation: int = 0
-				if cliff_catalog != null:
-					variation = cliff_catalog.pick_cliff_variation(
+				if catalog != null:
+					variation = catalog.pick_cliff_variation(
 						model_dir, tag, stored, ix, iy
 					)
 				out.append(
@@ -599,9 +622,9 @@ static func _cliff_tag_from_rels(rbl: int, rtl: int, rtr: int, rbr: int) -> Stri
 	)
 
 
-## gap / cliff / FLAG_RAMP 统计（斜坡 mesh 未实现，仅计旗位格）。
+## gap / cliff / FLAG_RAMP / romp 统计。
 static func count_gaps(
-	hf: Dictionary, meta: Dictionary = {}
+	hf: Dictionary, meta: Dictionary = {}, ramp_data: Wc3RampCollectResult = null
 ) -> Dictionary:
 	if meta.is_empty():
 		meta = Wc3Heightfield.build_meta_from_dict(hf)
@@ -609,6 +632,8 @@ static func count_gaps(
 	var height: int = meta["height"]
 	var layers: Array = meta["layer_heights"]
 	var flags: Array = meta["flags"]
+	if ramp_data == null:
+		ramp_data = Wc3RampCollectResult.empty_for_size(width, height)
 	var cliffs := 0
 	var ramps := 0
 	var gaps := 0
@@ -625,4 +650,5 @@ static func count_gaps(
 		"cliffs": cliffs,
 		"ramps": ramps,
 		"tiles": tiles,
+		"ramp_models": ramp_data.non_phantom_count(),
 	}

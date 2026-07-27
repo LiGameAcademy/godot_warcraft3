@@ -23,12 +23,16 @@ var heightfield: Wc3Heightfield = null
 var terrain: Wc3TerrainLogic = Wc3TerrainLogic.new()
 ## 悬崖逻辑（蛋糕 / 策略 B / 层高）
 var cliff: Wc3CliffLogic = Wc3CliffLogic.new()
+## 斜坡逻辑（HiveWE：只写 FLAG_RAMP）
+var ramp: Wc3RampLogic = Wc3RampLogic.new()
 var info: Dictionary = {}
 var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
 var brush_cliff_type: int = 0
 var _dirty: bool = false
+## 最近一次斜坡笔刷结果（状态栏 / 自测）
+var last_ramp_message: String = ""
 
 
 ## Present / rebuild 过渡：共享数组的 JSON 形视图。Layer 全面吃 Heightfield 后删除。
@@ -43,6 +47,7 @@ func _rebind_logic() -> void:
 	cliff.bind(heightfield)
 	cliff.ensure_catalog()
 	cliff.clear_ground_tile_cache()
+	ramp.bind(heightfield, cliff)
 
 
 func is_dirty() -> bool:
@@ -303,8 +308,8 @@ func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	return true
 
 
-## 悬崖笔刷：委托 Wc3CliffLogic。
-## tool_id: "0".."4"（降两/降一/整平/升一/升两）| "ShallowWater" | "DeepWater"
+## 悬崖笔刷：委托 Wc3CliffLogic；Ramp 走 paint_ramp_at。
+## tool_id: "0".."4" | "ShallowWater" | "DeepWater" | "Ramp"
 func paint_cliff_corner(
 	ix: int,
 	iy: int,
@@ -312,6 +317,8 @@ func paint_cliff_corner(
 	cliff_type_idx: int = -1,
 	level_layer: int = -1
 ) -> bool:
+	if tool_id == "Ramp":
+		return paint_ramp_at(ix, iy)
 	if is_empty():
 		return false
 	var ctype: int = cliff_type_idx if cliff_type_idx >= 0 else brush_cliff_type
@@ -319,6 +326,41 @@ func paint_cliff_corner(
 		mark_dirty()
 		return true
 	return false
+
+
+## 斜坡笔刷：委托 Wc3RampLogic（只写 FLAG_RAMP）。
+## horizontal/vertical ∈ {-1,0,1}；皆 0 时由 Logic 按层差推断。
+func paint_ramp_at(ix: int, iy: int, horizontal: int = 0, vertical: int = 0) -> bool:
+	var r: Dictionary = try_paint_ramp_at(ix, iy, horizontal, vertical)
+	last_ramp_message = str(r.get("message", ""))
+	return bool(r.get("changed", false))
+
+
+func try_paint_ramp_at(ix: int, iy: int, horizontal: int = 0, vertical: int = 0) -> Dictionary:
+	if is_empty():
+		return {
+			"ok": false,
+			"changed": false,
+			"message": "地图为空",
+			"variant": "",
+			"axis": "",
+			"sx": 0,
+			"sy": 0,
+			"marked": [],
+		}
+	var r: Dictionary = ramp.try_paint_at(
+		ix, iy, horizontal, vertical, brush_cliff_type
+	)
+	if bool(r.get("changed", false)):
+		mark_dirty()
+	return r
+
+
+func peek_ramp_spine_at(ix: int, iy: int, horizontal: int = 0, vertical: int = 0) -> Array[Vector2i]:
+	if is_empty():
+		var empty: Array[Vector2i] = []
+		return empty
+	return ramp.peek_spine_at(ix, iy, horizontal, vertical)
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:

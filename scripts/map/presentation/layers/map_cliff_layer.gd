@@ -3,6 +3,7 @@ extends Node3D
 
 ## 悬崖表现层：只读 Context.placements + Catalog 资产 → MultiMesh。
 ## 禁止改 Heightfield；禁止做 TAG / 挖洞 / 变体选型（一律 Logic）。
+## 禁止读斜坡 Collect；入口 / CliffTrans 覆盖由 Ramp Present 调 hide_at_tiles。
 
 var _shader: Shader
 var _height_tex: Texture2D
@@ -99,6 +100,14 @@ func build(ctx: MapBuildContext) -> void:
 			collected.groups.size(),
 		]
 	)
+
+
+## 斜坡 Present API：隐藏指定地表格上的直崖（入口 / 已被 CliffTrans 覆盖）。
+## 当前仅契约占位；完整实例索引表待与 Builder 坐标对齐后实装。
+func hide_at_tiles(tiles: Array[Vector2i]) -> void:
+	if tiles.is_empty():
+		return
+	pass
 
 
 func get_debug_materials() -> Array[ShaderMaterial]:

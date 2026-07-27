@@ -9,6 +9,7 @@
 [ext_resource type="Texture2D" uid="uid://b3tm81f24y6i6" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush02.png" id="cliff_level"]
 [ext_resource type="Texture2D" uid="uid://bmjlp1lag73uw" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush06.png" id="cliff_lower"]
 [ext_resource type="Texture2D" uid="uid://5nkb3smynw52" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush03.png" id="cliff_raise"]
+[ext_resource type="Texture2D" uid="uid://f6bg30b2rqrd" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RampBrush00.png" id="cliff_ramp"]
 [ext_resource type="Texture2D" uid="uid://dxnqx0hmokde2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush00.png" id="cliff_shallow"]
 [ext_resource type="Texture2D" uid="uid://b4p87paofsfqv" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush01.png" id="height_lower"]
 [ext_resource type="Texture2D" uid="uid://mo24k85wcjdb" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush03.png" id="height_noise"]
@@ -25,11 +26,9 @@
 [node name="ToolPaletteWindow" type="Window" unique_id=278871348]
 oversampling_override = 1.0
 title = "WESTRING_TOOL_PALETTE"
-position = Vector2i(24, 47)
+initial_position = 4
 size = Vector2i(268, 612)
 always_on_top = true
-transparent = false
-unfocusable = false
 script = ExtResource("1_script")
 
 [node name="Bg" type="Panel" parent="." unique_id=1508506488]
@@ -232,6 +231,15 @@ texture_normal = ExtResource("cliff_shallow")
 ignore_texture_size = true
 stretch_mode = 5
 
+[node name="CliffRamp" type="TextureButton" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection/CliffRow2" unique_id=636589149]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("cliff_ramp")
+ignore_texture_size = true
+stretch_mode = 5
+
 [node name="CliffTypeLabel" type="Label" parent="Margin/Root/Pages/MarginContainer/TerrainVBox/CliffSection" unique_id=1195120623]
 unique_name_in_owner = true
 layout_mode = 2
@@ -409,6 +417,7 @@ ignore_texture_size = true
 stretch_mode = 5
 
 [node name="PlaceholderPage" type="VBoxContainer" parent="Margin/Root/Pages" unique_id=976567396]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
