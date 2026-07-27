@@ -4,7 +4,7 @@ extends RefCounted
 ## 斜坡逻辑层（对齐 HiveWE / docs/RAMP_WE.md）：
 ##   paint → 只写 FLAG_RAMP（高→低 3 点 / 3×3 + L 补心）
 ##   collect_placements → CliffTrans 滑窗匹配 + romp
-## 对外：bind / paint_at / try_paint_at / peek_spine_at / collect_placements
+## 对外：bind / paint_at / try_paint_at / peek_spine_at / collect_placements / clear_flags_around
 ##
 ## 目录约定（与 cliff/terrain 对齐，禁止再拆薄工具文件）：
 ##   wc3_ramp_logic.gd   — 门面 + 常量 + 落旗 + plan/result 字典
@@ -147,6 +147,44 @@ static func plan_dig_mask(
 
 static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
 	return Wc3RampCollect.plan_entrance_tiles(hf)
+
+
+# --- 改崖联动（Document 编排：只清笔刷点邻域，不用脏区 AABB）---
+
+## 直坡臂约 3 点；刷点 ±2 盖住低侧菱形，不影响远处坡。
+const CLEAR_AROUND_CLIFF_EXPAND := 2
+
+
+## 清除单角点邻域内 FLAG_RAMP。返回清除点数。
+func clear_flags_around(
+	ix: int, iy: int, expand: int = CLEAR_AROUND_CLIFF_EXPAND
+) -> int:
+	return clear_flags_in_rect(Vector2i(ix, iy), Vector2i(ix, iy), expand)
+
+
+## 清除矩形（含 expand）内所有 FLAG_RAMP。返回清除点数。
+func clear_flags_in_rect(
+	rmin: Vector2i, rmax: Vector2i, expand: int = CLEAR_AROUND_CLIFF_EXPAND
+) -> int:
+	if heightfield == null or not heightfield.is_valid():
+		return 0
+	var flags: Array = heightfield.flags_packed
+	var tw: int = heightfield.width
+	var th: int = heightfield.height
+	if flags.is_empty() or tw <= 0 or th <= 0:
+		return 0
+	var x0: int = maxi(0, rmin.x - expand)
+	var y0: int = maxi(0, rmin.y - expand)
+	var x1: int = mini(tw - 1, rmax.x + expand)
+	var y1: int = mini(th - 1, rmax.y + expand)
+	if x1 < x0 or y1 < y0:
+		return 0
+	var n := 0
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			if set_ramp_flag(flags, y * tw + x, false):
+				n += 1
+	return n
 
 
 # --- 落旗 ---

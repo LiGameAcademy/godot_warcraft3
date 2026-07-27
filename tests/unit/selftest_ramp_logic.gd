@@ -28,6 +28,7 @@ func _run() -> void:
 	_test_l_then_diagonal_half_side()
 	_test_single_axis_promotes_to_diagonal()
 	_test_far_empty_still_paintable()
+	_test_cliff_change_clears_nearby_ramp()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
 		quit(0)
@@ -495,3 +496,36 @@ func _test_far_empty_still_paintable() -> void:
 		_fail("far_empty marks missing")
 		return
 	print("  far_empty_still_paintable OK")
+
+
+func _test_cliff_change_clears_nearby_ramp() -> void:
+	# 本笔刷点相关坡清掉；远处另一段坡必须保留（禁止脏区 AABB 整图清）。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if y <= 2 else 2
+	doc._rebind_logic()
+	var near: Dictionary = doc.try_paint_ramp_at(3, 2, 0, 1)
+	var far: Dictionary = doc.try_paint_ramp_at(10, 2, 0, 1)
+	if not bool(near.get("changed", false)) or not bool(far.get("changed", false)):
+		_fail("cliff_clear setup paint fail near=%s far=%s" % [str(near), str(far)])
+		return
+	if not doc.paint_cliff_corner(3, 2, "3"):
+		_fail("cliff_clear raise failed")
+		return
+	if _flag_ramp(doc, 3, 2) or _flag_ramp(doc, 3, 3) or _flag_ramp(doc, 3, 4):
+		_fail("cliff_clear leftover near FLAG_RAMP after raise")
+		return
+	if not (_flag_ramp(doc, 10, 2) and _flag_ramp(doc, 10, 3) and _flag_ramp(doc, 10, 4)):
+		_fail("cliff_clear wiped far ramp (AABB too wide)")
+		return
+	print("  cliff_change_clears_nearby_ramp OK")

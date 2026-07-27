@@ -146,9 +146,9 @@ func paint_corner(
 			changed_any = true
 			touched.append_array(raised)
 
-	## 策略 A：层高变更自动清除 ramp flag（不对斜坡模块产生导入依赖）
+	## 策略 A：只清本笔刷点相关坡（刷点 ±2 + 层高变更顶点自身），不扫脏区 AABB
 	if changed_any and propagate >= 0:
-		_clear_ramp_flags_at(flags, touched)
+		_clear_ramp_flags_near(flags, ix, iy, touched)
 
 	var ground_tex: Array = heightfield.ground_textures
 	var ground_var: Array = heightfield.ground_variations
@@ -173,19 +173,29 @@ func paint_corner(
 	return changed_any
 
 
-## 策略 A 实现：层高变更时清除 touched 列表中各角的 ramp flag。
-## 仅使用内联常量 _RAMP_BIT（=4），不引用任何斜坡模块符号。
-func _clear_ramp_flags_at(flags: Array, touched: Array) -> void:
+## 策略 A：改崖只清「本顶点相关」坡旗——刷点邻域盖住直坡臂低侧菱形；
+## 另清 touched 自身（传播改高的点），不对每个 touched 再外扩（否则蛋糕/传播会整图清坡）。
+const _RAMP_CLEAR_EXPAND: int = 2
+
+
+func _clear_ramp_flags_near(flags: Array, brush_x: int, brush_y: int, touched: Array) -> void:
+	var tw: int = heightfield.width
+	var th: int = heightfield.height
+	for dy in range(-_RAMP_CLEAR_EXPAND, _RAMP_CLEAR_EXPAND + 1):
+		for dx in range(-_RAMP_CLEAR_EXPAND, _RAMP_CLEAR_EXPAND + 1):
+			_clear_ramp_bit_at(flags, tw, th, brush_x + dx, brush_y + dy)
 	for p in touched:
-		var x: int = int(p.x)
-		var y: int = int(p.y)
-		if x < 0 or y < 0:
-			continue
-		var i: int = y * heightfield.width + x
-		if i < 0 or i >= flags.size():
-			continue
-		if (int(flags[i]) & _RAMP_BIT) != 0:
-			flags[i] = int(flags[i]) & ~_RAMP_BIT
+		_clear_ramp_bit_at(flags, tw, th, int(p.x), int(p.y))
+
+
+func _clear_ramp_bit_at(flags: Array, tw: int, th: int, x: int, y: int) -> void:
+	if x < 0 or y < 0 or x >= tw or y >= th:
+		return
+	var i: int = y * tw + x
+	if i < 0 or i >= flags.size():
+		return
+	if (int(flags[i]) & _RAMP_BIT) != 0:
+		flags[i] = int(flags[i]) & ~_RAMP_BIT
 
 
 func apply_layer_delta(

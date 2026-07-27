@@ -240,6 +240,8 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 
 与直崖关系：直崖已完成 `milestone/cliff-layered`；斜坡是 **平行通道**，共享层高与 Catalog 族目录，不塞进 `Wc3CliffLogic.paint_corner`。
 
+**改崖清坡（当前简单方案）**：只清**本笔刷角点**邻域（±2）+ 层高变更顶点自身的 `FLAG_RAMP`；**禁止**对脏区 AABB 整片清（传播/蛋糕会误删远处坡）。蓝菱形随 rebuild 读旗消失。以后可换成「校验后保留」。
+
 勿与 ROADMAP **⑩ 应用高度**（装饰物贴地）或「纯高度坡 B」混淆——那些不写 `FLAG_RAMP`、不挂 CliffTrans。
 
 ---
