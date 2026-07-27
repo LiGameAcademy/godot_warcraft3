@@ -300,37 +300,36 @@ static func _resolve_from_low_side(
 	return best
 
 
-## 根据 toward 和 pref 产生候选方向列表
+## 根据 toward（高→点击）和 pref（鼠标）产生候选方向。
+## 低侧回退时必须优先 toward，否则单轴鼠标偏好会把坡刷到高台对侧。
 static func _dir_candidates(toward: Vector2i, pref_hx: int, pref_hy: int) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	var pref: Vector2i = Vector2i(clampi(pref_hx, -1, 1), clampi(pref_hy, -1, 1))
-	var single_pref: bool = (pref.x != 0) != (pref.y != 0)
-
-	if single_pref:
-		out.append(pref)
-	elif pref.x != 0 and pref.y != 0:
-		out.append(pref)
-		out.append(toward)
-	else:
-		if toward.x != 0:
-			out.append(Vector2i(toward.x, 0))
-		if toward.y != 0:
-			out.append(Vector2i(0, toward.y))
-		if toward.x != 0 and toward.y != 0:
-			out.append(toward)
-
+	_append_dir(out, toward)
+	if toward.x != 0 and toward.y != 0:
+		_append_dir(out, Vector2i(toward.x, 0))
+		_append_dir(out, Vector2i(0, toward.y))
+	_append_dir(out, pref)
+	if pref.x != 0 and pref.y != 0:
+		_append_dir(out, Vector2i(pref.x, 0))
+		_append_dir(out, Vector2i(0, pref.y))
 	return out
 
 
-## 检查 click 是否被 plan 覆盖
+static func _append_dir(out: Array[Vector2i], d: Vector2i) -> void:
+	if d.x == 0 and d.y == 0:
+		return
+	for e in out:
+		if e == d:
+			return
+	out.append(d)
+
+
+## 检查 click 是否被 plan 的落旗点覆盖（不能只靠 origin 距离，否则对侧坡也会过）。
 static func _covers_click(p: Dictionary, click_x: int, click_y: int) -> bool:
-	var sx: int = int(p.get("sx", -1))
-	var sy: int = int(p.get("sy", -1))
-	if sx >= 0 and maxi(absi(sx - click_x), absi(sy - click_y)) <= 2:
-		return true
 	for v in p.get("marked", []):
 		var pt: Vector2i = v as Vector2i
-		if maxi(absi(pt.x - click_x), absi(pt.y - click_y)) <= 1:
+		if maxi(absi(pt.x - click_x), absi(pt.y - click_y)) <= 2:
 			return true
 	return false
 

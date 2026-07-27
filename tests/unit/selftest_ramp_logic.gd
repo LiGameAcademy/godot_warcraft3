@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_wall_low_stays_single()
 	_test_expand_straight_to_diagonal()
 	_test_intent_not_opposite()
+	_test_low_side_mouse_pref_not_far_side()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
 		quit(0)
@@ -314,3 +315,40 @@ func _test_intent_not_opposite() -> void:
 		_fail("intent_not_opposite expect straight got %s" % str(r.get("variant")))
 		return
 	print("  intent_not_opposite OK origin=(%d,%d)" % [sx, sy])
+
+
+func _test_low_side_mouse_pref_not_far_side() -> void:
+	# 截图回归：点在崖脚低地，鼠标偏好朝向高台内侧；必须朝点击落旗，不能刷到高台对侧。
+	# 高台 y<=4；点击 (5,6)（距崖边 2）；pref=(0,-1) 指向高台深处。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if y <= 4 else 2
+	doc._rebind_logic()
+	var r: Dictionary = doc.try_paint_ramp_at(5, 6, 0, -1)
+	if not bool(r.get("ok", false)) or not bool(r.get("changed", false)):
+		_fail("low_side_pref expect ok: %s" % str(r))
+		return
+	var sx: int = int(r.get("sx", -1))
+	var sy: int = int(r.get("sy", -1))
+	# 原点应在崖边朝向点击（y=4），坡向 +Y
+	if sy != 4:
+		_fail("low_side_pref expect origin on rim y=4 got (%d,%d)" % [sx, sy])
+		return
+	if not (_flag_ramp(doc, sx, 4) and _flag_ramp(doc, sx, 5) and _flag_ramp(doc, sx, 6)):
+		_fail("low_side_pref expect marks toward click along +Y from rim")
+		return
+	# 对侧（高台深处 / 远离点击）不应落旗
+	if _flag_ramp(doc, sx, 2) or _flag_ramp(doc, sx, 3):
+		_fail("low_side_pref must not mark far side of plateau")
+		return
+	print("  low_side_mouse_pref_not_far_side OK origin=(%d,%d)" % [sx, sy])
