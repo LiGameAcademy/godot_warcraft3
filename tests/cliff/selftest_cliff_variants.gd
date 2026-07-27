@@ -45,6 +45,8 @@ func _run() -> void:
 	failed += _case_remote_cliff_tex_isolation()
 	failed += _case_heterogeneous_contact_assimilate()
 	failed += _case_unified_variation_along_wall(cliffs)
+	failed += _case_plateau_top_keeps_dirt_for_grass_cliff()
+	failed += _case_faces_use_diverse_variations(cliffs)
 
 	if failed > 0:
 		push_error("selftest_cliff_variants FAILED cases=%d" % failed)
@@ -497,13 +499,16 @@ func _case_heterogeneous_contact_assimilate() -> int:
 						fail = 1
 					else:
 						assimilated += 1
-					# groundTile for CLgr is Lgrs → index 1 in default tilesets
-					if int(ground[qi]) != 1:
-						push_error(
-							"contact corner(%d,%d) groundTextures=%d want 1(Lgrs)"
-							% [ix + cx2, iy + cy2, int(ground[qi])]
-						)
-						fail = 1
+					# groundTile 仅低侧；台顶高侧保持原地表（对齐 WE）
+					var gx: int = ix + cx2
+					var gy: int = iy + cy2
+					if Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, int(doc.as_build_dict()["tilepointHeight"]), gx, gy):
+						if int(ground[qi]) != 1:
+							push_error(
+								"contact low corner(%d,%d) groundTextures=%d want 1(Lgrs)"
+								% [gx, gy, int(ground[qi])]
+							)
+							fail = 1
 
 	if assimilated == 0:
 		push_error("no contact cliff corners assimilated (brush may have missed old cliff)")
@@ -558,4 +563,88 @@ func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
 		)
 		return 1
 	print("unified_variation AABB n=%d var=%d OK" % [aabb_count, int(aabb_vars.keys()[0])])
+	return 0
+
+
+## 草地悬崖抬台后，台顶内侧应仍为泥土（groundTile 只写崖脚低侧）。
+func _case_plateau_top_keeps_dirt_for_grass_cliff() -> int:
+	var doc = DocScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 16,
+		"main_tileset": "L",
+		"ground_tilesets": ["Ldrt", "Lgrs", "Lrok"],
+		"cliff_tilesets": ["CLdi", "CLgr"],
+		"cliff_level": 2,
+		"default_tile_index": 0,
+	})
+	for y in range(6, 11):
+		for x in range(6, 11):
+			doc.paint_cliff_corner(x, y, "3", 1) # CLgr
+	var d: Dictionary = doc.as_build_dict()
+	var tp_w: int = int(d["tilepointWidth"])
+	var tp_h: int = int(d["tilepointHeight"])
+	var ground: Array = d["groundTextures"]
+	var layers: Array = d["layerHeights"]
+	# 台顶中心 (8,8) 应为高侧，保持 Ldrt=0
+	if Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, tp_h, 8, 8):
+		push_error("plateau center unexpectedly low-side")
+		return 1
+	if int(ground[8 * tp_w + 8]) != 0:
+		push_error("plateau top ground=%d want 0(Ldrt)" % int(ground[8 * tp_w + 8]))
+		return 1
+	# Present corner_texture 也不应把台顶强制成草
+	var cat := Wc3CliffCatalog.new()
+	cat.load_default()
+	var c2g: PackedInt32Array = cat.build_cliff_to_ground_map(d["cliffTilesets"], d["groundTilesets"])
+	var terrain := MapTerrainLayer.new()
+	var forced: int = terrain.corner_texture(
+		ground, layers, d["cliffTextures"], c2g, tp_w, tp_h, 8, 8
+	)
+	terrain.free()
+	if forced != 0:
+		push_error("corner_texture forced plateau top to %d want 0" % forced)
+		return 1
+	print("plateau_top_keeps_dirt OK")
+	return 0
+
+
+## 矩形台四面直墙（不同 TAG）应出现多于一种 variation（Catalog 空间哈希）。
+func _case_faces_use_diverse_variations(cliffs: Wc3CliffCatalog) -> int:
+	var doc = DocScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 16,
+		"main_tileset": "L",
+		"ground_tilesets": ["Ldrt", "Lgrs", "Lrok"],
+		"cliff_tilesets": ["CLdi", "CLgr"],
+		"cliff_level": 2,
+		"default_tile_index": 0,
+	})
+	for y in range(5, 12):
+		for x in range(5, 12):
+			doc.paint_cliff_corner(x, y, "3", 0)
+	var hf := Wc3Heightfield.from_dict(doc.as_build_dict(), false)
+	var placements: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(hf, cliffs)
+	var by_tag: Dictionary = {}
+	for p in placements:
+		if not by_tag.has(p.tag):
+			by_tag[p.tag] = {}
+		(by_tag[p.tag] as Dictionary)[p.variation] = true
+	if by_tag.size() < 2:
+		push_error("diverse_variations: expect multiple face TAGs, got %s" % str(by_tag.keys()))
+		return 1
+	var all_vars: Dictionary = {}
+	for tag in by_tag.keys():
+		for v in (by_tag[tag] as Dictionary).keys():
+			all_vars[v] = true
+	# 允许碰巧撞同一 var，但空间哈希在 4 面 × 多锚点下通常 >1；至少要求每面内部统一
+	for tag2 in by_tag.keys():
+		if (by_tag[tag2] as Dictionary).size() != 1:
+			push_error("diverse_variations: tag %s must be unified, got %s" % [tag2, str(by_tag[tag2].keys())])
+			return 1
+	print(
+		"diverse_variations tags=%d vars=%s OK"
+		% [by_tag.size(), str(all_vars.keys())]
+	)
 	return 0

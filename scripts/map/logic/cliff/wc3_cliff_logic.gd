@@ -260,6 +260,34 @@ func _mark_dirty_point(ix: int, iy: int) -> void:
 	dirty_max = Vector2i(maxi(dirty_max.x, ix), maxi(dirty_max.y, iy))
 
 
+## 角点是否落在某直崖格的「低侧」（层高 < 该格四角 max）。
+## 用于对齐 WE：groundTile 只铺崖脚过渡，不刷台顶内侧。
+static func is_low_side_cliff_corner(
+	layers: Array, tp_w: int, tp_h: int, col: int, row: int
+) -> bool:
+	if layers.is_empty() or col < 0 or row < 0 or col >= tp_w or row >= tp_h:
+		return false
+	var lv: int = int(layers[row * tp_w + col])
+	for dy in range(-1, 1):
+		for dx in range(-1, 1):
+			var tx: int = col + dx
+			var ty: int = row + dy
+			if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+				continue
+			if not is_cliff_tile(layers, tp_w, tx, ty):
+				continue
+			var mx: int = -1
+			for cy in range(0, 2):
+				for cx in range(0, 2):
+					var i: int = (ty + cy) * tp_w + (tx + cx)
+					if i < 0 or i >= layers.size():
+						continue
+					mx = maxi(mx, int(layers[i]))
+			if mx >= 0 and lv < mx:
+				return true
+	return false
+
+
 func _sync_corner_textures(
 	ix: int,
 	iy: int,
@@ -298,19 +326,6 @@ func _sync_corner_textures(
 						corner_pts[Vector2i(tx + cx, ty + cy)] = true
 
 	var any := false
-	## 同一次接触同步共用一个 variation，减少邻格岩壁竖缝
-	var shared_var := 0
-	for key_scan in corner_pts.keys():
-		var qs: Vector2i = key_scan
-		if qs.x < 0 or qs.y < 0 or qs.x >= tp_w or qs.y >= tp_h:
-			continue
-		var si: int = qs.y * tp_w + qs.x
-		if si < cliff_var.size() and int(cliff_var[si]) > 0:
-			shared_var = int(cliff_var[si])
-			break
-	if shared_var <= 0:
-		shared_var = (randi() % 3) + 1
-
 	for key2 in corner_pts.keys():
 		var q: Vector2i = key2
 		if q.x < 0 or q.y < 0 or q.x >= tp_w or q.y >= tp_h:
@@ -321,16 +336,21 @@ func _sync_corner_textures(
 			if prev_tex != ctype:
 				cliff_tex[ci] = ctype
 				any = true
-			if ci < cliff_var.size():
-				if prev_tex != ctype or int(cliff_var[ci]) == 0:
-					if int(cliff_var[ci]) != shared_var:
-						cliff_var[ci] = shared_var
-						any = true
-		if gti >= 0 and ci < ground_tex.size() and int(ground_tex[ci]) != gti:
-			ground_tex[ci] = gti
-			any = true
-			if ci < ground_var.size():
-				ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
+			# 变体交给 collect 按墙段锚点哈希；类型变更时清 0 以便重选
+			if ci < cliff_var.size() and prev_tex != ctype and int(cliff_var[ci]) != 0:
+				cliff_var[ci] = 0
+				any = true
+		# groundTile：低侧写入；高侧若仍是本崖 groundTile 则清回默认（抬台过程误写残留）
+		if gti >= 0 and ci < ground_tex.size():
+			if is_low_side_cliff_corner(layers, tp_w, tp_h, q.x, q.y):
+				if int(ground_tex[ci]) != gti:
+					ground_tex[ci] = gti
+					any = true
+					if ci < ground_var.size():
+						ground_var[ci] = Wc3TerrainLogic.random_ground_variation()
+			elif int(ground_tex[ci]) == gti:
+				ground_tex[ci] = 0
+				any = true
 	return any
 
 
@@ -591,8 +611,8 @@ static func _assign_unified_variations(raw: Array[Dictionary], catalog: Wc3Cliff
 			if d == 1:
 				_uf_unite(parent, i, j)
 
-	## 每连通分量：优先众数 stored；否则用分量锚点哈希
-	var comp_stored: Dictionary = {} # root → {v → count}
+	## 每连通分量：存盘值全体一致则沿用；否则按锚点空间哈希（不同墙面不同变体）
+	var comp_stored: Dictionary = {} # root → Array of stored >0
 	var comp_anchor: Dictionary = {} # root → Vector2i 最小 (ix,iy)
 	for i in range(n):
 		var r: int = _uf_find(parent, i)
@@ -600,10 +620,8 @@ static func _assign_unified_variations(raw: Array[Dictionary], catalog: Wc3Cliff
 		var st: int = int(item["stored"])
 		if st > 0:
 			if not comp_stored.has(r):
-				comp_stored[r] = {}
-			var bag: Dictionary = comp_stored[r]
-			bag[st] = int(bag.get(st, 0)) + 1
-			comp_stored[r] = bag
+				comp_stored[r] = []
+			(comp_stored[r] as Array).append(st)
 		var pt := Vector2i(int(item["ix"]), int(item["iy"]))
 		if not comp_anchor.has(r):
 			comp_anchor[r] = pt
@@ -618,24 +636,24 @@ static func _assign_unified_variations(raw: Array[Dictionary], catalog: Wc3Cliff
 		if comp_var.has(r2):
 			continue
 		var chosen := 0
+		var unanimous := false
 		if comp_stored.has(r2):
-			var bag2: Dictionary = comp_stored[r2]
-			var best_v2 := 0
-			var best_n2 := -1
-			for k2 in bag2.keys():
-				var n2: int = int(bag2[k2])
-				var kv2: int = int(k2)
-				if n2 > best_n2 or (n2 == best_n2 and kv2 > best_v2):
-					best_n2 = n2
-					best_v2 = kv2
-			chosen = best_v2
+			var vals: Array = comp_stored[r2]
+			unanimous = vals.size() > 0
+			var first_v: int = int(vals[0]) if vals.size() > 0 else 0
+			for v in vals:
+				if int(v) != first_v:
+					unanimous = false
+					break
+			if unanimous:
+				chosen = first_v
 		var sample: Dictionary = raw[i]
 		var tag: String = str(sample["tag"])
 		var model_dir: String = str(sample["model_dir"])
 		var anchor: Vector2i = comp_anchor.get(r2, Vector2i(int(sample["ix"]), int(sample["iy"])))
 		if catalog != null:
 			chosen = catalog.pick_cliff_variation(
-				model_dir, tag, chosen, anchor.x, anchor.y
+				model_dir, tag, chosen if unanimous else 0, anchor.x, anchor.y
 			)
 		else:
 			chosen = maxi(chosen, 0)

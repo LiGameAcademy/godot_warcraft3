@@ -48,6 +48,7 @@ func build(ctx: MapBuildContext) -> void:
 		var glb: String = g.glb
 		var tex_idx: int = g.cliff_tex_index
 		var transforms: Array[Transform3D] = g.transforms
+		var customs: Array[Color] = g.customs
 		if transforms.is_empty():
 			continue
 
@@ -78,10 +79,13 @@ func build(ctx: MapBuildContext) -> void:
 
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
 		mm.mesh = mesh
 		mm.instance_count = transforms.size()
 		for i in range(transforms.size()):
 			mm.set_instance_transform(i, transforms[i])
+			var c: Color = customs[i] if i < customs.size() else Color(0.5, 0.5, 0.5, 1.0)
+			mm.set_instance_custom_data(i, c)
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]

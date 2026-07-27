@@ -54,27 +54,37 @@ func _run() -> void:
 				% [ix, iy, bl, br, tl, tr, mask.atlas, mask.pedagogical]
 			)
 	terrain.free()
-	# corner_texture：邻崖角应强制 cliff.groundTile（CLgr→Lgrs=1）
+	# corner_texture：仅低侧强制 Lgrs；台顶高侧保持泥土
 	var cat := Wc3CliffCatalog.new()
 	cat.load_default()
+	var tp_h: int = int(doc.as_build_dict()["tilepointHeight"])
 	var c2g: PackedInt32Array = cat.build_cliff_to_ground_map(
 		doc.as_build_dict()["cliffTilesets"],
 		doc.as_build_dict()["groundTilesets"]
 	)
 	var terrain2 := MapTerrainLayer.new()
-	var forced := 0
+	var forced_low := 0
 	var cliff_tex: Array = doc.as_build_dict()["cliffTextures"]
 	for y in range(cy - 2, cy + 3):
 		for x in range(cx - 2, cx + 3):
+			if not Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, tp_h, x, y):
+				continue
 			var t: int = terrain2.corner_texture(
-				ground, layers, cliff_tex, c2g, tp_w, int(doc.as_build_dict()["tilepointHeight"]), x, y
+				ground, layers, cliff_tex, c2g, tp_w, tp_h, x, y
 			)
 			if t == 1:
-				forced += 1
+				forced_low += 1
+	var top_t: int = terrain2.corner_texture(
+		ground, layers, cliff_tex, c2g, tp_w, tp_h, cx, cy
+	)
 	terrain2.free()
-	if forced < 4:
-		push_error("corner_texture expected grass forced near cliff, got forced=%d" % forced)
+	if forced_low < 1:
+		push_error("corner_texture expected some low-side grass, got forced_low=%d" % forced_low)
 		quit(1)
 		return
-	print("corner_texture forced_grass=%d OK" % forced)
+	if top_t == 1 and not Wc3CliffLogic.is_low_side_cliff_corner(layers, tp_w, tp_h, cx, cy):
+		push_error("corner_texture must not force grass on plateau top")
+		quit(1)
+		return
+	print("corner_texture forced_low_grass=%d top=%d OK" % [forced_low, top_t])
 	quit(0)

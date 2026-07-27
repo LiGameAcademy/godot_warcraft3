@@ -100,7 +100,9 @@ func clamp_variation(model_dir: String, tag: String, variation: int) -> int:
 	return mini(maxi(variation, 0), max_v)
 
 
-## 直崖变体：优先存盘值；存盘为 0 时用「墙段锚点」哈希（collect 会再按共边统一）。
+## 直崖变体选型（Catalog / 资源映射层）。
+## - stored>0：尊重存盘（W3E cliffVariations）
+## - stored==0：按墙段锚点 (ix,iy)+TAG 稳定哈希，保证同锚点可复现、不同墙面不同变体
 func pick_cliff_variation(
 	model_dir: String, tag: String, stored: int, ix: int, iy: int
 ) -> int:
@@ -109,8 +111,23 @@ func pick_cliff_variation(
 		return 0
 	if stored > 0:
 		return mini(stored, max_v)
-	# 仅用 tag + 较小轴坐标，使同行/同列更易落到同变体；最终以 collect 共边统一为准
-	var h: int = absi((mini(ix, iy) * 73856093) ^ tag.hash())
+	return spatial_variation(model_dir, tag, ix, iy)
+
+
+## 笔刷落盘用：真随机变体（写入 cliffVariations 后由 collect 统一墙段）。
+func random_variation(model_dir: String, tag: String) -> int:
+	var max_v: int = max_variation(model_dir, tag)
+	if max_v <= 0:
+		return 0
+	return randi() % (max_v + 1)
+
+
+## 稳定空间哈希变体（同 TAG 墙段用锚点调用，避免每帧乱跳）。
+func spatial_variation(model_dir: String, tag: String, ix: int, iy: int) -> int:
+	var max_v: int = max_variation(model_dir, tag)
+	if max_v <= 0:
+		return 0
+	var h: int = absi((ix * 73856093) ^ (iy * 19349663) ^ (tag.hash() * 83492791))
 	return h % (max_v + 1)
 
 

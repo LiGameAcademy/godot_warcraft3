@@ -26,9 +26,9 @@
 
 选型表：`Wc3CliffCatalog` → `Doodads/Terrain/Cliffs/Cliffs{TAG}{var}.glb`。
 
-**Variation（岩壁竖缝）**：`collect_placements` 对同 TAG、同崖贴图、四连通共边的 placement **统一 variation**；笔刷 `_sync_corner_textures` 同一次接触写入共享 `cliffVariations`。
+**Variation（岩壁）**：同 TAG 共边墙段统一变体（Catalog 空间哈希 / 存盘一致值）；不同墙面 TAG 各自哈希 → 自然差异。Present 再经 MultiMesh `INSTANCE_CUSTOM` 做轻量 UV/明暗扰动。
 
-核心代码：`scripts/map/logic/cliff/wc3_cliff_logic.gd`、`presentation/cliff/wc3_cliff_builder.gd`、`map_cliff_layer.gd`。`MapTerrainLayer.corner_texture` 邻崖角强制 `cliff.groundTile`。
+**groundTile**：只写/强制**崖脚低侧**角点；台顶高侧保持原地表（对齐经典 WE）。
 
 ## 3. 笔刷拓扑（蛋糕）
 
