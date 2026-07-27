@@ -441,7 +441,17 @@ static func _check_column(
 		if int(layers[(iy + ny2) * tp_w + (ix + nx2)]) > origin_level:
 			return false
 
-	## 对向轴禁贴：若侧邻已有 ramp，其沿坡向必须有完整臂
+	## 对侧斜坡禁止：原点反方向已有落在低层的 ramp（同一崖脊双向落坡，无对应模型）
+	var back_x: int = ix - dir_x
+	var back_y: int = iy - dir_y
+	if _in_bounds(back_x, back_y, tp_w, tp_h):
+		if (
+			_has_ramp(ramp, tp_w, tp_h, back_x, back_y)
+			and int(layers[back_y * tp_w + back_x]) == target_level
+		):
+			return false
+
+	## 侧翼禁贴：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
 	for side in [-1, 1]:
 		var sx: int = ix + side * (-dir_y)
 		var sy: int = iy + side * dir_x
@@ -449,12 +459,34 @@ static func _check_column(
 			continue
 		if not _has_ramp(ramp, tp_w, tp_h, sx, sy):
 			continue
-		## 侧邻有 ramp → 检查沿坡向是否有完整 3 点臂
-		if not _has_ramp(ramp, tp_w, tp_h, sx + dir_x, sy + dir_y):
-			return false
-		if not _has_ramp(ramp, tp_w, tp_h, sx + 2 * dir_x, sy + 2 * dir_y):
-			return false
+		# 平行加宽：侧邻沿本坡向有完整臂
+		var parallel_ok: bool = (
+			_has_ramp(ramp, tp_w, tp_h, sx + dir_x, sy + dir_y)
+			and _has_ramp(ramp, tp_w, tp_h, sx + 2 * dir_x, sy + 2 * dir_y)
+		)
+		if parallel_ok:
+			continue
+		# L / 半侧：侧邻属于从原点出发的垂直臂（完整 3 点）
+		if _side_is_l_arm(ix, iy, sx, sy, ramp, tp_w, tp_h):
+			continue
+		return false
 
+	return true
+
+
+## 侧邻 (sx,sy) 是否与原点构成已有垂直臂（L 的一肢），允许再刷另一肢/对角。
+static func _side_is_l_arm(
+	ix: int, iy: int, sx: int, sy: int, ramp: PackedByteArray, tp_w: int, tp_h: int
+) -> bool:
+	var pdx: int = sx - ix
+	var pdy: int = sy - iy
+	if absi(pdx) + absi(pdy) != 1:
+		return false
+	# 原点须已在坡上；沿 (pdx,pdy) 再走一步也须有 ramp → 完整 3 点臂
+	if not _has_ramp(ramp, tp_w, tp_h, ix, iy):
+		return false
+	if not _has_ramp(ramp, tp_w, tp_h, sx + pdx, sy + pdy):
+		return false
 	return true
 
 

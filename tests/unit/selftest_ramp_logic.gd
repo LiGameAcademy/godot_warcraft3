@@ -24,6 +24,9 @@ func _run() -> void:
 	_test_expand_straight_to_diagonal()
 	_test_intent_not_opposite()
 	_test_low_side_mouse_pref_not_far_side()
+	_test_forbid_opposite_face_ramp()
+	_test_l_then_diagonal_half_side()
+	_test_far_empty_still_paintable()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
 		quit(0)
@@ -352,3 +355,105 @@ func _test_low_side_mouse_pref_not_far_side() -> void:
 		_fail("low_side_pref must not mark far side of plateau")
 		return
 	print("  low_side_mouse_pref_not_far_side OK origin=(%d,%d)" % [sx, sy])
+
+
+func _test_forbid_opposite_face_ramp() -> void:
+	# 截图1：细高台脊（两侧皆低）。先朝 +Y 落坡，再朝 -Y 必须拒绝（对侧无模）。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			# 仅 y==5 为高脊
+			doc.heightfield.layer_heights[y * w + x] = 3 if y == 5 else 2
+	doc._rebind_logic()
+	var r1: Dictionary = doc.try_paint_ramp_at(5, 5, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("opposite_face setup +Y fail: %s" % str(r1))
+		return
+	var r2: Dictionary = doc.try_paint_ramp_at(5, 5, 0, -1)
+	if bool(r2.get("ok", false)) and bool(r2.get("changed", false)):
+		_fail("opposite_face must reject -Y after +Y: %s" % str(r2))
+		return
+	if _flag_ramp(doc, 5, 4) or _flag_ramp(doc, 5, 3):
+		_fail("opposite_face must not mark -Y side")
+		return
+	print("  forbid_opposite_face_ramp OK")
+
+
+func _test_l_then_diagonal_half_side() -> void:
+	# 截图2：外角先竖臂再横/对角，应能扩成半侧对角，不被侧翼禁贴误伤。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 4 and y <= 4) else 2
+	doc._rebind_logic()
+	var r1: Dictionary = doc.try_paint_ramp_at(4, 4, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("half_side setup vertical fail: %s" % str(r1))
+		return
+	# 第二笔：对角意图，应扩成 diagonal 并补上横臂/箱内点
+	var r2: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 1)
+	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
+		_fail("half_side diagonal expand fail: %s" % str(r2))
+		return
+	if str(r2.get("variant", "")) != "diagonal":
+		_fail("half_side expect diagonal got %s" % str(r2.get("variant")))
+		return
+	# 半侧：原点 + 竖臂 + 横臂方向上应有旗
+	if not (
+		_flag_ramp(doc, 4, 4)
+		and _flag_ramp(doc, 4, 5)
+		and _flag_ramp(doc, 4, 6)
+		and _flag_ramp(doc, 5, 4)
+		and _flag_ramp(doc, 6, 4)
+	):
+		_fail("half_side missing L/box arms after expand")
+		return
+	print("  l_then_diagonal_half_side OK n=%d" % (r2.get("marked", []) as Array).size())
+
+
+func _test_far_empty_still_paintable() -> void:
+	# 截图3：崖缘一侧已有坡时，远处另一段空崖仍可落直坡。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if y <= 4 else 2
+	doc._rebind_logic()
+	var r1: Dictionary = doc.try_paint_ramp_at(3, 4, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("far_empty setup fail: %s" % str(r1))
+		return
+	var r2: Dictionary = doc.try_paint_ramp_at(10, 4, 0, 1)
+	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
+		_fail("far_empty should still paint: %s" % str(r2))
+		return
+	if not (_flag_ramp(doc, 10, 4) and _flag_ramp(doc, 10, 5) and _flag_ramp(doc, 10, 6)):
+		_fail("far_empty marks missing")
+		return
+	print("  far_empty_still_paintable OK")
