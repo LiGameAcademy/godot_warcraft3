@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_low_side_mouse_pref_not_far_side()
 	_test_forbid_opposite_face_ramp()
 	_test_l_then_diagonal_half_side()
+	_test_single_axis_promotes_to_diagonal()
 	_test_far_empty_still_paintable()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
@@ -427,6 +428,40 @@ func _test_l_then_diagonal_half_side() -> void:
 		_fail("half_side missing L/box arms after expand")
 		return
 	print("  l_then_diagonal_half_side OK n=%d" % (r2.get("marked", []) as Array).size())
+
+
+func _test_single_axis_promotes_to_diagonal() -> void:
+	# 截图：外角已有竖臂，再只传单轴横意图 → 应自动升为对角半侧
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 4 and y <= 4) else 2
+	doc._rebind_logic()
+	var r1: Dictionary = doc.try_paint_ramp_at(4, 4, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("promote setup vertical fail: %s" % str(r1))
+		return
+	# 仅 hx=1（不传 hy）——旧逻辑会落第二条单侧；新逻辑应升对角
+	var r2: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 0)
+	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
+		_fail("promote single→diagonal fail: %s" % str(r2))
+		return
+	if str(r2.get("variant", "")) != "diagonal":
+		_fail("promote expect diagonal got %s" % str(r2.get("variant")))
+		return
+	if not (_flag_ramp(doc, 5, 4) and _flag_ramp(doc, 6, 4) and _flag_ramp(doc, 5, 5)):
+		_fail("promote missing diagonal box fills")
+		return
+	print("  single_axis_promotes_to_diagonal OK n=%d" % (r2.get("marked", []) as Array).size())
 
 
 func _test_far_empty_still_paintable() -> void:

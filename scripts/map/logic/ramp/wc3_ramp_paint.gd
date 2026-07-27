@@ -162,6 +162,21 @@ static func plan(
 		ix, iy, hx, hy, origin_level, target_level, layers, tp_w, tp_h
 	)
 
+	## 单轴意图：若邻侧已有垂直完整臂，优先升级为对角半侧（避免两条单侧坡拐角）
+	var single_axis: bool = (hx != 0) != (hy != 0)
+	if single_axis and not allow_d:
+		var promo: Vector2i = _try_promote_single_to_diagonal(
+			ix, iy, hx, hy, origin_level, target_level, layers, ramp, tp_w, tp_h
+		)
+		if promo.x != 0 and promo.y != 0:
+			hx = promo.x
+			hy = promo.y
+			allow_d = true
+		elif _has_perpendicular_arm_to_intent(ix, iy, hx, hy, ramp, tp_w, tp_h):
+			# 对角盒不合法时禁止再刷单轴，避免侧脊畸形
+			allow_h = false
+			allow_v = false
+
 	## 至少有一个方向可落
 	if not allow_h and not allow_v and not allow_d:
 		MapLogScript.debug(
@@ -488,6 +503,67 @@ static func _side_is_l_arm(
 	if not _has_ramp(ramp, tp_w, tp_h, sx + pdx, sy + pdy):
 		return false
 	return true
+
+
+## 从原点沿 (dx,dy) 是否已有完整 3 点 ramp 臂。
+static func _has_full_ramp_arm(
+	ix: int, iy: int, dx: int, dy: int, ramp: PackedByteArray, tp_w: int, tp_h: int
+) -> bool:
+	if dx == 0 and dy == 0:
+		return false
+	for step in range(3):
+		if not _has_ramp(ramp, tp_w, tp_h, ix + step * dx, iy + step * dy):
+			return false
+	return true
+
+
+## 相对当前单轴意图，是否已有垂直方向的完整臂（不含本轴）。
+static func _has_perpendicular_arm_to_intent(
+	ix: int, iy: int, hx: int, hy: int, ramp: PackedByteArray, tp_w: int, tp_h: int
+) -> bool:
+	if hx != 0 and hy == 0:
+		return (
+			_has_full_ramp_arm(ix, iy, 0, 1, ramp, tp_w, tp_h)
+			or _has_full_ramp_arm(ix, iy, 0, -1, ramp, tp_w, tp_h)
+		)
+	if hy != 0 and hx == 0:
+		return (
+			_has_full_ramp_arm(ix, iy, 1, 0, ramp, tp_w, tp_h)
+			or _has_full_ramp_arm(ix, iy, -1, 0, ramp, tp_w, tp_h)
+		)
+	return false
+
+
+## 单轴绘制时：若垂直方向已有完整臂且对角盒合法，返回升级后的 (hx,hy)；否则 (0,0)。
+static func _try_promote_single_to_diagonal(
+	ix: int,
+	iy: int,
+	hx: int,
+	hy: int,
+	origin_level: int,
+	target_level: int,
+	layers: Array,
+	ramp: PackedByteArray,
+	tp_w: int,
+	tp_h: int
+) -> Vector2i:
+	if hx != 0 and hy == 0:
+		for phy in [-1, 1]:
+			if not _has_full_ramp_arm(ix, iy, 0, phy, ramp, tp_w, tp_h):
+				continue
+			if _check_diagonal_box(
+				ix, iy, hx, phy, origin_level, target_level, layers, tp_w, tp_h
+			):
+				return Vector2i(hx, phy)
+	elif hy != 0 and hx == 0:
+		for phx in [-1, 1]:
+			if not _has_full_ramp_arm(ix, iy, phx, 0, ramp, tp_w, tp_h):
+				continue
+			if _check_diagonal_box(
+				ix, iy, phx, hy, origin_level, target_level, layers, tp_w, tp_h
+			):
+				return Vector2i(phx, hy)
+	return Vector2i.ZERO
 
 
 ## 对角 3×3 box 门禁：原点须为 origin_level；其余 8 点须为 target_level（RAMP_WE §4.2）。
