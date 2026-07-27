@@ -26,7 +26,7 @@
 
 选型表：`Wc3CliffCatalog` → `Doodads/Terrain/Cliffs/Cliffs{TAG}{var}.glb`。
 
-**Variation（岩壁）**：同 TAG 共边墙段统一变体（Catalog 空间哈希 / 存盘一致值）；不同墙面 TAG 各自哈希 → 自然差异。Present 再经 MultiMesh `INSTANCE_CUSTOM` 做轻量 UV/明暗扰动。
+**Variation（岩壁）**：同 TAG 共边墙段统一变体（Catalog 空间哈希 / 存盘一致值）；不同墙面 TAG 各自哈希 → 自然差异。勿对 cliff mesh UV 做实例抖动（易采到贴图白边导致岩壁发白）。
 
 **groundTile**：只写/强制**崖脚低侧**角点；台顶高侧保持原地表（对齐经典 WE）。
 

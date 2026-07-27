@@ -38,9 +38,6 @@ void vertex() {
 }
 
 void fragment() {
-	// INSTANCE_CUSTOM：Catalog 选好 GLB 变体后，表现层再加轻量扰动（不换模）
-	vec2 uv_jitter = (INSTANCE_CUSTOM.rg - vec2(0.5)) * 0.04;
-	float shade = mix(0.94, 1.06, INSTANCE_CUSTOM.b);
-	vec3 albedo = texture(cliff_albedo, UV + uv_jitter).rgb * albedo_scale * shade;
+	vec3 albedo = texture(cliff_albedo, UV).rgb * albedo_scale;
 	ALBEDO = dbg_apply_grid(albedo);
 }
