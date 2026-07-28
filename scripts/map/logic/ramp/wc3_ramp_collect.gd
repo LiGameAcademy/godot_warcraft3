@@ -124,6 +124,43 @@ static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
 	return tiles
 
 
+## 入口低角抬高半层（对齐 WE update_ground_heights）：tilepoint 上 1=该角 heights 再 +0.5*128。
+## 仅 Present bake 使用，不写回 Heightfield。
+static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
+	var out := PackedByteArray()
+	if hf == null or not hf.is_valid():
+		return out
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	var layers: Array = hf.layer_heights
+	var flags: Array = hf.flags_packed
+	out.resize(maxi(tp_w * tp_h, 0))
+	out.fill(0)
+	for iy in range(tp_h - 1):
+		for ix in range(tp_w - 1):
+			if not is_entrance(flags, layers, tp_w, tp_h, ix, iy):
+				continue
+			var i00: int = iy * tp_w + ix
+			var i10: int = i00 + 1
+			var i01: int = i00 + tp_w
+			var i11: int = i01 + 1
+			var bl: int = int(layers[i00])
+			var br: int = int(layers[i10])
+			var tl: int = int(layers[i01])
+			var tr: int = int(layers[i11])
+			var lo: int = mini(mini(bl, br), mini(tl, tr))
+			# 幂等：多入口格共享角可重复标 1
+			if bl == lo:
+				out[i00] = 1
+			if br == lo:
+				out[i10] = 1
+			if tl == lo:
+				out[i01] = 1
+			if tr == lo:
+				out[i11] = 1
+	return out
+
+
 ## CliffTrans 覆盖的地表格（竖窗占 (i,j)+(i,j+1)；横窗占 (i,j)+(i+1,j)）。
 static func placement_footprint_tiles(p: Wc3RampPlacement) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []

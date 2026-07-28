@@ -3,15 +3,15 @@
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
 > 最后更新：2026-07-27
 
-## 当前焦点：斜坡 Present 收尾（+0.5）+ 水体
+## 当前焦点：斜坡脏区 / tag + 水体
 
-悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic ✅；Present：挂模 + 过滤直崖 + **dig/入口 undig**✅；入口 +0.5 后置。
+悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic ✅；Present：挂模 + 过滤直崖 + dig/入口 undig + **入口低角 +0.5**✅。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
 | **崖 M0–M2** | ✅ + tag | `milestone/cliff-layered`；M3 脏区可选 |
 | **坡 Paint / Collect** | ✅ | HiveWE 同构；蓝菱形验收 |
-| **坡 Present** | ✅ 核心 / +0.5 后置 | CliffTrans + dig/undig/hide；低角 +0.5 待做 |
+| **坡 Present** | ✅ | CliffTrans + dig/undig/hide + 入口低角 +0.5 |
 | **水体** | 待开 | 见 [WATER.md](WATER.md) |
 
 ---
@@ -47,7 +47,7 @@
 - [x] 存盘权威：`FLAG_RAMP` / `has_ramp`
 - [x] Catalog：`Wc3CliffTransCatalog` + `ramp_model_dir`
 - [x] Present：`MapRampLayer` 挂 CliffTrans + undig 入口 + romp dig + hide 直崖
-- [ ] Present：入口低角 GPU +0.5
+- [x] Present：入口低角 +0.5（Present bake，不写 HF）
 
 ## 岸浪
 

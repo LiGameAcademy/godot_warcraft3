@@ -11,6 +11,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_test_dig_and_entrance_plans()
+	_test_entrance_height_boost()
 	_test_builder_from_ramp_placements()
 	_test_vertical_ramp_footprint()
 	_test_hide_cliff_piece_by_slice()
@@ -62,6 +63,50 @@ func _test_dig_and_entrance_plans() -> void:
 		"  dig_entrance OK dig=%d entrances=%d placements=%d"
 		% [dig_n, entrances.size(), ramp.non_phantom_count()]
 	)
+
+
+func _test_entrance_height_boost() -> void:
+	# 手工入口：四角 FLAG_RAMP + 层差；低侧两角应 boost。
+	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 8,
+		"height": 8,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var hf: Wc3Heightfield = doc.heightfield
+	var w: int = hf.width
+	var ix := 3
+	var iy := 3
+	# bl/br=2（低）, tl/tr=3（高）— 非对角平坦
+	for dy in range(2):
+		for dx in range(2):
+			var i: int = (iy + dy) * w + (ix + dx)
+			hf.layer_heights[i] = 3 if dy == 1 else 2
+			hf.flags_packed[i] = int(hf.flags_packed[i]) | Wc3Coords.FLAG_RAMP
+	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf)
+	if boost.is_empty() or boost.size() != w * hf.height:
+		_fail("boost size mismatch")
+		return
+	var i00: int = iy * w + ix
+	if boost[i00] == 0 or boost[i00 + 1] == 0:
+		_fail("boost low corners missing")
+		return
+	if boost[i00 + w] != 0 or boost[i00 + w + 1] != 0:
+		_fail("boost high corners should stay 0")
+		return
+	# 非入口格不应全图乱标
+	var n := 0
+	for i in range(boost.size()):
+		if boost[i] != 0:
+			n += 1
+	if n != 2:
+		_fail("boost expect 2 corners got %d" % n)
+		return
+	print("  entrance_boost OK low=%d,%d" % [i00, i00 + 1])
 
 
 func _test_builder_from_ramp_placements() -> void:

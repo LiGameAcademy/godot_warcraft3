@@ -114,7 +114,7 @@
 - [x] Collect ≈ `update_cliff_meshes` 数据侧（placements + romp；与 cliff 拓扑分离）
 - [x] 分层：cliff `gap_mask` 不含坡；挖洞/藏崖由 `MapRampLayer` 调 Terrain/Cliff API
 - [x] Present 核心：挂 CliffTrans + `undig` 入口 + romp dig + hide 直崖
-- [ ] Present：入口低角 GPU +0.5
+- [x] Present：入口低角 +0.5（bake，不写 HF）
 - [ ] 脏区 / tag `milestone/ramp-layered`
 
 ### ⑨ 水体（深水 / 浅水）

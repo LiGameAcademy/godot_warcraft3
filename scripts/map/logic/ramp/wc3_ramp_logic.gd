@@ -149,6 +149,11 @@ static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
 	return Wc3RampCollect.plan_entrance_tiles(hf)
 
 
+## Present：入口低角半层抬高 mask（tilepoint；不写 HF）。
+static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
+	return Wc3RampCollect.plan_entrance_height_boost(hf)
+
+
 ## Present / Loader：单块直崖模型是否应跳过（叠段粒度）。
 static func should_hide_cliff_piece(
 	ix: int,

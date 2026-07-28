@@ -1,9 +1,9 @@
 class_name MapRampLayer
 extends Node3D
 
-## 斜坡表现层：消费 Collect → 地面 dig/undig → 挂 CliffTrans。
+## 斜坡表现层：消费 Collect → 地面 dig/undig/入口+0.5 → 挂 CliffTrans。
 ## 直崖跳过由 MapLoader 在挂崖前 filter_cliff_placements（对齐 WE continue）。
-## 本步只挖洞（+ 入口 undig 保留地面）；不补额外地面 Mesh；入口 +0.5 后置。
+## 不另铺「甲板」Mesh：坡身靠 CliffTrans，入口靠 undig 地面 + 低角半层抬高。
 
 @export var terrain: MapTerrainLayer
 @export var cliffs: MapCliffLayer
@@ -11,6 +11,7 @@ extends Node3D
 var last_placement_count: int = 0
 var last_dig_count: int = 0
 var last_entrance_count: int = 0
+var last_boost_count: int = 0
 var _shader: Shader
 var _height_tex: Texture2D
 var _ramp_mats: Array[ShaderMaterial] = []
@@ -22,6 +23,7 @@ func build(ctx: MapBuildContext) -> void:
 	last_placement_count = 0
 	last_dig_count = 0
 	last_entrance_count = 0
+	last_boost_count = 0
 	if ctx == null:
 		return
 
@@ -34,13 +36,15 @@ func build(ctx: MapBuildContext) -> void:
 	if ramp_data == null:
 		return
 
-	# 挖洞：romp∪cliff 且非入口；入口 undig（直崖 gap 可能已挖掉入口，须填回）
+	# 挖洞 + 入口 undig + 入口低角半层（贴 CliffTrans 坡脚）
 	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
 	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf)
+	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf)
 	last_dig_count = _count_ones(dig)
 	last_entrance_count = entrances.size()
+	last_boost_count = _count_ones(boost)
 	if terrain != null:
-		terrain.apply_ramp_dig(dig, entrances)
+		terrain.apply_ramp_dig(dig, entrances, boost)
 
 	var ramp_placements: Array[Wc3RampPlacement] = []
 	for p in ramp_data.placements:
@@ -52,7 +56,8 @@ func build(ctx: MapBuildContext) -> void:
 		MapLog.info(
 			MapLog.Layer.PRESENT,
 			"Ramp",
-			"dig=%d entrances=%d no CliffTrans" % [last_dig_count, last_entrance_count]
+			"dig=%d entrances=%d boost=%d no CliffTrans"
+			% [last_dig_count, last_entrance_count, last_boost_count]
 		)
 		return
 
@@ -72,8 +77,14 @@ func build(ctx: MapBuildContext) -> void:
 	MapLog.info(
 		MapLog.Layer.PRESENT,
 		"Ramp",
-		"placed=%d missing=%d dig=%d entrances=%d"
-		% [last_placement_count, collected.missing, last_dig_count, last_entrance_count]
+		"placed=%d missing=%d dig=%d entrances=%d boost=%d"
+		% [
+			last_placement_count,
+			collected.missing,
+			last_dig_count,
+			last_entrance_count,
+			last_boost_count,
+		]
 	)
 
 

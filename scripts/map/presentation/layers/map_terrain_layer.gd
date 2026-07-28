@@ -23,6 +23,8 @@ var _last_extended: PackedByteArray = PackedByteArray()
 var _base_gap: PackedByteArray = PackedByteArray()
 var _extra_dig: PackedByteArray = PackedByteArray()
 var _undig: PackedByteArray = PackedByteArray()
+## tilepoint：入口低角半层抬高（Present bake，不写 HF）
+var _entrance_h_boost: PackedByteArray = PackedByteArray()
 var _last_cliff_to_ground: PackedInt32Array = PackedInt32Array()
 
 ## 四角 bitmask 结果（避免裸 Dictionary 键）。
@@ -45,6 +47,7 @@ func build(ctx: MapBuildContext) -> void:
 	_base_gap = PackedByteArray()
 	_extra_dig = PackedByteArray()
 	_undig = PackedByteArray()
+	_entrance_h_boost = PackedByteArray()
 	_last_cliff_to_ground = PackedInt32Array()
 
 	var hf: Wc3Heightfield = ctx.heightfield
@@ -121,10 +124,17 @@ func undig_tiles(tiles: Array[Vector2i]) -> void:
 	_rebuild_ground_mesh_only()
 
 
-## 一次重建：施加斜坡 dig，并 undig 入口（避免双次 rebuild）。
-func apply_ramp_dig(extra: PackedByteArray, entrance_tiles: Array[Vector2i]) -> void:
+## 一次重建：斜坡 dig + 入口 undig + 入口低角半层抬高（不写 HF）。
+func apply_ramp_dig(
+	extra: PackedByteArray,
+	entrance_tiles: Array[Vector2i],
+	entrance_height_boost: PackedByteArray = PackedByteArray()
+) -> void:
 	_extra_dig = extra.duplicate() if not extra.is_empty() else PackedByteArray()
 	_set_undig_tiles(entrance_tiles)
+	_entrance_h_boost = (
+		entrance_height_boost.duplicate() if not entrance_height_boost.is_empty() else PackedByteArray()
+	)
 	_rebuild_ground_mesh_only()
 
 
@@ -270,17 +280,31 @@ func _build_ground_mesh(
 			)
 
 			var positions := PackedVector3Array([
-				HeightfieldMesh.sample_vert(ix, iy, float(hf.heights[i00]), center, tile_size),
-				HeightfieldMesh.sample_vert(ix + 1, iy, float(hf.heights[i00 + 1]), center, tile_size),
-				HeightfieldMesh.sample_vert(ix, iy + 1, float(hf.heights[i00 + width]), center, tile_size),
 				HeightfieldMesh.sample_vert(
-					ix + 1, iy + 1, float(hf.heights[i00 + width + 1]), center, tile_size
+					ix, iy, _corner_h(hf, i00), center, tile_size
+				),
+				HeightfieldMesh.sample_vert(
+					ix + 1, iy, _corner_h(hf, i00 + 1), center, tile_size
+				),
+				HeightfieldMesh.sample_vert(
+					ix, iy + 1, _corner_h(hf, i00 + width), center, tile_size
+				),
+				HeightfieldMesh.sample_vert(
+					ix + 1, iy + 1, _corner_h(hf, i00 + width + 1), center, tile_size
 				),
 			])
 			_ground.add_quad(positions, slots.tex, slots.variation)
 
 	_ground.commit_build()
 	return gap_count
+
+
+## Present bake：入口低角 +0.5 层（64 WC3）；不改权威 heights。
+func _corner_h(hf: Wc3Heightfield, corner_i: int) -> float:
+	var h: float = float(hf.heights[corner_i])
+	if corner_i >= 0 and corner_i < _entrance_h_boost.size() and _entrance_h_boost[corner_i] != 0:
+		h += 0.5 * Wc3CliffLogic.LAYER_HEIGHT_STEP
+	return h
 
 
 ## 构建层
