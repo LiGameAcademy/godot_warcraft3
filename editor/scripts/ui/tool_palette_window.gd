@@ -119,7 +119,8 @@ func _ready() -> void:
 	# 笔刷已用 DisplayServer 轮询悬停，面板获焦后仍可恢复预览，无需 unfocusable
 	transparent = false
 	unfocusable = false
-	always_on_top = true
+	# always_on_top 与 transient 在 Windows 互斥；由 editor 设 transient 随主窗
+	always_on_top = false
 	_sel_style = _make_sel_style()
 	close_requested.connect(_on_close_requested)
 	_kind_option.item_selected.connect(_on_kind_selected)

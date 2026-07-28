@@ -147,8 +147,8 @@ static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
 			var bl: int = int(layers[i00])
 			var br: int = int(layers[i10])
 			var tl: int = int(layers[i01])
-			var tr: int = int(layers[i11])
-			var lo: int = mini(mini(bl, br), mini(tl, tr))
+			var top_r: int = int(layers[i11])
+			var lo: int = mini(mini(bl, br), mini(tl, top_r))
 			# 幂等：多入口格共享角可重复标 1
 			if bl == lo:
 				out[i00] = 1
@@ -156,7 +156,7 @@ static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
 				out[i10] = 1
 			if tl == lo:
 				out[i01] = 1
-			if tr == lo:
+			if top_r == lo:
 				out[i11] = 1
 	return out
 

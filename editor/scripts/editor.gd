@@ -324,8 +324,9 @@ func _spawn_tool_palette(kind: int) -> void:
 		menu.set_show_palettes_checked(true)
 	var offset := _palette_spawn_index * 28
 	_palette_spawn_index += 1
-	# 相对主编辑窗口定位；transient=true 时引擎沿父节点 viewport 自动绑定主窗
+	# 相对主编辑窗口定位。Windows 上 always_on_top 与 transient 互斥，取 transient（随主窗）。
 	var main_win := get_viewport().get_window()
+	win.always_on_top = false
 	win.transient = true
 	if main_win != null:
 		win.position = main_win.position + Vector2i(24 + offset, 72 + offset)
@@ -333,7 +334,6 @@ func _spawn_tool_palette(kind: int) -> void:
 		win.position = Vector2i(24 + offset, 72 + offset)
 	win.transparent = false
 	win.unfocusable = false
-	win.always_on_top = true
 	win.visible = true
 	win.show()
 
