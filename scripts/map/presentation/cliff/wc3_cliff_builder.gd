@@ -3,7 +3,8 @@ extends RefCounted
 
 ## 悬崖表现装配：只读 placements + Catalog 资产路径 → MultiMesh 分组。
 ## 禁止：拓扑判断、改 Heightfield、过滤 TAG（Logic 已保证列表可渲染）。
-## 变体随机性在 Catalog/Logic（TAG 墙段空间哈希）；勿对 cliff UV 做实例抖动（易采到贴图白边）。
+## 变体随机性在 Catalog/Logic（按格 BL / 空间哈希；同墙可不同变体）。
+## 勿对 cliff UV 做实例抖动（易采到贴图白边）。
 ##
 ## 变换两套（勿混用）：
 ##   Cliffs     → instance_transform（经典锚 ix+1，无解旋）

@@ -101,20 +101,18 @@ func clamp_variation(model_dir: String, tag: String, variation: int) -> int:
 
 
 ## 直崖变体选型（Catalog / 资源映射层）。
-## - stored>0：尊重存盘（W3E cliffVariations）
-## - stored==0：按墙段锚点 (ix,iy)+TAG 稳定哈希，保证同锚点可复现、不同墙面不同变体
+## W3E cliff_variation 为 0–7；0 也是合法变体（不是「未赋值」）。
+## 挂模：夹紧存盘值。真随机由笔刷写入 cliffVariations（random_variation_byte）。
 func pick_cliff_variation(
-	model_dir: String, tag: String, stored: int, ix: int, iy: int
+	model_dir: String, tag: String, stored: int, _ix: int = 0, _iy: int = 0
 ) -> int:
 	var max_v: int = max_variation(model_dir, tag)
 	if max_v <= 0:
 		return 0
-	if stored > 0:
-		return mini(stored, max_v)
-	return spatial_variation(model_dir, tag, ix, iy)
+	return clampi(stored, 0, max_v)
 
 
-## 笔刷落盘用：真随机变体（写入 cliffVariations 后由 collect 统一墙段）。
+## 笔刷落盘：在已知 TAG 时从 [0..max] 均匀随机。
 func random_variation(model_dir: String, tag: String) -> int:
 	var max_v: int = max_variation(model_dir, tag)
 	if max_v <= 0:
@@ -122,13 +120,23 @@ func random_variation(model_dir: String, tag: String) -> int:
 	return randi() % (max_v + 1)
 
 
-## 稳定空间哈希变体（同 TAG 墙段用锚点调用，避免每帧乱跳）。
+## 笔刷落盘：W3E 角点 3bit 变体字段（0–7），挂模时再按 TAG clamp。
+static func random_variation_byte() -> int:
+	return randi() % 8
+
+
+## 稳定空间哈希（调试/迁移用；主路径用存盘随机，避免同墙 010101 条纹）。
 func spatial_variation(model_dir: String, tag: String, ix: int, iy: int) -> int:
 	var max_v: int = max_variation(model_dir, tag)
 	if max_v <= 0:
 		return 0
-	var h: int = absi((ix * 73856093) ^ (iy * 19349663) ^ (tag.hash() * 83492791))
-	return h % (max_v + 1)
+	# 充分混合，减轻相邻 ix 对 max_v=1 时的严格交替
+	var h: int = ix * 0x9e3779b1
+	h = (h ^ (h >> 16)) * 0x85ebca6b
+	h = h ^ (iy * 0xc2b2ae35)
+	h = (h ^ (h >> 13)) * 0x27d4eb2d
+	h = h ^ tag.hash()
+	return absi(h) % (max_v + 1)
 
 
 ## cliffTilesets 下标 → groundTilesets 下标；无映射为 -1。

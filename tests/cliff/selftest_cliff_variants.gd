@@ -44,7 +44,7 @@ func _run() -> void:
 	failed += _case_paint_level2_edge_then_corner(cliffs)
 	failed += _case_remote_cliff_tex_isolation()
 	failed += _case_heterogeneous_contact_assimilate()
-	failed += _case_unified_variation_along_wall(cliffs)
+	failed += _case_wall_variations_diverse_along_face(cliffs)
 	failed += _case_plateau_top_keeps_dirt_for_grass_cliff()
 	failed += _case_faces_use_diverse_variations(cliffs)
 
@@ -525,8 +525,8 @@ func _case_heterogeneous_contact_assimilate() -> int:
 	return fail
 
 
-## 同一条 AABB 直墙共边 placement 必须共用 variation（消除竖缝）。
-func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
+## 同一条 AABB 直墙：笔刷写入随机 cliffVariations 后，同墙可出现多种 variation。
+func _case_wall_variations_diverse_along_face(cliffs: Wc3CliffCatalog) -> int:
 	var doc = DocScript.new()
 	doc.create_from_options({
 		"width": 16,
@@ -537,11 +537,18 @@ func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
 		"cliff_level": 2,
 		"default_tile_index": 0,
 	})
-	# 抬升矩形高台 → 西侧直墙为 AABB 多格共边
 	for y in range(5, 12):
 		for x in range(8, 12):
 			doc.paint_cliff_corner(x, y, "3", 0)
 	var hf := Wc3Heightfield.from_dict(doc.as_build_dict(), false)
+	# 显式写入非条纹随机序列，避免偶发全撞同一 clamp 结果
+	var seq: Array[int] = [0, 2, 1, 0, 1, 2, 1]
+	var yi := 0
+	for y in range(5, 12):
+		var bi: int = y * hf.width + 7 # 西墙 BL 约在 x=7
+		if bi >= 0 and bi < hf.cliff_variations.size():
+			hf.cliff_variations[bi] = seq[yi % seq.size()]
+		yi += 1
 	var placements: Array[Wc3CliffPlacement] = Wc3CliffLogic.collect_placements(hf, cliffs)
 	var aabb_vars: Dictionary = {}
 	var aabb_count := 0
@@ -550,16 +557,19 @@ func _case_unified_variation_along_wall(cliffs: Wc3CliffCatalog) -> int:
 			continue
 		aabb_count += 1
 		aabb_vars[p.variation] = true
-	if aabb_count < 2:
-		push_error("unified_variation: expected multiple AABB along wall, got %d" % aabb_count)
+	if aabb_count < 3:
+		push_error("wall_diverse: expected multiple AABB along wall, got %d" % aabb_count)
 		return 1
-	if aabb_vars.size() != 1:
+	if cliffs.max_variation("Cliffs", "AABB") >= 1 and aabb_vars.size() < 2:
 		push_error(
-			"unified_variation: AABB wall must share 1 variation, got %s (n=%d)"
+			"wall_diverse: AABB wall should use >1 variation, got %s (n=%d)"
 			% [str(aabb_vars.keys()), aabb_count]
 		)
 		return 1
-	print("unified_variation AABB n=%d var=%d OK" % [aabb_count, int(aabb_vars.keys()[0])])
+	print(
+		"wall_diverse AABB n=%d vars=%s OK"
+		% [aabb_count, str(aabb_vars.keys())]
+	)
 	return 0
 
 
@@ -647,13 +657,9 @@ func _case_faces_use_diverse_variations(cliffs: Wc3CliffCatalog) -> int:
 	for tag in by_tag.keys():
 		for v in (by_tag[tag] as Dictionary).keys():
 			all_vars[v] = true
-	# 允许碰巧撞同一 var，但空间哈希在 4 面 × 多锚点下通常 >1；至少要求每面内部统一
-	for tag2 in by_tag.keys():
-		if (by_tag[tag2] as Dictionary).size() != 1:
-			push_error("diverse_variations: tag %s must be unified, got %s" % [tag2, str(by_tag[tag2].keys())])
-			return 1
+	# 同墙按格哈希：单 TAG 长边也可有多种 variation
 	print(
-		"diverse_variations tags=%d vars=%s OK"
-		% [by_tag.size(), str(all_vars.keys())]
+		"diverse_variations tags=%d vars=%s by_tag=%s OK"
+		% [by_tag.size(), str(all_vars.keys()), str(by_tag)]
 	)
 	return 0

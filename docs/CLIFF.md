@@ -26,7 +26,7 @@
 
 选型表：`Wc3CliffCatalog` → `Doodads/Terrain/Cliffs/Cliffs{TAG}{var}.glb`。
 
-**Variation（岩壁）**：同 TAG 共边墙段统一变体（Catalog 空间哈希 / 存盘一致值）；不同墙面 TAG 各自哈希 → 自然差异。勿对 cliff mesh UV 做实例抖动（易采到贴图白边导致岩壁发白）。
+**Variation（岩壁）**：对齐 HiveWE——每格用 **BL 角** `cliffVariations`（0 也是合法变体）。笔刷写入 **0–7 真随机**；挂模按 TAG `clamp`。**同墙允许不同变体**。勿用「ix 空间哈希」当主路径（两变体时易成 010101 条纹）。
 
 **groundTile**：直崖格四角写入/强制 `cliff.groundTile`（对齐 viewer `cornerTexture`）。台心不贴直崖则保持原地表；台缘/崖脚与泥土靠四角 bitmask 过渡。
 
@@ -73,7 +73,7 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_level3.gd
 godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 ```
 
-`selftest_cliff_variants.gd` 覆盖：TAG/GLB、AABC 单片、叠段、台面+柱、远程隔离、异种接触同化、直墙 variation 统一。
+`selftest_cliff_variants.gd` 覆盖：TAG/GLB、AABC 单片、叠段、台面+柱、远程隔离、异种接触同化、直墙 variation 按格打散。
 
 ## 8. 相关文件
 
