@@ -4,7 +4,7 @@
 > **对照源码**：本地 `_ref/HiveWE`（gitignored）  
 > - 落旗：`src/brush/terrain_operators.cpp` → `CliffOperator::update_ramp` / `apply_ramps`  
 > - 表现：`src/base/terrain.ixx` → `update_cliff_meshes` / `is_corner_ramp_entrance` / `update_ground_heights` / `update_ground_exists`  
-> **本仓库状态**：Logic（Paint + Collect）✅；Present：CliffTrans 挂模 + **挂直崖前按叠段过滤**✅；dig/undig / 入口 +0.5 **后置**。  
+> **本仓库状态**：Logic（Paint + Collect）✅；Present：CliffTrans + 挂崖前过滤 + **地面 dig/入口 undig**✅；入口 +0.5 **后置**。  
 > **分层纪律**：地形/悬崖 Present **不读**斜坡 Collect；挖洞/藏崖由 Loader / 斜坡编排调 Logic 过滤或对方 API。  
 > 最后更新：2026-07-28
 
@@ -217,7 +217,7 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 | `update_ramp` | ✅ `Wc3RampLogic.paint_*` ← `Wc3RampPaint`（只写旗 + cliff_tex） |
 | `corner_romp` + CliffTrans 列表 | ✅ `Wc3RampCollect` ← `Wc3RampLogic.collect_placements`（与 cliff 拓扑分离） |
 | `update_cliff_meshes` 匹配 | ✅ Collect 滑窗；Catalog `glb_path` resolve |
-| 挖洞 / +0.5 / 挂模 | Logic：`plan_dig_*` / `filter_cliff_placements`；Loader 挂崖前过滤；Present 挂 CliffTrans（解旋）；dig/undig / +0.5 **后置** |
+| 挖洞 / +0.5 / 挂模 | Logic：`plan_dig_*` / `filter_cliff_placements`；Loader 挂崖前过滤；Present：`apply_ramp_dig` + CliffTrans；**+0.5 后置** |
 | 鼠标方向 | ✅ Editor `terrain_brush` 传入 ±X/±Y |
 
 ### 8.1 Present 所有权（禁止反向依赖）
@@ -229,11 +229,11 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 
 斜坡：Wc3RampLogic.collect → ctx.ramp
       MapRampLayer.build（当前）：
+        · terrain.apply_ramp_dig(plan_dig_mask, entrances)  ← romp∪cliff 挖洞；入口 undig
         · 挂 CliffTrans（instance_transform_trans）
       后置（未开）：
-        · terrain.undig_tiles(入口)
-        · terrain.apply_dig_mask(romp 增量)
         · 入口低角 GPU +0.5
+        · 其它地面补洞 / 补 Mesh（若需要）
 ```
 
 ### 8.2 跳过直崖算法（按模型实例，挂模前过滤）
@@ -265,8 +265,8 @@ Logic：`Wc3RampCollect.should_hide_cliff_piece` / `filter_cliff_placements`；�
 
 1. **只 Paint**：✅ 蓝菱形 + `selftest_ramp_logic`；点高侧 3 点；邻列加宽；低侧拒绝。  
 2. **Collect**：✅ `selftest_ramp_data` / Lost Temple 滑窗统计。  
-3. **Present 核心**：✅ 挂 CliffTrans + 挂崖前按叠段过滤直崖（`selftest_ramp_present`）；dig/undig 后置。  
-4. **Present 后置**：romp dig / 入口 undig；入口低角 GPU +0.5；再谈脏区与 City 族细化。
+3. **Present 核心**：✅ 挂 CliffTrans + 挂崖前按叠段过滤直崖 + **dig/入口 undig**（`selftest_ramp_present`）。  
+4. **Present 后置**：入口低角 GPU +0.5；再谈脏区与 City 族细化。
 
 ---
 

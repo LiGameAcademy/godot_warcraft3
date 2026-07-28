@@ -117,7 +117,20 @@ func apply_dig_mask(extra: PackedByteArray) -> void:
 
 ## 斜坡 Present API：强制保留地面（入口格）。优先级高于 dig。
 func undig_tiles(tiles: Array[Vector2i]) -> void:
+	_set_undig_tiles(tiles)
+	_rebuild_ground_mesh_only()
+
+
+## 一次重建：施加斜坡 dig，并 undig 入口（避免双次 rebuild）。
+func apply_ramp_dig(extra: PackedByteArray, entrance_tiles: Array[Vector2i]) -> void:
+	_extra_dig = extra.duplicate() if not extra.is_empty() else PackedByteArray()
+	_set_undig_tiles(entrance_tiles)
+	_rebuild_ground_mesh_only()
+
+
+func _set_undig_tiles(tiles: Array[Vector2i]) -> void:
 	if _last_hf == null or not _last_hf.is_valid():
+		_undig = PackedByteArray()
 		return
 	var map_w: int = _last_hf.width - 1
 	var map_h: int = _last_hf.height - 1
@@ -127,7 +140,6 @@ func undig_tiles(tiles: Array[Vector2i]) -> void:
 		if t.x < 0 or t.y < 0 or t.x >= map_w or t.y >= map_h:
 			continue
 		_undig[t.y * map_w + t.x] = 1
-	_rebuild_ground_mesh_only()
 
 
 func _rebuild_ground_mesh_only() -> void:
