@@ -5,7 +5,7 @@
 
 ## 当前焦点：斜坡 Present 收尾（+0.5）+ 水体
 
-悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic ✅；Present 核心（挂模/dig/undig/hide）已接线，入口 +0.5 后置。
+悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic ✅；Present：挂模 + 过滤直崖 + **dig/入口 undig**✅；入口 +0.5 后置。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
