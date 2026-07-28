@@ -207,6 +207,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
 	_build_ramps(ctx)
+	_build_ramp_debug(ctx)
 	_apply_view_grid()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
