@@ -4,9 +4,9 @@
 > **对照源码**：本地 `_ref/HiveWE`（gitignored）  
 > - 落旗：`src/brush/terrain_operators.cpp` → `CliffOperator::update_ramp` / `apply_ramps`  
 > - 表现：`src/base/terrain.ixx` → `update_cliff_meshes` / `is_corner_ramp_entrance` / `update_ground_heights` / `update_ground_exists`  
-> **本仓库状态**：Logic 已按本文实现（Paint + Collect）；Present 坡模挂载仍后置。  
+> **本仓库状态**：Logic（Paint + Collect）✅；Present 核心（CliffTrans + dig/undig/hide）✅；入口 +0.5 后置。  
 > **分层纪律**：地形/悬崖 Present **不读**斜坡 Collect；挖洞/藏崖由斜坡 Present 调对方 API。  
-> 最后更新：2026-07-26
+> 最后更新：2026-07-27
 
 ---
 
@@ -216,7 +216,7 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 | `update_ramp` | ✅ `Wc3RampLogic.paint_*` ← `Wc3RampPaint`（只写旗 + cliff_tex） |
 | `corner_romp` + CliffTrans 列表 | ✅ `Wc3RampCollect` ← `Wc3RampLogic.collect_placements`（与 cliff 拓扑分离） |
 | `update_cliff_meshes` 匹配 | ✅ Collect 滑窗；Catalog `glb_path` resolve |
-| 挖洞 / +0.5 | Logic：`plan_dig_mask` / `plan_entrance_tiles`；Present：`MapRampLayer` → `MapTerrainLayer.apply_dig_mask` / `undig_tiles` + `MapCliffLayer.hide_at_tiles`；+0.5 后置 |
+| 挖洞 / +0.5 / 挂模 | Logic：`plan_dig_*`；Present：`MapRampLayer` dig/undig/hide + **CliffTrans 解旋变换**（`instance_transform_trans`，异于直崖）；+0.5 后置 |
 | 鼠标方向 | ✅ Editor `terrain_brush` 传入 ±X/±Y |
 
 ### 8.1 Present 所有权（禁止反向依赖）
@@ -248,10 +248,10 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 
 ## 9. 建议验收顺序（重做时）
 
-1. **只 Paint**：✅ 蓝菱形 + `selftest_ramp_logic`；点高侧 3 点；邻列加宽；低侧拒绝。地面/悬崖与无坡时一致（斜坡 Present 未施加副作用）。  
+1. **只 Paint**：✅ 蓝菱形 + `selftest_ramp_logic`；点高侧 3 点；邻列加宽；低侧拒绝。  
 2. **Collect**：✅ `selftest_ramp_data` / Lost Temple 滑窗统计。  
-3. **Present**：`MapRampLayer` 调 API → 入口留地、romp 挖洞、藏直崖、挂 CliffTrans；低角 +0.5。  
-4. 再谈脏区与 City 族细化。
+3. **Present 核心**：✅ `MapRampLayer` → 入口 undig、romp dig、hide 直崖、挂 CliffTrans（`selftest_ramp_present`）。  
+4. **Present 后置**：入口低角 GPU +0.5；再谈脏区与 City 族细化。
 
 ---
 

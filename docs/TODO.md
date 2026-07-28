@@ -1,17 +1,17 @@
 # 待办
 
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-07-26
+> 最后更新：2026-07-27
 
-## 当前焦点：悬崖收尾 + 水体
+## 当前焦点：斜坡 Present 收尾（+0.5）+ 水体
 
-悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic 已按 [RAMP_WE.md](RAMP_WE.md) 落地（Paint+Collect）；Present 后置。
+悬崖 Catalog/Logic/Present 已打 tag `milestone/cliff-layered`。斜坡 Logic ✅；Present 核心（挂模/dig/undig/hide）已接线，入口 +0.5 后置。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
 | **崖 M0–M2** | ✅ + tag | `milestone/cliff-layered`；M3 脏区可选 |
 | **坡 Paint / Collect** | ✅ | HiveWE 同构；蓝菱形验收 |
-| **坡 Present** | 待开 | CliffTrans 挂模 + 入口 +0.5 |
+| **坡 Present** | ✅ 核心 / +0.5 后置 | CliffTrans + dig/undig/hide；低角 +0.5 待做 |
 | **水体** | 待开 | 见 [WATER.md](WATER.md) |
 
 ---
@@ -46,7 +46,8 @@
 - [x] **斜坡 Logic（崖边 A）**：Paint + Collect 对齐 [RAMP_WE.md](RAMP_WE.md)。勿与「应用高度」纯高度坡（B）混淆。
 - [x] 存盘权威：`FLAG_RAMP` / `has_ramp`
 - [x] Catalog：`Wc3CliffTransCatalog` + `ramp_model_dir`
-- [ ] Present：`MapRampLayer`（或 Cliff 通道）消费 placements；入口 +0.5
+- [x] Present：`MapRampLayer` 挂 CliffTrans + undig 入口 + romp dig + hide 直崖
+- [ ] Present：入口低角 GPU +0.5
 
 ## 岸浪
 

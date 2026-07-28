@@ -14,11 +14,14 @@ var _dbg_path: bool = false
 var _dbg_fine: bool = false
 var _dbg_center: Vector2 = Vector2.ZERO
 var _dbg_tile_size: float = 128.0
+## Vector2i(ix,iy) → Array[{ "mm": MultiMesh, "index": int }]
+var _instances_by_tile: Dictionary = {}
 
 
 func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	_cliff_mats.clear()
+	_instances_by_tile.clear()
 	last_placed = 0
 	ctx.ensure_cliff_topology()
 
@@ -82,6 +85,8 @@ func build(ctx: MapBuildContext) -> void:
 		mm.instance_count = transforms.size()
 		for i in range(transforms.size()):
 			mm.set_instance_transform(i, transforms[i])
+			if i < g.tiles.size():
+				_register_instance(g.tiles[i], mm, i)
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]
@@ -102,12 +107,27 @@ func build(ctx: MapBuildContext) -> void:
 	)
 
 
+func _register_instance(tile: Vector2i, mm: MultiMesh, index: int) -> void:
+	if not _instances_by_tile.has(tile):
+		_instances_by_tile[tile] = []
+	(_instances_by_tile[tile] as Array).append({"mm": mm, "index": index})
+
+
 ## 斜坡 Present API：隐藏指定地表格上的直崖（入口 / 已被 CliffTrans 覆盖）。
-## 当前仅契约占位；完整实例索引表待与 Builder 坐标对齐后实装。
 func hide_at_tiles(tiles: Array[Vector2i]) -> void:
-	if tiles.is_empty():
+	if tiles.is_empty() or _instances_by_tile.is_empty():
 		return
-	pass
+	# 零缩放藏模（Transform3D 无 ZERO 常量）
+	var hidden := Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
+	for t in tiles:
+		if not _instances_by_tile.has(t):
+			continue
+		for entry in _instances_by_tile[t]:
+			var mm: MultiMesh = entry.get("mm") as MultiMesh
+			var idx: int = int(entry.get("index", -1))
+			if mm == null or idx < 0 or idx >= mm.instance_count:
+				continue
+			mm.set_instance_transform(idx, hidden)
 
 
 func get_debug_materials() -> Array[ShaderMaterial]:

@@ -7,6 +7,8 @@ class Group extends RefCounted:
 	var glb: String = ""
 	var cliff_tex_index: int = 0
 	var transforms: Array[Transform3D] = []
+	## 与 transforms 等长；供 MapCliffLayer.hide_at_tiles 建索引
+	var tiles: Array[Vector2i] = []
 
 
 var groups: Array[Group] = []

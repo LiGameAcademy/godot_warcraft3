@@ -37,6 +37,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @onready var _terrain: MapTerrainLayer = $Terrain
 @onready var _water: MapWaterLayer = $Water
 @onready var _cliffs: MapCliffLayer = $Cliffs
+@onready var _ramps: MapRampLayer = $Ramps
 @onready var _doodads: MapDoodadLayer = $Doodads
 @onready var _units: MapUnitLayer = $Units
 @onready var _debug_grid: Node = $DebugGrid
@@ -122,6 +123,12 @@ func reload_from_hf(hf: Dictionary, info: Dictionary = {}, p_map_dir: String = "
 	await _load_all()
 
 
+func _build_ramps(ctx: MapBuildContext) -> void:
+	if _ramps == null:
+		return
+	_ramps.build(ctx)
+
+
 func _build_ramp_debug(ctx) -> void:
 	if _ramp_debug == null or not _ramp_debug.has_method("build"):
 		return
@@ -179,6 +186,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	)
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
+	_build_ramps(ctx)
 	_apply_view_grid()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
@@ -212,6 +220,7 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_ensure_terrain_collision()
 	if build_cliffs:
 		_cliffs.build(ctx)
+	_build_ramps(ctx)
 	if build_water:
 		_water.foam_cliff_out_extra = foam_cliff_out_extra
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
@@ -245,6 +254,9 @@ func _load_all() -> void:
 		_set_status("放置悬崖模型…")
 		_cliffs.build(ctx)
 		await get_tree().process_frame
+	_set_status("放置斜坡模型…")
+	_build_ramps(ctx)
+	await get_tree().process_frame
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
 	if build_water:
@@ -267,16 +279,17 @@ func _load_all() -> void:
 
 	var ms := Time.get_ticks_msec() - t0
 	var cliff_n := _cliffs.last_placed if build_cliffs else 0
+	var ramp_n := _ramps.last_placement_count if _ramps else 0
 	var water_n := _water.last_cell_count if build_water else 0
 	var shore_n := _water.last_shore_count if build_water else 0
 	var doodad_n := _doodads.last_placed if place_doodads else 0
 	_set_status(
-		"地形就绪（%d ms，留缝 %d，悬崖 %d，水面 %d，岸浪 %d，装饰 %d）— WASD 移动，右键转向，滚轮缩放"
-		% [ms, _terrain.last_gap_count, cliff_n, water_n, shore_n, doodad_n]
+		"地形就绪（%d ms，留缝 %d，悬崖 %d，斜坡 %d，水面 %d，岸浪 %d，装饰 %d）— WASD 移动，右键转向，滚轮缩放"
+		% [ms, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
 	)
 	print(
-		"Terrain load in %d ms from %s (gaps=%d cliffs=%d water=%d shore=%d doodads=%d)"
-		% [ms, map_dir, _terrain.last_gap_count, cliff_n, water_n, shore_n, doodad_n]
+		"Terrain load in %d ms from %s (gaps=%d cliffs=%d ramps=%d water=%d shore=%d doodads=%d)"
+		% [ms, map_dir, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
 	)
 
 

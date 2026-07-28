@@ -106,14 +106,15 @@
 - [x] M2 Present：placements 驱动；恢复地面挖洞对接
 - [ ] M3 脏区 / 命令标签（可选；不挡 ⑧）
 
-### ⑧ 斜坡层（Logic ✅ / Present 后置）
+### ⑧ 斜坡层（Logic ✅ / Present 核心 ✅）
 
 > **WE 思路权威**：[RAMP_WE.md](RAMP_WE.md)
 
 - [x] Paint ≈ `update_ramp`（`logic/ramp/`；Document 委托；蓝菱形）
 - [x] Collect ≈ `update_cliff_meshes` 数据侧（placements + romp；与 cliff 拓扑分离）
-- [x] 分层：cliff `gap_mask` 不含坡；挖洞/藏崖 API 由 `MapRampLayer` 调用（Present 未启用副作用）
-- [ ] Present：挂 CliffTrans + `undig` 入口 + romp dig + hide 直崖 + 入口 +0.5
+- [x] 分层：cliff `gap_mask` 不含坡；挖洞/藏崖由 `MapRampLayer` 调 Terrain/Cliff API
+- [x] Present 核心：挂 CliffTrans + `undig` 入口 + romp dig + hide 直崖
+- [ ] Present：入口低角 GPU +0.5
 - [ ] 脏区 / tag `milestone/ramp-layered`
 
 ### ⑨ 水体（深水 / 浅水）

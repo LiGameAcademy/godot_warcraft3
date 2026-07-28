@@ -2,31 +2,162 @@ class_name MapRampLayer
 extends Node3D
 
 ## 斜坡表现层：消费 Collect placements，编排地形/悬崖 API，挂 CliffTrans。
-## 当前阶段：不挖洞、不藏崖、不挂模——避免在 Present 完成前污染地形/悬崖。
-##
-## 目标流水线（Present 实装时）：
-##   1. ctx.ensure_ramp_topology()
-##   2. dig = Wc3RampCollect.plan_dig_mask(hf, ramp) 中「相对直崖的增量」
-##      terrain.apply_dig_mask(romp_only) / terrain.undig_tiles(entrances)
-##   3. cliffs.hide_at_tiles(entrances + clifftrans tiles)
-##   4. 挂 CliffTrans MultiMesh；入口低角 +0.5
+## 流水线：ensure_ramp → dig/undig → hide 直崖 → CliffTrans MultiMesh。
+## 入口低角 +0.5 后置（本层不改 Heightfield / 地面高度采样）。
 
 @export var terrain: MapTerrainLayer
 @export var cliffs: MapCliffLayer
 
 var last_placement_count: int = 0
+var _shader: Shader
+var _height_tex: Texture2D
+var _ramp_mats: Array[ShaderMaterial] = []
 
 
 func build(ctx: MapBuildContext) -> void:
 	_clear_children()
+	_ramp_mats.clear()
 	last_placement_count = 0
 	if ctx == null:
 		return
-	# Collect 可缓存供调试/后续挂模；本阶段不对地形/悬崖施加任何副作用。
+
 	ctx.ensure_ramp_topology()
-	if ctx.ramp != null:
-		last_placement_count = ctx.ramp.non_phantom_count()
-	# Present 未启用：故意不调用 terrain.apply_dig_mask / undig_tiles / cliffs.hide_at_tiles
+	var hf: Wc3Heightfield = ctx.heightfield
+	if hf == null or not hf.is_valid():
+		return
+
+	var ramp_data: Wc3RampCollectResult = ctx.ramp
+	if ramp_data == null:
+		return
+
+	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf)
+	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
+
+	if terrain != null:
+		terrain.apply_dig_mask(dig)
+		terrain.undig_tiles(entrances)
+
+	var hide_tiles: Array[Vector2i] = entrances.duplicate()
+	var ramp_placements: Array[Wc3RampPlacement] = []
+	for p in ramp_data.placements:
+		if p == null:
+			continue
+		hide_tiles.append(Vector2i(p.ix, p.iy))
+		if p.has_glb:
+			ramp_placements.append(p)
+
+	if cliffs != null and not hide_tiles.is_empty():
+		cliffs.hide_at_tiles(hide_tiles)
+
+	if ramp_placements.is_empty() or ctx.cliff_catalog == null:
+		last_placement_count = 0
+		return
+
+	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
+	_shader = load("res://assets/shaders/wc3_cliff.gdshader") as Shader
+
+	# 必须用 CliffTrans 解旋变换；勿复用直崖 build_from_placements
+	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_ramp_placements(
+		ramp_placements,
+		ctx.cliff_catalog,
+		hf.center_offset,
+		hf.tile_size
+	)
+	_mount_groups(collected, ctx, hf)
+	last_placement_count = collected.placed_cliffs
+
+	MapLog.info(
+		MapLog.Layer.PRESENT,
+		"Ramp",
+		"placed=%d missing=%d dig=%d entrances=%d"
+		% [
+			last_placement_count,
+			collected.missing,
+			_count_ones(dig),
+			entrances.size(),
+		]
+	)
+
+
+func _mount_groups(
+	collected: Wc3CliffBuildResult, ctx: MapBuildContext, hf: Wc3Heightfield
+) -> void:
+	if collected.groups.is_empty():
+		return
+	var cliff_tilesets: Array = hf.cliff_tilesets
+	var tex_cache: Dictionary = {}
+	var mesh_by_key: Dictionary = {}
+
+	for g in collected.groups:
+		var glb: String = g.glb
+		var tex_idx: int = g.cliff_tex_index
+		var transforms: Array[Transform3D] = g.transforms
+		if transforms.is_empty():
+			continue
+
+		if not tex_cache.has(tex_idx):
+			var png: String = ""
+			if ctx.cliff_catalog != null:
+				png = ctx.cliff_catalog.png_for_cliff_index(cliff_tilesets, tex_idx)
+			tex_cache[tex_idx] = RuntimeAssets.load_texture(png) if not png.is_empty() else null
+
+		var key := "%s|%d" % [glb, tex_idx]
+		var mesh: Mesh = mesh_by_key.get(key)
+		if mesh == null:
+			var mat := _cliff_material(tex_cache[tex_idx], hf)
+			_ramp_mats.append(mat)
+			mesh = _mesh_with_material(ctx.cache, glb, mat)
+			if mesh == null:
+				continue
+			mesh_by_key[key] = mesh
+
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = transforms.size()
+		for i in range(transforms.size()):
+			mm.set_instance_transform(i, transforms[i])
+
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Ramp_%s_%d" % [glb.get_file().get_basename(), tex_idx]
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mmi)
+
+
+func _cliff_material(tex: Texture2D, hf: Wc3Heightfield) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = _shader
+	mat.set_shader_parameter("height_map", _height_tex)
+	mat.set_shader_parameter("center_offset", hf.center_offset)
+	mat.set_shader_parameter("map_size", Vector2(float(hf.width), float(hf.height)))
+	mat.set_shader_parameter("world_scale", Wc3Coords.WORLD_SCALE)
+	mat.set_shader_parameter("albedo_scale", 1.0)
+	mat.set_shader_parameter("dbg_center_offset", hf.center_offset)
+	mat.set_shader_parameter("dbg_tile_size", hf.tile_size)
+	if tex:
+		mat.set_shader_parameter("cliff_albedo", tex)
+	return mat
+
+
+func _mesh_with_material(cache: MapModelCache, glb: String, mat: Material) -> Mesh:
+	var src := cache.mesh_from_glb(glb)
+	if src == null:
+		return null
+	var dup: ArrayMesh = src.duplicate(true) as ArrayMesh
+	if dup == null:
+		return null
+	for s in range(dup.get_surface_count()):
+		dup.surface_set_material(s, mat)
+	return dup
+
+
+func _count_ones(mask: PackedByteArray) -> int:
+	var n := 0
+	for i in range(mask.size()):
+		if mask[i] != 0:
+			n += 1
+	return n
 
 
 func _clear_children() -> void:
