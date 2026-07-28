@@ -1,9 +1,9 @@
 class_name MapRampLayer
 extends Node3D
 
-## 斜坡表现层：消费 Collect placements，编排地形/悬崖 API，挂 CliffTrans。
-## 流水线：ensure_ramp → dig/undig → hide 直崖 → CliffTrans MultiMesh。
-## 入口低角 +0.5 后置（本层不改 Heightfield / 地面高度采样）。
+## 斜坡表现层：消费 Collect placements，挂 CliffTrans。
+## 直崖跳过由 MapLoader 在挂崖前 filter_cliff_placements（对齐 WE continue）。
+## 本阶段不改地形 mesh（dig/undig 后置）；入口低角 +0.5 后置。
 
 @export var terrain: MapTerrainLayer
 @export var cliffs: MapCliffLayer
@@ -30,27 +30,14 @@ func build(ctx: MapBuildContext) -> void:
 	if ramp_data == null:
 		return
 
-	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf)
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
-
-	if terrain != null:
-		terrain.apply_dig_mask(dig)
-		terrain.undig_tiles(entrances)
-
-	var hide_tiles: Array[Vector2i] = entrances.duplicate()
 	var ramp_placements: Array[Wc3RampPlacement] = []
 	for p in ramp_data.placements:
-		if p == null:
-			continue
-		hide_tiles.append(Vector2i(p.ix, p.iy))
-		if p.has_glb:
+		if p != null and p.has_glb:
 			ramp_placements.append(p)
-
-	if cliffs != null and not hide_tiles.is_empty():
-		cliffs.hide_at_tiles(hide_tiles)
 
 	if ramp_placements.is_empty() or ctx.cliff_catalog == null:
 		last_placement_count = 0
+		MapLog.info(MapLog.Layer.PRESENT, "Ramp", "no CliffTrans")
 		return
 
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
@@ -69,13 +56,7 @@ func build(ctx: MapBuildContext) -> void:
 	MapLog.info(
 		MapLog.Layer.PRESENT,
 		"Ramp",
-		"placed=%d missing=%d dig=%d entrances=%d"
-		% [
-			last_placement_count,
-			collected.missing,
-			_count_ones(dig),
-			entrances.size(),
-		]
+		"placed=%d missing=%d" % [last_placement_count, collected.missing]
 	)
 
 
@@ -150,14 +131,6 @@ func _mesh_with_material(cache: MapModelCache, glb: String, mat: Material) -> Me
 	for s in range(dup.get_surface_count()):
 		dup.surface_set_material(s, mat)
 	return dup
-
-
-func _count_ones(mask: PackedByteArray) -> int:
-	var n := 0
-	for i in range(mask.size()):
-		if mask[i] != 0:
-			n += 1
-	return n
 
 
 func _clear_children() -> void:

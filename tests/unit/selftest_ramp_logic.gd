@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_allow_opposite_face_ramp()
 	_test_l_then_diagonal_half_side()
 	_test_single_axis_promotes_to_diagonal()
+	_test_dual_arms_se_plus_l_fill()
 	_test_far_empty_still_paintable()
 	_test_cliff_change_clears_nearby_ramp()
 	if failed == 0:
@@ -466,6 +467,55 @@ func _test_single_axis_promotes_to_diagonal() -> void:
 		_fail("promote missing diagonal box fills")
 		return
 	print("  single_axis_promotes_to_diagonal OK n=%d" % (r2.get("marked", []) as Array).size())
+
+
+func _test_dual_arms_se_plus_l_fill() -> void:
+	# WE：先下后上，再刷右下对角 → 右下整块 3×3；右上不升对角，只 L 补心一点
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 14,
+		"height": 14,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x == 6 and y == 6) else 2
+	doc._rebind_logic()
+	var r_down: Dictionary = doc.try_paint_ramp_at(6, 6, 0, 1)
+	if not bool(r_down.get("changed", false)):
+		_fail("l_fill setup down fail: %s" % str(r_down))
+		return
+	var r_up: Dictionary = doc.try_paint_ramp_at(6, 6, 0, -1)
+	if not bool(r_up.get("changed", false)):
+		_fail("l_fill setup up fail: %s" % str(r_up))
+		return
+	# 明确右下对角（非单轴「向右」双侧升）
+	var r_se: Dictionary = doc.try_paint_ramp_at(6, 6, 1, 1)
+	if not bool(r_se.get("ok", false)) or not bool(r_se.get("changed", false)):
+		_fail("l_fill SE diagonal fail: %s" % str(r_se))
+		return
+	if str(r_se.get("variant", "")) != "diagonal":
+		_fail("l_fill expect diagonal got %s" % str(r_se.get("variant")))
+		return
+	# 右下 3×3 应有旗
+	for t in [
+		Vector2i(7, 6), Vector2i(8, 6), Vector2i(7, 7), Vector2i(8, 7), Vector2i(7, 8), Vector2i(8, 8),
+	]:
+		if not _flag_ramp(doc, t.x, t.y):
+			_fail("l_fill missing SE @(%d,%d)" % [t.x, t.y])
+			return
+	# 右上：仅补心 (7,5)，不要整块对角（如 8,4 / 8,5）
+	if not _flag_ramp(doc, 7, 5):
+		_fail("l_fill missing NE center (7,5)")
+		return
+	if _flag_ramp(doc, 8, 4) or _flag_ramp(doc, 8, 5) or _flag_ramp(doc, 7, 4):
+		_fail("l_fill should NOT full NE diagonal")
+		return
+	print("  dual_arms_se_plus_l_fill OK")
 
 
 func _test_far_empty_still_paintable() -> void:

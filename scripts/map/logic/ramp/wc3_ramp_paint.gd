@@ -106,6 +106,42 @@ static func extend_adjacent_side(
 			_set_ramp(ramp, tp_w, tp_h, x, y, true)
 
 
+## L 补心（RAMP_WE §4.3）：原点处若已有「横 3 + 竖 2」且缺口为目标层 → 填 (ix±1, iy±1)。
+## 对齐 WE：一侧完整对角后，对侧不升整块 3×3，只标凹口中心那一点。
+static func fill_l_centers(
+	ramp: PackedByteArray,
+	ix: int,
+	iy: int,
+	layers: Array,
+	target_level: int,
+	tp_w: int,
+	tp_h: int
+) -> void:
+	for sx in [-1, 1]:
+		for sy in [-1, 1]:
+			if not _has_ramp(ramp, tp_w, tp_h, ix, iy):
+				continue
+			if not (
+				_has_ramp(ramp, tp_w, tp_h, ix + sx, iy)
+				and _has_ramp(ramp, tp_w, tp_h, ix + 2 * sx, iy)
+			):
+				continue
+			if not (
+				_has_ramp(ramp, tp_w, tp_h, ix, iy + sy)
+				and _has_ramp(ramp, tp_w, tp_h, ix, iy + 2 * sy)
+			):
+				continue
+			var cx: int = ix + sx
+			var cy: int = iy + sy
+			if _has_ramp(ramp, tp_w, tp_h, cx, cy):
+				continue
+			if not _in_bounds(cx, cy, tp_w, tp_h):
+				continue
+			if int(layers[cy * tp_w + cx]) != target_level:
+				continue
+			_set_ramp(ramp, tp_w, tp_h, cx, cy, true)
+
+
 ## ============================================================
 ## Step 3：路由判断
 ## ============================================================
@@ -162,16 +198,19 @@ static func plan(
 		ix, iy, hx, hy, origin_level, target_level, layers, tp_w, tp_h
 	)
 
-	## 单轴意图：若邻侧已有垂直完整臂，优先升级为对角半侧（避免两条单侧坡拐角）
+	## 单轴意图：若恰有一侧垂直完整臂可升对角 → 升那一侧；双侧都可升则不自动铺两块 3×3（靠后置 L 补心出凹口点）
 	var single_axis: bool = (hx != 0) != (hy != 0)
 	if single_axis and not allow_d:
-		var promo: Vector2i = _try_promote_single_to_diagonal(
+		var promo_diags: Array[Vector2i] = _collect_promote_diagonals(
 			ix, iy, hx, hy, origin_level, target_level, layers, ramp, tp_w, tp_h
 		)
-		if promo.x != 0 and promo.y != 0:
-			hx = promo.x
-			hy = promo.y
+		if promo_diags.size() == 1:
+			hx = promo_diags[0].x
+			hy = promo_diags[0].y
 			allow_d = true
+		elif promo_diags.size() > 1:
+			# 保留单轴落点；两侧凹口由 fill_l_centers 补
+			pass
 		elif _has_perpendicular_arm_to_intent(ix, iy, hx, hy, ramp, tp_w, tp_h):
 			# 对角盒不合法时禁止再刷单轴，避免侧脊畸形
 			allow_h = false
@@ -189,7 +228,7 @@ static func plan(
 
 	## 根据路由落标记
 	if allow_d:
-		## 邻侧扩展：对角斜坡 3×3 box
+		## 邻侧扩展：对角斜坡 3×3 box（只落意图/升格的那一侧）
 		extend_adjacent_side(ramp, ix, iy, hx, hy, tp_w, tp_h)
 	elif allow_h and allow_v:
 		## 两臂都合法但对角不合法：标注 L 形（横+竖）
@@ -201,6 +240,9 @@ static func plan(
 	elif allow_v:
 		## 只有竖直臂
 		mark_column(ramp, ix, iy, Vector2i(0, hy), tp_w, tp_h)
+
+	## L 补心：横3+竖2 缺口中心（对齐 WE 凹陷转角那一点）
+	fill_l_centers(ramp, ix, iy, layers, target_level, tp_w, tp_h)
 
 	## 收集本次落标记的顶点（与旧标记的差集）
 	var marked: Array[Vector2i] = _collect_new_marks(
@@ -535,7 +577,41 @@ static func _has_perpendicular_arm_to_intent(
 	return false
 
 
-## 单轴绘制时：若垂直方向已有完整臂且对角盒合法，返回升级后的 (hx,hy)；否则 (0,0)。
+## 单轴绘制时：收集所有「垂直完整臂 + 对角盒合法」的升级方向。
+## 上下（或左右）双臂都在时返回两个对角，避免只落半侧。
+static func _collect_promote_diagonals(
+	ix: int,
+	iy: int,
+	hx: int,
+	hy: int,
+	origin_level: int,
+	target_level: int,
+	layers: Array,
+	ramp: PackedByteArray,
+	tp_w: int,
+	tp_h: int
+) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if hx != 0 and hy == 0:
+		for phy in [-1, 1]:
+			if not _has_full_ramp_arm(ix, iy, 0, phy, ramp, tp_w, tp_h):
+				continue
+			if _check_diagonal_box(
+				ix, iy, hx, phy, origin_level, target_level, layers, tp_w, tp_h
+			):
+				out.append(Vector2i(hx, phy))
+	elif hy != 0 and hx == 0:
+		for phx in [-1, 1]:
+			if not _has_full_ramp_arm(ix, iy, phx, 0, ramp, tp_w, tp_h):
+				continue
+			if _check_diagonal_box(
+				ix, iy, phx, hy, origin_level, target_level, layers, tp_w, tp_h
+			):
+				out.append(Vector2i(phx, hy))
+	return out
+
+
+## 兼容旧调用：返回首个升级方向，无则 (0,0)。
 static func _try_promote_single_to_diagonal(
 	ix: int,
 	iy: int,
@@ -548,23 +624,10 @@ static func _try_promote_single_to_diagonal(
 	tp_w: int,
 	tp_h: int
 ) -> Vector2i:
-	if hx != 0 and hy == 0:
-		for phy in [-1, 1]:
-			if not _has_full_ramp_arm(ix, iy, 0, phy, ramp, tp_w, tp_h):
-				continue
-			if _check_diagonal_box(
-				ix, iy, hx, phy, origin_level, target_level, layers, tp_w, tp_h
-			):
-				return Vector2i(hx, phy)
-	elif hy != 0 and hx == 0:
-		for phx in [-1, 1]:
-			if not _has_full_ramp_arm(ix, iy, phx, 0, ramp, tp_w, tp_h):
-				continue
-			if _check_diagonal_box(
-				ix, iy, phx, hy, origin_level, target_level, layers, tp_w, tp_h
-			):
-				return Vector2i(phx, hy)
-	return Vector2i.ZERO
+	var all: Array[Vector2i] = _collect_promote_diagonals(
+		ix, iy, hx, hy, origin_level, target_level, layers, ramp, tp_w, tp_h
+	)
+	return all[0] if not all.is_empty() else Vector2i.ZERO
 
 
 ## 对角 3×3 box 门禁：原点须为 origin_level；其余 8 点须为 target_level（RAMP_WE §4.2）。

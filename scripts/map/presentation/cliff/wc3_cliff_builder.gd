@@ -34,7 +34,7 @@ static func build_from_placements(
 			result.missing += 1
 			continue
 		var xf := instance_transform(p.ix, p.iy, p.base_layer, center, tile_size)
-		_bucket_add(buckets, glb, p.cliff_tex_index, xf, Vector2i(p.ix, p.iy))
+		_bucket_add(buckets, glb, p.cliff_tex_index, xf, Vector2i(p.ix, p.iy), p.base_layer)
 		result.placed_cliffs += 1
 
 	for k in buckets.keys():
@@ -67,7 +67,7 @@ static func build_from_ramp_placements(
 			result.missing += 1
 			continue
 		var xf := instance_transform_trans(p.ix, p.iy, p.base_layer, center, tile_size)
-		_bucket_add(buckets, glb, p.cliff_tex_index, xf, Vector2i(p.ix, p.iy))
+		_bucket_add(buckets, glb, p.cliff_tex_index, xf, Vector2i(p.ix, p.iy), p.base_layer)
 		result.placed_cliffs += 1
 
 	for k in buckets.keys():
@@ -76,7 +76,12 @@ static func build_from_ramp_placements(
 
 
 static func _bucket_add(
-	buckets: Dictionary, glb: String, tex_idx: int, xf: Transform3D, tile: Vector2i
+	buckets: Dictionary,
+	glb: String,
+	tex_idx: int,
+	xf: Transform3D,
+	tile: Vector2i,
+	base_layer: int
 ) -> void:
 	var key := "%s|%d" % [glb, tex_idx]
 	if not buckets.has(key):
@@ -87,6 +92,7 @@ static func _bucket_add(
 	var group: Wc3CliffBuildResult.Group = buckets[key] as Wc3CliffBuildResult.Group
 	group.transforms.append(xf)
 	group.tiles.append(tile)
+	group.base_layers.append(base_layer)
 
 
 ## 直崖：局部 X∈[-128,0]，锚 (ix+1, iy)；Z=(base-2)*128。无解旋。

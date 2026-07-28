@@ -3,7 +3,8 @@ extends Node3D
 
 ## 悬崖表现层：只读 Context.placements + Catalog 资产 → MultiMesh。
 ## 禁止改 Heightfield；禁止做 TAG / 挖洞 / 变体选型（一律 Logic）。
-## 禁止读斜坡 Collect；入口 / CliffTrans 覆盖由 Ramp Present 调 hide_at_tiles。
+## 禁止读斜坡 Collect；斜坡跳过由 Loader 在 build 前 filter_cliff_placements。
+## hide_* 仅调试/兼容；主路径不依赖事后零缩放。
 
 var _shader: Shader
 var _height_tex: Texture2D
@@ -14,14 +15,14 @@ var _dbg_path: bool = false
 var _dbg_fine: bool = false
 var _dbg_center: Vector2 = Vector2.ZERO
 var _dbg_tile_size: float = 128.0
-## Vector2i(ix,iy) → Array[{ "mm": MultiMesh, "index": int }]
-var _instances_by_tile: Dictionary = {}
+## 每块直崖模型一条：{ mm, index, ix, iy, base_layer, xf }
+var _instances: Array[Dictionary] = []
 
 
 func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	_cliff_mats.clear()
-	_instances_by_tile.clear()
+	_instances.clear()
 	last_placed = 0
 	ctx.ensure_cliff_topology()
 
@@ -85,8 +86,16 @@ func build(ctx: MapBuildContext) -> void:
 		mm.instance_count = transforms.size()
 		for i in range(transforms.size()):
 			mm.set_instance_transform(i, transforms[i])
-			if i < g.tiles.size():
-				_register_instance(g.tiles[i], mm, i)
+			var tile := Vector2i(g.tiles[i].x, g.tiles[i].y) if i < g.tiles.size() else Vector2i(-1, -1)
+			var base_l: int = int(g.base_layers[i]) if i < g.base_layers.size() else 2
+			_instances.append({
+				"mm": mm,
+				"index": i,
+				"ix": tile.x,
+				"iy": tile.y,
+				"base_layer": base_l,
+				"xf": transforms[i],
+			})
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]
@@ -107,27 +116,44 @@ func build(ctx: MapBuildContext) -> void:
 	)
 
 
-func _register_instance(tile: Vector2i, mm: MultiMesh, index: int) -> void:
-	if not _instances_by_tile.has(tile):
-		_instances_by_tile[tile] = []
-	(_instances_by_tile[tile] as Array).append({"mm": mm, "index": index})
-
-
-## 斜坡 Present API：隐藏指定地表格上的直崖（入口 / 已被 CliffTrans 覆盖）。
-func hide_at_tiles(tiles: Array[Vector2i]) -> void:
-	if tiles.is_empty() or _instances_by_tile.is_empty():
-		return
-	# 零缩放藏模（Transform3D 无 ZERO 常量）
+## 斜坡 Present：按「单块直崖模型」隐藏（叠段粒度），不整格一刀切。
+func hide_pieces_for_ramp(hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult) -> int:
+	if _instances.is_empty() or hf == null or ramp_data == null:
+		return 0
 	var hidden := Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
-	for t in tiles:
-		if not _instances_by_tile.has(t):
+	var n := 0
+	for entry in _instances:
+		var ix: int = int(entry.get("ix", -1))
+		var iy: int = int(entry.get("iy", -1))
+		var base_l: int = int(entry.get("base_layer", 2))
+		if not Wc3RampLogic.should_hide_cliff_piece(ix, iy, base_l, hf, ramp_data):
 			continue
-		for entry in _instances_by_tile[t]:
-			var mm: MultiMesh = entry.get("mm") as MultiMesh
-			var idx: int = int(entry.get("index", -1))
-			if mm == null or idx < 0 or idx >= mm.instance_count:
-				continue
-			mm.set_instance_transform(idx, hidden)
+		var mm: MultiMesh = entry.get("mm") as MultiMesh
+		var idx: int = int(entry.get("index", -1))
+		if mm == null or idx < 0 or idx >= mm.instance_count:
+			continue
+		mm.set_instance_transform(idx, hidden)
+		n += 1
+	return n
+
+
+## 兼容旧 API：按地表格隐藏该格全部叠段模型。
+func hide_at_tiles(tiles: Array[Vector2i]) -> void:
+	if tiles.is_empty() or _instances.is_empty():
+		return
+	var want: Dictionary = {}
+	for t in tiles:
+		want[t] = true
+	var hidden := Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
+	for entry in _instances:
+		var tile := Vector2i(int(entry.get("ix", -1)), int(entry.get("iy", -1)))
+		if not want.has(tile):
+			continue
+		var mm: MultiMesh = entry.get("mm") as MultiMesh
+		var idx: int = int(entry.get("index", -1))
+		if mm == null or idx < 0 or idx >= mm.instance_count:
+			continue
+		mm.set_instance_transform(idx, hidden)
 
 
 func get_debug_materials() -> Array[ShaderMaterial]:

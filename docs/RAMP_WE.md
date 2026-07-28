@@ -4,9 +4,9 @@
 > **对照源码**：本地 `_ref/HiveWE`（gitignored）  
 > - 落旗：`src/brush/terrain_operators.cpp` → `CliffOperator::update_ramp` / `apply_ramps`  
 > - 表现：`src/base/terrain.ixx` → `update_cliff_meshes` / `is_corner_ramp_entrance` / `update_ground_heights` / `update_ground_exists`  
-> **本仓库状态**：Logic（Paint + Collect）✅；Present 核心（CliffTrans + dig/undig/hide）✅；入口 +0.5 后置。  
-> **分层纪律**：地形/悬崖 Present **不读**斜坡 Collect；挖洞/藏崖由斜坡 Present 调对方 API。  
-> 最后更新：2026-07-27
+> **本仓库状态**：Logic（Paint + Collect）✅；Present：CliffTrans 挂模 + **挂直崖前按叠段过滤**✅；dig/undig / 入口 +0.5 **后置**。  
+> **分层纪律**：地形/悬崖 Present **不读**斜坡 Collect；挖洞/藏崖由 Loader / 斜坡编排调 Logic 过滤或对方 API。  
+> 最后更新：2026-07-28
 
 ---
 
@@ -74,7 +74,8 @@
 - 一次调用最多同时尝试 **横臂、竖臂、对角 3×3**。  
 - **本仓库 UX**（相对 HiveWE）：① 鼠标偏移轴向主导 → 更容易单列；② 点在低侧时解析到邻域高角朝点击方向落坡（`plan_from_pointer`；单轴意图不扩对角、须盖住点击侧）。  
 - **对角判定**与 HiveWE 一致：双轴非 0 且 3×3 低层即可落 9 点（不要求两臂都过对向轴禁贴），以便单列后续扩成对角。  
-- **单轴升对角（本仓库）**：仅横或仅竖意图时，若原点垂直方向已有完整 3 点臂且对角盒合法 → **自动升为 3×3 对角**；对角不合法则禁止再落该单轴（避免拐角两条单侧坡）。
+- **单轴升对角（本仓库）**：仅横或仅竖意图时，若**恰有一侧**垂直完整臂且对角盒合法 → 升为该侧 3×3；**双侧都可升时不自动铺两块**（避免对称宽对角）。  
+- **L 补心**：落旗后若原点呈「横 3 + 竖 2」缺口且角点为目标层 → 只填 `(±1,±1)` 中心点（WE 凹陷转角那一点）。
 
 ### 4.2 方向门禁 `check_ramp_direction(dir_x, dir_y)`
 
@@ -216,25 +217,39 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 | `update_ramp` | ✅ `Wc3RampLogic.paint_*` ← `Wc3RampPaint`（只写旗 + cliff_tex） |
 | `corner_romp` + CliffTrans 列表 | ✅ `Wc3RampCollect` ← `Wc3RampLogic.collect_placements`（与 cliff 拓扑分离） |
 | `update_cliff_meshes` 匹配 | ✅ Collect 滑窗；Catalog `glb_path` resolve |
-| 挖洞 / +0.5 / 挂模 | Logic：`plan_dig_*`；Present：`MapRampLayer` dig/undig/hide + **CliffTrans 解旋变换**（`instance_transform_trans`，异于直崖）；+0.5 后置 |
+| 挖洞 / +0.5 / 挂模 | Logic：`plan_dig_*` / `filter_cliff_placements`；Loader 挂崖前过滤；Present 挂 CliffTrans（解旋）；dig/undig / +0.5 **后置** |
 | 鼠标方向 | ✅ Editor `terrain_brush` 传入 ±X/±Y |
 
 ### 8.1 Present 所有权（禁止反向依赖）
 
 ```text
 直崖：Wc3CliffLogic.build_topology → cliff_gap_mask（仅直崖）
-      MapTerrainLayer / MapCliffLayer 只消费 cliff_*
+      MapLoader：ensure_ramp → filter_cliff_placements → MapCliffLayer.build
+      MapCliffLayer 只消费已过滤的 cliff_placements（不读 ctx.ramp）
 
 斜坡：Wc3RampLogic.collect → ctx.ramp
-      MapRampLayer.build：
-        · terrain.undig_tiles(入口)     ← 坡脚必须是地面，不是 CliffTrans
+      MapRampLayer.build（当前）：
+        · 挂 CliffTrans（instance_transform_trans）
+      后置（未开）：
+        · terrain.undig_tiles(入口)
         · terrain.apply_dig_mask(romp 增量)
-        · cliffs.hide_at_tiles(入口 ∪ CliffTrans 格)
-        · 挂 CliffTrans
+        · 入口低角 GPU +0.5
 ```
+
+### 8.2 跳过直崖算法（按模型实例，挂模前过滤）
+
+直崖一格可有多块叠段（`cliff_slices_at`：跨度>2 时每 2 层一块，最多约 4 块）。必须以 **(ix,iy,piece_base)** 判断，对齐 WE `continue`（**不**事后 MultiMesh 零缩放）：
+
+1. **入口格**：该格全部直崖 placement 都跳过（留地面通道）。
+2. **CliffTrans footprint 覆盖**（竖窗 `(i,j)+(i,j+1)`；横窗 `(i,j)+(i+1,j)`），且高度带相交：
+   - 崖块 `[piece_base, piece_base+2)` ∩ 坡 `[ramp_base, ramp_base+2)` 非空 → **只跳过该块**。
+3. 否则保留（高台上层叠段可留，避免整墙消失）。
+
+Logic：`Wc3RampCollect.should_hide_cliff_piece` / `filter_cliff_placements`；编排：`MapLoader._apply_ramp_cliff_filter`。
 
 **禁止**：`MapTerrainLayer` / `MapCliffLayer` 根据 `ctx.ramp` / romp 自行改洞或跳过实例。  
 **禁止**：在 `Wc3CliffLogic.build_topology` 里 `merge` 斜坡挖洞（已拆除）。
+**禁止**：依赖 MultiMesh 零缩放藏崖（崖 shader / 奇异矩阵不可靠）。
 
 分层纪律仍遵 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)：Paint/Collect 在 Logic，mesh 在 Present，禁止 Layer 内选型。
 
@@ -250,8 +265,8 @@ ramp[bl]∧ramp[br]∧ramp[tl]∧ramp[tr]
 
 1. **只 Paint**：✅ 蓝菱形 + `selftest_ramp_logic`；点高侧 3 点；邻列加宽；低侧拒绝。  
 2. **Collect**：✅ `selftest_ramp_data` / Lost Temple 滑窗统计。  
-3. **Present 核心**：✅ `MapRampLayer` → 入口 undig、romp dig、hide 直崖、挂 CliffTrans（`selftest_ramp_present`）。  
-4. **Present 后置**：入口低角 GPU +0.5；再谈脏区与 City 族细化。
+3. **Present 核心**：✅ 挂 CliffTrans + 挂崖前按叠段过滤直崖（`selftest_ramp_present`）；dig/undig 后置。  
+4. **Present 后置**：romp dig / 入口 undig；入口低角 GPU +0.5；再谈脏区与 City 族细化。
 
 ---
 

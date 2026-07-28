@@ -124,6 +124,84 @@ static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
 	return tiles
 
 
+## CliffTrans 覆盖的地表格（竖窗占 (i,j)+(i,j+1)；横窗占 (i,j)+(i+1,j)）。
+static func placement_footprint_tiles(p: Wc3RampPlacement) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if p == null:
+		return out
+	out.append(Vector2i(p.ix, p.iy))
+	if p.axis == Wc3RampLogic.AXIS_V:
+		out.append(Vector2i(p.ix, p.iy + 1))
+	elif p.axis == Wc3RampLogic.AXIS_H:
+		out.append(Vector2i(p.ix + 1, p.iy))
+	return out
+
+
+## 直崖叠段模型是否应被斜坡跳过（按「单块模型」判断，非整格一刀切）。
+##
+## 规则：
+## 1) 入口格：该格全部直崖模型都跳过（要留地面通道）。
+## 2) 被某 CliffTrans footprint 盖住，且叠段高度带与坡 base 相交 → 跳过该块。
+##    高度带：崖块 [piece_base, piece_base+2)，坡 [ramp_base, ramp_base+2)。
+## 3) 否则保留（高台上层叠段可留）。
+static func should_hide_cliff_piece(
+	ix: int,
+	iy: int,
+	piece_base: int,
+	hf: Wc3Heightfield,
+	ramp_data: Wc3RampCollectResult
+) -> bool:
+	if hf == null or not hf.is_valid() or ramp_data == null:
+		return false
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	if ix < 0 or iy < 0 or ix >= tp_w - 1 or iy >= tp_h - 1:
+		return false
+	var layers: Array = hf.layer_heights
+	var flags: Array = hf.flags_packed
+	if is_entrance(flags, layers, tp_w, tp_h, ix, iy):
+		return true
+	for p in ramp_data.placements:
+		if p == null or not p.has_glb:
+			continue
+		if not _footprint_contains(p, ix, iy):
+			continue
+		if piece_base < p.base_layer + 2 and piece_base + 2 > p.base_layer:
+			return true
+	return false
+
+
+## 挂直崖 MultiMesh 前过滤：去掉应被斜坡跳过的单块 placement（对齐 WE continue）。
+## 返回新数组，不改入参；无坡数据时原样复制。
+static func filter_cliff_placements(
+	placements: Array[Wc3CliffPlacement],
+	hf: Wc3Heightfield,
+	ramp_data: Wc3RampCollectResult
+) -> Array[Wc3CliffPlacement]:
+	var out: Array[Wc3CliffPlacement] = []
+	if placements.is_empty():
+		return out
+	if hf == null or not hf.is_valid() or ramp_data == null:
+		for p in placements:
+			if p != null:
+				out.append(p)
+		return out
+	for p in placements:
+		if p == null:
+			continue
+		if should_hide_cliff_piece(p.ix, p.iy, p.base_layer, hf, ramp_data):
+			continue
+		out.append(p)
+	return out
+
+
+static func _footprint_contains(p: Wc3RampPlacement, ix: int, iy: int) -> bool:
+	for t in placement_footprint_tiles(p):
+		if t.x == ix and t.y == iy:
+			return true
+	return false
+
+
 static func _try_vertical(
 	i: int,
 	j: int,

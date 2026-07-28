@@ -13,6 +13,8 @@ func _run() -> void:
 	_test_dig_and_entrance_plans()
 	_test_builder_from_ramp_placements()
 	_test_vertical_ramp_footprint()
+	_test_hide_cliff_piece_by_slice()
+	_test_filter_cliff_placements()
 	if failed == 0:
 		print("selftest_ramp_present: PASS")
 		quit(0)
@@ -152,3 +154,136 @@ func _test_vertical_ramp_footprint() -> void:
 		)
 		return
 	print("  vertical_footprint OK tag=%s span_x=%.2f span_z=%.2f" % [p.tag, span_x, span_z])
+
+
+func _test_hide_cliff_piece_by_slice() -> void:
+	# 不依赖 Paint（Paint 只认层差 1）；手工摆一层高崖 + 一条 footprint 坡。
+	# 跨度 4 → 两块叠段 base=2 / base=4；坡 base=2 → 只藏下层。
+	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 6 if y <= 4 else 2
+	doc._rebind_logic()
+
+	var cliff_ix := 5
+	var cliff_iy := 4
+	var slices: Array = Wc3CliffLogic.cliff_slices_at(
+		doc.heightfield.layer_heights, w, cliff_ix, cliff_iy
+	)
+	if slices.size() < 2:
+		_fail("hide_slice expect >=2 slices got %d @(%d,%d)" % [slices.size(), cliff_ix, cliff_iy])
+		return
+	var low_base: int = int(slices[0].get("base_layer", -1))
+	var high_base: int = int(slices[1].get("base_layer", -1))
+	if low_base >= high_base:
+		_fail("hide_slice base order %d >= %d" % [low_base, high_base])
+		return
+
+	var ramp := Wc3RampCollectResult.empty_for_size(w, doc.heightfield.height)
+	ramp.placements.append(
+		Wc3RampPlacement.make(
+			cliff_ix, cliff_iy, "ALHB", low_base, 0, "CliffTrans", Wc3RampPlacement.AXIS_V, 0, true
+		)
+	)
+
+	var hide_low: bool = Wc3RampLogic.should_hide_cliff_piece(
+		cliff_ix, cliff_iy, low_base, doc.heightfield, ramp
+	)
+	var hide_high: bool = Wc3RampLogic.should_hide_cliff_piece(
+		cliff_ix, cliff_iy, high_base, doc.heightfield, ramp
+	)
+	if not hide_low:
+		_fail("hide_slice low base=%d should hide" % low_base)
+		return
+	if hide_high:
+		_fail("hide_slice high base=%d must stay" % high_base)
+		return
+	# footprint 第二格 (ix, iy+1) 同规则
+	if not Wc3RampLogic.should_hide_cliff_piece(
+		cliff_ix, cliff_iy + 1, low_base, doc.heightfield, ramp
+	):
+		_fail("hide_slice footprint second tile low should hide")
+		return
+	if Wc3RampLogic.should_hide_cliff_piece(1, 1, low_base, doc.heightfield, ramp):
+		_fail("hide_slice far tile must not hide")
+		return
+	print("  hide_slice OK low=%d hide high=%d stay" % [low_base, high_base])
+
+
+func _test_filter_cliff_placements() -> void:
+	# filter 后：下层 placement 消失、上层保留（挂模前跳过，非零缩放）
+	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 6 if y <= 4 else 2
+	doc._rebind_logic()
+
+	var cliff_ix := 5
+	var cliff_iy := 4
+	var slices: Array = Wc3CliffLogic.cliff_slices_at(
+		doc.heightfield.layer_heights, w, cliff_ix, cliff_iy
+	)
+	if slices.size() < 2:
+		_fail("filter expect >=2 slices")
+		return
+	var low_base: int = int(slices[0].get("base_layer", -1))
+	var high_base: int = int(slices[1].get("base_layer", -1))
+
+	var raw: Array[Wc3CliffPlacement] = []
+	raw.append(Wc3CliffPlacement.make(cliff_ix, cliff_iy, "CAAC", low_base, 0, "Cliffs", 0))
+	raw.append(Wc3CliffPlacement.make(cliff_ix, cliff_iy, "CAAC", high_base, 0, "Cliffs", 0))
+	raw.append(Wc3CliffPlacement.make(1, 1, "AACA", low_base, 0, "Cliffs", 0))
+
+	var ramp := Wc3RampCollectResult.empty_for_size(w, doc.heightfield.height)
+	ramp.placements.append(
+		Wc3RampPlacement.make(
+			cliff_ix, cliff_iy, "ALHB", low_base, 0, "CliffTrans", Wc3RampPlacement.AXIS_V, 0, true
+		)
+	)
+
+	var filtered: Array[Wc3CliffPlacement] = Wc3RampLogic.filter_cliff_placements(
+		raw, doc.heightfield, ramp
+	)
+	if filtered.size() != 2:
+		_fail("filter expect 2 kept got %d" % filtered.size())
+		return
+	var bases: Dictionary = {}
+	for p in filtered:
+		bases[p.base_layer] = true
+		if p.ix == cliff_ix and p.iy == cliff_iy and p.base_layer == low_base:
+			_fail("filter still has low slice")
+			return
+	if not bases.has(high_base):
+		_fail("filter dropped high slice")
+		return
+	if not bases.has(low_base):
+		# far tile (1,1) may keep low_base — OK
+		pass
+	var far_ok := false
+	for p in filtered:
+		if p.ix == 1 and p.iy == 1:
+			far_ok = true
+	if not far_ok:
+		_fail("filter dropped far tile")
+		return
+	print("  filter_placements OK kept=%d" % filtered.size())

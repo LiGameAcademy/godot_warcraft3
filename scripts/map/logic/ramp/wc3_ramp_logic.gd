@@ -149,6 +149,26 @@ static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
 	return Wc3RampCollect.plan_entrance_tiles(hf)
 
 
+## Present / Loader：单块直崖模型是否应跳过（叠段粒度）。
+static func should_hide_cliff_piece(
+	ix: int,
+	iy: int,
+	piece_base: int,
+	hf: Wc3Heightfield,
+	ramp_data: Wc3RampCollectResult
+) -> bool:
+	return Wc3RampCollect.should_hide_cliff_piece(ix, iy, piece_base, hf, ramp_data)
+
+
+## Loader：挂直崖前过滤 placements（新数组；对齐 WE continue）。
+static func filter_cliff_placements(
+	placements: Array[Wc3CliffPlacement],
+	hf: Wc3Heightfield,
+	ramp_data: Wc3RampCollectResult
+) -> Array[Wc3CliffPlacement]:
+	return Wc3RampCollect.filter_cliff_placements(placements, hf, ramp_data)
+
+
 # --- 改崖联动（Document 编排：只清笔刷点邻域，不用脏区 AABB）---
 
 ## 直坡臂约 3 点；刷点 ±2 盖住低侧菱形，不影响远处坡。

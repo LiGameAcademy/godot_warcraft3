@@ -129,6 +129,26 @@ func _build_ramps(ctx: MapBuildContext) -> void:
 	_ramps.build(ctx)
 
 
+## 挂直崖前：ensure 坡拓扑并按单块模型过滤 cliff_placements（不污染 Logic 缓存语义：ctx 每次新建）。
+func _apply_ramp_cliff_filter(ctx: MapBuildContext) -> int:
+	if ctx == null:
+		return 0
+	ctx.ensure_cliff_topology()
+	ctx.ensure_ramp_topology()
+	var before: int = ctx.cliff_placements.size()
+	ctx.cliff_placements = Wc3RampLogic.filter_cliff_placements(
+		ctx.cliff_placements, ctx.heightfield, ctx.ramp
+	)
+	var removed: int = before - ctx.cliff_placements.size()
+	if removed > 0:
+		MapLog.info(
+			MapLog.Layer.PRESENT,
+			"MapLoader",
+			"ramp filtered cliffs=%d (kept=%d)" % [removed, ctx.cliff_placements.size()]
+		)
+	return removed
+
+
 func _build_ramp_debug(ctx) -> void:
 	if _ramp_debug == null or not _ramp_debug.has_method("build"):
 		return
@@ -214,7 +234,7 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		"MapLoader",
 		"rebuild_cliffs_water %dx%d" % [ctx.width(), ctx.height()]
 	)
-	ctx.ensure_cliff_topology()
+	_apply_ramp_cliff_filter(ctx)
 	_terrain.build(ctx)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
@@ -242,7 +262,7 @@ func _load_all() -> void:
 	if info.is_empty() and _external_hf.is_empty():
 		info = _read_json(map_dir.path_join("info.json"))
 	var ctx = MapBuildContext.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
-	ctx.ensure_cliff_topology()
+	_apply_ramp_cliff_filter(ctx)
 
 	_set_status("生成贴图地形高度图（悬崖留缝）…")
 	_terrain.build(ctx)
