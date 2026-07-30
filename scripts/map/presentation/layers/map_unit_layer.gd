@@ -14,11 +14,13 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 	_cache = cache
 
 
-func build(units_json: Dictionary) -> void:
+func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	var loaded := 0
 	var placeholder := 0
-	for u in units_json.get("units", []):
+	if ctx == null:
+		return
+	for u in ctx.units.get("units", []):
 		var type_id := str(u.get("typeId", ""))
 		var variation := int(u.get("variation", 0))
 		var pos: Dictionary = u.get("position", {})

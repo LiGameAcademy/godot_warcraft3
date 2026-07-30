@@ -19,6 +19,12 @@ var info: Dictionary = {}
 var map_flags: Dictionary = {}
 var main_tileset: String = "I"
 
+## Doodad / Unit JSON（由 MapLoader._load_all 预读后写入）。
+## Layer build(ctx) 统一从这里取，行为等价于旧 build(json)。
+## rebuild_terrain_only / rebuild_terrain_cliffs_water 路径不写 → Layer 跳过（行为不变）。
+var doodads: Dictionary = {}
+var units: Dictionary = {}
+
 var tiles: Wc3TerrainTileCatalog = null
 var cliff_catalog: Wc3CliffCatalog = null
 var catalog: Wc3IdCatalog = null

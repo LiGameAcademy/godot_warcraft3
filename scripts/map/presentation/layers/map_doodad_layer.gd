@@ -17,11 +17,13 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 	_cache = cache
 
 
-func build(doodads_json: Dictionary) -> void:
+func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	last_placed = 0
 	last_placeholder = 0
-	var doodads: Array = doodads_json.get("doodads", [])
+	if ctx == null:
+		return
+	var doodads: Array = ctx.doodads.get("doodads", [])
 	if doodads.is_empty():
 		return
 

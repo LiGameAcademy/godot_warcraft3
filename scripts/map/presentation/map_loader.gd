@@ -287,11 +287,14 @@ func _load_all() -> void:
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		_water.build(ctx)
 		await get_tree().process_frame
+	# Doodad/Unit JSON 预读到 ctx（统一 Layer build(ctx) 契约；与 _terrain/_cliffs/_water 一致）
 	if place_units:
-		_units.build(_read_json(map_dir.path_join("units.json")))
+		ctx.units = _read_json(map_dir.path_join("units.json"))
+		_units.build(ctx)
 		await get_tree().process_frame
 	if place_doodads:
-		_doodads.build(_read_json(map_dir.path_join("doodads.json")))
+		ctx.doodads = _read_json(map_dir.path_join("doodads.json"))
+		_doodads.build(ctx)
 		await get_tree().process_frame
 	if show_pathing_debug_grid and _debug_grid:
 		_set_status("开启调试栅格（GPU）…")
