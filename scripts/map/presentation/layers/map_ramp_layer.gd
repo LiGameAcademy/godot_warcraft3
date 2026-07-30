@@ -6,6 +6,8 @@ extends Node3D
 ## L 内角：只 undig 凹陷格（2×2 下凹）；邻臂不 undig，并挖三兄弟，避免伪 3×3 对角坡面。
 ## 不另铺「甲板」Mesh：坡身靠 CliffTrans，入口靠 undig 地面 + 低角半层抬高。
 
+const Wc3RampCollectScript = preload("res://scripts/map/logic/ramp/wc3_ramp_collect.gd")
+
 @export var terrain: MapTerrainLayer
 @export var cliffs: MapCliffLayer
 
@@ -38,7 +40,12 @@ func build(ctx: MapBuildContext) -> void:
 		return
 
 	# 挖洞 + 入口 undig + 入口低角半层（贴 CliffTrans 坡脚）
+	# dig = L bowl footprint dig + diagonal ramp dig（后者独立于 placement）
 	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
+	var diag_dig: PackedByteArray = Wc3RampCollectScript.plan_diagonal_dig_mask(hf)
+	for i in range(mini(dig.size(), diag_dig.size())):
+		if diag_dig[i] != 0:
+			dig[i] = 1
 	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp_data)
 	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ramp_data)
 	last_dig_count = _count_ones(dig)

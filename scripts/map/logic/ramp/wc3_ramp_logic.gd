@@ -146,6 +146,11 @@ static func plan_dig_mask(
 	return Wc3RampCollect.plan_dig_mask(hf, ramp_data)
 
 
+## 对角斜坡的地面挖洞（独立于 placement；用于 placement 为空但仍有 diagonal ramp flag 的情况）。
+static func plan_diagonal_dig_mask(hf: Wc3Heightfield) -> PackedByteArray:
+	return Wc3RampCollect.plan_diagonal_dig_mask(hf)
+
+
 static func plan_entrance_tiles(
 	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
 ) -> Array[Vector2i]:

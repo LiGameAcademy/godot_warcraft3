@@ -629,6 +629,46 @@ static func plan_entrance_height_boost(
 	return out
 
 
+## 对角斜坡的地面挖洞计划（独立于 placement 匹配）。
+## 原理：对角 ramp 的 2×2 tile 满足「四角有 ramp 旗且 BL==TR（对角等高）但 TL!=BR（另一对角不等）」，
+## 这正是 HiveWE is_corner_ramp_entrance 中 diagonal 分支的判断条件。
+## 与 L-bowl（low_bits 恰一位）的条件互斥，不会重叠。
+static func plan_diagonal_dig_mask(hf: Wc3Heightfield) -> PackedByteArray:
+	var out := PackedByteArray()
+	if hf == null or not hf.is_valid():
+		return out
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	out.resize(maxi(map_w * map_h, 0))
+	out.fill(0)
+	var flags: Array = hf.flags_packed
+	var layers: Array = hf.layer_heights
+	for ty in range(map_h):
+		for tx in range(map_w):
+			var i_bl := ty * tp_w + tx
+			var i_br := i_bl + 1
+			var i_tl := i_bl + tp_w
+			var i_tr := i_tl + 1
+			if i_tr >= layers.size():
+				continue
+			## 四角都有 ramp 旗？
+			if not (_flag_ramp(flags, tp_w, tx, ty)
+				and _flag_ramp(flags, tp_w, tx + 1, ty)
+				and _flag_ramp(flags, tp_w, tx, ty + 1)
+				and _flag_ramp(flags, tp_w, tx + 1, ty + 1)):
+				continue
+			var bl := int(layers[i_bl])
+			var br := int(layers[i_br])
+			var tl := int(layers[i_tl])
+			var tr := int(layers[i_tr])
+			## BL == TR（对角等高）但 TL != BR（另一对角不等）→ 对角 ramp
+			if bl == tr and tl != br:
+				out[ty * map_w + tx] = 1
+	return out
+
+
 ## CliffTrans 覆盖的地表格（竖窗占 (i,j)+(i,j+1)；横窗占 (i,j)+(i+1,j)）。
 static func placement_footprint_tiles(p: Wc3RampPlacement) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
