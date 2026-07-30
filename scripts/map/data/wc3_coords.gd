@@ -8,8 +8,16 @@ const TILE_SIZE := 128.0
 const WORLD_SCALE := 0.01
 
 ## war3map.w3e tilepoint flags
+## 位分配（不要冲突；改前先看这里）：
+##   bit 0 (1)    FLAG_WATER
+##   bit 1 (2)    FLAG_BLIGHT       — 污染（亡灵的腐地）；当前未使用，预留给 ROADMAP §⑪
+##   bit 2 (4)    FLAG_RAMP
+##   bit 3 (8)    FLAG_BOUNDARY     — 边界（深水不可建）；当前未使用，预留给 CellOperator
+##   bit 4..31    保留
 const FLAG_WATER := 1
+const FLAG_BLIGHT := 2
 const FLAG_RAMP := 4
+const FLAG_BOUNDARY := 8
 
 
 static func wc3_to_godot(wc3: Vector3) -> Vector3:
