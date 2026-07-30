@@ -81,7 +81,7 @@ EditorMain (Node3D)                     ← editor_shell.gd（薄壳）
 
 | 路径（现 / 目标） | 职责 |
 |------|------|
-| `scripts/map/map_loader.gd` → `presentation/` | `reload_from_hf` / 分路径重建；外部 hf 优先 |
+| `scripts/map/presentation/map_loader.gd` | `reload_from_hf` / 分路径重建；外部 hf 优先 |
 | `map_build_context.gd` | 单次构建上下文 |
 | `map_*_layer.gd` → `presentation/layers/` | 各层挂树 |
 

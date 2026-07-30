@@ -68,11 +68,11 @@ HiveWE **不实现**自动岸浪摆放（无 `shoreSFile` / `WavesDepth` 逻辑�
 
 ### 相关文件
 
-- `scripts/map/wc3_water_mesh.gd` — 水面；斜坡下铺水
-- `scripts/map/wc3_shoreline_builder.gd` — 放置点
-- `scripts/map/wc3_shore_foam.gd` — MultiMesh 泡沫
+- `scripts/map/presentation/water/wc3_water_mesh.gd` — 水面；斜坡下铺水
+- `scripts/map/presentation/water/wc3_shoreline_builder.gd` — 放置点
+- `scripts/map/presentation/water/wc3_shore_foam.gd` — MultiMesh 泡沫
 - `shaders/wc3_shore_foam.gdshader` / `wc3_water.gdshader`
-- `scripts/map/map_water_layer.gd`
+- `scripts/map/presentation/layers/map_water_layer.gd`
 - `tests/water/selftest_shoreline.gd`
 
 ### 验收

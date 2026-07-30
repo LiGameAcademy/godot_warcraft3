@@ -28,7 +28,7 @@ oversampling_override = 1.0
 title = "WESTRING_TOOL_PALETTE"
 initial_position = 4
 size = Vector2i(268, 612)
-always_on_top = false
+always_on_top = true
 script = ExtResource("1_script")
 
 [node name="Bg" type="Panel" parent="." unique_id=1508506488]

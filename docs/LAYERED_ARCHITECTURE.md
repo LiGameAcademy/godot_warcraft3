@@ -150,38 +150,50 @@ EditorMain (Node3D)                    ← 场景壳：环境光、挂载子节�
 ```text
 scripts/map/
 ├── data/                          # 数据映射
-│   ├── wc3_coords.gd              # FLAG / TILE / tilepoint（目标迁入）
+│   ├── wc3_coords.gd
 │   ├── wc3_heightfield.gd
 │   ├── wc3_tile_vertex.gd
 │   ├── wc3_parsed_map.gd
-│   └── …                          # info / doodads / units JSON 映射
+│   └── …                          # placements / topology 结果
 │
-├── catalog/                       # 资源映射：运行时扫盘 / resolve（不检入 .tres 表）
+├── catalog/                       # 资源映射：运行时扫盘 / resolve
 │   ├── wc3_id_catalog.gd
-│   ├── wc3_terrain_tile_catalog.gd       # tileID / cliffID → PNG·模型目录
-│   ├── wc3_ground_tile_catalog.gd # Texture2DArray
-│   ├── wc3_cliff_catalog.gd       # 目标（直崖）
+│   ├── wc3_terrain_tile_catalog.gd
+│   ├── wc3_ground_tile_catalog.gd
+│   ├── wc3_cliff_catalog.gd
 │   └── wc3_cliff_trans_catalog.gd
 │
 ├── logic/                         # 规则 / API（无 Node）
 │   ├── terrain/
-│   │   └── wc3_terrain_logic.gd   # 地表/高度 API + 脏矩形
-│   ├── cliff/                     # is_cliff_tile、TAG 选型、挖洞集合
-│   ├── ramp/                      # logic + paint + collect（对齐 HiveWE）
-│   ├── water/                     # 深浅判定等（后置）
-│   └── …                          # doodad / unit 放置规则（后置）
+│   ├── cliff/
+│   └── ramp/
 │
 ├── presentation/                  # 表现：挂树 + 建 Mesh
-│   ├── layers/
-│   │   ├── map_terrain_layer.gd   # 地表规则 + 组网
+│   ├── map_loader.gd
+│   ├── map_build_context.gd
+│   ├── orbit_camera.gd
+│   ├── layers/                    # 全部 Map*Layer
+│   │   ├── map_terrain_layer.gd
+│   │   ├── map_cliff_layer.gd
+│   │   ├── map_ramp_layer.gd
+│   │   ├── map_ramp_debug_layer.gd
+│   │   ├── map_water_layer.gd
+│   │   ├── map_doodad_layer.gd
+│   │   ├── map_unit_layer.gd
 │   │   └── map_debug_grid_layer.gd
-│   └── mesh/
-│       └── heightfield_mesh.gd    # 采样 / Packed* 批建 / active_material
+│   ├── mesh/
+│   │   └── heightfield_mesh.gd
+│   ├── cliff/
+│   │   ├── wc3_cliff_builder.gd
+│   │   └── wc3_cliff_height_map.gd
+│   └── water/
+│       ├── wc3_water_mesh.gd
+│       ├── wc3_water_params.gd
+│       ├── wc3_shoreline_builder.gd
+│       └── wc3_shore_foam.gd
 │
-│   # 材质/shader 在 res://assets/{materials,shaders}/，不在 presentation/
-│   # 待迁：map_loader / map_build_context / 其它 Layer
-│
-└── infra/                         # 基建（待迁）
+└── infra/                         # 基建
+    ├── map_log.gd
     ├── runtime_assets.gd
     ├── map_model_cache.gd
     └── map_placeholders.gd
@@ -193,7 +205,7 @@ scripts/map/
 |--------|------|
 | ~~`wc3_terrain_autotile.gd`~~ | ✅ 并入 `MapTerrainLayer` + Catalog |
 | ~~`heightfield_mesh_builder.gd`~~ | ✅ 并入 `HeightfieldMesh` / `Wc3Heightfield` |
-| `wc3_cliff_tiles.gd`（选型） | 待迁 `logic/cliff/` |
+| Layer / water / infra 平铺 | ✅ 已迁入 `presentation/` · `infra/` |
 
 ### 4.2 `editor/`（编辑层）
 

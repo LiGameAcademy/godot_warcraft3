@@ -3,6 +3,7 @@ extends Node3D
 
 ## 斜坡表现层：消费 Collect → 地面 dig/undig/入口+0.5 → 挂 CliffTrans。
 ## 直崖跳过由 MapLoader 在挂崖前 filter_cliff_placements（对齐 WE continue）。
+## L 内角：只 undig 凹陷格（2×2 下凹）；邻臂不 undig，并挖三兄弟，避免伪 3×3 对角坡面。
 ## 不另铺「甲板」Mesh：坡身靠 CliffTrans，入口靠 undig 地面 + 低角半层抬高。
 
 @export var terrain: MapTerrainLayer
@@ -38,13 +39,24 @@ func build(ctx: MapBuildContext) -> void:
 
 	# 挖洞 + 入口 undig + 入口低角半层（贴 CliffTrans 坡脚）
 	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
-	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf)
-	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf)
+	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp_data)
+	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ramp_data)
 	last_dig_count = _count_ones(dig)
 	last_entrance_count = entrances.size()
 	last_boost_count = _count_ones(boost)
-	if terrain != null:
-		terrain.apply_ramp_dig(dig, entrances, boost)
+	var terrain_layer: MapTerrainLayer = terrain
+	if terrain_layer == null:
+		terrain_layer = get_node_or_null("../Terrain") as MapTerrainLayer
+	if terrain_layer != null:
+		terrain_layer.apply_ramp_dig(dig, entrances, boost)
+		MapLog.info(
+			MapLog.Layer.PRESENT,
+			"Ramp",
+			"terrain gaps after dig=%d (plan_dig=%d footprint应各2格)"
+			% [terrain_layer.last_gap_count, last_dig_count]
+		)
+	else:
+		MapLog.warn(MapLog.Layer.PRESENT, "Ramp", "terrain 未接线，romp 探出格不会挖洞")
 
 	var ramp_placements: Array[Wc3RampPlacement] = []
 	for p in ramp_data.placements:
@@ -96,6 +108,7 @@ func _mount_groups(
 	var cliff_tilesets: Array = hf.cliff_tilesets
 	var tex_cache: Dictionary = {}
 	var mesh_by_key: Dictionary = {}
+	var mounted := 0
 
 	for g in collected.groups:
 		var glb: String = g.glb
@@ -117,21 +130,40 @@ func _mount_groups(
 			_ramp_mats.append(mat)
 			mesh = _mesh_with_material(ctx.cache, glb, mat)
 			if mesh == null:
+				MapLog.warn(
+					MapLog.Layer.PRESENT,
+					"Ramp",
+					"mesh null %s" % glb.get_file()
+				)
 				continue
 			mesh_by_key[key] = mesh
 
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = mesh
-		mm.instance_count = transforms.size()
+		# 每块独立 MeshInstance：解旋 Basis 下 MultiMesh AABB 易被裁掉导致「挖了洞却看不见 CliffTrans」
+		var mat_override: Material = null
+		if mesh.get_surface_count() > 0:
+			mat_override = mesh.surface_get_material(0)
+		var local_aabb: AABB = mesh.get_aabb()
 		for i in range(transforms.size()):
-			mm.set_instance_transform(i, transforms[i])
+			var xf: Transform3D = transforms[i]
+			var mi := MeshInstance3D.new()
+			mi.name = "Ramp_%s_%d_%d" % [glb.get_file().get_basename(), tex_idx, i]
+			mi.mesh = mesh
+			mi.transform = xf
+			if mat_override != null:
+				mi.material_override = mat_override
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# 本地 AABB；节点 transform 已含解旋，避免错误裁剪
+			mi.custom_aabb = local_aabb
+			mi.extra_cull_margin = 4.0
+			add_child(mi)
+			mounted += 1
 
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Ramp_%s_%d" % [glb.get_file().get_basename(), tex_idx]
-		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mmi)
+	if mounted != collected.placed_cliffs:
+		MapLog.warn(
+			MapLog.Layer.PRESENT,
+			"Ramp",
+			"mounted=%d placed=%d (mesh skip?)" % [mounted, collected.placed_cliffs]
+		)
 
 
 func _cliff_material(tex: Texture2D, hf: Wc3Heightfield) -> ShaderMaterial:
@@ -169,6 +201,12 @@ func _count_ones(mask: PackedByteArray) -> int:
 	return n
 
 
+func get_debug_materials() -> Array[ShaderMaterial]:
+	return _ramp_mats.duplicate()
+
+
 func _clear_children() -> void:
-	for c in get_children():
-		c.queue_free()
+	while get_child_count() > 0:
+		var c: Node = get_child(0)
+		remove_child(c)
+		c.free()

@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://wp5vsj7v15ph"]
 
 [ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="1_map"]
-[ext_resource type="Script" uid="uid://db3rw3vkfpi74" path="res://scripts/map/orbit_camera.gd" id="2_cam"]
+[ext_resource type="Script" uid="uid://db3rw3vkfpi74" path="res://scripts/map/presentation/orbit_camera.gd" id="2_cam"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1

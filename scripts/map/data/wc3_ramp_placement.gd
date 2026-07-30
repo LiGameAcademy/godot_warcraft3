@@ -8,7 +8,10 @@ const AXIS_V := "v"
 const AXIS_D := "d"
 
 const VARIANT_STRAIGHT := "straight"
+## 外角整块：3×3 九旗（HiveWE allow_ramp_diagonal）
 const VARIANT_DIAGONAL := "diagonal"
+## 转角 L：两臂（各 3 点）+ 仅补凹口中心 1 点；绝不是 3×3
+const VARIANT_L := "l"
 
 var ix: int = 0
 var iy: int = 0

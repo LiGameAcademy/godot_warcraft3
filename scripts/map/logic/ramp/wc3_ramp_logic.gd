@@ -2,7 +2,7 @@ class_name Wc3RampLogic
 extends RefCounted
 
 ## 斜坡逻辑层（对齐 HiveWE / docs/RAMP_WE.md）：
-##   paint → 只写 FLAG_RAMP（高→低 3 点 / 3×3 + L 补心）
+##   paint → 只写 FLAG_RAMP（直坡 3 点 / 外角对角 3×3 / L 仅补中心）
 ##   collect_placements → CliffTrans 滑窗匹配 + romp
 ## 对外：bind / paint_at / try_paint_at / peek_spine_at / collect_placements / clear_flags_around
 ##
@@ -18,6 +18,7 @@ const AXIS_D := Wc3RampPlacement.AXIS_D
 
 const VARIANT_STRAIGHT := Wc3RampPlacement.VARIANT_STRAIGHT
 const VARIANT_DIAGONAL := Wc3RampPlacement.VARIANT_DIAGONAL
+const VARIANT_L := Wc3RampPlacement.VARIANT_L
 
 const ROMP_NONE := Wc3RampCollectResult.ROMP_NONE
 const ROMP_TRANS := Wc3RampCollectResult.ROMP_TRANS
@@ -145,13 +146,17 @@ static func plan_dig_mask(
 	return Wc3RampCollect.plan_dig_mask(hf, ramp_data)
 
 
-static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
-	return Wc3RampCollect.plan_entrance_tiles(hf)
+static func plan_entrance_tiles(
+	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
+) -> Array[Vector2i]:
+	return Wc3RampCollect.plan_entrance_tiles(hf, ramp_data)
 
 
-## Present：入口低角半层抬高 mask（tilepoint；不写 HF）。
-static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
-	return Wc3RampCollect.plan_entrance_height_boost(hf)
+## Present：入口低角半层抬高 mask（tilepoint；不写 HF）。与 undig 入口列表一致。
+static func plan_entrance_height_boost(
+	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
+) -> PackedByteArray:
+	return Wc3RampCollect.plan_entrance_height_boost(hf, ramp_data)
 
 
 ## Present / Loader：单块直崖模型是否应跳过（叠段粒度）。
@@ -174,10 +179,10 @@ static func filter_cliff_placements(
 	return Wc3RampCollect.filter_cliff_placements(placements, hf, ramp_data)
 
 
-# --- 改崖联动（Document 编排：只清笔刷点邻域，不用脏区 AABB）---
+# --- 改崖联动（Document 一般不再调用；保留 API 供显式清区）---
 
-## 直坡臂约 3 点；刷点 ±2 盖住低侧菱形，不影响远处坡。
-const CLEAR_AROUND_CLIFF_EXPAND := 2
+## 默认 expand=0：只清矩形内顶点。需要清臂时由 CliffLogic 走「变更点穿臂」。
+const CLEAR_AROUND_CLIFF_EXPAND := 0
 
 
 ## 清除单角点邻域内 FLAG_RAMP。返回清除点数。

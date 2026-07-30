@@ -323,8 +323,7 @@ func paint_cliff_corner(
 		return false
 	var ctype: int = cliff_type_idx if cliff_type_idx >= 0 else brush_cliff_type
 	if cliff.paint_corner(ix, iy, tool_id, ctype, level_layer):
-		# 只清本笔刷点邻域坡（勿用脏区 AABB，传播/蛋糕会扫掉整图）
-		ramp.clear_flags_around(ix, iy)
+		# 清坡已在 CliffLogic 内按「变更点所在坡臂」处理；勿再 clear_flags_around 方阵误伤邻列
 		mark_dirty()
 		return true
 	return false

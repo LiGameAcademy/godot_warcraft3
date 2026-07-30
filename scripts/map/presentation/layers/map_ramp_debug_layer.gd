@@ -21,7 +21,7 @@ func build(ctx) -> void:
 		return
 	var hf: Wc3Heightfield = ctx.heightfield as Wc3Heightfield
 	if hf != null and hf.is_valid():
-		var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf)
+		var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ctx.ramp)
 		_build_from_arrays(
 			hf.width,
 			hf.height,

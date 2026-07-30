@@ -1,6 +1,6 @@
 ---
 description: 表现层禁止领域判断与写运行时地图数据
-globs: scripts/map/presentation/**/*.gd,scripts/map/map_*_layer.gd,scripts/map/wc3_*_builder.gd
+globs: scripts/map/presentation/**/*.gd
 alwaysApply: false
 ---
 

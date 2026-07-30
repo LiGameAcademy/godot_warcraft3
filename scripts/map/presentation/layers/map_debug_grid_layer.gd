@@ -7,6 +7,7 @@ extends Node3D
 
 @export var terrain_layer: MapTerrainLayer = null
 @export var cliffs_layer: MapCliffLayer = null
+@export var ramps_layer: MapRampLayer = null
 
 @export var show_tile_grid: bool = true ## 大黄网 512u
 @export var show_path_grid: bool = true ## 中白网 128u
@@ -66,6 +67,8 @@ func _resolve_layers() -> void:
 		terrain_layer = get_node_or_null("../Terrain") as MapTerrainLayer
 	if cliffs_layer == null:
 		cliffs_layer = get_node_or_null("../Cliffs") as MapCliffLayer
+	if ramps_layer == null:
+		ramps_layer = get_node_or_null("../Ramps") as MapRampLayer
 
 
 func _apply() -> void:
@@ -97,4 +100,6 @@ func _collect_materials() -> Array[ShaderMaterial]:
 		out.append_array(terrain_layer.get_debug_materials())
 	if is_instance_valid(cliffs_layer) and cliffs_layer.has_method("get_debug_materials"):
 		out.append_array(cliffs_layer.get_debug_materials())
+	if is_instance_valid(ramps_layer) and ramps_layer.has_method("get_debug_materials"):
+		out.append_array(ramps_layer.get_debug_materials())
 	return out

@@ -47,7 +47,7 @@ func _test_paint_then_rebuild() -> int:
 	layer.add_child(ground)
 	layer._ground = ground
 
-	var ctx = (load("res://scripts/map/map_build_context.gd") as GDScript).create(
+	var ctx = (load("res://scripts/map/presentation/map_build_context.gd") as GDScript).create(
 		"res://",
 		doc.as_build_dict(),
 		{},

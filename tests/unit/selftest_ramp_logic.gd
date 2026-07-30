@@ -21,15 +21,20 @@ func _run() -> void:
 	_test_soften_dirs()
 	_test_corner_intent_from_low()
 	_test_wall_low_stays_single()
-	_test_expand_straight_to_diagonal()
+	_test_expand_straight_to_l()
 	_test_intent_not_opposite()
 	_test_low_side_mouse_pref_not_far_side()
 	_test_allow_opposite_face_ramp()
-	_test_l_then_diagonal_half_side()
-	_test_single_axis_promotes_to_diagonal()
+	_test_l_then_complete_with_center()
+	_test_single_axis_keeps_straight_second_arm()
 	_test_dual_arms_se_plus_l_fill()
+	_test_fresh_corner_diagonal()
 	_test_far_empty_still_paintable()
 	_test_cliff_change_clears_nearby_ramp()
+	_test_cliff_raise2_keeps_far_ramp()
+	_test_bend_low_side_not_auto_diagonal()
+	_test_l_corner_from_low_side_correct_origin()
+	_test_l_then_dual_axis_expands_to_diagonal()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
 		quit(0)
@@ -252,8 +257,8 @@ func _test_wall_low_stays_single() -> void:
 	print("  wall_low_stays_single OK")
 
 
-func _test_expand_straight_to_diagonal() -> void:
-	# 外角先单列，再双轴应能扩成对角（HiveWE：对角不过对向轴禁贴）
+func _test_expand_straight_to_l() -> void:
+	# 外角先单列，再双轴 → L（第二臂 + 中心），绝不是 3×3 对角
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 10,
@@ -270,23 +275,30 @@ func _test_expand_straight_to_diagonal() -> void:
 	doc._rebind_logic()
 	var r1: Dictionary = doc.try_paint_ramp_at(3, 3, 1, 0)
 	if not bool(r1.get("changed", false)):
-		_fail("expand: first straight fail %s" % str(r1))
+		_fail("expand_l: first straight fail %s" % str(r1))
 		return
 	var r2: Dictionary = doc.try_paint_ramp_at(3, 3, 1, 1)
 	if not bool(r2.get("ok", false)):
-		_fail("expand: diagonal plan fail %s" % str(r2))
+		_fail("expand_l: second plan fail %s" % str(r2))
 		return
-	if str(r2.get("variant", "")) != "diagonal":
-		_fail("expand: expect diagonal got %s marks=%s" % [str(r2.get("variant")), str(r2.get("marked"))])
+	if str(r2.get("variant", "")) != "l":
+		_fail("expand_l: expect l got %s marks=%s" % [str(r2.get("variant")), str(r2.get("marked"))])
 		return
-	var n: int = (r2.get("marked", []) as Array).size()
-	if n < 9 and not bool(r2.get("changed", false)):
-		# 若旗已部分存在，changed 可能 false，但 variant 应为 diagonal 且至少覆盖对角
-		pass
-	if n < 5:
-		_fail("expand: too few marks %d" % n)
+	# 两臂 + 中心；远角 (5,5) 不应被 3×3 铺上
+	if not (
+		_flag_ramp(doc, 3, 3)
+		and _flag_ramp(doc, 4, 3)
+		and _flag_ramp(doc, 5, 3)
+		and _flag_ramp(doc, 3, 4)
+		and _flag_ramp(doc, 3, 5)
+		and _flag_ramp(doc, 4, 4)
+	):
+		_fail("expand_l missing L arms/center")
 		return
-	print("  expand_straight_to_diagonal OK n=%d changed=%s" % [n, str(r2.get("changed"))])
+	if _flag_ramp(doc, 5, 5):
+		_fail("expand_l must not fill far diagonal cell (5,5)")
+		return
+	print("  expand_straight_to_l OK n=%d" % (r2.get("marked", []) as Array).size())
 
 
 func _test_intent_not_opposite() -> void:
@@ -394,8 +406,8 @@ func _test_allow_opposite_face_ramp() -> void:
 	print("  allow_opposite_face_ramp OK")
 
 
-func _test_l_then_diagonal_half_side() -> void:
-	# 截图2：外角先竖臂再横/对角，应能扩成半侧对角，不被侧翼禁贴误伤。
+func _test_l_then_complete_with_center() -> void:
+	# 外角先竖臂再横/双轴 → L：补横臂 + 中心，不铺远角 3×3
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -412,31 +424,33 @@ func _test_l_then_diagonal_half_side() -> void:
 	doc._rebind_logic()
 	var r1: Dictionary = doc.try_paint_ramp_at(4, 4, 0, 1)
 	if not bool(r1.get("changed", false)):
-		_fail("half_side setup vertical fail: %s" % str(r1))
+		_fail("l_complete setup vertical fail: %s" % str(r1))
 		return
-	# 第二笔：对角意图，应扩成 diagonal 并补上横臂/箱内点
 	var r2: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 1)
 	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
-		_fail("half_side diagonal expand fail: %s" % str(r2))
+		_fail("l_complete second stroke fail: %s" % str(r2))
 		return
-	if str(r2.get("variant", "")) != "diagonal":
-		_fail("half_side expect diagonal got %s" % str(r2.get("variant")))
+	if str(r2.get("variant", "")) != "l":
+		_fail("l_complete expect l got %s" % str(r2.get("variant")))
 		return
-	# 半侧：原点 + 竖臂 + 横臂方向上应有旗
 	if not (
 		_flag_ramp(doc, 4, 4)
 		and _flag_ramp(doc, 4, 5)
 		and _flag_ramp(doc, 4, 6)
 		and _flag_ramp(doc, 5, 4)
 		and _flag_ramp(doc, 6, 4)
+		and _flag_ramp(doc, 5, 5)
 	):
-		_fail("half_side missing L/box arms after expand")
+		_fail("l_complete missing L arms/center")
 		return
-	print("  l_then_diagonal_half_side OK n=%d" % (r2.get("marked", []) as Array).size())
+	if _flag_ramp(doc, 6, 6):
+		_fail("l_complete must not fill far cell (6,6)")
+		return
+	print("  l_then_complete_with_center OK n=%d" % (r2.get("marked", []) as Array).size())
 
 
-func _test_single_axis_promotes_to_diagonal() -> void:
-	# 截图：外角已有竖臂，再只传单轴横意图 → 应自动升为对角半侧
+func _test_single_axis_keeps_straight_second_arm() -> void:
+	# 外角已有竖臂，再单轴横意图 → L（横臂±中心），不是 diagonal
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -453,20 +467,58 @@ func _test_single_axis_promotes_to_diagonal() -> void:
 	doc._rebind_logic()
 	var r1: Dictionary = doc.try_paint_ramp_at(4, 4, 0, 1)
 	if not bool(r1.get("changed", false)):
-		_fail("promote setup vertical fail: %s" % str(r1))
+		_fail("second_arm setup vertical fail: %s" % str(r1))
 		return
-	# 仅 hx=1（不传 hy）——旧逻辑会落第二条单侧；新逻辑应升对角
 	var r2: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 0)
 	if not bool(r2.get("ok", false)) or not bool(r2.get("changed", false)):
-		_fail("promote single→diagonal fail: %s" % str(r2))
+		_fail("second_arm single-axis horizontal fail: %s" % str(r2))
 		return
-	if str(r2.get("variant", "")) != "diagonal":
-		_fail("promote expect diagonal got %s" % str(r2.get("variant")))
+	if str(r2.get("variant", "")) == "diagonal":
+		_fail("second_arm must not be diagonal")
 		return
-	if not (_flag_ramp(doc, 5, 4) and _flag_ramp(doc, 6, 4) and _flag_ramp(doc, 5, 5)):
-		_fail("promote missing diagonal box fills")
+	if str(r2.get("variant", "")) != "l":
+		_fail("second_arm expect l got %s" % str(r2.get("variant")))
 		return
-	print("  single_axis_promotes_to_diagonal OK n=%d" % (r2.get("marked", []) as Array).size())
+	if not (_flag_ramp(doc, 5, 4) and _flag_ramp(doc, 6, 4)):
+		_fail("second_arm missing horizontal marks")
+		return
+	if _flag_ramp(doc, 6, 6):
+		_fail("second_arm should not fill far diagonal cell (6,6)")
+		return
+	print("  single_axis_keeps_straight_second_arm OK n=%d" % (r2.get("marked", []) as Array).size())
+
+
+func _test_fresh_corner_diagonal() -> void:
+	# 空外角一次双轴 → 才是真正的 diagonal 3×3
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 4 and y <= 4) else 2
+	doc._rebind_logic()
+	var r: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 1)
+	if not bool(r.get("changed", false)):
+		_fail("fresh_diag fail: %s" % str(r))
+		return
+	if str(r.get("variant", "")) != "diagonal":
+		_fail("fresh_diag expect diagonal got %s" % str(r.get("variant")))
+		return
+	var n: int = (r.get("marked", []) as Array).size()
+	if n < 9:
+		_fail("fresh_diag expect 9 marks got %d" % n)
+		return
+	if not _flag_ramp(doc, 6, 6):
+		_fail("fresh_diag missing far cell (6,6)")
+		return
+	print("  fresh_corner_diagonal OK n=%d" % n)
 
 
 func _test_dual_arms_se_plus_l_fill() -> void:
@@ -493,27 +545,25 @@ func _test_dual_arms_se_plus_l_fill() -> void:
 	if not bool(r_up.get("changed", false)):
 		_fail("l_fill setup up fail: %s" % str(r_up))
 		return
-	# 明确右下对角（非单轴「向右」双侧升）
+	# 已有上下臂后再右下意图 → L（横臂 + 凹口中心），不是 3×3 对角
 	var r_se: Dictionary = doc.try_paint_ramp_at(6, 6, 1, 1)
 	if not bool(r_se.get("ok", false)) or not bool(r_se.get("changed", false)):
-		_fail("l_fill SE diagonal fail: %s" % str(r_se))
+		_fail("l_fill SE fail: %s" % str(r_se))
 		return
-	if str(r_se.get("variant", "")) != "diagonal":
-		_fail("l_fill expect diagonal got %s" % str(r_se.get("variant")))
+	if str(r_se.get("variant", "")) != "l":
+		_fail("l_fill expect l got %s" % str(r_se.get("variant")))
 		return
-	# 右下 3×3 应有旗
-	for t in [
-		Vector2i(7, 6), Vector2i(8, 6), Vector2i(7, 7), Vector2i(8, 7), Vector2i(7, 8), Vector2i(8, 8),
-	]:
-		if not _flag_ramp(doc, t.x, t.y):
-			_fail("l_fill missing SE @(%d,%d)" % [t.x, t.y])
-			return
-	# 右上：仅补心 (7,5)，不要整块对角（如 8,4 / 8,5）
-	if not _flag_ramp(doc, 7, 5):
-		_fail("l_fill missing NE center (7,5)")
+	# 横臂 + SE/NE 中心；远角不应被铺
+	if not (
+		_flag_ramp(doc, 7, 6)
+		and _flag_ramp(doc, 8, 6)
+		and _flag_ramp(doc, 7, 7)
+		and _flag_ramp(doc, 7, 5)
+	):
+		_fail("l_fill missing H arm or L centers")
 		return
-	if _flag_ramp(doc, 8, 4) or _flag_ramp(doc, 8, 5) or _flag_ramp(doc, 7, 4):
-		_fail("l_fill should NOT full NE diagonal")
+	if _flag_ramp(doc, 8, 8) or _flag_ramp(doc, 8, 4) or _flag_ramp(doc, 8, 5):
+		_fail("l_fill should NOT fill far 3×3 cells")
 		return
 	print("  dual_arms_se_plus_l_fill OK")
 
@@ -549,7 +599,7 @@ func _test_far_empty_still_paintable() -> void:
 
 
 func _test_cliff_change_clears_nearby_ramp() -> void:
-	# 本笔刷点相关坡清掉；远处另一段坡必须保留（禁止脏区 AABB 整图清）。
+	# 本笔刷点相关坡臂清掉；远处另一段坡必须保留；平行邻列在未改层时也必须保留。
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 16,
@@ -565,17 +615,236 @@ func _test_cliff_change_clears_nearby_ramp() -> void:
 			doc.heightfield.layer_heights[y * w + x] = 3 if y <= 2 else 2
 	doc._rebind_logic()
 	var near: Dictionary = doc.try_paint_ramp_at(3, 2, 0, 1)
+	var parallel: Dictionary = doc.try_paint_ramp_at(5, 2, 0, 1)
 	var far: Dictionary = doc.try_paint_ramp_at(10, 2, 0, 1)
-	if not bool(near.get("changed", false)) or not bool(far.get("changed", false)):
-		_fail("cliff_clear setup paint fail near=%s far=%s" % [str(near), str(far)])
+	if (
+		not bool(near.get("changed", false))
+		or not bool(parallel.get("changed", false))
+		or not bool(far.get("changed", false))
+	):
+		_fail(
+			"cliff_clear setup paint fail near=%s par=%s far=%s"
+			% [str(near), str(parallel), str(far)]
+		)
 		return
+	# +1 抬高坡原点（tool 3）；不应方阵扫掉 x=5 邻列
 	if not doc.paint_cliff_corner(3, 2, "3"):
 		_fail("cliff_clear raise failed")
 		return
 	if _flag_ramp(doc, 3, 2) or _flag_ramp(doc, 3, 3) or _flag_ramp(doc, 3, 4):
 		_fail("cliff_clear leftover near FLAG_RAMP after raise")
 		return
+	if not (_flag_ramp(doc, 5, 2) and _flag_ramp(doc, 5, 3) and _flag_ramp(doc, 5, 4)):
+		_fail("cliff_clear wiped parallel column (square expand too wide)")
+		return
 	if not (_flag_ramp(doc, 10, 2) and _flag_ramp(doc, 10, 3) and _flag_ramp(doc, 10, 4)):
 		_fail("cliff_clear wiped far ramp (AABB too wide)")
 		return
 	print("  cliff_change_clears_nearby_ramp OK")
+
+
+func _test_cliff_raise2_keeps_far_ramp() -> void:
+	# tool 4（+2）蛋糕传播面大，仍不得方阵误清远处坡
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 20,
+		"height": 14,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 2
+	# 左侧小高台 + 右侧另一段崖缘坡
+	for y in range(0, 4):
+		for x in range(0, 5):
+			doc.heightfield.layer_heights[y * w + x] = 3
+	for y in range(0, 4):
+		for x in range(12, 16):
+			doc.heightfield.layer_heights[y * w + x] = 3
+	doc._rebind_logic()
+	if not bool(doc.try_paint_ramp_at(4, 3, 0, 1).get("changed", false)):
+		_fail("raise2 setup near ramp fail")
+		return
+	if not bool(doc.try_paint_ramp_at(14, 3, 0, 1).get("changed", false)):
+		_fail("raise2 setup far ramp fail")
+		return
+	if not doc.paint_cliff_corner(2, 2, "4"):
+		_fail("raise2 +2 paint failed")
+		return
+	if not (_flag_ramp(doc, 14, 3) and _flag_ramp(doc, 14, 4) and _flag_ramp(doc, 14, 5)):
+		_fail("raise2 wiped far ramp during cake propagate")
+		return
+	print("  cliff_raise2_keeps_far_ramp OK")
+
+
+func _test_bend_low_side_not_auto_diagonal() -> void:
+	# 日志回归：脊线先落竖坡、端头再落横坡，转角低侧再点 → 必须仍 straight，不得 diagonal×6
+	# （旧逻辑低侧 plan 会单轴升对角，Collect placed 下降并挖出灰洞）
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 16,
+		"height": 16,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			# 细脊 y==5、x=2..5（对齐「只抬一排崖角」）
+			doc.heightfield.layer_heights[y * w + x] = 3 if (y == 5 and x >= 2 and x <= 5) else 2
+	doc._rebind_logic()
+	# 1) 北侧低点 → 竖坡朝南落到脊上
+	var r1: Dictionary = doc.try_paint_ramp_at(3, 4, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("bend setup vertical fail: %s" % str(r1))
+		return
+	if str(r1.get("variant", "")) != "straight":
+		_fail("bend setup1 expect straight got %s" % str(r1.get("variant")))
+		return
+	# 2) 东侧低点 → 端头横坡（与竖臂在 (5,5) 垂直）
+	var r2: Dictionary = doc.try_paint_ramp_at(6, 5, -1, 0)
+	if not bool(r2.get("changed", false)):
+		_fail("bend setup horizontal fail: %s" % str(r2))
+		return
+	if str(r2.get("variant", "")) != "straight":
+		_fail("bend setup2 expect straight got %s" % str(r2.get("variant")))
+		return
+	var cat := Wc3CliffCatalog.new()
+	cat.load_default()
+	var before: Wc3RampCollectResult = Wc3RampLogic.collect_placements(doc.heightfield, {}, cat)
+	var n_before: int = before.placements.size()
+	# 3) 南侧转角低点：旧 bug 升 diagonal×6；现应 straight 单列
+	var r3: Dictionary = doc.try_paint_ramp_at(5, 6, 0, 1)
+	if not bool(r3.get("ok", false)) or not bool(r3.get("changed", false)):
+		_fail("bend low-side paint fail: %s" % str(r3))
+		return
+	if str(r3.get("variant", "")) == "diagonal":
+		_fail(
+			"bend must not auto-diagonal from low side marks=%s"
+			% str(r3.get("marked"))
+		)
+		return
+	var marked: Array = r3.get("marked", [])
+	if marked.size() > 3:
+		_fail("bend expect ≤3 new marks got %d %s" % [marked.size(), str(marked)])
+		return
+	var after: Wc3RampCollectResult = Wc3RampLogic.collect_placements(doc.heightfield, {}, cat)
+	if after.placements.size() < n_before:
+		_fail(
+			"bend Collect placements dropped %d→%d"
+			% [n_before, after.placements.size()]
+		)
+		return
+	print(
+		"  bend_low_side_not_auto_diagonal OK variant=%s marks=%d placed=%d→%d"
+		% [str(r3.get("variant")), marked.size(), n_before, after.placements.size()]
+	)
+
+
+func _test_l_corner_from_low_side_correct_origin() -> void:
+	# 日志回归：崖缘 (32..34,31) → 北向直坡 @(33,31) → 东向直坡 @(34,31)
+	# → 在 (34,32) 补 L：原点必须是 (34,31)，南臂+中心 (35,32)；
+	# 不得落到 (33,31) 再往南/西乱标（截图 X 点）。
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 48,
+		"height": 48,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 2
+	for x in range(32, 35):
+		doc.heightfield.layer_heights[31 * w + x] = 3
+	doc._rebind_logic()
+	var r1: Dictionary = doc.try_paint_ramp_at(33, 30, 0, 1)
+	if not bool(r1.get("changed", false)):
+		_fail("l_corner setup N fail: %s" % str(r1))
+		return
+	var r2: Dictionary = doc.try_paint_ramp_at(35, 31, -1, 0)
+	if not bool(r2.get("changed", false)):
+		_fail("l_corner setup E fail: %s" % str(r2))
+		return
+	var sx2: int = int(r2.get("sx", -1))
+	var sy2: int = int(r2.get("sy", -1))
+	if sx2 != 34 or sy2 != 31:
+		_fail("l_corner setup E expect origin (34,31) got (%d,%d)" % [sx2, sy2])
+		return
+	var r3: Dictionary = doc.try_paint_ramp_at(34, 32, 0, 1)
+	if not bool(r3.get("ok", false)) or not bool(r3.get("changed", false)):
+		_fail("l_corner low-side L fail: %s" % str(r3))
+		return
+	var sx: int = int(r3.get("sx", -1))
+	var sy: int = int(r3.get("sy", -1))
+	if sx != 34 or sy != 31:
+		_fail("l_corner expect origin (34,31) got (%d,%d) variant=%s marks=%s"
+			% [sx, sy, str(r3.get("variant")), str(r3.get("marked"))])
+		return
+	if str(r3.get("variant", "")) != "l":
+		_fail("l_corner expect variant=l got %s" % str(r3.get("variant")))
+		return
+	# 应有：南臂 + L 中心
+	if not (
+		_flag_ramp(doc, 34, 32)
+		and _flag_ramp(doc, 34, 33)
+		and _flag_ramp(doc, 35, 32)
+	):
+		_fail("l_corner missing S arm / center (35,32)")
+		return
+	# 不应：从错误原点 (33,31) 往南乱标
+	if _flag_ramp(doc, 33, 32) or _flag_ramp(doc, 33, 33):
+		_fail("l_corner must not mark wrong S column from (33,31)")
+		return
+	print(
+		"  l_corner_from_low_side_correct_origin OK marks=%s"
+		% str(r3.get("marked"))
+	)
+
+
+func _test_l_then_dual_axis_expands_to_diagonal() -> void:
+	# L 完成后双轴应能升满 3×3（先前 had_arm 误杀 allow_d）
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 12,
+		"height": 12,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 4 and y <= 4) else 2
+	doc._rebind_logic()
+	if not bool(doc.try_paint_ramp_at(4, 4, 0, 1).get("changed", false)):
+		_fail("l2d setup V fail")
+		return
+	if not bool(doc.try_paint_ramp_at(4, 4, 1, 0).get("changed", false)):
+		_fail("l2d setup H/L fail")
+		return
+	# 此时应为 L（含中心），远角 (6,6) 尚无
+	if _flag_ramp(doc, 6, 6):
+		_fail("l2d setup should not already have far cell")
+		return
+	var r: Dictionary = doc.try_paint_ramp_at(4, 4, 1, 1)
+	if not bool(r.get("ok", false)) or not bool(r.get("changed", false)):
+		_fail("l2d dual-axis expand fail: %s" % str(r))
+		return
+	if str(r.get("variant", "")) != "diagonal":
+		_fail("l2d expect diagonal got %s marks=%s" % [str(r.get("variant")), str(r.get("marked"))])
+		return
+	if not _flag_ramp(doc, 6, 6):
+		_fail("l2d missing far diagonal cell (6,6)")
+		return
+	print("  l_then_dual_axis_expands_to_diagonal OK n=%d" % (r.get("marked", []) as Array).size())

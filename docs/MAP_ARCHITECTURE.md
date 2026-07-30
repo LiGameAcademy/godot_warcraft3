@@ -18,17 +18,19 @@
 ### 1.1 场景树
 
 ```text
-MapRoot (Node3D)                    ← map_loader.gd  编排入口
-├── Terrain (Node3D)                ← map_terrain_layer.gd
-│   └── Ground (MeshInstance3D)     ← heightfield_mesh.gd
-├── Cliffs (Node3D)                 ← map_cliff_layer.gd
+MapRoot (Node3D)                    ← presentation/map_loader.gd
+├── Terrain (Node3D)                ← layers/map_terrain_layer.gd
+│   └── Ground (MeshInstance3D)     ← mesh/heightfield_mesh.gd
+├── Cliffs (Node3D)                 ← layers/map_cliff_layer.gd
 │   └── （运行时 MultiMeshInstance3D 子节点）
-├── Water (Node3D)                  ← map_water_layer.gd
+├── Ramps (Node3D)                  ← layers/map_ramp_layer.gd
+├── Water (Node3D)                  ← layers/map_water_layer.gd
 │   └── Surface (MeshInstance3D)    ← heightfield_mesh.gd
 │   └── （运行时岸浪 MultiMesh / 粒子）
-├── Doodads (Node3D)                ← map_doodad_layer.gd
-├── Units (Node3D)                  ← map_unit_layer.gd
-└── PathingDebug (Node3D)           ← map_pathing_debug_layer.gd
+├── Doodads (Node3D)                ← layers/map_doodad_layer.gd
+├── Units (Node3D)                  ← layers/map_unit_layer.gd
+├── DebugGrid (Node3D)              ← layers/map_debug_grid_layer.gd
+└── RampDebug (Node3D)              ← layers/map_ramp_debug_layer.gd
 ```
 
 实例化位置：

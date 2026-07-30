@@ -57,10 +57,21 @@ static func collect(
 	return out
 
 
-## HiveWE is_corner_ramp_entrance
+## 入口格：保留地面 + 低角 +0.5（对齐 HiveWE is_corner_ramp_entrance，并扩展 L 内角凹陷）。
+## 1) 经典：四角皆 ramp 且非「对角层高两两相等」。
+## 2) L 凹陷：恰一角最低，且该角与其边上两邻角有 ramp（L 补心常见：高角无旗）。
+##    → undig 三高一低地面，形成朝补心下凹的坡，而不是只挖洞靠 BBAB。
 static func is_entrance(flags: Array, layers: Array, tp_w: int, tp_h: int, x: int, y: int) -> bool:
 	if x < 0 or y < 0 or x >= tp_w - 1 or y >= tp_h - 1:
 		return false
+	if _is_classic_entrance(flags, layers, tp_w, x, y):
+		return true
+	return _is_l_recess_entrance(flags, layers, tp_w, x, y)
+
+
+static func _is_classic_entrance(
+	flags: Array, layers: Array, tp_w: int, x: int, y: int
+) -> bool:
 	if not (
 		_flag_ramp(flags, tp_w, x, y)
 		and _flag_ramp(flags, tp_w, x + 1, y)
@@ -75,9 +86,65 @@ static func is_entrance(flags: Array, layers: Array, tp_w: int, tp_h: int, x: in
 	return not (bl == top_r and tl == br)
 
 
+## L 补心内角：唯一低角 + 两边邻角有旗（高角可无旗）。
+static func _is_l_recess_entrance(
+	flags: Array, layers: Array, tp_w: int, x: int, y: int
+) -> bool:
+	if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, x, y):
+		return false
+	var i00: int = y * tp_w + x
+	var i10: int = i00 + 1
+	var i01: int = i00 + tp_w
+	var i11: int = i01 + 1
+	var lv00: int = int(layers[i00])
+	var lv10: int = int(layers[i10])
+	var lv01: int = int(layers[i01])
+	var lv11: int = int(layers[i11])
+	var lo: int = mini(mini(lv00, lv10), mini(lv01, lv11))
+	var low_bits: int = 0
+	if lv00 == lo:
+		low_bits |= 1
+	if lv10 == lo:
+		low_bits |= 2
+	if lv01 == lo:
+		low_bits |= 4
+	if lv11 == lo:
+		low_bits |= 8
+	# 恰一角最低（三高一低）
+	if low_bits != 1 and low_bits != 2 and low_bits != 4 and low_bits != 8:
+		return false
+	# 低角必须有 ramp；与低角共边的两角也必须有 ramp
+	match low_bits:
+		1: # BL 低 → 邻 BR、TL
+			return (
+				_flag_ramp(flags, tp_w, x, y)
+				and _flag_ramp(flags, tp_w, x + 1, y)
+				and _flag_ramp(flags, tp_w, x, y + 1)
+			)
+		2: # BR 低 → 邻 BL、TR
+			return (
+				_flag_ramp(flags, tp_w, x + 1, y)
+				and _flag_ramp(flags, tp_w, x, y)
+				and _flag_ramp(flags, tp_w, x + 1, y + 1)
+			)
+		4: # TL 低 → 邻 BL、TR
+			return (
+				_flag_ramp(flags, tp_w, x, y + 1)
+				and _flag_ramp(flags, tp_w, x, y)
+				and _flag_ramp(flags, tp_w, x + 1, y + 1)
+			)
+		8: # TR 低 → 邻 BR、TL（L 补心典型）
+			return (
+				_flag_ramp(flags, tp_w, x + 1, y + 1)
+				and _flag_ramp(flags, tp_w, x + 1, y)
+				and _flag_ramp(flags, tp_w, x, y + 1)
+			)
+	return false
+
+
 ## 斜坡 Present 用的挖洞计划（≈ HiveWE `update_ground_exists` 坡相关部分）。
-## 返回与直崖 gap 同尺寸的 mask：1=应挖；入口强制 0。
-## 禁止写入 cliff gap_mask；由 Ramp Present 调 `MapTerrainLayer.apply_dig_mask` 施加。
+## 只挖有模 CliffTrans footprint。
+## **仅 L 凹槽 2×2 强制清 dig**；外角未齐四旗只 undig 非 footprint（保留 WE 坡身洞）。
 static func plan_dig_mask(
 	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult
 ) -> PackedByteArray:
@@ -86,47 +153,437 @@ static func plan_dig_mask(
 		return out
 	var tp_w: int = hf.width
 	var tp_h: int = hf.height
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	out.resize(maxi(map_w * map_h, 0))
+	out.fill(0)
+	var body := _ramp_body_mask(hf, ramp_data)
+	for i in range(mini(out.size(), body.size())):
+		out[i] = body[i]
 	var layers: Array = hf.layer_heights
 	var flags: Array = hf.flags_packed
-	var romp: PackedByteArray = (
-		ramp_data.romp if ramp_data != null else PackedByteArray()
-	)
-	out.resize(maxi((tp_w - 1) * (tp_h - 1), 0))
-	out.fill(0)
-	var i := 0
-	for iy in range(tp_h - 1):
-		for ix in range(tp_w - 1):
-			if is_entrance(flags, layers, tp_w, tp_h, ix, iy):
-				out[i] = 0
-			else:
-				var bl: int = iy * tp_w + ix
-				var has_romp: bool = bl < romp.size() and romp[bl] != Wc3RampLogic.ROMP_NONE
-				var is_cliff: bool = Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy)
-				if is_cliff or has_romp:
-					out[i] = 1
-			i += 1
+	for t in _all_l_bowl_tiles(flags, layers, tp_w, tp_h):
+		if t.x < 0 or t.y < 0 or t.x >= map_w or t.y >= map_h:
+			continue
+		out[t.y * map_w + t.x] = 0
 	return out
 
 
-## 入口格：相对直崖 gap 需要「保留地面」的坐标（斜坡 Present 调 undig / 隐藏直崖）。
-static func plan_entrance_tiles(hf: Wc3Heightfield) -> Array[Vector2i]:
+## 入口 undig。L 凹槽 / 未齐四旗外角碗 undig；外角与 CT footprint 重叠时保留 dig；经典两低照旧。
+static func plan_entrance_tiles(
+	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
+) -> Array[Vector2i]:
 	var tiles: Array[Vector2i] = []
 	if hf == null or not hf.is_valid():
 		return tiles
 	var tp_w: int = hf.width
 	var tp_h: int = hf.height
-	var layers: Array = hf.layer_heights
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	var body := _ramp_body_mask(hf, ramp_data)
 	var flags: Array = hf.flags_packed
-	for iy in range(tp_h - 1):
-		for ix in range(tp_w - 1):
-			if is_entrance(flags, layers, tp_w, tp_h, ix, iy):
-				tiles.append(Vector2i(ix, iy))
+	var layers: Array = hf.layer_heights
+	var seen: Dictionary = {}
+	for t in _all_l_bowl_tiles(flags, layers, tp_w, tp_h):
+		if t.x < 0 or t.y < 0 or t.x >= map_w or t.y >= map_h:
+			continue
+		var key: int = t.y * map_w + t.x
+		if seen.has(key):
+			continue
+		seen[key] = true
+		tiles.append(t)
+	for t2 in _all_forced_ground_tiles(flags, layers, tp_w, tp_h):
+		if t2.x < 0 or t2.y < 0 or t2.x >= map_w or t2.y >= map_h:
+			continue
+		var key2: int = t2.y * map_w + t2.x
+		if seen.has(key2):
+			continue
+		# 外角碗与 CT footprint 重叠时保留 dig（WE footprint 优先）
+		if key2 < body.size() and body[key2] != 0:
+			continue
+		seen[key2] = true
+		tiles.append(t2)
+	for iy in range(map_h):
+		for ix in range(map_w):
+			var key3: int = iy * map_w + ix
+			if seen.has(key3):
+				continue
+			if not _is_classic_entrance(flags, layers, tp_w, ix, iy):
+				continue
+			if _count_corners_at_min(layers, tp_w, ix, iy) != 2:
+				continue
+			if key3 < body.size() and body[key3] != 0:
+				continue
+			tiles.append(Vector2i(ix, iy))
 	return tiles
 
 
+## 该格用地面代替直崖（undig + hide 必须同时成立）。
+static func _keeps_ground_over_cliff(
+	flags: Array, layers: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> bool:
+	if _is_l_recess_entrance(flags, layers, tp_w, ix, iy):
+		return true
+	if _is_l_recess_2x2_sibling(flags, layers, tp_w, tp_h, ix, iy):
+		return true
+	if _is_outer_corner_ramp_tile(flags, layers, tp_w, tp_h, ix, iy):
+		return true
+	if _is_outer_corner_2x2_sibling(flags, layers, tp_w, tp_h, ix, iy):
+		return true
+	if not _is_classic_entrance(flags, layers, tp_w, ix, iy):
+		return false
+	return _count_corners_at_min(layers, tp_w, ix, iy) == 2
+
+
+## L 碗 + 外角未齐四旗的坡口（笔刷 L/外角常见；齐四旗的走经典入口+footprint 优先）。
+static func _all_forced_ground_tiles(
+	flags: Array, layers: Array, tp_w: int, tp_h: int
+) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var seen: Dictionary = {}
+	for t in _all_l_bowl_tiles(flags, layers, tp_w, tp_h):
+		var key: int = t.y * 65536 + t.x
+		if seen.has(key):
+			continue
+		seen[key] = true
+		out.append(t)
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	for iy in range(map_h):
+		for ix in range(map_w):
+			if not _is_outer_corner_ramp_tile(flags, layers, tp_w, tp_h, ix, iy):
+				continue
+			# 四旗已齐 → 交给经典入口 / CT footprint，不强制挖掉 dig
+			if _count_ramp_corners(flags, tp_w, ix, iy) >= 4:
+				continue
+			for t2 in _outer_corner_bowl_tiles(layers, tp_w, ix, iy):
+				if t2.x < 0 or t2.y < 0 or t2.x >= map_w or t2.y >= map_h:
+					continue
+				var key2: int = t2.y * 65536 + t2.x
+				if seen.has(key2):
+					continue
+				seen[key2] = true
+				out.append(t2)
+	return out
+
+
+## 高台外角坡口：三低一高崖格 + 高台支撑 + 坡旗（本格或邻格）。
+## 笔刷 L 常把旗落在邻边而非外角格本身，故允许邻格 nr≥2。
+## 靠近真正 L 凹槽时禁用（防把凹槽扩成伪对角）。
+static func _is_outer_corner_ramp_tile(
+	flags: Array, layers: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> bool:
+	if not Wc3CliffLogic.is_cliff_tile(layers, tp_w, ix, iy):
+		return false
+	if _count_corners_at_min(layers, tp_w, ix, iy) != 3:
+		return false
+	if _near_l_recess(flags, layers, tp_w, tp_h, ix, iy, 2):
+		return false
+	var hi: Vector2i = _unique_high_corner_delta(layers, tp_w, ix, iy)
+	if hi.x < 0:
+		return false
+	var vx: int = ix + hi.x
+	var vy: int = iy + hi.y
+	var hi_layer: int = int(layers[vy * tp_w + vx])
+	if not _vertex_has_plateau_support(layers, tp_w, tp_h, vx, vy, hi_layer):
+		return false
+	var nr: int = _count_ramp_corners(flags, tp_w, ix, iy)
+	if nr >= 2:
+		return true
+	if nr >= 1 and _flag_ramp(flags, tp_w, vx, vy):
+		return true
+	# 旗在邻边（外角格自身 nr=0）：邻接崖格有 ≥2 坡旗即可
+	return _adjacent_tile_has_ramp_arm(flags, tp_w, tp_h, ix, iy)
+
+
+## 四邻崖格是否有 ≥2 角带 ramp（L 臂落在邻边）。
+static func _adjacent_tile_has_ramp_arm(
+	flags: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> bool:
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var nx: int = ix + d.x
+		var ny: int = iy + d.y
+		if nx < 0 or ny < 0 or nx >= map_w or ny >= map_h:
+			continue
+		if _count_ramp_corners(flags, tp_w, nx, ny) >= 2:
+			return true
+	return false
+
+
+## 是否落在某个未齐四旗外角碗的 2×2 内（非外角崖格本身）。
+static func _is_outer_corner_2x2_sibling(
+	flags: Array, layers: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> bool:
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var ox: int = ix + dx
+			var oy: int = iy + dy
+			if ox < 0 or oy < 0 or ox >= map_w or oy >= map_h:
+				continue
+			if not _is_outer_corner_ramp_tile(flags, layers, tp_w, tp_h, ox, oy):
+				continue
+			if _count_ramp_corners(flags, tp_w, ox, oy) >= 4:
+				continue
+			for t in _outer_corner_bowl_tiles(layers, tp_w, ox, oy):
+				if t.x == ix and t.y == iy:
+					return true
+	return false
+
+
+## 高台外角顶点周围 2×2 顶点中，至少 3 个同为高层（真外角；单点抬高泄漏则只有 1 个）。
+static func _vertex_has_plateau_support(
+	layers: Array, tp_w: int, tp_h: int, vx: int, vy: int, hi_layer: int
+) -> bool:
+	var n := 0
+	for y in [vy - 1, vy]:
+		for x in [vx - 1, vx]:
+			if x < 0 or y < 0 or x >= tp_w or y >= tp_h:
+				continue
+			if int(layers[y * tp_w + x]) == hi_layer:
+				n += 1
+	return n >= 3
+
+
+## 外角坡口的 2×2 地面：崖格 + 朝低侧三格（四格地形 Mesh）。
+static func _outer_corner_bowl_tiles(
+	layers: Array, tp_w: int, ix: int, iy: int
+) -> Array[Vector2i]:
+	var hi: Vector2i = _unique_high_corner_delta(layers, tp_w, ix, iy)
+	if hi.x < 0:
+		return [Vector2i(ix, iy)]
+	var dx: int = 1 if hi.x == 0 else -1
+	var dy: int = 1 if hi.y == 0 else -1
+	return [
+		Vector2i(ix, iy),
+		Vector2i(ix + dx, iy),
+		Vector2i(ix, iy + dy),
+		Vector2i(ix + dx, iy + dy),
+	]
+
+
+## 三低一高时唯一高角相对 BL 的 (dx,dy)；否则 (-1,-1)。
+static func _unique_high_corner_delta(
+	layers: Array, tp_w: int, ix: int, iy: int
+) -> Vector2i:
+	if _count_corners_at_min(layers, tp_w, ix, iy) != 3:
+		return Vector2i(-1, -1)
+	var i00: int = iy * tp_w + ix
+	var i10: int = i00 + 1
+	var i01: int = i00 + tp_w
+	var i11: int = i01 + 1
+	if i11 >= layers.size():
+		return Vector2i(-1, -1)
+	var lo: int = mini(
+		mini(int(layers[i00]), int(layers[i10])),
+		mini(int(layers[i01]), int(layers[i11]))
+	)
+	if int(layers[i00]) != lo:
+		return Vector2i(0, 0)
+	if int(layers[i10]) != lo:
+		return Vector2i(1, 0)
+	if int(layers[i01]) != lo:
+		return Vector2i(0, 1)
+	if int(layers[i11]) != lo:
+		return Vector2i(1, 1)
+	return Vector2i(-1, -1)
+
+
+static func _count_ramp_corners(flags: Array, tp_w: int, ix: int, iy: int) -> int:
+	var n := 0
+	if _flag_ramp(flags, tp_w, ix, iy):
+		n += 1
+	if _flag_ramp(flags, tp_w, ix + 1, iy):
+		n += 1
+	if _flag_ramp(flags, tp_w, ix, iy + 1):
+		n += 1
+	if _flag_ramp(flags, tp_w, ix + 1, iy + 1):
+		n += 1
+	return n
+
+
+## 是否在某个 L 凹陷格的 Chebyshev 邻域内。
+static func _near_l_recess(
+	flags: Array, layers: Array, tp_w: int, tp_h: int, ix: int, iy: int, radius: int
+) -> bool:
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var nx: int = ix + dx
+			var ny: int = iy + dy
+			if nx < 0 or ny < 0 or nx >= map_w or ny >= map_h:
+				continue
+			if _is_l_recess_entrance(flags, layers, tp_w, nx, ny):
+				return true
+	return false
+
+
+## 所有 L 凹槽的 2×2 四格（凹陷格 + 三兄弟）。
+static func _all_l_bowl_tiles(
+	flags: Array, layers: Array, tp_w: int, tp_h: int
+) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	var seen: Dictionary = {}
+	for iy in range(map_h):
+		for ix in range(map_w):
+			if not _is_l_recess_entrance(flags, layers, tp_w, ix, iy):
+				continue
+			for t in _l_bowl_tiles(layers, tp_w, ix, iy):
+				var key: int = t.y * 65536 + t.x
+				if seen.has(key):
+					continue
+				seen[key] = true
+				out.append(t)
+	return out
+
+
+## 单个 L 凹陷的 2×2：凹陷格 + 朝低角方向的三格。
+static func _l_bowl_tiles(layers: Array, tp_w: int, ix: int, iy: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = [Vector2i(ix, iy)]
+	for t in _l_recess_sibling_tiles(layers, tp_w, ix, iy):
+		out.append(t)
+	return out
+
+
+## 是否为某个 L 凹陷格低角所在 2×2 地块中的「非凹陷」格。
+static func _is_l_recess_2x2_sibling(
+	flags: Array, layers: Array, tp_w: int, tp_h: int, ix: int, iy: int
+) -> bool:
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var rx: int = ix + dx
+			var ry: int = iy + dy
+			if rx < 0 or ry < 0 or rx >= map_w or ry >= map_h:
+				continue
+			if not _is_l_recess_entrance(flags, layers, tp_w, rx, ry):
+				continue
+			for t in _l_recess_sibling_tiles(layers, tp_w, rx, ry):
+				if t.x == ix and t.y == iy:
+					return true
+	return false
+
+
+## L 凹陷格低角所在 2×2 地块中、除凹陷格外的另外三格。
+static func _l_recess_sibling_tiles(
+	layers: Array, tp_w: int, ix: int, iy: int
+) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var low: Vector2i = _l_recess_low_corner_delta(layers, tp_w, ix, iy)
+	if low.x < 0:
+		return out
+	for t in [
+		Vector2i(ix + low.x, iy),
+		Vector2i(ix, iy + low.y),
+		Vector2i(ix + low.x, iy + low.y),
+	]:
+		if t.x == ix and t.y == iy:
+			continue
+		out.append(t)
+	return out
+
+
+## 低角相对凹陷格 BL 的 (dx,dy)；非 L 凹陷返回 (-1,-1)。
+static func _l_recess_low_corner_delta(
+	layers: Array, tp_w: int, ix: int, iy: int
+) -> Vector2i:
+	var i00: int = iy * tp_w + ix
+	var i10: int = i00 + 1
+	var i01: int = i00 + tp_w
+	var i11: int = i01 + 1
+	if i11 >= layers.size():
+		return Vector2i(-1, -1)
+	var lv00: int = int(layers[i00])
+	var lv10: int = int(layers[i10])
+	var lv01: int = int(layers[i01])
+	var lv11: int = int(layers[i11])
+	var lo: int = mini(mini(lv00, lv10), mini(lv01, lv11))
+	var bits := 0
+	if lv00 == lo:
+		bits |= 1
+	if lv10 == lo:
+		bits |= 2
+	if lv01 == lo:
+		bits |= 4
+	if lv11 == lo:
+		bits |= 8
+	match bits:
+		1:
+			return Vector2i(0, 0)
+		2:
+			return Vector2i(1, 0)
+		4:
+			return Vector2i(0, 1)
+		8:
+			return Vector2i(1, 1)
+		_:
+			return Vector2i(-1, -1)
+
+
+## 地表格四角中层高 == min 的角数。
+static func _count_corners_at_min(layers: Array, tp_w: int, ix: int, iy: int) -> int:
+	var i00: int = iy * tp_w + ix
+	var i10: int = i00 + 1
+	var i01: int = i00 + tp_w
+	var i11: int = i01 + 1
+	if i11 >= layers.size():
+		return 0
+	var lv00: int = int(layers[i00])
+	var lv10: int = int(layers[i10])
+	var lv01: int = int(layers[i01])
+	var lv11: int = int(layers[i11])
+	var lo: int = mini(mini(lv00, lv10), mini(lv01, lv11))
+	var n := 0
+	if lv00 == lo:
+		n += 1
+	if lv10 == lo:
+		n += 1
+	if lv01 == lo:
+		n += 1
+	if lv11 == lo:
+		n += 1
+	return n
+
+
+## 坡身格 mask（仅有模 CliffTrans footprint）。
+## 不用裸 romp：有匹配无 GLB 时 dig 会留下灰缝（藏不了崖也盖不住洞）。
+static func _ramp_body_mask(
+	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult
+) -> PackedByteArray:
+	var out := PackedByteArray()
+	if hf == null or not hf.is_valid():
+		return out
+	var tp_w: int = hf.width
+	var tp_h: int = hf.height
+	var map_w: int = tp_w - 1
+	var map_h: int = tp_h - 1
+	out.resize(maxi(map_w * map_h, 0))
+	out.fill(0)
+	if ramp_data == null:
+		return out
+	for p in ramp_data.placements:
+		if p == null or not p.has_glb:
+			continue
+		for t in placement_footprint_tiles(p):
+			if t.x < 0 or t.y < 0 or t.x >= map_w or t.y >= map_h:
+				continue
+			out[t.y * map_w + t.x] = 1
+	return out
+
+
 ## 入口低角抬高半层（对齐 WE update_ground_heights）：tilepoint 上 1=该角 heights 再 +0.5*128。
+## 抬高：L 凹陷、外角坡口、非碗内两低经典入口。碗内三兄弟只 undig 不 boost。
 ## 仅 Present bake 使用，不写回 Heightfield。
-static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
+static func plan_entrance_height_boost(
+	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
+) -> PackedByteArray:
 	var out := PackedByteArray()
 	if hf == null or not hf.is_valid():
 		return out
@@ -134,30 +591,38 @@ static func plan_entrance_height_boost(hf: Wc3Heightfield) -> PackedByteArray:
 	var tp_h: int = hf.height
 	var layers: Array = hf.layer_heights
 	var flags: Array = hf.flags_packed
-	out.resize(maxi(tp_w * tp_h, 0))
+	out.resize(maxi(tp_w * hf.height, 0))
 	out.fill(0)
-	for iy in range(tp_h - 1):
-		for ix in range(tp_w - 1):
-			if not is_entrance(flags, layers, tp_w, tp_h, ix, iy):
-				continue
-			var i00: int = iy * tp_w + ix
-			var i10: int = i00 + 1
-			var i01: int = i00 + tp_w
-			var i11: int = i01 + 1
-			var bl: int = int(layers[i00])
-			var br: int = int(layers[i10])
-			var tl: int = int(layers[i01])
-			var top_r: int = int(layers[i11])
-			var lo: int = mini(mini(bl, br), mini(tl, top_r))
-			# 幂等：多入口格共享角可重复标 1
-			if bl == lo:
-				out[i00] = 1
-			if br == lo:
-				out[i10] = 1
-			if tl == lo:
-				out[i01] = 1
-			if top_r == lo:
-				out[i11] = 1
+	var ents: Array[Vector2i] = plan_entrance_tiles(hf, ramp_data)
+	for t in ents:
+		var l_rec: bool = _is_l_recess_entrance(flags, layers, tp_w, t.x, t.y)
+		var outer: bool = _is_outer_corner_ramp_tile(flags, layers, tp_w, tp_h, t.x, t.y)
+		var clas: bool = (
+			_is_classic_entrance(flags, layers, tp_w, t.x, t.y)
+			and _count_corners_at_min(layers, tp_w, t.x, t.y) == 2
+			and not _is_l_recess_2x2_sibling(flags, layers, tp_w, tp_h, t.x, t.y)
+		)
+		if not l_rec and not outer and not clas:
+			continue
+		var i00: int = t.y * tp_w + t.x
+		var i10: int = i00 + 1
+		var i01: int = i00 + tp_w
+		var i11: int = i01 + 1
+		if i11 >= layers.size() or i11 >= out.size():
+			continue
+		var bl: int = int(layers[i00])
+		var br: int = int(layers[i10])
+		var tl: int = int(layers[i01])
+		var top_r: int = int(layers[i11])
+		var lo: int = mini(mini(bl, br), mini(tl, top_r))
+		if bl == lo:
+			out[i00] = 1
+		if br == lo:
+			out[i10] = 1
+		if tl == lo:
+			out[i01] = 1
+		if top_r == lo:
+			out[i11] = 1
 	return out
 
 
@@ -174,13 +639,7 @@ static func placement_footprint_tiles(p: Wc3RampPlacement) -> Array[Vector2i]:
 	return out
 
 
-## 直崖叠段模型是否应被斜坡跳过（按「单块模型」判断，非整格一刀切）。
-##
-## 规则：
-## 1) 入口格：该格全部直崖模型都跳过（要留地面通道）。
-## 2) 被某 CliffTrans footprint 盖住，且叠段高度带与坡 base 相交 → 跳过该块。
-##    高度带：崖块 [piece_base, piece_base+2)，坡 [ramp_base, ramp_base+2)。
-## 3) 否则保留（高台上层叠段可留）。
+## 直崖叠段是否跳过。hide 与 undig 必须同源（`_keeps_ground_over_cliff`），禁止藏崖留灰缝。
 static func should_hide_cliff_piece(
 	ix: int,
 	iy: int,
@@ -194,9 +653,7 @@ static func should_hide_cliff_piece(
 	var tp_h: int = hf.height
 	if ix < 0 or iy < 0 or ix >= tp_w - 1 or iy >= tp_h - 1:
 		return false
-	var layers: Array = hf.layer_heights
-	var flags: Array = hf.flags_packed
-	if is_entrance(flags, layers, tp_w, tp_h, ix, iy):
+	if _keeps_ground_over_cliff(hf.flags_packed, hf.layer_heights, tp_w, tp_h, ix, iy):
 		return true
 	for p in ramp_data.placements:
 		if p == null or not p.has_glb:
@@ -260,16 +717,12 @@ static func _try_vertical(
 	if int(layers[tl]) != ae or int(layers[top_r]) != cf:
 		return {"ok": false}
 	var base: int = mini(ae, cf)
-	# 左列三格 ramp 同，右列三格 ramp 同，且左右相反
-	if not (
-		ramp[bl] == ramp[tl]
-		and ramp[bl] == ramp[ttl]
-		and ramp[br] == ramp[top_r]
-		and ramp[br] == ramp[ttr]
-		and ramp[bl] != ramp[br]
+	# 左列 / 右列 ramp 相反；允许 L 转角「中格被另一臂污染」的放宽（见 _ramp_cols_opposite）
+	if not _ramp_cols_opposite(
+		ramp[bl], ramp[tl], ramp[ttl], ramp[br], ramp[top_r], ramp[ttr]
 	):
 		return {"ok": false}
-	# TAG 角序：ttl, ttr, br, bl（HiveWE 竖窗）
+	# TAG 角序：ttl, ttr, br, bl（HiveWE 竖窗）；字符仍按实际旗位
 	var tag := (
 		_tag_char(ramp[ttl] != 0, int(layers[ttl]), base)
 		+ _tag_char(ramp[ttr] != 0, int(layers[ttr]), base)
@@ -300,12 +753,9 @@ static func _try_horizontal(
 	if int(layers[br]) != ae or int(layers[top_r]) != bf:
 		return {"ok": false}
 	var base: int = mini(ae, bf)
-	if not (
-		ramp[bl] == ramp[br]
-		and ramp[bl] == ramp[brr]
-		and ramp[tl] == ramp[top_r]
-		and ramp[tl] == ramp[trr]
-		and ramp[bl] != ramp[tl]
+	# 下行 / 上行 ramp 相反；同样允许 L 转角中格污染放宽
+	if not _ramp_cols_opposite(
+		ramp[bl], ramp[br], ramp[brr], ramp[tl], ramp[top_r], ramp[trr]
 	):
 		return {"ok": false}
 	# TAG：tl, trr, brr, bl
@@ -316,6 +766,20 @@ static func _try_horizontal(
 		+ _tag_char(ramp[bl] != 0, int(layers[bl]), base)
 	)
 	return _placement_from_tag(i, j, tag, base, bl, cliff_tex, cliff_sets, cat, Wc3RampLogic.AXIS_H)
+
+
+## 两列（或横窗的两行）ramp 是否「一侧全同、两侧相反」。
+## 严格：HiveWE 原条件。放宽：坡列全同，对侧仅中格被另一臂染成同旗（L 转角典型），两端仍相反。
+static func _ramp_cols_opposite(a0: int, a1: int, a2: int, b0: int, b1: int, b2: int) -> bool:
+	if a0 == a1 and a1 == a2 and b0 == b1 and b1 == b2 and a0 != b0:
+		return true
+	# A 为完整坡列，B 仅中格被污染
+	if a0 == a1 and a1 == a2 and b0 == b2 and b0 != a0 and b1 == a0:
+		return true
+	# B 为完整坡列，A 仅中格被污染
+	if b0 == b1 and b1 == b2 and a0 == a2 and a0 != b0 and a1 == b0:
+		return true
+	return false
 
 
 static func _placement_from_tag(

@@ -23,6 +23,9 @@ const ToolPaletteWindowScript := preload("res://editor/scripts/ui/tool_palette_w
 var _doc
 var _history: EditorCommandHistory = EditorCommandHistory.new()
 var _rebuilding: bool = false
+## 撤销/重做时若正赶上笔刷重建，延后补一次表现刷新
+var _pending_history_rebuild: bool = false
+var _pending_history_cliff: bool = false
 var _we_data
 var _hover_tile: Vector2i = Vector2i(-1, -1)
 var _status_key: String = "EDITOR_STATUS_IDLE"
@@ -289,14 +292,31 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 			cmd.get_label() if cmd else "?",
 		]
 	)
-	if not should_rebuild or _rebuilding or map_root == null or _doc == null:
+	if not should_rebuild or map_root == null or _doc == null:
+		return
+	var cliff: bool = cmd.affects_cliffs_water() if cmd else false
+	if _rebuilding:
+		_pending_history_rebuild = true
+		_pending_history_cliff = _pending_history_cliff or cliff
+		MapLog.debug(MapLog.Layer.EDITOR, "History", "rebuild deferred (busy)")
+		return
+	_run_history_rebuild(cliff)
+
+
+func _run_history_rebuild(cliff: bool) -> void:
+	if map_root == null or _doc == null:
 		return
 	_rebuilding = true
-	if cmd.affects_cliffs_water():
+	if cliff:
 		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
 	else:
 		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
+	if _pending_history_rebuild:
+		var again_cliff: bool = _pending_history_cliff
+		_pending_history_rebuild = false
+		_pending_history_cliff = false
+		call_deferred("_run_history_rebuild", again_cliff)
 
 
 func _spawn_tool_palette(kind: int) -> void:
@@ -324,10 +344,10 @@ func _spawn_tool_palette(kind: int) -> void:
 		menu.set_show_palettes_checked(true)
 	var offset := _palette_spawn_index * 28
 	_palette_spawn_index += 1
-	# 相对主编辑窗口定位。Windows 上 always_on_top 与 transient 互斥，取 transient（随主窗）。
+	# Windows：always_on_top 与 transient 互斥。工具面板要压在主编辑窗上 → 只用置顶。
 	var main_win := get_viewport().get_window()
-	win.always_on_top = false
-	win.transient = true
+	win.transient = false
+	win.always_on_top = true
 	if main_win != null:
 		win.position = main_win.position + Vector2i(24 + offset, 72 + offset)
 	else:
@@ -336,6 +356,7 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.unfocusable = false
 	win.visible = true
 	win.show()
+	win.move_to_foreground()
 
 
 func _on_brush_settings_changed(size: int, shape: int) -> void:
@@ -480,6 +501,11 @@ func _on_dirty_changed(dirty: bool) -> void:
 func _on_brush_rebuild() -> void:
 	if _rebuilding:
 		MapLog.debug(MapLog.Layer.EDITOR, "Brush", "rebuild skipped (busy)")
+		_pending_history_rebuild = true
+		_pending_history_cliff = (
+			_pending_history_cliff
+			or (brush != null and bool(brush.get("cliff_dirty")))
+		)
 		return
 	_rebuilding = true
 	var cliff := brush != null and bool(brush.get("cliff_dirty"))
@@ -494,6 +520,11 @@ func _on_brush_rebuild() -> void:
 	else:
 		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
+	if _pending_history_rebuild:
+		var again_cliff: bool = _pending_history_cliff
+		_pending_history_rebuild = false
+		_pending_history_cliff = false
+		call_deferred("_run_history_rebuild", again_cliff)
 
 
 func _apply_document(full_reload: bool) -> void:

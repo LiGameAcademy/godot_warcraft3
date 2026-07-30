@@ -168,11 +168,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_paint_at_mouse(mb.position)
 				get_viewport().set_input_as_handled()
 			else:
-				_cliff_level_anchor = -1
-				_last_vert = INVALID_VERT
-				_end_stroke()
-				if _dirty_paint:
-					_request_rebuild(true)
+				_finish_paint_gesture()
+				get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _painting:
@@ -184,6 +181,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	# 工具面板 always_on_top 时，松键事件可能到不了主视口 → 笔划永不 record
+	if _painting and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_paint_gesture()
 	if _dirty_paint and not _painting:
 		_request_rebuild(false)
 	elif _dirty_paint and _painting:
@@ -193,6 +193,18 @@ func _process(_delta: float) -> void:
 	# 工具面板抢焦点后主窗口可能收不到 MouseMotion：按全局鼠标位置轮询悬停
 	if not _painting:
 		_poll_hover_from_global_mouse()
+
+
+## 结束一次按下→抬起：入撤销栈并请求重建。
+func _finish_paint_gesture() -> void:
+	if not _painting and not _stroke.is_active():
+		return
+	_painting = false
+	_cliff_level_anchor = -1
+	_last_vert = INVALID_VERT
+	_end_stroke()
+	if _dirty_paint:
+		_request_rebuild(true)
 
 
 ## 鼠标在主编辑窗口地图区时更新预览（不依赖窗口焦点 / 右键激活）。
@@ -262,19 +274,18 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 		var dirs: Vector2i = _ramp_dirs_from_mouse(vert, screen_pos)
 		var hx: int = dirs.x
 		var hy: int = dirs.y
-		# 按实际 marked 采集快照（低侧 fallback / 对角可超出固定半径）
-		var marked: Array[Vector2i] = document.peek_ramp_spine_at(vert.x, vert.y, hx, hy)
-		if marked.is_empty():
-			_stroke.capture_before_at(vert.x, vert.y, 5)
-		else:
-			_stroke.capture_before_points(marked)
-			_stroke.capture_before_at(vert.x, vert.y, 0)
-		var ramp_changed: bool = bool(document.paint_ramp_at(vert.x, vert.y, hx, hy))
-		if marked.is_empty():
-			_stroke.capture_after_at(vert.x, vert.y, 5)
-		else:
-			_stroke.capture_after_points(marked)
-			_stroke.capture_after_at(vert.x, vert.y, 0)
+		# 先采足够大邻域 before（低侧意图原点≤2 + 臂长≤2 + L 补心）；避免只记 click 漏掉真正落旗点
+		const RAMP_SNAP_R := 6
+		_stroke.capture_before_at(vert.x, vert.y, RAMP_SNAP_R)
+		var ramp_result: Dictionary = document.try_paint_ramp_at(vert.x, vert.y, hx, hy)
+		document.last_ramp_message = str(ramp_result.get("message", ""))
+		var ramp_changed: bool = bool(ramp_result.get("changed", false))
+		_stroke.capture_after_at(vert.x, vert.y, RAMP_SNAP_R)
+		# 结果 marked 再刷一遍 after（before 已在邻域内；勿在 paint 后再 capture_before）
+		var marked: Array = ramp_result.get("marked", [])
+		for v in marked:
+			var mp: Vector2i = v as Vector2i
+			_stroke.capture_after_at(mp.x, mp.y, 0)
 		var msg: String = str(document.last_ramp_message)
 		if not msg.is_empty():
 			ramp_feedback.emit(msg)

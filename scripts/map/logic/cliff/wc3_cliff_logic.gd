@@ -146,7 +146,7 @@ func paint_corner(
 			changed_any = true
 			touched.append_array(raised)
 
-	## 策略 A：只清本笔刷点相关坡（刷点 ±2 + 层高变更顶点自身），不扫脏区 AABB
+	## 策略 A：按层高变更点清除其所在连续坡臂（非 ±2 方阵）
 	if changed_any and propagate >= 0:
 		_clear_ramp_flags_near(flags, ix, iy, touched)
 
@@ -173,19 +173,40 @@ func paint_corner(
 	return changed_any
 
 
-## 策略 A：改崖只清「本顶点相关」坡旗——刷点邻域盖住直坡臂低侧菱形；
-## 另清 touched 自身（传播改高的点），不对每个 touched 再外扩（否则蛋糕/传播会整图清坡）。
-const _RAMP_CLEAR_EXPAND: int = 2
-
-
+## 策略 A（收紧）：只清「层高变更顶点」所穿过的连续坡臂，不扫刷点 ±2 方阵。
+## 方阵会误删平行邻列仍合法的斜坡；蛋糕/传播 touched 很多时尤其过量。
+## 臂长最多 3（原点±2 步），遇无旗即停，不跨空洞扫到无关坡。
 func _clear_ramp_flags_near(flags: Array, brush_x: int, brush_y: int, touched: Array) -> void:
 	var tw: int = heightfield.width
 	var th: int = heightfield.height
-	for dy in range(-_RAMP_CLEAR_EXPAND, _RAMP_CLEAR_EXPAND + 1):
-		for dx in range(-_RAMP_CLEAR_EXPAND, _RAMP_CLEAR_EXPAND + 1):
-			_clear_ramp_bit_at(flags, tw, th, brush_x + dx, brush_y + dy)
+	var seeds: Dictionary = {}
+	seeds[Vector2i(brush_x, brush_y)] = true
 	for p in touched:
-		_clear_ramp_bit_at(flags, tw, th, int(p.x), int(p.y))
+		seeds[Vector2i(int(p.x), int(p.y))] = true
+	for key in seeds.keys():
+		var s: Vector2i = key as Vector2i
+		_clear_ramp_arms_through(flags, tw, th, s.x, s.y)
+
+
+## 清除经过 (x,y) 的连续 FLAG_RAMP（自身 + 四向各最多 2 步，遇空停）。
+func _clear_ramp_arms_through(flags: Array, tw: int, th: int, x: int, y: int) -> void:
+	_clear_ramp_bit_at(flags, tw, th, x, y)
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		for step in range(1, 3):
+			var nx: int = x + d.x * step
+			var ny: int = y + d.y * step
+			if not _has_ramp_bit(flags, tw, th, nx, ny):
+				break
+			_clear_ramp_bit_at(flags, tw, th, nx, ny)
+
+
+func _has_ramp_bit(flags: Array, tw: int, th: int, x: int, y: int) -> bool:
+	if x < 0 or y < 0 or x >= tw or y >= th:
+		return false
+	var i: int = y * tw + x
+	if i < 0 or i >= flags.size():
+		return false
+	return (int(flags[i]) & _RAMP_BIT) != 0
 
 
 func _clear_ramp_bit_at(flags: Array, tw: int, th: int, x: int, y: int) -> void:
