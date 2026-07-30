@@ -1,7 +1,7 @@
 class_name MapPlaceholders
 extends RefCounted
-## 单位 / 装饰缺失 GLB 时的灰盒占位。
 
+## 单位 / 装饰缺失 GLB 时的灰盒占位。
 
 const PLAYER_COLORS: Array[Color] = [
 	Color(1.0, 0.1, 0.1),

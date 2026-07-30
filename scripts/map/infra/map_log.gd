@@ -4,7 +4,6 @@ extends Object
 ## 地图模块调试日志：分层 + 彩色 print_rich。
 ## 用法：MapLog.info(MapLog.Layer.PRESENT, "Terrain", "gaps=%d" % n)
 
-
 enum Layer { DATA, CATALOG, LOGIC, PRESENT, EDITOR }
 enum Level { DEBUG, INFO, WARN, ERROR }
 

@@ -35,6 +35,11 @@ func _run() -> void:
 	_test_bend_low_side_not_auto_diagonal()
 	_test_l_corner_from_low_side_correct_origin()
 	_test_l_then_dual_axis_expands_to_diagonal()
+	_test_soften_dirs()
+	_test_check_column_gate()
+	_test_check_diagonal_box_gate()
+	_test_side_is_l_arm()
+	_test_ramp_cols_opposite()
 	if failed == 0:
 		print("selftest_ramp_logic: PASS")
 		quit(0)
@@ -848,3 +853,149 @@ func _test_l_then_dual_axis_expands_to_diagonal() -> void:
 		_fail("l2d missing far diagonal cell (6,6)")
 		return
 	print("  l_then_dual_axis_expands_to_diagonal OK n=%d" % (r.get("marked", []) as Array).size())
+
+
+## ============================================================
+## 内部路径测试（覆盖 Wc3RampPaint 私有函数）
+## ============================================================
+
+func _test_soften_dirs() -> void:
+	var s: Vector2i = Wc3RampPaint.soften_dirs(1.0, 0.3)
+	if s != Vector2i(1, 0):
+		_fail("soften_dirs hx-dominant expect +X only got %s" % str(s))
+		return
+	var d: Vector2i = Wc3RampPaint.soften_dirs(1.0, 1.0)
+	if d != Vector2i(1, 1):
+		_fail("soften_dirs equal expect diagonal got %s" % str(d))
+		return
+	var v: Vector2i = Wc3RampPaint.soften_dirs(0.3, 1.0)
+	if v != Vector2i(0, 1):
+		_fail("soften_dirs hy-dominant expect +Y only got %s" % str(v))
+		return
+	var n: Vector2i = Wc3RampPaint.soften_dirs(0.0, 0.0)
+	if n != Vector2i(0, 0):
+		_fail("soften_dirs zero expect (0,0) got %s" % str(n))
+		return
+	var neg: Vector2i = Wc3RampPaint.soften_dirs(-0.5, 0.1)
+	if neg != Vector2i(-1, 0):
+		_fail("soften_dirs negative hx expect (-1,0) got %s" % str(neg))
+		return
+	print("  soften_dirs OK")
+
+
+func _test_check_column_gate() -> void:
+	## 构造：原点高=3，沿 +X 三点低=2，边界和层高都满足，无侧邻干扰
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 8,
+		"height": 8,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if x <= 1 else 2
+	doc._rebind_logic()
+	## 原点 (1,3)：高=3，后两步 (2,3)(3,3)：低=2，侧邻无高
+	var ok: bool = doc.try_paint_ramp_at(1, 3, 1, 0).get("changed", false)
+	if not ok:
+		_fail("check_column_gate: valid column should pass")
+		return
+	## 破坏后两步层高：中间变高 → 门禁应拒
+	doc.heightfield.layer_heights[3 * w + 2] = 3
+	doc._rebind_logic()
+	var blocked: bool = doc.try_paint_ramp_at(1, 3, 1, 0).get("changed", false)
+	if blocked:
+		_fail("check_column_gate: column with wrong layer should be blocked")
+		return
+	print("  check_column_gate OK")
+
+
+func _test_check_diagonal_box_gate() -> void:
+	## 外角：高台 x<=3 且 y<=3；原点 (3,3) 高=3，对角 3×3 八个邻点全低=2
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 10,
+		"height": 10,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 3 and y <= 3) else 2
+	doc._rebind_logic()
+	## 验证对角 3×3 成功（原点 (3,3)，双轴都指向低侧）
+	var r: Dictionary = doc.try_paint_ramp_at(3, 3, 1, 1)
+	if not bool(r.get("ok", false)):
+		_fail("check_diagonal_box: valid 3x3 should pass: %s" % str(r))
+		return
+	if (r.get("marked", []) as Array).size() < 9:
+		_fail("check_diagonal_box: valid 3x3 should mark 9 points got %d" % (r.get("marked", []) as Array).size())
+		return
+	## 破坏一个邻点层高 → 对角应被拒
+	doc.heightfield.layer_heights[4 * w + 4] = 3
+	doc._rebind_logic()
+	var blocked: Dictionary = doc.try_paint_ramp_at(3, 3, 1, 1)
+	if bool(blocked.get("changed", false)):
+		_fail("check_diagonal_box: broken box should be blocked")
+		return
+	print("  check_diagonal_box_gate OK")
+
+
+func _test_side_is_l_arm() -> void:
+	## 构造 L：原点 (3,3) 已有 +Y 竖臂；侧邻 (2,3) 应被识别为 L 的一肢
+	var doc = MapDocumentScript.new()
+	doc.create_from_options({
+		"width": 10,
+		"height": 10,
+		"main_tileset": "I",
+		"ground_tilesets": ["Idrt"],
+		"cliff_tilesets": ["CIsn"],
+		"cliff_level": 2,
+	})
+	var w: int = doc.heightfield.width
+	for y in range(doc.heightfield.height):
+		for x in range(w):
+			doc.heightfield.layer_heights[y * w + x] = 3 if (x <= 3 and y <= 3) else 2
+	doc._rebind_logic()
+	## 先刷竖臂 (3,3) → +Y
+	doc.try_paint_ramp_at(3, 3, 0, 1)
+	## 再刷水平臂 (3,3) → +X（允许侧邻有旗，因为构成 L）
+	var r: Dictionary = doc.try_paint_ramp_at(3, 3, 1, 0)
+	if not bool(r.get("ok", false)):
+		_fail("side_is_l_arm: L second arm should pass: %s" % str(r))
+		return
+	if str(r.get("variant", "")) != "l":
+		_fail("side_is_l_arm: expect l got %s" % str(r.get("variant")))
+		return
+	print("  side_is_l_arm OK")
+
+
+func _test_ramp_cols_opposite() -> void:
+	## 严格相反：A=[1,1,1] B=[0,0,0] → true
+	if not Wc3RampCollect._ramp_cols_opposite(1, 1, 1, 0, 0, 0):
+		_fail("_ramp_cols_opposite strict opposite should be true")
+		return
+	## 放宽 A 污染：A=[1,1,1] B=[0,1,0] → true（中格被染）
+	if not Wc3RampCollect._ramp_cols_opposite(1, 1, 1, 0, 1, 0):
+		_fail("_ramp_cols_opposite A-polluted should be true")
+		return
+	## 放宽 B 污染：A=[0,1,0] B=[0,0,0] → true（中格被染）
+	if not Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 0, 0, 0):
+		_fail("_ramp_cols_opposite B-polluted should be true")
+		return
+	## 非法：双向各污染 A=[0,1,0] B=[1,0,1] → false（无法判断 base）
+	if Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 1, 0, 1):
+		_fail("_ramp_cols_opposite double-polluted should be false")
+		return
+	## 非法：同相 A=[1,1,1] B=[1,1,1] → false
+	if Wc3RampCollect._ramp_cols_opposite(1, 1, 1, 1, 1, 1):
+		_fail("_ramp_cols_opposite same-phase should be false")
+		return
+	print("  ramp_cols_opposite OK")

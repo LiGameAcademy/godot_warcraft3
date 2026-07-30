@@ -1,10 +1,10 @@
 class_name RuntimeAssets
 extends RefCounted
+
 ## 运行时资源 I/O：只从磁盘加载（asset-converted 被 .gdignore）。
 ## 地图代码请用 converted_path / load_*；勿再手写 res://assets/asset-converted/ 前缀。
 ##
 ## 解析顺序（via resolve）：AssetProvider overlay → converted → .cache
-
 
 const CONVERTED_RES_ROOT := "res://assets/asset-converted"
 const SLK_RES_ROOT := "res://assets/slk-exported"

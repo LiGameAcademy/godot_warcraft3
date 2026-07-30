@@ -1,7 +1,7 @@
 class_name MapModelCache
 extends RefCounted
-## 运行时 GLB 场景 / Mesh 缓存，供单位与装饰层共用。
 
+## 运行时 GLB 场景 / Mesh 缓存，供单位与装饰层共用。
 
 var _scene_cache: Dictionary = {}
 ## path → bool（是否含 AnimationPlayer 动画）

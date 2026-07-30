@@ -1,5 +1,6 @@
 class_name Wc3TileVertex
 extends RefCounted
+
 ## 瓦片顶点（tilepoint）视图：指向 Wc3Heightfield 某一 index，读写即改 SoA。
 ## WC3 网格改动的基本单位；不要脱离 Heightfield 长期缓存大量实例。
 

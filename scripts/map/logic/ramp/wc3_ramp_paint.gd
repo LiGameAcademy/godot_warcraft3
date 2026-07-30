@@ -3,13 +3,16 @@ extends RefCounted
 
 const MapLogScript = preload("res://scripts/map/infra/map_log.gd")
 
+## 低侧 fallback 搜索半径（格）
+const LOW_SIDE_SEARCH_RADIUS := 2
+
 ## HiveWE `CliffOperator::update_ramp` 同构规划（只算标记，不写盘）。
 ## 权威：docs/RAMP_WE.md §4
 ##
 ## 三层架构：
 ##   Step 1 — 单列斜坡：沿方向标注连续 3 个顶点
 ##   Step 2 — 方向变体：
-##     同侧扩展 → 增加斜坡宽度（多列）
+##     同侧扩展 → 增加斜坡宽度（多列，暂未接入路由 @deprecated）
 ##     邻侧扩展 → 对角斜坡，3×3 box（9点）
 ##   Step 3 — 路由：根据顶点信息 + 门禁校验，决定落哪种变体
 ##
@@ -55,6 +58,7 @@ static func mark_column(
 ## ============================================================
 
 ## 2a. 同侧扩展：增加斜坡宽度（沿侧方向扩展多列）
+## @deprecated 暂未接入路由，需要时启用
 ## origin: 坡的起点（高侧角点）
 ## main_dir: 坡的方向（单列的延伸方向）
 ## side_dir: 侧方向（垂直于 main_dir，决定往哪侧扩宽）
@@ -230,48 +234,44 @@ static func _has_full_ramp_arm(
 ## Step 3：路由判断
 ## ============================================================
 
-## 主入口：规划斜坡落点（对齐 HiveWE `CliffOperator::update_ramp`）
-## horizontal/vertical ∈ {-1, 0, 1} — 鼠标相对格子的偏移方向
-## 返回 plan dict（含 ok, variant, axis, sx, sy, marked）
-static func plan(
-	ix: int,
-	iy: int,
-	layers: Array,
-	flags: Array,
-	tp_w: int,
-	tp_h: int,
-	horizontal: int = 0,
-	vertical: int = 0
+## ============================================================
+## Phase A：边界 + 层差 + 方向规范
+## ============================================================
+static func _plan_phase_a(
+	ix: int, iy: int, layers: Array, tp_w: int, tp_h: int,
+	horizontal: int, vertical: int
 ) -> Dictionary:
-	## 边界检查
 	if layers.is_empty() or ix < 0 or iy < 0 or ix >= tp_w or iy >= tp_h:
 		return Wc3RampLogic.plan_fail("顶点越界")
-
-	## 计算层差
 	var origin_level: int = int(layers[iy * tp_w + ix])
 	var target_level: int = origin_level - 1
 	if target_level < 0:
 		return Wc3RampLogic.plan_fail("已在最低层，无法向更低刷坡")
-
-	## 规范方向
 	var hx: int = clampi(horizontal, -1, 1)
 	var hy: int = clampi(vertical, -1, 1)
-
-	## 零方向时按邻域推断
 	if hx == 0 and hy == 0:
 		var inferred: Vector2i = _infer_dirs(ix, iy, layers, tp_w, tp_h, target_level)
 		hx = inferred.x
 		hy = inferred.y
 		if hx == 0 and hy == 0:
 			return Wc3RampLogic.plan_fail("附近没有层差为 1 的低侧（请点在高台侧）")
+	return {"origin_level": origin_level, "target_level": target_level, "hx": hx, "hy": hy}
 
-	## 建立 ramp 快照（只读当前已有标记，用于门禁判断）
+
+## ============================================================
+## Phase B：ramp 快照 + 三重门禁
+## ============================================================
+static func _plan_phase_b(
+	ix: int, iy: int,
+	layers: Array, flags: Array,
+	origin_level: int, target_level: int,
+	hx: int, hy: int,
+	tp_w: int, tp_h: int
+) -> Dictionary:
 	var ramp: PackedByteArray = PackedByteArray()
 	ramp.resize(tp_w * tp_h)
 	for i in range(flags.size()):
 		ramp[i] = 1 if (int(flags[i]) & Wc3Coords.FLAG_RAMP) != 0 else 0
-
-	## HiveWE：对角初值只看鼠标双轴；再分别校验横/竖列；对角盒只验层高（不过列门禁）
 	var allow_h: bool = (hx != 0) and _check_column(
 		ix, iy, hx, 0, origin_level, target_level, layers, ramp, tp_w, tp_h
 	)
@@ -281,48 +281,58 @@ static func plan(
 	var allow_d: bool = (hx != 0 and hy != 0) and _check_diagonal_box(
 		ix, iy, hx, hy, origin_level, target_level, layers, tp_w, tp_h
 	)
+	return {"ramp": ramp, "allow_h": allow_h, "allow_v": allow_v, "allow_d": allow_d}
 
-	## L ≠ 对角：
-	## - 单轴 / 仅一臂：只补缺臂 + 中心（不升 3×3）
-	## - 两臂已齐（L 成型）且双轴 + 对角盒：允许升满 3×3（L→对角）
-	## - 空外角双轴：照常 diagonal
+
+## ============================================================
+## Phase C：L 状态机 + 门禁压制
+## ============================================================
+static func _plan_phase_c(
+	ix: int, iy: int, hx: int, hy: int,
+	allow_h: bool, allow_v: bool, allow_d: bool,
+	ramp: PackedByteArray, layers: Array, target_level: int,
+	tp_w: int, tp_h: int
+) -> Dictionary:
 	var had_arm: bool = _origin_has_any_full_arm(ix, iy, ramp, tp_w, tp_h)
-	var has_h_arm: bool = (
-		_has_full_ramp_arm(ix, iy, 1, 0, ramp, tp_w, tp_h)
-		or _has_full_ramp_arm(ix, iy, -1, 0, ramp, tp_w, tp_h)
+	var lst: LRampState = _compute_l_state(
+		ix, iy, hx, hy, allow_h, allow_v, allow_d, ramp, tp_w, tp_h, layers, target_level
 	)
-	var has_v_arm: bool = (
-		_has_full_ramp_arm(ix, iy, 0, 1, ramp, tp_w, tp_h)
-		or _has_full_ramp_arm(ix, iy, 0, -1, ramp, tp_w, tp_h)
-	)
-	var l_ready: bool = has_h_arm and has_v_arm
-	if allow_d and had_arm and not l_ready:
+	if allow_d and had_arm and lst != LRampState.READY:
 		allow_d = false
 	if had_arm and not allow_d:
 		if hx != 0 and _has_full_ramp_arm(ix, iy, hx, 0, ramp, tp_w, tp_h):
 			allow_h = false
 		if hy != 0 and _has_full_ramp_arm(ix, iy, 0, hy, ramp, tp_w, tp_h):
 			allow_v = false
+	return {
+		"had_arm": had_arm, "lst": lst,
+		"allow_h": allow_h, "allow_v": allow_v, "allow_d": allow_d,
+		"ramp": ramp,
+	}
 
-	## 仅 L 补心：两臂已齐、列门禁都过不了新点，但仍缺凹口中心
-	var l_fill_only: bool = (
-		not allow_h and not allow_v and not allow_d
-		and _would_fill_l_center(
-			ix, iy, layers, ramp, target_level, tp_w, tp_h, hx, hy, true, true
-		)
-	)
 
-	## 至少有一个方向可落
-	if not allow_h and not allow_v and not allow_d and not l_fill_only:
+## ============================================================
+## Phase D：落旗 + 变体解析
+## ============================================================
+static func _plan_phase_d(
+	ix: int, iy: int,
+	hx: int, hy: int,
+	layers: Array, flags: Array,
+	allow_h: bool, allow_v: bool, allow_d: bool,
+	had_arm: bool, lst: LRampState,
+	target_level: int,
+	tp_w: int, tp_h: int,
+	ramp: PackedByteArray
+) -> Dictionary:
+	if not allow_h and not allow_v and not allow_d and lst != LRampState.FILL_ONLY:
 		MapLogScript.debug(
 			MapLogScript.Layer.LOGIC, "RampPaint",
 			"reject @(ix=%d,iy=%d) hx=%d hy=%d origin=%d target=%d allow_h=%s allow_v=%s allow_d=%s had_arm=%s"
-			% [ix, iy, hx, hy, origin_level, target_level,
+			% [ix, iy, hx, hy, target_level + 1, target_level,
 			   str(allow_h), str(allow_v), str(allow_d), str(had_arm)]
 		)
 		return Wc3RampLogic.plan_fail("侧脊限制或不完整低侧，无法落坡")
 
-	## 落旗：直臂 / 外角 3×3 各自写入；L 绝不走 3×3
 	if allow_h:
 		mark_column(ramp, ix, iy, Vector2i(hx, 0), tp_w, tp_h)
 	if allow_v:
@@ -330,20 +340,17 @@ static func plan(
 	if allow_d:
 		extend_adjacent_side(ramp, ix, iy, hx, hy, tp_w, tp_h)
 
-	## L 补心：只按本笔横/竖意图象限填（HiveWE），避免四向乱补
 	var filled_l: int = fill_l_centers(
 		ramp, ix, iy, layers, target_level, tp_w, tp_h,
-		hx, hy, allow_h or allow_d or l_fill_only, allow_v or allow_d or l_fill_only
+		hx, hy,
+		allow_h or allow_d or lst == LRampState.FILL_ONLY,
+		allow_v or allow_d or lst == LRampState.FILL_ONLY
 	)
 
-	## 收集本次落标记的顶点（与旧标记的差集）
-	var marked: Array[Vector2i] = _collect_new_marks(
-		ramp, flags, tp_w, tp_h
-	)
+	var marked: Array[Vector2i] = _collect_new_marks(ramp, flags, tp_w, tp_h)
 	if marked.is_empty():
 		return Wc3RampLogic.plan_fail("斜坡已存在")
 
-	## 变体：对角 / L / 直坡 三分
 	var axis: String
 	var variant: String
 	if allow_d:
@@ -351,10 +358,12 @@ static func plan(
 		variant = Wc3RampLogic.VARIANT_DIAGONAL
 	elif (
 		filled_l > 0
-		or l_fill_only
+		or lst == LRampState.FILL_ONLY
 		or (had_arm and (allow_h or allow_v))
 		or (allow_h and allow_v)
 	):
+		## L 变体使用 AXIS_D：L 本质是两臂交汇的角点，与对角共享「角轴」语义。
+		## 后续 footprint 判断只用 H/V；D 轴仅作标记用途，不影响 Present 建模。
 		axis = Wc3RampLogic.AXIS_D
 		variant = Wc3RampLogic.VARIANT_L
 	elif allow_h:
@@ -371,6 +380,56 @@ static func plan(
 		   filled_l, str(marked)]
 	)
 	return Wc3RampLogic.plan_ok(variant, axis, ix, iy, marked, hx, hy)
+
+
+## 主入口：规划斜坡落点（对齐 HiveWE `CliffOperator::update_ramp`）
+## horizontal/vertical ∈ {-1, 0, 1} — 鼠标相对格子的偏移方向
+## 返回 plan dict（含 ok, variant, axis, sx, sy, marked）
+static func plan(
+	ix: int,
+	iy: int,
+	layers: Array,
+	flags: Array,
+	tp_w: int,
+	tp_h: int,
+	horizontal: int = 0,
+	vertical: int = 0
+) -> Dictionary:
+	## Phase A：边界 + 层差 + 方向规范
+	var ctx_a: Dictionary = _plan_phase_a(ix, iy, layers, tp_w, tp_h, horizontal, vertical)
+	if not ctx_a.has("origin_level"):  ## 无此键 → plan_fail
+		return Wc3RampLogic.plan_fail(str(ctx_a.get("message", "")))
+	var origin_level: int = ctx_a.origin_level
+	var target_level: int = ctx_a.target_level
+	var hx: int = ctx_a.hx
+	var hy: int = ctx_a.hy
+
+	## Phase B：ramp 快照 + 三重门禁
+	var ctx_b: Dictionary = _plan_phase_b(
+		ix, iy, layers, flags, origin_level, target_level, hx, hy, tp_w, tp_h
+	)
+	var ramp: PackedByteArray = ctx_b.ramp
+	var allow_h: bool = ctx_b.allow_h
+	var allow_v: bool = ctx_b.allow_v
+	var allow_d: bool = ctx_b.allow_d
+
+	## Phase C：L 状态机 + 门禁压制
+	var ctx_c: Dictionary = _plan_phase_c(
+		ix, iy, hx, hy, allow_h, allow_v, allow_d, ramp, layers, target_level, tp_w, tp_h
+	)
+	var had_arm: bool = ctx_c.had_arm
+	var lst: LRampState = ctx_c.lst
+	allow_h = ctx_c.allow_h
+	allow_v = ctx_c.allow_v
+	allow_d = ctx_c.allow_d
+
+	## Phase D：落旗 + 变体解析（ramp 来自 ctx_c，不再重建）
+	return _plan_phase_d(
+		ix, iy, hx, hy, layers, flags,
+		allow_h, allow_v, allow_d,
+		had_arm, lst, target_level,
+		tp_w, tp_h, ctx_c.ramp
+	)
 
 
 ## ============================================================
@@ -402,6 +461,11 @@ static func plan_from_pointer(
 		ix, iy, layers, flags, tp_w, tp_h, horizontal, vertical
 	)
 	if bool(resolved.get("ok", false)):
+		MapLogScript.debug(
+			MapLogScript.Layer.LOGIC, "RampPaint",
+			"low_side_fallback ok @(click=%d,%d) origin=(%d,%d) variant=%s"
+			% [ix, iy, resolved.get("sx", 0), resolved.get("sy", 0), resolved.get("variant", "")]
+		)
 		return resolved
 	return direct
 
@@ -424,9 +488,9 @@ static func _resolve_from_low_side(
 	var best: Dictionary = {}
 	var best_score: int = -1
 
-	## 在 click 周围 2 格内找「高一层」的角点
-	for cy in range(click_y - 2, click_y + 3):
-		for cx in range(click_x - 2, click_x + 3):
+	## 在 click 周围 LOW_SIDE_SEARCH_RADIUS 格内找「高一层」的角点
+	for cy in range(click_y - LOW_SIDE_SEARCH_RADIUS, click_y + LOW_SIDE_SEARCH_RADIUS + 1):
+		for cx in range(click_x - LOW_SIDE_SEARCH_RADIUS, click_x + LOW_SIDE_SEARCH_RADIUS + 1):
 			if not _in_bounds(cx, cy, tp_w, tp_h):
 				continue
 			if cx == click_x and cy == click_y:
@@ -512,6 +576,19 @@ static func _covers_click(p: Dictionary, click_x: int, click_y: int) -> bool:
 
 
 ## 评分 plan 与 click 的匹配度
+##
+## 评分因子说明：
+##   标记点距离：d=0 → +100, d=1 → +40, d=2 → +8（Chebyshev 距离，幂次衰减）
+##   原点距离：od = max(|dx|,|dy|)，每少 1 格 +4，上限 6 格 → 0
+##   轴向对齐：click 落在「沿本笔坡向的轴上」→ +60（真·转角原点）
+##   变体偏好（单轴 pref）：
+##     diagonal -80（避免对角蹭入单轴意图）
+##     L +10（可接受）
+##     n>3 单列 -40（宽列不符单轴意图）
+##     单列 +25（最佳匹配）
+##   变体偏好（双轴 pref）：
+##     diagonal +20, L +15
+##   L 紧邻：od≤1 且 L 变体 → +20
 static func _score_plan(p: Dictionary, click_x: int, click_y: int, pref_hx: int, pref_hy: int) -> int:
 	var score := 0
 	for v in p.get("marked", []):
@@ -596,6 +673,97 @@ static func _two_steps_reach(
 ## 辅助：门禁校验
 ## ============================================================
 
+## 侧翼禁贴检查：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
+## completing_l：原点已有垂直于本坡向的完整臂时，允许侧邻有旗（邻列异源坡不再误拒）
+static func _check_side_clearance(
+	ix: int,
+	iy: int,
+	dir_x: int,
+	dir_y: int,
+	ramp: PackedByteArray,
+	tp_w: int,
+	tp_h: int
+) -> bool:
+	var completing_l: bool = false
+	if dir_x != 0:
+		completing_l = (
+			_has_full_ramp_arm(ix, iy, 0, 1, ramp, tp_w, tp_h)
+			or _has_full_ramp_arm(ix, iy, 0, -1, ramp, tp_w, tp_h)
+		)
+	elif dir_y != 0:
+		completing_l = (
+			_has_full_ramp_arm(ix, iy, 1, 0, ramp, tp_w, tp_h)
+			or _has_full_ramp_arm(ix, iy, -1, 0, ramp, tp_w, tp_h)
+		)
+	for side in [-1, 1]:
+		var sx: int = ix + side * (-dir_y)
+		var sy: int = iy + side * dir_x
+		if not _in_bounds(sx, sy, tp_w, tp_h):
+			continue
+		if not _has_ramp(ramp, tp_w, tp_h, sx, sy):
+			continue
+		# 平行加宽：侧邻沿本坡向有完整臂
+		var parallel_ok: bool = (
+			_has_ramp(ramp, tp_w, tp_h, sx + dir_x, sy + dir_y)
+			and _has_ramp(ramp, tp_w, tp_h, sx + 2 * dir_x, sy + 2 * dir_y)
+		)
+		if parallel_ok:
+			continue
+		# L / 半侧：侧邻属于从原点出发的垂直臂（完整 3 点）
+		if _side_is_l_arm(ix, iy, sx, sy, ramp, tp_w, tp_h):
+			continue
+		# 本原点正在补 L 的第二臂：邻列已有坡不阻挡
+		if completing_l:
+			continue
+		return false
+	return true
+
+
+## L 状态枚举：替代 5 个布尔量（had_arm / has_h_arm / has_v_arm / l_ready / l_fill_only）
+enum LRampState {
+	NONE,      # 原点无臂
+	HAS_H,     # 仅有水平臂
+	HAS_V,     # 仅有竖直臂
+	READY,     # 两臂齐（L 成型）
+	FILL_ONLY, # 列门禁全拒但能补 L 中心
+}
+
+
+## 根据臂状态和门禁结果计算 L 状态
+static func _compute_l_state(
+	ix: int,
+	iy: int,
+	hx: int,
+	hy: int,
+	allow_h: bool,
+	allow_v: bool,
+	allow_d: bool,
+	ramp: PackedByteArray,
+	tp_w: int,
+	tp_h: int,
+	layers: Array,
+	target_level: int
+) -> LRampState:
+	var has_h: bool = (
+		_has_full_ramp_arm(ix, iy, 1, 0, ramp, tp_w, tp_h)
+		or _has_full_ramp_arm(ix, iy, -1, 0, ramp, tp_w, tp_h)
+	)
+	var has_v: bool = (
+		_has_full_ramp_arm(ix, iy, 0, 1, ramp, tp_w, tp_h)
+		or _has_full_ramp_arm(ix, iy, 0, -1, ramp, tp_w, tp_h)
+	)
+	if not has_h and not has_v:
+		return LRampState.NONE
+	if has_h and has_v:
+		return LRampState.READY
+	if not allow_h and not allow_v and not allow_d:
+		if _would_fill_l_center(
+			ix, iy, layers, ramp, target_level, tp_w, tp_h, hx, hy, true, true
+		):
+			return LRampState.FILL_ONLY
+	return LRampState.HAS_H if has_h else LRampState.HAS_V
+
+
 ## 单列门禁（检查 hx 或 hy 某一轴向是否可落）
 ## dir_x/dir_y 其中一个必须为 0，另一个 ∈ {-1, 1}
 static func _check_column(
@@ -648,38 +816,7 @@ static func _check_column(
 	# 		return false
 
 	## 侧翼禁贴：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
-	## L 补第二臂：原点已有垂直于本坡向的完整臂时，允许侧邻有旗（邻列异源坡不再误拒）
-	var completing_l: bool = false
-	if dir_x != 0:
-		completing_l = (
-			_has_full_ramp_arm(ix, iy, 0, 1, ramp, tp_w, tp_h)
-			or _has_full_ramp_arm(ix, iy, 0, -1, ramp, tp_w, tp_h)
-		)
-	elif dir_y != 0:
-		completing_l = (
-			_has_full_ramp_arm(ix, iy, 1, 0, ramp, tp_w, tp_h)
-			or _has_full_ramp_arm(ix, iy, -1, 0, ramp, tp_w, tp_h)
-		)
-	for side in [-1, 1]:
-		var sx: int = ix + side * (-dir_y)
-		var sy: int = iy + side * dir_x
-		if not _in_bounds(sx, sy, tp_w, tp_h):
-			continue
-		if not _has_ramp(ramp, tp_w, tp_h, sx, sy):
-			continue
-		# 平行加宽：侧邻沿本坡向有完整臂
-		var parallel_ok: bool = (
-			_has_ramp(ramp, tp_w, tp_h, sx + dir_x, sy + dir_y)
-			and _has_ramp(ramp, tp_w, tp_h, sx + 2 * dir_x, sy + 2 * dir_y)
-		)
-		if parallel_ok:
-			continue
-		# L / 半侧：侧邻属于从原点出发的垂直臂（完整 3 点）
-		if _side_is_l_arm(ix, iy, sx, sy, ramp, tp_w, tp_h):
-			continue
-		# 本原点正在补 L 的第二臂：邻列已有坡不阻挡
-		if completing_l:
-			continue
+	if not _check_side_clearance(ix, iy, dir_x, dir_y, ramp, tp_w, tp_h):
 		return false
 
 	return true

@@ -208,8 +208,11 @@ static func plan_entrance_tiles(
 			var key3: int = iy * map_w + ix
 			if seen.has(key3):
 				continue
-			if not _is_classic_entrance(flags, layers, tp_w, ix, iy):
+			## 统一经 is_entrance() 过滤后分支；避免与 _is_classic_entrance 重复检测
+			if not is_entrance(flags, layers, tp_w, tp_h, ix, iy):
 				continue
+			if _is_l_recess_entrance(flags, layers, tp_w, ix, iy):
+				continue  ## L 碗已在第一循环处理
 			if _count_corners_at_min(layers, tp_w, ix, iy) != 2:
 				continue
 			if key3 < body.size() and body[key3] != 0:
@@ -768,8 +771,11 @@ static func _try_horizontal(
 	return _placement_from_tag(i, j, tag, base, bl, cliff_tex, cliff_sets, cat, Wc3RampLogic.AXIS_H)
 
 
-## 两列（或横窗的两行）ramp 是否「一侧全同、两侧相反」。
-## 严格：HiveWE 原条件。放宽：坡列全同，对侧仅中格被另一臂染成同旗（L 转角典型），两端仍相反。
+## 两列 ramp 是否构成合法坡列组合：
+##   1. 严格：列内全同，列间相反（经典 HiveWE）
+##   2. A 污染：A 列完整，B 列仅中格被污染（两端仍与 A 相反）
+##   3. B 污染：B 列完整，A 列仅中格被污染（两端仍与 B 相反）
+## 注意：两端有旗中格无旗的「双向各污染」不属于合法组合（无法判断 base 层）。
 static func _ramp_cols_opposite(a0: int, a1: int, a2: int, b0: int, b1: int, b2: int) -> bool:
 	if a0 == a1 and a1 == a2 and b0 == b1 and b1 == b2 and a0 != b0:
 		return true
