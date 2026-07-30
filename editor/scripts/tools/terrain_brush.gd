@@ -31,6 +31,9 @@ var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
 var apply_texture: bool = true
 var apply_cliff: bool = true
+## 悬崖/斜坡笔刷开启时 → 全 heightfield 快照（防 cliff 级联 clamp 漏快照）。
+## 由 set_cliff_settings() 自动设；地表笔刷保持局部 CAPTURE_RADIUS 行为。
+var use_full_snapshot: bool = false
 ## WorldEditData 悬崖工具 id："0".."4" / ShallowWater / DeepWater / Ramp
 var cliff_tool_id: String = "2"
 var cliff_type_index: int = 0
@@ -57,6 +60,9 @@ func set_cliff_settings(p_apply: bool, tool_id: String, type_idx: int) -> void:
 	apply_cliff = p_apply
 	cliff_tool_id = tool_id if not tool_id.is_empty() else "2"
 	cliff_type_index = maxi(type_idx, 0)
+	# 悬崖/斜坡笔刷的修改可能级联传播到笔刷区域外（cliff 邻接 clamp、ramp 9-corner valid），
+	# 用全 heightfield 快照防漏；地表笔刷继续走局部 CAPTURE_RADIUS。
+	use_full_snapshot = p_apply
 	if document != null and document.has_method("ensure_cliff_type_valid"):
 		document.brush_cliff_type = cliff_type_index
 		document.ensure_cliff_type_valid()
@@ -326,7 +332,7 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 func _begin_stroke() -> void:
 	if history == null or document == null:
 		return
-	_stroke.begin(document)
+	_stroke.begin(document, use_full_snapshot)
 
 
 func _end_stroke() -> void:

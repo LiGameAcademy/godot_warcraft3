@@ -13,12 +13,18 @@ var _affects_cliff: bool = false
 var _active: bool = false
 
 
-func begin(document) -> void:
+func begin(document, full_heightfield: bool = false) -> void:
 	_doc = document
 	_before.clear()
 	_after.clear()
 	_affects_cliff = false
 	_active = true
+
+	# 悬崖 / 斜坡等"级联传播"操作应记下整张 heightfield before，
+	# 否则 cliff 邻接 clamp / ramp 9-corner valid 改到笔刷区域外会漏快照、撤销不一致。
+	# 局部刷（地表贴图 / 高度）保持原 CAPTURE_RADIUS 行为。
+	if full_heightfield and _doc != null and _doc.heightfield != null:
+		capture_before_at(0, 0, 999999)
 
 
 func is_active() -> bool:
