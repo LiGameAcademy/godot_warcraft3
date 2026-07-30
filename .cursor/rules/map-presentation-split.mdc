@@ -1,12 +1,12 @@
 ---
 description: 表现层脚本拆分尺度：避免过碎与上帝类
-globs: scripts/map/presentation/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/TERRAIN_TILES.md
+globs: scripts/map/presentation/**/*.gd,docs/architecture/LAYERED_ARCHITECTURE.md,docs/terrain/TERRAIN_TILES.md
 alwaysApply: false
 ---
 
 # 表现层拆分原则
 
-总纲：`docs/LAYERED_ARCHITECTURE.md` §「脚本拆分尺度」。
+总纲：`docs/architecture/LAYERED_ARCHITECTURE.md` §「脚本拆分尺度」。
 
 ## 何时拆
 

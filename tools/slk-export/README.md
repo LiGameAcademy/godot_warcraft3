@@ -67,4 +67,4 @@ npm run export "--" "--include=Units/**" --overwrite
 | `Doodads/Doodads.slk` | 装饰物 |
 | `TerrainArt/Terrain.slk` | 地表 tile ID → 贴图 |
 
-详见 [docs/WC3_ASSET_PATHS.md](../../docs/WC3_ASSET_PATHS.md)。
+详见 [docs/data/WC3_ASSET_PATHS.md](../../docs/data/WC3_ASSET_PATHS.md)。

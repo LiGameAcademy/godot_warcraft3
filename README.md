@@ -2,17 +2,17 @@
 
 使用 **Godot 4.6** 复刻《魔兽争霸3》玩法的实验项目。
 
-仓库**不包含**暴雪游戏资产。开发与运行前须自备正版经典客户端，详见 [docs/LEGAL.md](docs/LEGAL.md)。
+仓库**不包含**暴雪游戏资产。开发与运行前须自备正版经典客户端，详见 [docs/data/LEGAL.md](docs/data/LEGAL.md)。
 
-经典 MPQ 解包后各目录放什么，见 [docs/WC3_ASSET_PATHS.md](docs/WC3_ASSET_PATHS.md)（按路径查单位/地形/UI/音效等）。
+经典 MPQ 解包后各目录放什么，见 [docs/data/WC3_ASSET_PATHS.md](docs/data/WC3_ASSET_PATHS.md)（按路径查单位/地形/UI/音效等）。
 
-水体（HiveWE 对齐、后续 Shoreline、远期增强）：[docs/WATER.md](docs/WATER.md)。
+水体（HiveWE 对齐、后续 Shoreline、远期增强）：[docs/water/WATER.md](docs/water/WATER.md)。
 
-分层总纲（数据 / 资源映射 / 逻辑 / 表现 / 编辑）：[docs/LAYERED_ARCHITECTURE.md](docs/LAYERED_ARCHITECTURE.md)。  
-路线图：[docs/ROADMAP.md](docs/ROADMAP.md)。  
-MapRoot 节点树与历史职责表：[docs/MAP_ARCHITECTURE.md](docs/MAP_ARCHITECTURE.md)。
+分层总纲（数据 / 资源映射 / 逻辑 / 表现 / 编辑）：[docs/architecture/LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)。  
+路线图：[docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)。  
+MapRoot 节点树与历史职责表：[docs/architecture/MAP_ARCHITECTURE.md](docs/architecture/MAP_ARCHITECTURE.md)。
 
-地图编辑器（HiveWE 式竖切，分支 `feature/map-editor`）：[docs/EDITOR.md](docs/EDITOR.md) · 场景 F6 → [`editor/scenes/editor_main.tscn`](editor/scenes/editor_main.tscn)。
+地图编辑器（HiveWE 式竖切，分支 `feature/map-editor`）：[docs/editor/EDITOR.md](docs/editor/EDITOR.md) · 场景 F6 → [`editor/scenes/editor_main.tscn`](editor/scenes/editor_main.tscn)。
 
 ## 前置条件
 
@@ -141,9 +141,9 @@ mods/                  Mod 覆盖目录（内容不提交）
 assets/asset-converted/  转换后 PNG/GLB + 同步的编辑器 UI txt（不提交）
 assets/map-parsed/       解析后的地图 JSON（不提交）
 assets/slk-exported/     SLK 导出表（不提交）
-docs/LEGAL.md            合规说明
-docs/WC3_ASSET_PATHS.md  经典资产路径手册
-docs/WATER.md            水体复刻路线与远期增强（暂不实现）
+docs/data/LEGAL.md            合规说明
+docs/data/WC3_ASSET_PATHS.md  经典资产路径手册
+docs/water/WATER.md            水体复刻路线与远期增强（暂不实现）
 ```
 
 ## Lost Temple 地图预览（灰盒 → 可视复原）

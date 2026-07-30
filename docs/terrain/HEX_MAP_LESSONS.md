@@ -2,7 +2,7 @@
 
 > 对比对象：`D:\GodotProject\laoli_gamedev_godot4_course\godot_hex_map`  
 > 本仓库：`godot_warcraft3`  
-> 相关：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md) · [EDITOR.md](EDITOR.md)  
+> 相关：[LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) · [ROADMAP.md](docs/roadmap/ROADMAP.md) · [EDITOR.md](docs/editor/EDITOR.md)  
 > 最后更新：2026-07-27
 
 ---

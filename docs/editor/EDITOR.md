@@ -1,7 +1,7 @@
 # 地图编辑器架构
 
 > 入口：`editor/scenes/editor_main.tscn`（F6 运行当前场景；**不**改 `project.godot` 主场景）  
-> 分层总纲：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)。MapRoot：[MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md)。  
+> 分层总纲：[LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)。MapRoot：[MAP_ARCHITECTURE.md](docs/architecture/MAP_ARCHITECTURE.md)。  
 > 最后更新：2026-07-24
 
 ---
@@ -20,7 +20,7 @@
 
 ## 2. 与五层的关系
 
-编辑器整体属于 **Editor 层**。它 **消费** Presentation（`MapRoot`），**不**实现 Catalog/Logic。目录约定见 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) §4.2。
+编辑器整体属于 **Editor 层**。它 **消费** Presentation（`MapRoot`），**不**实现 Catalog/Logic。目录约定见 [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) §4.2。
 
 | 编辑器内模块 | 职责 |
 |--------------|------|
@@ -132,7 +132,7 @@ ToolPalette → cliff_settings_changed → TerrainBrush.set_cliff_settings()
        → Terrain + Cliffs + Water
 ```
 
-专项文档：[CLIFF.md](CLIFF.md)。悬崖回归见 `tests/cliff/selftest_cliff_*.gd`。斜坡待重做。
+专项文档：[CLIFF.md](docs/cliff/CLIFF.md)。悬崖回归见 `tests/cliff/selftest_cliff_*.gd`。斜坡待重做。
 
 偏好：`EditorSettingsStore` → `user://editor_settings.cfg`；语言 `user://editor_locale.cfg`。
 
@@ -210,7 +210,7 @@ file_save → MapDocument.save_json()
 3. 高度笔刷命令、合并细碎笔划、撤销上限与 UI 灰显  
 4. 装饰/单位、导出  
 
-完整顺序见 [ROADMAP.md](ROADMAP.md)。
+完整顺序见 [ROADMAP.md](docs/roadmap/ROADMAP.md)。
 
 ---
 
@@ -218,7 +218,7 @@ file_save → MapDocument.save_json()
 
 | 文档 | 内容 |
 |------|------|
-| [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层总纲 + 目录拆分 |
-| [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | MapRoot 节点树 |
-| [ROADMAP.md](ROADMAP.md) | 开发路线 |
+| [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) | 五层总纲 + 目录拆分 |
+| [MAP_ARCHITECTURE.md](docs/architecture/MAP_ARCHITECTURE.md) | MapRoot 节点树 |
+| [ROADMAP.md](docs/roadmap/ROADMAP.md) | 开发路线 |
 | [editor/README.md](../editor/README.md) | 如何 F6 运行 |

@@ -1,7 +1,7 @@
 # 悬崖模块重构计划
 
-> 前置：地面纹理管线 + 编辑总管 + 命令模式已打通（见 [TERRAIN_TILES.md](TERRAIN_TILES.md)、[EDITOR.md](EDITOR.md)）。  
-> 领域规则仍以 [CLIFF.md](CLIFF.md) 为准；本文只定 **怎么按五层拆** 与验收顺序。  
+> 前置：地面纹理管线 + 编辑总管 + 命令模式已打通（见 [TERRAIN_TILES.md](docs/terrain/TERRAIN_TILES.md)、[EDITOR.md](docs/editor/EDITOR.md)）。  
+> 领域规则仍以 [CLIFF.md](docs/cliff/CLIFF.md) 为准；本文只定 **怎么按五层拆** 与验收顺序。  
 > 斜坡待重做；代码侧崖 M0–M2 已打 tag `milestone/cliff-layered`。  
 > 最后更新：2026-07-25
 
@@ -117,7 +117,7 @@ editor/scripts/
 1. ~~新建 `Wc3CliffCatalog`~~ ✅（`catalog/wc3_cliff_catalog.gd`；DefStore + PNG/modelDir）  
 2. ~~TerrainArt 四表 Def + DefStore~~ ✅；`Wc3TerrainTileCatalog` / `Wc3WaterParams` 只做资源映射  
 3. ~~`Wc3TerrainTileCatalog` 仅地表~~ ✅；Context / Loader / Builder / Editor 已接 `cliff_catalog`  
-4. 文档：更新 [CLIFF.md](CLIFF.md) §8 路径表  
+4. 文档：更新 [CLIFF.md](docs/cliff/CLIFF.md) §8 路径表  
 
 **验收**：Lost Temple 崖外观与现网一致；`selftest_cliff_*` / `selftest_def_store_cliff` 绿。
 
@@ -184,8 +184,8 @@ godot --headless --path . -s res://tests/unit/selftest_paint_ground_rebuild.gd
 
 | 文档 | 角色 |
 |------|------|
-| [CLIFF.md](CLIFF.md) | 领域规则（蛋糕、策略 B、TAG） |
-| [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层总纲 |
-| [ROADMAP.md](ROADMAP.md) | ⑦ 悬崖层勾选 |
-| [TODO.md](TODO.md) | 细项勾选 |
-| [EDITOR.md](EDITOR.md) | 总管 / 命令 / 重建路径 |
+| [CLIFF.md](docs/cliff/CLIFF.md) | 领域规则（蛋糕、策略 B、TAG） |
+| [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) | 五层总纲 |
+| [ROADMAP.md](docs/roadmap/ROADMAP.md) | ⑦ 悬崖层勾选 |
+| [TODO.md](docs/roadmap/TODO.md) | 细项勾选 |
+| [EDITOR.md](docs/editor/EDITOR.md) | 总管 / 命令 / 重建路径 |

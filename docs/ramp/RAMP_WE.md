@@ -273,7 +273,7 @@ Logic：`Wc3RampCollect.should_hide_cliff_piece` / `filter_cliff_placements`；�
 **禁止**：在 `Wc3CliffLogic.build_topology` 里 `merge` 斜坡挖洞（已拆除）。
 **禁止**：依赖 MultiMesh 零缩放藏崖（崖 shader / 奇异矩阵不可靠）。
 
-分层纪律仍遵 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)：Paint/Collect 在 Logic，mesh 在 Present，禁止 Layer 内选型。
+分层纪律仍遵 [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)：Paint/Collect 在 Logic，mesh 在 Present，禁止 Layer 内选型。
 
 与直崖关系：直崖已完成 `milestone/cliff-layered`；斜坡是 **平行通道**，共享层高与 Catalog 族目录，不塞进 `Wc3CliffLogic.paint_corner`。
 

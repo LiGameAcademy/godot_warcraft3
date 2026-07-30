@@ -1,12 +1,12 @@
 ---
 description: 地图模块分层门禁：Data / Catalog / Logic / Presentation / Editor
-globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,docs/LAYERED_ARCHITECTURE.md,docs/ROADMAP.md,docs/MAP_DATA.md,docs/EDITOR.md
+globs: scripts/map/**/*.gd,editor/scripts/**/*.gd,docs/architecture/LAYERED_ARCHITECTURE.md,docs/roadmap/ROADMAP.md,docs/architecture/MAP_DATA.md,docs/editor/EDITOR.md
 alwaysApply: false
 ---
 
 # 地图分层架构（vibecoding 门禁）
 
-总纲：`docs/LAYERED_ARCHITECTURE.md`。路线：`docs/ROADMAP.md`。
+总纲：`docs/architecture/LAYERED_ARCHITECTURE.md`。路线：`docs/roadmap/ROADMAP.md`。
 
 ## 五层（勿混）
 
@@ -18,7 +18,7 @@ alwaysApply: false
 | Presentation | `map_*_layer`、Mesh 构建 | 消费 placements + resolve 结果 | 写 flags/layer、硬编码资产路径 |
 | Editor | `editor/scripts/`；总管 `Editor`/`MapEditor`（Node） | `@export` 注入 MapRoot；调 Logic API、脏区重建 | 根节点堆业务；笔刷里组 Mesh / resolve 路径 |
 
-编辑场景：`editor_main.tscn` 壳 + 直接子节点 `Editor`；目录目标见 `docs/LAYERED_ARCHITECTURE.md` §4。
+编辑场景：`editor_main.tscn` 壳 + 直接子节点 `Editor`；目录目标见 `docs/architecture/LAYERED_ARCHITECTURE.md` §4。
 
 ## 模块顺序（强制）
 

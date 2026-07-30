@@ -40,4 +40,4 @@
 | `presentation/layers/map_debug_grid_layer.gd` | 跨层调试栅格 |
 | `logic/terrain/wc3_terrain_logic.gd` | 改顶点 / variation 随机 |
 
-拆分尺度见 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) §6。
+拆分尺度见 [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) §6。

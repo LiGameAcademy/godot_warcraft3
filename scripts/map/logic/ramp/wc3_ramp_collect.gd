@@ -2,7 +2,7 @@ class_name Wc3RampCollect
 extends RefCounted
 
 ## HiveWE `Terrain::update_cliff_meshes` 斜坡匹配部分（只产出 placements + romp）。
-## 权威：docs/RAMP_WE.md §5
+## 权威：docs/ramp/RAMP_WE.md §5
 
 
 static func collect(

@@ -5,7 +5,7 @@
 - 本机解包根目录：`.cache/wc3-assets/`（与 MPQ 内路径一一对应）
 - 清单索引：`.cache/manifest.json`（`logicalPath` → 来源 MPQ / 大小 / 哈希）
 - 转换后资源：`assets/asset-converted/`（PNG/GLB，路径结构与逻辑路径相同，扩展名不同）
-- 合规：勿把解包资产提交 Git，见 [LEGAL.md](LEGAL.md)
+- 合规：勿把解包资产提交 Git，见 [LEGAL.md](docs/data/LEGAL.md)
 
 路径一律使用正斜杠，例如 `Units/Human/Footman/Footman.mdx`。Windows 上查找时大小写通常不敏感，但 MPQ 内可能同时存在 `Buildings/` 与 `buildings/`、`Abilities/` 与 `abilities/`（来自不同归档层），以 `manifest.json` 中的键为准。
 

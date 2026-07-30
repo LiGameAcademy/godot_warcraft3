@@ -7,7 +7,7 @@ const MapLogScript = preload("res://scripts/map/infra/map_log.gd")
 const LOW_SIDE_SEARCH_RADIUS := 2
 
 ## HiveWE `CliffOperator::update_ramp` 同构规划（只算标记，不写盘）。
-## 权威：docs/RAMP_WE.md §4
+## 权威：docs/ramp/RAMP_WE.md §4
 ##
 ## 三层架构：
 ##   Step 1 — 单列斜坡：沿方向标注连续 3 个顶点

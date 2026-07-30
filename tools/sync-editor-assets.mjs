@@ -3,7 +3,7 @@
  * 同步到 assets/asset-converted（保持相同相对路径）。
  *
  * AssetProvider 解析顺序：converted → cache，故同步后优先读 converted。
- * 注意：内容仍属暴雪资产，保持 gitignore，勿提交（见 docs/LEGAL.md）。
+ * 注意：内容仍属暴雪资产，保持 gitignore，勿提交（见 docs/data/LEGAL.md）。
  *
  * 用法：
  *   node tools/sync-editor-assets.mjs

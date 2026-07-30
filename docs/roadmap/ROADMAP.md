@@ -1,6 +1,6 @@
 # 开发路线图（架构重构优先）
 
-> 总纲：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)  
+> 总纲：[LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)  
 > 原则：**先搭框架与映射，再按「数据 → 逻辑 → 表现 → 编辑」逐模块推进**。  
 > 当前阶段 **不是** 斜坡功能冲刺，而是底层可维护性重构；斜坡排在悬崖之后。  
 > 最后更新：2026-07-24
@@ -44,7 +44,7 @@
 
 ### ① 框架层搭建
 
-- [x] 落地 `docs/LAYERED_ARCHITECTURE.md` 为总纲（本文档配套）
+- [x] 落地 `docs/architecture/LAYERED_ARCHITECTURE.md` 为总纲（本文档配套）
 - [x] Cursor rules：分层门禁、Catalog vs Data vs Logic
 - [x] 文档约定目标目录：`data/` · `catalog/` · `logic/` · `presentation/` · `infra/`；`editor/scripts/editor.gd` 总管
 - [x] Catalog 落位：`scripts/map/catalog/`（Id + CliffTrans）；Coords → `data/`
@@ -98,7 +98,7 @@
 
 ### ⑦ 悬崖层
 
-> 计划全文：[CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)  
+> 计划全文：[CLIFF_REFACTOR.md](docs/architecture/CLIFF_REFACTOR.md)  
 > Tag：`milestone/cliff-layered`
 
 - [x] M0 Catalog：`Wc3CliffCatalog`；收缩 `Wc3TerrainTileCatalog`
@@ -108,7 +108,7 @@
 
 ### ⑧ 斜坡层（Logic ✅ / Present 核心 ✅）
 
-> **WE 思路权威**：[RAMP_WE.md](RAMP_WE.md)
+> **WE 思路权威**：[RAMP_WE.md](docs/ramp/RAMP_WE.md)
 
 - [x] Paint ≈ `update_ramp`（`logic/ramp/`；Document 委托；蓝菱形）
 - [x] Collect ≈ `update_cliff_meshes` 数据侧（placements + romp；与 cliff 拓扑分离）

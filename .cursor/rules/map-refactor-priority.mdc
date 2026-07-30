@@ -7,7 +7,7 @@ alwaysApply: true
 
 本仓库当前主线是 **分层重构（数据 / 资源映射 / 逻辑 / 表现 / 编辑）**，不是斜坡视觉冲刺。
 
-1. 先读 `docs/LAYERED_ARCHITECTURE.md` 与 `docs/ROADMAP.md` ①–⑤。
+1. 先读 `docs/architecture/LAYERED_ARCHITECTURE.md` 与 `docs/roadmap/ROADMAP.md` ①–⑤。
 2. 优先跑通：Heightfield 数据 → 改顶点 API → Ground Mesh + 纹理 Catalog。
 3. 悬崖 →（斜坡待重做）→ 水体 → 装饰/单位，严格按 ROADMAP 顺序。
 4. 改 `wc3_cliff_*` 前确认：是否阻塞 Ground 管线？斜坡大改不要插入当前主线。

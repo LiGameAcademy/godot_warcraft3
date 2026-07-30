@@ -1,7 +1,7 @@
 class_name Wc3RampLogic
 extends RefCounted
 
-## 斜坡逻辑层（对齐 HiveWE / docs/RAMP_WE.md）：
+## 斜坡逻辑层（对齐 HiveWE / docs/ramp/RAMP_WE.md）：
 ##   paint → 只写 FLAG_RAMP（直坡 3 点 / 外角对角 3×3 / L 仅补中心）
 ##   collect_placements → CliffTrans 滑窗匹配 + romp
 ## 对外：bind / paint_at / try_paint_at / peek_spine_at / collect_placements / clear_flags_around

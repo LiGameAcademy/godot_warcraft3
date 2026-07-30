@@ -2,7 +2,7 @@
 
 独立运行场景，复用 `scenes/map/map_root.tscn` 做地形 / 悬崖 / 水面预览。
 
-设计说明见 [`docs/EDITOR.md`](../docs/EDITOR.md)。
+设计说明见 [`docs/editor/EDITOR.md`](../docs/editor/EDITOR.md)。
 
 ## 运行
 
