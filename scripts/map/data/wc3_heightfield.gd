@@ -25,6 +25,10 @@ var ground_textures: Array = []
 var ground_variations: Array = []
 var cliff_textures: Array = []
 var cliff_variations: Array = []
+## 直崖 corner flag（1 byte/corner，0/1）；与 heightfield 同 SoA 长度。
+## 缓存 4 角不等判定结果（[docs/hivewe/CLIFF.md §5]）；setter 同步待 future PR。
+## 当前无 setter — is_cliff_tile() 仍现算 4 角，cliffs 仅作未来同步缓存位。
+var cliffs: Array = []
 
 
 func tilepoint_count() -> int:
@@ -39,6 +43,7 @@ func is_valid() -> bool:
 		and heights.size() == n
 		and layer_heights.size() == n
 		and flags_packed.size() == n
+		and (cliffs.is_empty() or cliffs.size() == n)
 	)
 
 
@@ -114,6 +119,7 @@ static func from_dict(d: Dictionary, duplicate_arrays: bool = true) -> Wc3Height
 	hf.layer_heights = _arr(d.get("layerHeights", []), duplicate_arrays)
 	hf.water_heights = _arr(d.get("waterHeights", []), duplicate_arrays)
 	hf.flags_packed = _arr(d.get("flagsPacked", []), duplicate_arrays)
+	hf.cliffs = _arr(d.get("cliffs", []), duplicate_arrays)
 	hf.ground_textures = _arr(d.get("groundTextures", []), duplicate_arrays)
 	hf.ground_variations = _arr(d.get("groundVariations", []), duplicate_arrays)
 	hf.cliff_textures = _arr(d.get("cliffTextures", []), duplicate_arrays)
@@ -164,6 +170,7 @@ func as_dict_view() -> Dictionary:
 		"layerHeights": layer_heights,
 		"waterHeights": water_heights,
 		"flagsPacked": flags_packed,
+		"cliffs": cliffs.duplicate(),
 	}
 
 
@@ -182,6 +189,7 @@ func to_build_meta() -> Dictionary:
 		"cliff_variations": cliff_variations,
 		"layer_heights": layer_heights,
 		"flags": flags_packed,
+		"cliffs": cliffs,
 		"ground_tilesets": ground_tilesets,
 		"cliff_tilesets": cliff_tilesets,
 		"main_tileset": main_tileset,
@@ -213,6 +221,7 @@ func to_dict() -> Dictionary:
 		"layerHeights": layer_heights.duplicate(),
 		"waterHeights": water_heights.duplicate(),
 		"flagsPacked": flags_packed.duplicate(),
+		"cliffs": cliffs.duplicate(),
 	}
 
 
