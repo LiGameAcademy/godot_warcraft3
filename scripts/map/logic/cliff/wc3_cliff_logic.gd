@@ -167,6 +167,16 @@ func paint_corner(
 			)
 
 	if changed_any:
+		# 放 cliff 后清 4 角 FLAG_BLIGHT（HivEWE 经典规则：腐地不该跨到 cliff）。
+		# 仅 cliff 升降路径（propagate>=0）触发；水操作不调。
+		if propagate >= 0:
+			for tx in range(ix, ix + 2):
+				for ty in range(iy, iy + 2):
+					if tx < 0 or ty < 0 or tx >= tp_w or ty >= tp_h:
+						continue
+					var j: int = ty * tp_w + tx
+					if j < flags.size():
+						flags[j] = int(flags[j]) & ~Wc3Coords.FLAG_BLIGHT
 		_mark_dirty_point(ix, iy)
 		for p in touched:
 			_mark_dirty_point(int(p.x), int(p.y))

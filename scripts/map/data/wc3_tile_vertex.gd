@@ -105,6 +105,18 @@ var has_ramp: bool:
 			flags = flags & ~Wc3Coords.FLAG_RAMP
 
 
+var has_blight: bool:
+	get:
+		return (flags & Wc3Coords.FLAG_BLIGHT) != 0
+	set(v):
+		# 设 blight 时建议走 Wc3TerrainLogic.set_blight() — 内置 3×3 邻接 cliff 跳过
+		# 保护规则（HivEWE 经典）。直接走 setter 是 force 路径，仅供内部用。
+		if v:
+			flags = flags | Wc3Coords.FLAG_BLIGHT
+		else:
+			flags = flags & ~Wc3Coords.FLAG_BLIGHT
+
+
 func wc3_xy() -> Vector2:
 	return Wc3Coords.tilepoint_wc3(
 		ix, iy, heightfield.center_offset, heightfield.tile_size

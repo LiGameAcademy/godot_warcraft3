@@ -156,6 +156,46 @@ func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true
 	return changed
 
 
+## 写污染（Blight）标志。
+## 保护规则：写入 v=true 时若 3×3 邻域内有 cliff，返回 false（HivEWE TextureOperator 经典）。
+## force=true 跳过保护（仅供内部用，如加载离线资产时强制 set）。
+## 当前无 Blight 笔刷实现（ToolPaletteWindow 有 SpecialBlight 按钮但 setter 未接），
+## 此方法为未来 ROADMAP §⑪ 装饰物 / Blight 笔刷铺路。
+## [param ix: int] 坐标 x
+## [param iy: int] 坐标 y
+## [param v: bool] 是否设污染
+## [param force: bool] 跳过 cliff 邻接保护
+## [return bool] 是否成功写入
+func set_blight(ix: int, iy: int, v: bool, force: bool = false) -> bool:
+	if not is_bound() or not heightfield.in_bounds(ix, iy):
+		return false
+	if v and not force:
+		var tp_w: int = heightfield.width
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var tx: int = ix + dx
+				var ty: int = iy + dy
+				if not heightfield.in_bounds(tx, ty):
+					continue
+				if Wc3CliffLogic.is_cliff_tile(heightfield.layer_heights, tp_w, tx, ty):
+					MapLog.debug(
+						MapLog.Layer.LOGIC,
+						"TerrainLogic",
+						"set_blight(%d,%d) 邻接 cliff @(%d,%d)，跳过" % [ix, iy, tx, ty]
+					)
+					return false
+	var i: int = heightfield.index_at(ix, iy)
+	if i < 0 or i >= heightfield.flags_packed.size():
+		return false
+	var cur: int = int(heightfield.flags_packed[i])
+	var nf: int = (cur | Wc3Coords.FLAG_BLIGHT) if v else (cur & ~Wc3Coords.FLAG_BLIGHT)
+	if cur == nf:
+		return false
+	heightfield.flags_packed[i] = nf
+	_mark_dirty(ix, iy)
+	return true
+
+
 ## 写高度
 ## [param ix: int] 坐标 x
 ## [param iy: int] 坐标 y
