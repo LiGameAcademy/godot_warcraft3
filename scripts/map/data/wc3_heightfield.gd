@@ -65,6 +65,37 @@ func vertex_at_index(index: int) -> Wc3TileVertex:
 	return Wc3TileVertex.create(self, ix, iy)
 
 
+## 双线性插值取 (wc3_x, wc3_y) 处的高度（WC3 单位）。
+## 给 doodad / 装饰物贴合地形用。越界返回 0。
+## 与 HivEWE terrain.interpolated_height 同源（[docs/hivewe/OPERATORS.md §6.4]）。
+## [param wc3_x: float] WC3 X
+## [param wc3_y: float] WC3 Y
+## [return float] WC3 高度
+func interpolated_height(wc3_x: float, wc3_y: float) -> float:
+	if not is_valid() or tile_size <= 0.0:
+		return 0.0
+	var ixf: float = (wc3_x - center_offset.x) / tile_size
+	var iyf: float = (wc3_y - center_offset.y) / tile_size
+	if ixf < 0.0 or iyf < 0.0 or ixf > float(width - 1) or iyf > float(height - 1):
+		return 0.0
+	var ix0: int = int(floor(ixf))
+	var iy0: int = int(floor(iyf))
+	var fx: float = ixf - float(ix0)
+	var fy: float = iyf - float(iy0)
+	var i00: int = iy0 * width + ix0
+	var i10: int = iy0 * width + ix0 + 1
+	var i01: int = (iy0 + 1) * width + ix0
+	var i11: int = (iy0 + 1) * width + ix0 + 1
+	if i11 >= heights.size():
+		return 0.0
+	var h00: float = float(heights[i00])
+	var h10: float = float(heights[i10])
+	var h01: float = float(heights[i01])
+	var h11: float = float(heights[i11])
+	return h00 * (1.0 - fx) * (1.0 - fy) + h10 * fx * (1.0 - fy) \
+		+ h01 * (1.0 - fx) * fy + h11 * fx * fy
+
+
 ## [param duplicate_arrays] true：拷贝平行数组（安全默认）；false：共享引用（编辑器重建 / 视图包装）。
 static func from_dict(d: Dictionary, duplicate_arrays: bool = true) -> Wc3Heightfield:
 	var hf := Wc3Heightfield.new()

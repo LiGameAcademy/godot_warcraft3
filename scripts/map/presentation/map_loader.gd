@@ -209,6 +209,9 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	_build_ramps(ctx)
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
+	# 改地形后刷 doodad Y（change_doodad_heights 等价；HF 走 undo 自动同步 doodad 状态）
+	if _doodads != null:
+		_doodads.refresh_heights(ctx.heightfield)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 
@@ -249,6 +252,9 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_water.build(ctx)
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
+	# 改地形后刷 doodad Y（同 rebuild_terrain_only）
+	if _doodads != null:
+		_doodads.refresh_heights(ctx.heightfield)
 
 func _load_all() -> void:
 	var t0 := Time.get_ticks_msec()

@@ -75,6 +75,10 @@ func build(ctx: MapBuildContext) -> void:
 		% [last_placed, last_placeholder, anim_instances, glb_groups, mm_groups, ph_groups]
 	)
 
+	# 按 heightfield 重算所有 doodad Y（HivEWE change_doodad_heights 等价）。
+	# JSON 原始 pos.z 被覆盖；后续改地形时 MapLoader.rebuild_* 会再刷一次。
+	_apply_height_update(ctx.heightfield)
+
 
 func _place_multimesh_group(type_id: String, variation: int, glb: String, list: Array) -> bool:
 	var parts: Array = _cache.mesh_parts_from_glb(glb)
@@ -121,6 +125,7 @@ func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_an
 		return
 	node.name = "%s_%s" % [type_id, str(d.get("creationNumber", 0))]
 	_apply_doodad_xform(node, d, true)
+	node.set_meta("doodad_data", d)  # 供 refresh_heights 重算 Y 用
 	add_child(node)
 	if play_anim:
 		_cache.autoplay_stand(node)
@@ -130,7 +135,35 @@ func _place_doodad_placeholder(type_id: String, d: Dictionary) -> void:
 	var node := MapPlaceholders.make_entity(type_id, -1, false)
 	_apply_doodad_xform(node, d, false)
 	node.scale *= 0.8
+	node.set_meta("doodad_data", d)
 	add_child(node)
+
+
+## 公开 API：按 heightfield 重算所有 doodad 的 Y（change_doodad_heights 等价）。
+## 改地形笔刷时由 MapLoader.rebuild_* 调。doodad Y 重新贴合新地形。
+## 撤销时：MapDocument.heightfield 回到 before 状态 → 再次 refresh → Y 自动回到原值。
+## 无需独立 doodad undo 通道（[docs/hivewe/OPERATORS.md §6.4]）。
+## [param hf: Wc3Heightfield] 高度场
+func refresh_heights(hf: Wc3Heightfield) -> void:
+	_apply_height_update(hf)
+
+
+## 内部：遍历 children，按 doodad_data meta 里的 (x,y) 重算 Z。
+## hf 越界或 null 时跳过（不抛错）。children 为空时 no-op。
+func _apply_height_update(hf: Wc3Heightfield) -> void:
+	if hf == null or not hf.is_valid():
+		return
+	for c in get_children():
+		if not (c is Node3D):
+			continue
+		var d: Dictionary = c.get_meta("doodad_data", {})
+		if d.is_empty():
+			continue
+		var pos: Dictionary = d.get("position", {})
+		var wx: float = float(pos.get("x", 0.0))
+		var wy: float = float(pos.get("y", 0.0))
+		var new_z_wc3: float = hf.interpolated_height(wx, wy)
+		c.position.z = new_z_wc3 * Wc3Coords.WORLD_SCALE
 
 
 func _apply_doodad_xform(node: Node3D, d: Dictionary, multiply_imported_scale: bool) -> void:
