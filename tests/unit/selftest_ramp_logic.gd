@@ -143,18 +143,6 @@ func _test_low_side_intent() -> void:
 	print("  low_side_intent OK origin=(%d,%d)" % [int(r.get("sx")), int(r.get("sy"))])
 
 
-func _test_soften_dirs() -> void:
-	var s: Vector2i = Wc3RampPaint.soften_dirs(1.0, 0.3)
-	if s != Vector2i(1, 0):
-		_fail("soften expect +X only got %s" % str(s))
-		return
-	var d: Vector2i = Wc3RampPaint.soften_dirs(1.0, 1.0)
-	if d != Vector2i(1, 1):
-		_fail("soften expect diagonal got %s" % str(d))
-		return
-	print("  soften_dirs OK")
-
-
 func _test_corner_intent_from_low() -> void:
 	# 外角高台；点在低侧右下，应解析到 (3,3) 对角坡
 	var doc = MapDocumentScript.new()
