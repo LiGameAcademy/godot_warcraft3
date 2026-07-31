@@ -57,40 +57,6 @@ static func mark_column(
 ## Step 2：方向变体
 ## ============================================================
 
-## 2a. 同侧扩展：增加斜坡宽度（沿侧方向扩展多列）
-## @deprecated 暂未接入路由，需要时启用
-## origin: 坡的起点（高侧角点）
-## main_dir: 坡的方向（单列的延伸方向）
-## side_dir: 侧方向（垂直于 main_dir，决定往哪侧扩宽）
-## width: 总宽度（1=单列，2=双列，3=三列...）
-## ramp: PackedByteArray 可直接修改
-static func extend_same_side(
-	ramp: PackedByteArray,
-	origin: Vector2i,
-	main_dir: Vector2i,
-	side_dir: Vector2i,
-	width: int,
-	tp_w: int,
-	tp_h: int
-) -> void:
-	## side_dir 必须是垂直于 main_dir 的单位向量
-	## main_dir.x != 0 → 水平坡，side_dir 沿 Y 轴
-	## main_dir.y != 0 → 竖直坡，side_dir 沿 X 轴
-	for col in range(width):
-		if main_dir.x != 0:
-			## 水平坡：同列不同 X，Y = origin.y + col * side_dir.y
-			var y: int = origin.y + col * side_dir.y
-			for step in range(3):
-				var x: int = origin.x + step * main_dir.x
-				_set_ramp(ramp, tp_w, tp_h, x, y, true)
-		else:
-			## 竖直坡：同行的不同 Y，X = origin.x + col * side_dir.x
-			var x: int = origin.x + col * side_dir.x
-			for step in range(3):
-				var y: int = origin.y + step * main_dir.y
-				_set_ramp(ramp, tp_w, tp_h, x, y, true)
-
-
 ## 2b. 邻侧扩展：对角斜坡，标注 3×3 box
 ## 从 origin 出发，沿 hx/hy 各走 0,1,2 步，共 9 点
 ## hx, hy ∈ {-1, 1}，两者都必须非零（对角）
