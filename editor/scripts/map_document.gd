@@ -7,6 +7,7 @@ signal changed
 signal dirty_changed(is_dirty: bool)
 
 const DEFAULT_MAP_DIR := "res://assets/map-parsed/losttemple"
+const PARSED_MAPS_ROOT := "res://assets/map-parsed"
 const BLANK_TILEPOINTS := 33 ## → 32×32 格
 const DEFAULT_TILESET := "I"
 const DEFAULT_TILESET_NAME := "Icecrown"
@@ -33,6 +34,65 @@ var brush_cliff_type: int = 0
 var _dirty: bool = false
 ## 最近一次斜坡笔刷结果（状态栏 / 自测）
 var last_ramp_message: String = ""
+
+
+## 扫描 `assets/map-parsed/<slug>/`，返回可打开条目（含 heightfield 的目录）。
+## 每项：`{ dir, slug, name, detail }`；`detail` 为尺寸 / 推荐人数摘要。
+static func list_parsed_maps() -> Array:
+	var out: Array = []
+	var da := DirAccess.open(PARSED_MAPS_ROOT)
+	if da == null:
+		return out
+	da.list_dir_begin()
+	var entry := da.get_next()
+	while entry != "":
+		if not entry.begins_with(".") and da.current_is_dir():
+			var dir_path: String = PARSED_MAPS_ROOT.path_join(entry)
+			var hf_path: String = dir_path.path_join("terrain-heightfield.json")
+			if FileAccess.file_exists(hf_path):
+				out.append(_parsed_map_entry(dir_path, entry))
+		entry = da.get_next()
+	da.list_dir_end()
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("name", "")).nocasecmp_to(str(b.get("name", ""))) < 0
+	)
+	return out
+
+
+static func _parsed_map_entry(dir_path: String, slug: String) -> Dictionary:
+	var display_name := slug
+	var detail := ""
+	var sum_path: String = dir_path.path_join("summary.json")
+	if FileAccess.file_exists(sum_path):
+		var f: FileAccess = FileAccess.open(sum_path, FileAccess.READ)
+		if f != null:
+			var parsed: Variant = JSON.parse_string(f.get_as_text())
+			if typeof(parsed) == TYPE_DICTIONARY:
+				var root: Dictionary = parsed
+				var map_info: Dictionary = root.get("map", {}) as Dictionary
+				if not map_info.is_empty():
+					var n := str(map_info.get("name", "")).strip_edges()
+					if not n.is_empty():
+						display_name = n
+					var pw := int(map_info.get("playableWidth", 0))
+					var ph := int(map_info.get("playableHeight", 0))
+					var players := str(map_info.get("recommendedPlayers", "")).strip_edges()
+					var bits: PackedStringArray = PackedStringArray()
+					if pw > 0 and ph > 0:
+						bits.append("%d×%d" % [pw, ph])
+					if not players.is_empty():
+						bits.append(players)
+					detail = " · ".join(bits)
+				elif str(root.get("slug", "")).is_empty() == false:
+					display_name = str(root.get("slug"))
+	if detail.is_empty():
+		detail = slug
+	return {
+		"dir": dir_path,
+		"slug": slug,
+		"name": display_name,
+		"detail": detail,
+	}
 
 
 ## Present / rebuild 过渡：共享数组的 JSON 形视图。Layer 全面吃 Heightfield 后删除。
@@ -362,6 +422,21 @@ func peek_ramp_spine_at(ix: int, iy: int, horizontal: int = 0, vertical: int = 0
 		var empty: Array[Vector2i] = []
 		return empty
 	return ramp.peek_spine_at(ix, iy, horizontal, vertical)
+
+
+## 删邻域内所有 FLAG_RAMP（HivEWE 经典：右击斜坡 = 删邻域）。
+## radius=1 → 3×3 邻域，覆盖 3 点直坡 / L 补心 / 对角部分；
+## radius=2 → 5×5 邻域（用于 erase 中心点位跨变体时更彻底）。
+## 返回清除的顶点数。
+func erase_ramp_at(ix: int, iy: int, radius: int = 1) -> int:
+	if is_empty():
+		return 0
+	var rmin: Vector2i = Vector2i(ix - radius, iy - radius)
+	var rmax: Vector2i = Vector2i(ix + radius, iy + radius)
+	var n: int = ramp.clear_flags_in_rect(rmin, rmax, 0)
+	if n > 0:
+		mark_dirty()
+	return n
 
 
 func sample_height_at_tile(tx: int, ty: int) -> float:

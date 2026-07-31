@@ -19,6 +19,8 @@ const RAMP_SPINE_EDGE := Color(0.40, 1.0, 0.65, 0.95)
 ## Ramp 落坡会失败（plan_fail）时画红框单格，提示"点这无效"。
 const RAMP_REJECT_COLOR := Color(0.95, 0.30, 0.30, 0.50)
 const RAMP_REJECT_EDGE := Color(1.0, 0.50, 0.50, 0.95)
+## Ramp 工具：右击删邻域半径（HivEWE 经典行为）
+const RAMP_ERASE_RADIUS := 1
 const INVALID_VERT := Vector2i(-99999, -99999)
 
 var document ## MapDocument（preload 实例）
@@ -183,6 +185,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_finish_paint_gesture()
 				get_viewport().set_input_as_handled()
+		# Ramp 工具：右击删斜坡邻域（HivEWE 经典：单击即删，非拖动）
+		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed \
+				and apply_cliff and cliff_tool_id == "Ramp":
+			_cliff_level_anchor = -1
+			_begin_stroke()
+			_erase_ramp_at_mouse(mb.position)
+			_finish_paint_gesture()
+			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _painting:
@@ -334,6 +344,32 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 			"paint @(%d,%d) brush_tex=%d cliff=%s tex=%s tool=%s"
 			% [vert.x, vert.y, brush_tex, cliff_any, apply_texture, cliff_tool_id]
 		)
+
+
+## Ramp 工具：右击删邻域内所有 FLAG_RAMP（HivEWE 经典：单击即删）。
+## stroke 已在 _unhandled_input 内 begin；本函数只做 erase + 收尾。
+func _erase_ramp_at_mouse(screen_pos: Vector2) -> void:
+	var vert: Vector2i = _pick_vertex(screen_pos)
+	_set_hover_vert(vert)
+	if vert == INVALID_VERT:
+		return
+	# 采邻域 before（与 paint 路径保持一致；erase 半径 1 不需 RAMP_SNAP_R）
+	_stroke.capture_before_at(vert.x, vert.y, RAMP_ERASE_RADIUS)
+	var n: int = document.erase_ramp_at(vert.x, vert.y, RAMP_ERASE_RADIUS)
+	_stroke.capture_after_at(vert.x, vert.y, RAMP_ERASE_RADIUS)
+	if n > 0:
+		_stroke.mark_cliff()
+		_dirty_paint = true
+		cliff_dirty = true
+		ramp_feedback.emit("已删斜坡 %d 点 @(ix=%d,iy=%d)" % [n, vert.x, vert.y])
+		MapLog.info(
+			MapLog.Layer.EDITOR,
+			"Brush",
+			"erase ramp @(%d,%d) cleared=%d radius=%d"
+			% [vert.x, vert.y, n, RAMP_ERASE_RADIUS]
+		)
+	else:
+		ramp_feedback.emit("当前角点无斜坡 @(ix=%d,iy=%d)" % [vert.x, vert.y])
 
 
 func _begin_stroke() -> void:
