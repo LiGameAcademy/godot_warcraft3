@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://bgpdr7ovrx422"]
+[gd_scene load_steps=12 format=3 uid="uid://bgpdr7ovrx422"]
 
 [ext_resource type="Script" path="res://editor/scripts/editor_shell.gd" id="1_shell"]
 [ext_resource type="Script" path="res://editor/scripts/editor.gd" id="1b_editor"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" path="res://editor/scripts/ui/menu_bar.tscn" id="6_menu"]
 [ext_resource type="Environment" path="res://editor/resources/editor_environment.tres" id="7_env"]
 [ext_resource type="PackedScene" path="res://editor/scripts/ui/new_map_dialog.tscn" id="8_newmap"]
+[ext_resource type="PackedScene" path="res://editor/scripts/ui/open_map_dialog.tscn" id="8b_openmap"]
 [ext_resource type="Script" path="res://editor/scripts/tools/terrain_brush.gd" id="9_brush"]
 
 [node name="EditorMain" type="Node3D"]
@@ -40,6 +41,8 @@ current = true
 script = ExtResource("9_brush")
 
 [node name="NewMapDialog" parent="." instance=ExtResource("8_newmap")]
+
+[node name="OpenMapDialog" parent="." instance=ExtResource("8b_openmap")]
 
 [node name="UI" type="CanvasLayer" parent="."]
 
@@ -99,6 +102,7 @@ map_root = NodePath("../MapRoot")
 camera_rig = NodePath("../EditorCamera")
 brush = NodePath("../TerrainBrush")
 new_map_dialog = NodePath("../NewMapDialog")
+open_map_dialog = NodePath("../OpenMapDialog")
 menu = NodePath("../UI/MenuBarPanel/MenuBar")
 toolbar = NodePath("../UI/ToolStrip/Toolbar")
 palette = NodePath("../UI/SideBar/TilePalette")

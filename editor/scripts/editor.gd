@@ -14,6 +14,7 @@ const ToolPaletteWindowScript := preload("res://editor/scripts/ui/tool_palette_w
 @export var camera_rig: Node3D
 @export var brush: Node3D
 @export var new_map_dialog: Window
+@export var open_map_dialog: Window
 @export var menu: Node
 @export var toolbar: Node
 @export var palette: Node
@@ -79,6 +80,10 @@ func _ready() -> void:
 		new_map_dialog.setup(map_root.get_tiles(), map_root.get_cliff_catalog(), null, _we_data)
 		if not new_map_dialog.confirmed.is_connected(_on_new_map_confirmed):
 			new_map_dialog.confirmed.connect(_on_new_map_confirmed)
+	if open_map_dialog != null:
+		open_map_dialog.setup()
+		if not open_map_dialog.confirmed.is_connected(_on_open_map_confirmed):
+			open_map_dialog.confirmed.connect(_on_open_map_confirmed)
 	await _startup_new_map()
 	_set_view_grid(EditorSettingsStore.load_view_grid_level())
 	if menu != null and menu.has_method("set_ramp_debug_checked") and map_root != null:
@@ -107,6 +112,8 @@ func _resolve_exports() -> void:
 		brush = get_node_or_null("../TerrainBrush") as Node3D
 	if new_map_dialog == null:
 		new_map_dialog = get_node_or_null("../NewMapDialog") as Window
+	if open_map_dialog == null:
+		open_map_dialog = get_node_or_null("../OpenMapDialog") as Window
 	if menu == null:
 		menu = get_node_or_null("../UI/MenuBarPanel/MenuBar")
 	if toolbar == null:
@@ -209,7 +216,7 @@ func _on_menu_action(action_id: StringName) -> void:
 		"file_new":
 			_show_new_map_dialog()
 		"file_open":
-			await _on_open_lost_temple()
+			_show_open_map_dialog()
 		"file_save":
 			_on_save()
 		"file_exit":
@@ -441,6 +448,16 @@ func _show_new_map_dialog() -> void:
 	new_map_dialog.grab_focus()
 
 
+func _show_open_map_dialog() -> void:
+	if open_map_dialog == null:
+		return
+	open_map_dialog.setup()
+	open_map_dialog.transient = false
+	open_map_dialog.exclusive = true
+	open_map_dialog.popup_centered()
+	open_map_dialog.grab_focus()
+
+
 func _on_new_map_confirmed(options: Dictionary) -> void:
 	_doc.create_from_options(options)
 	_history.clear()
@@ -455,14 +472,16 @@ func _on_new_map_confirmed(options: Dictionary) -> void:
 	)
 
 
-func _on_open_lost_temple() -> void:
-	var err: int = _doc.load_from_map_dir(MapDocumentScript.DEFAULT_MAP_DIR)
+func _on_open_map_confirmed(entry: Dictionary) -> void:
+	var map_dir: String = str(entry.get("dir", ""))
+	var display_name: String = str(entry.get("name", map_dir.get_file()))
+	var err: int = _doc.load_from_map_dir(map_dir)
 	if err != OK:
-		_set_status_key("EDITOR_STATUS_OPEN_FAILED")
+		_set_status_key("EDITOR_STATUS_OPEN_FAILED", [display_name])
 		return
 	_history.clear()
 	await _apply_document(true)
-	_set_status_key("EDITOR_STATUS_OPENED_LOST_TEMPLE")
+	_set_status_key("EDITOR_STATUS_OPENED_MAP", [display_name])
 
 
 func _on_save() -> void:

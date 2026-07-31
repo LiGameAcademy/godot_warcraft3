@@ -4,8 +4,11 @@ EDITOR_STATUS_TERRAIN_BRUSH,当前：地形编辑器 / 地表笔刷（左键绘�
 EDITOR_STATUS_ABOUT,%s — Godot 复刻竖切,%s — Godot remake slice
 EDITOR_STATUS_NOT_IMPLEMENTED,尚未实现：%s,Not implemented: %s
 EDITOR_STATUS_MAP_CREATED,已新建 %dx%d · %s,Created %dx%d · %s
-EDITOR_STATUS_OPEN_FAILED,打开失败：缺少 map-parsed/losttemple,Open failed: missing map-parsed/losttemple
-EDITOR_STATUS_OPENED_LOST_TEMPLE,已打开 Lost Temple（只编辑内存文档，不改磁盘）,Opened Lost Temple (in-memory only; disk unchanged)
+EDITOR_STATUS_OPEN_FAILED,打开失败：%s,Open failed: %s
+EDITOR_STATUS_OPENED_MAP,已打开 %s（只编辑内存文档，不改磁盘）,Opened %s (in-memory only; disk unchanged)
+EDITOR_OPENMAP_TITLE,打开地图,Open Map
+EDITOR_OPENMAP_HINT,选择已解析的地图（assets/map-parsed）：,Select a parsed map (assets/map-parsed):
+EDITOR_OPENMAP_EMPTY,未找到地图。请先用 tools/map-parse 导出。,No maps found. Run tools/map-parse first.
 EDITOR_STATUS_SAVE_FAILED,保存失败,Save failed
 EDITOR_STATUS_SAVED,已保存到 user://editor_maps/,Saved to user://editor_maps/
 EDITOR_HOVER_CELL,"顶点 (%d, %d)","Vertex (%d, %d)"
