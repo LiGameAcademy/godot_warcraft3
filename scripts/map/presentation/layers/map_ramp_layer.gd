@@ -55,7 +55,8 @@ func build(ctx: MapBuildContext) -> void:
 	if terrain_layer == null:
 		terrain_layer = get_node_or_null("../Terrain") as MapTerrainLayer
 	if terrain_layer != null:
-		terrain_layer.apply_ramp_dig(dig, entrances, boost)
+		# 传 romp 让 corner_texture 能看 a_romp（对齐 HivEWE real_tile_texture）
+		terrain_layer.apply_ramp_dig(dig, entrances, boost, ramp_data.romp)
 		MapLog.info(
 			MapLog.Layer.PRESENT,
 			"Ramp",
