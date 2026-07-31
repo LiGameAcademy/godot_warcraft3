@@ -7,6 +7,7 @@
 | 文件 | 内容 |
 |------|------|
 | [RAMP_WE.md](RAMP_WE.md) | HiveWE 思路权威（Paint/Collect 行为、CliffTrans 选型、GLB 探测） |
+| [HIVEWE_ALIGN.md](HIVEWE_ALIGN.md) | 斜坡层向 HivEWE 对齐的路线图（已对齐 / 待对齐 / 测试状态）|
 | [RAMP_REFACTOR.md](RAMP_REFACTOR.md) | 分层重构历史 + tag 计划 + 入口低角 +0.5 决策记录 |
 
 ## 状态（按 [TODO.md §"斜坡"](../roadmap/TODO.md)）
