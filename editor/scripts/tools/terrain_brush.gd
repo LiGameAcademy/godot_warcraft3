@@ -12,6 +12,13 @@ const REBUILD_INTERVAL_MS := 80
 const HOVER_LIFT := 0.015
 const HOVER_COLOR := Color(0.18, 0.92, 0.28, 0.42)
 const HOVER_EDGE := Color(0.35, 1.0, 0.45, 0.85)
+## Ramp spine preview：调 peek_spine_at 算出的落旗点集（3 点直坡 / L 补心 / 对角 3×3）。
+## 绿偏青，区别于地表笔刷的纯绿（HivEWE 经典 Ramp 工具风格）。
+const RAMP_SPINE_COLOR := Color(0.20, 0.90, 0.55, 0.45)
+const RAMP_SPINE_EDGE := Color(0.40, 1.0, 0.65, 0.95)
+## Ramp 落坡会失败（plan_fail）时画红框单格，提示"点这无效"。
+const RAMP_REJECT_COLOR := Color(0.95, 0.30, 0.30, 0.50)
+const RAMP_REJECT_EDGE := Color(1.0, 0.50, 0.50, 0.95)
 const INVALID_VERT := Vector2i(-99999, -99999)
 
 var document ## MapDocument（preload 实例）
@@ -468,6 +475,10 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	if document == null or bool(document.is_empty()):
 		_hide_hover_preview()
 		return
+	# Ramp 工具：spine preview（点集）+ 失败时红框（HivEWE 经典 Ramp UX）
+	if apply_cliff and cliff_tool_id == "Ramp":
+		_update_ramp_hover_preview(vert)
+		return
 	var fill: ArrayMesh
 	var edge: ArrayMesh
 	if brush_shape == 0:
@@ -496,6 +507,58 @@ func _update_hover_preview(vert: Vector2i) -> void:
 	_hover_mesh.visible = true
 	_edge_mesh.mesh = edge
 	_edge_mesh.visible = true
+
+
+## Ramp 工具 hover：调 peek_spine_at 算落旗点集，画 spine preview；
+## 失败时降级为单格红框（提示"点这无效"）。
+func _update_ramp_hover_preview(vert: Vector2i) -> void:
+	var dirs: Vector2i = _ramp_dirs_from_mouse(vert, _main_window_mouse_local())
+	var spine: Array[Vector2i] = document.peek_ramp_spine_at(vert.x, vert.y, dirs.x, dirs.y)
+	if spine.is_empty():
+		# 落坡会失败：画当前点红框
+		_hover_mat.albedo_color = RAMP_REJECT_COLOR
+		_edge_mat.albedo_color = RAMP_REJECT_EDGE
+		_hover_mesh.mesh = _make_offsets_fill_mesh(vert.x, vert.y)
+		_edge_mesh.mesh = _make_offsets_edge_mesh(vert.x, vert.y)
+	else:
+		# 落坡将成功：画点集 spine
+		_hover_mat.albedo_color = RAMP_SPINE_COLOR
+		_edge_mat.albedo_color = RAMP_SPINE_EDGE
+		_hover_mesh.mesh = _make_points_fill_mesh(spine)
+		_edge_mesh.mesh = _make_points_edge_mesh(spine)
+	_hover_mesh.visible = true
+	_edge_mesh.visible = true
+
+
+## spine preview fill：每个点画 1×1 方块（不走笔刷形状）。
+## 直坡 → 3 格；L 补心 → 5 格；外角对角 → 9 格。
+func _make_points_fill_mesh(points: Array[Vector2i]) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for p in points:
+		var bl := _tp_to_godot(float(p.x) - 0.5, float(p.y) - 0.5)
+		var br := _tp_to_godot(float(p.x) + 0.5, float(p.y) - 0.5)
+		var tl := _tp_to_godot(float(p.x) - 0.5, float(p.y) + 0.5)
+		var p_tr := _tp_to_godot(float(p.x) + 0.5, float(p.y) + 0.5)
+		_add_tri(st, bl, br, p_tr)
+		_add_tri(st, bl, p_tr, tl)
+	return st.commit()
+
+
+## spine preview edge：每个点画 1×1 方框。
+func _make_points_edge_mesh(points: Array[Vector2i]) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	for p in points:
+		var bl := _tp_to_godot(float(p.x) - 0.5, float(p.y) - 0.5)
+		var br := _tp_to_godot(float(p.x) + 0.5, float(p.y) - 0.5)
+		var tl := _tp_to_godot(float(p.x) - 0.5, float(p.y) + 0.5)
+		var p_tr := _tp_to_godot(float(p.x) + 0.5, float(p.y) + 0.5)
+		_add_line(st, bl, br)
+		_add_line(st, br, p_tr)
+		_add_line(st, p_tr, tl)
+		_add_line(st, tl, bl)
+	return st.commit()
 
 
 ## 以 tilepoint 为中心的 1×1 预览（西南角 = vert-0.5），对齐顶点拾取。
