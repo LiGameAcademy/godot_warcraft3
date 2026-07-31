@@ -83,5 +83,17 @@ func _run() -> void:
 			push_error("fresh load should not be dirty")
 			quit(1)
 			return
-	print("selftest_map_document OK")
+	var listed: Array = MapDocumentScript.list_parsed_maps()
+	if listed.is_empty():
+		push_error("list_parsed_maps empty (expected at least losttemple)")
+		quit(1)
+		return
+	var slugs := {}
+	for e in listed:
+		slugs[str(e.get("slug", ""))] = true
+	if not slugs.has("losttemple"):
+		push_error("list_parsed_maps missing losttemple: %s" % str(slugs.keys()))
+		quit(1)
+		return
+	print("selftest_map_document OK maps=%d" % listed.size())
 	quit(0)

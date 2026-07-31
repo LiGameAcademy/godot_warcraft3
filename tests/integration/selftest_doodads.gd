@@ -27,7 +27,9 @@ func _run() -> void:
 
 	var root := Node3D.new()
 	root.add_child(layer)
-	layer.build(data as Dictionary)
+	var ctx := MapBuildContext.new()
+	ctx.doodads = data as Dictionary
+	layer.build(ctx)
 	print(
 		"selftest Doodads: placed=%d placeholder=%d children=%d"
 		% [layer.last_placed, layer.last_placeholder, layer.get_child_count()]
