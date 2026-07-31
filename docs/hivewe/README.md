@@ -24,7 +24,8 @@
 4. **[CLIFF.md](CLIFF.md)** — `CliffOperator` 8 种操作 + TAG 选型 + 跨层 clamp
 5. **[RAMP.md](RAMP.md)** — `update_ramp` 完整算法（3 角/对角线/L-corner 补 center）
 6. **[WATER.md](WATER.md)** — `CellOperator` 4 种操作 + 水位公式
-7. **[UNDO.md](UNDO.md)** — `WorldUndoManager` + 笔划期全 heightfield 快照
+7. **[WATER_DEEP_ANALYSIS.md](WATER_DEEP_ANALYSIS.md)** — 浅水/深水（CliffOperator 水路径）+ 水体与斜坡交互 + Water/foam shader 完整对照
+8. **[UNDO.md](UNDO.md)** — `WorldUndoManager` + 笔划期全 heightfield 快照
 
 ## HiveWE 项目结构
 
@@ -109,7 +110,8 @@ D:\GameMaker\HiveWE\
 - **改悬崖/斜坡算法前** → [CLIFF.md](CLIFF.md) / [RAMP.md](RAMP.md)（**先看 v0.3 + 新版对照**）
 - **加新 Operator 类**（比如 RampOperator 独立） → [OPERATORS.md](OPERATORS.md) §"vibecoding 指导"
 - **做脏区局部重建** → [UNDO.md](UNDO.md) §"vibecoding 指导"
-- **做水体/边界/污染** → [WATER.md](WATER.md) / [TERRAIN_TEXTURE.md](TERRAIN_TEXTURE.md)
+- **做水体/边界/污染** → [WATER.md](WATER.md) + [WATER_DEEP_ANALYSIS.md](WATER_DEEP_ANALYSIS.md) / [TERRAIN_TEXTURE.md](TERRAIN_TEXTURE.md)
+- **改浅水/深水笔刷 / 水-斜坡交互 / water-foam shader** → [WATER_DEEP_ANALYSIS.md](WATER_DEEP_ANALYSIS.md)
 - **决策"我们要不要照 HivEWE 这么做"** → 每个文档末"vibecoding 指导"段
 
 ## 已知差异
