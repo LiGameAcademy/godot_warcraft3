@@ -431,6 +431,9 @@ func _pick_vertex(screen_pos: Vector2) -> Vector2i:
 
 
 ## 鼠标相对 tilepoint 的 ±1 坡向（HiveWE：mouse 与角点比较；本仓库加轴向主导以降单列难度）。
+## Modifier（经典 WE 行为）：
+##   Shift → 整体反向（让鼠标对侧也能 paint）
+##   Alt   → 强制单轴（覆盖 soften_dirs 的 2x 软化，强行取主轴）
 func _ramp_dirs_from_mouse(vert: Vector2i, screen_pos: Vector2) -> Vector2i:
 	if document == null or camera == null:
 		return Vector2i.ZERO
@@ -446,7 +449,19 @@ func _ramp_dirs_from_mouse(vert: Vector2i, screen_pos: Vector2) -> Vector2i:
 	var corner: Vector2 = Wc3Coords.tilepoint_wc3(
 		vert.x, vert.y, document.center_offset(), document.tile_size()
 	)
-	return Wc3RampPaint.soften_dirs(mouse_wc3.x - corner.x, mouse_wc3.y - corner.y)
+	var dirs: Vector2i = Wc3RampPaint.soften_dirs(
+		mouse_wc3.x - corner.x, mouse_wc3.y - corner.y
+	)
+	# Shift 反向（HivEWE apply_ramps 行为）
+	if Input.is_key_pressed(KEY_SHIFT):
+		dirs = Vector2i(-dirs.x, -dirs.y)
+	# Alt 强制单轴（覆盖 soften_dirs 的 2x 软化，保留 abs 大的轴）
+	if Input.is_key_pressed(KEY_ALT) and dirs.x != 0 and dirs.y != 0:
+		if absi(dirs.x) >= absi(dirs.y):
+			dirs = Vector2i(dirs.x, 0)
+		else:
+			dirs = Vector2i(0, dirs.y)
+	return dirs
 
 
 ## 沿视线与 heightfield（含层高）求交；悬崖挖洞处仍可命中台顶。
