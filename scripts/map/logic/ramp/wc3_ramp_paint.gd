@@ -804,16 +804,26 @@ static func _check_column(
 		if int(layers[(iy + ny2) * tp_w + (ix + nx2)]) > origin_level:
 			return false
 
-	## 对侧斜坡：经典 WE 允许细脊两侧双向落坡，故不在此拒绝。
-	## （Collect 仍可能「有旗无模」；Present 另议。旧禁门保留注释备查。）
-	# var back_x: int = ix - dir_x
-	# var back_y: int = iy - dir_y
-	# if _in_bounds(back_x, back_y, tp_w, tp_h):
-	# 	if (
-	# 		_has_ramp(ramp, tp_w, tp_h, back_x, back_y)
-	# 		and int(layers[back_y * tp_w + back_x]) == target_level
-	# 	):
-	# 		return false
+	## 紧贴对侧斜坡禁门（侧翼 ramp 不齐 → 拒绝，避免细脊双侧落坡）
+	## 对齐 HiveWE `CliffOperator::check_ramp_direction` line 448-459。
+	## 仅当"侧翼 corner 已有 ramp 但沿本坡向延伸不齐"时拒绝。
+	for side in [-1, 1]:
+		# Y 方向侧翼：(ix, iy+side) 有 ramp + 沿坡向延伸不齐
+		if _has_ramp(ramp, tp_w, tp_h, ix, iy + side):
+			var ok_y: bool = (
+				_has_ramp(ramp, tp_w, tp_h, ix + dir_x, iy + side + dir_y)
+				and _has_ramp(ramp, tp_w, tp_h, ix + 2 * dir_x, iy + side + 2 * dir_y)
+			)
+			if not ok_y:
+				return false
+		# X 方向侧翼：(ix+side, iy) 有 ramp + 沿坡向延伸不齐
+		if _has_ramp(ramp, tp_w, tp_h, ix + side, iy):
+			var ok_x: bool = (
+				_has_ramp(ramp, tp_w, tp_h, ix + side + dir_x, iy + dir_y)
+				and _has_ramp(ramp, tp_w, tp_h, ix + side + 2 * dir_x, iy + 2 * dir_y)
+			)
+			if not ok_x:
+				return false
 
 	## 侧翼禁贴：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
 	if not _check_side_clearance(ix, iy, dir_x, dir_y, ramp, tp_w, tp_h):
