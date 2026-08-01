@@ -32,6 +32,10 @@ EDITOR_DOODAD_LIST_EMPTY,无可用条目（检查 slk-exported）,No entries (ch
 EDITOR_DOODAD_RANDOM_VAR,放置时使用随机样式,Use random variation when placing
 EDITOR_DOODAD_VAR_PREV,上一个样式,Previous variation
 EDITOR_DOODAD_VAR_NEXT,下一个样式,Next variation
+EDITOR_DOODAD_RAND_ROTATION,随机旋转角度,Random Rotation
+EDITOR_DOODAD_RAND_SCALE_SYM,随机大小 - 对称,Random Scale - Symmetric
+EDITOR_DOODAD_RAND_SCALE_Z,随机大小 - Z轴（高度）,Random Scale - Z Axis (height)
+EDITOR_DOODAD_RAND_SCALE_XY,随机大小 - XY面,Random Scale - XY Plane
 WESTRING_DTYPE_PROPS,道具,Props
 WESTRING_DTYPE_STRUCTURES,建筑,Structures
 WESTRING_DTYPE_WATER,水,Water

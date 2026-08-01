@@ -22,6 +22,10 @@
 [ext_resource type="Texture2D" uid="uid://34lt7g1vvgqx" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush01.png" id="size_c1"]
 [ext_resource type="Texture2D" uid="uid://cxlt06ic33sf8" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush02.png" id="size_c2"]
 [ext_resource type="Texture2D" uid="uid://bog3hdoys2lh2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush03.png" id="size_c3"]
+[ext_resource type="Texture2D" uid="uid://4anpnuwoujmp" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomRotation.png" id="rand_rot"]
+[ext_resource type="Texture2D" uid="uid://crm54xhqj7bla" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-Symmetric.png" id="rand_scale_sym"]
+[ext_resource type="Texture2D" uid="uid://bwfe4v72ughj" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricZ.png" id="rand_scale_z"]
+[ext_resource type="Texture2D" uid="uid://bn08x8ltvr8te" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricXY.png" id="rand_scale_xy"]
 
 [node name="ToolPaletteWindow" type="Window" unique_id=278871348]
 oversampling_override = 1.0
@@ -445,32 +449,50 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="DoodadVarRow" type="HBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage" unique_id=1103222363]
+[node name="DoodadPlaceRandRow" type="HBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage" unique_id=1103222400]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="DoodadRandomBtn" type="Button" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadVarRow" unique_id=1103222364]
+[node name="DoodadRandRotationBtn" type="TextureButton" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadPlaceRandRow" unique_id=1103222401]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-text = "?"
-tooltip_text = "EDITOR_DOODAD_RANDOM_VAR"
+texture_normal = ExtResource("rand_rot")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "EDITOR_DOODAD_RAND_ROTATION"
 
-[node name="DoodadVarPrev" type="Button" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadVarRow" unique_id=1103222365]
+[node name="DoodadRandScaleSymBtn" type="TextureButton" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadPlaceRandRow" unique_id=1103222402]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-text = "<"
-tooltip_text = "EDITOR_DOODAD_VAR_PREV"
+toggle_mode = true
+texture_normal = ExtResource("rand_scale_sym")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "EDITOR_DOODAD_RAND_SCALE_SYM"
 
-[node name="DoodadVarNext" type="Button" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadVarRow" unique_id=1103222366]
+[node name="DoodadRandScaleZBtn" type="TextureButton" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadPlaceRandRow" unique_id=1103222403]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-text = ">"
-tooltip_text = "EDITOR_DOODAD_VAR_NEXT"
+toggle_mode = true
+texture_normal = ExtResource("rand_scale_z")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "EDITOR_DOODAD_RAND_SCALE_Z"
+
+[node name="DoodadRandScaleXYBtn" type="TextureButton" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage/DoodadPlaceRandRow" unique_id=1103222404]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("rand_scale_xy")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "EDITOR_DOODAD_RAND_SCALE_XY"
 
 [node name="DoodadList" type="ItemList" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage" unique_id=479818122]
 unique_name_in_owner = true

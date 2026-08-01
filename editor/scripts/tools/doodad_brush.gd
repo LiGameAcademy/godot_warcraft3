@@ -12,6 +12,7 @@ signal facing_changed(angle_deg: float) ## 笔刷朝向变化（无选中时 [ ]
 signal palette_cleared ## Esc 取消放置预览 / 清空笔刷类型
 
 const DoodadEditCommandScript := preload("res://editor/scripts/commands/doodad_edit_command.gd")
+const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
 
 const REBUILD_INTERVAL_MS := 80
 const PLACE_SPACING_TILES := 0.5 ## 拖拽节流：半格（与吸附步进一致）
@@ -48,6 +49,11 @@ var num_var: int = 1
 var angle_deg: float = 270.0
 var place_scale: float = 1.0
 var random_variation: bool = true
+## 放置随机（WE 四按钮）：旋转角 / 对称缩放 / WC3-Z 高度 / WC3-XY 水平面
+var random_rotation: bool = true
+var random_scale_sym: bool = false
+var random_scale_z: bool = false
+var random_scale_xy: bool = false
 
 var _painting: bool = false
 var _stroke_entries: Array = []
@@ -106,6 +112,10 @@ func set_palette(
 	p_scale: float,
 	p_random: bool,
 	p_num_var: int = 1,
+	p_random_rotation: bool = false,
+	p_random_scale_sym: bool = false,
+	p_random_scale_z: bool = false,
+	p_random_scale_xy: bool = false,
 ) -> void:
 	var new_type := p_type_id.strip_edges()
 	var type_changed := type_id != new_type or variation != p_variation
@@ -115,9 +125,26 @@ func set_palette(
 	angle_deg = p_angle_deg
 	place_scale = maxf(p_scale, 0.01)
 	random_variation = p_random
+	random_rotation = p_random_rotation
+	random_scale_sym = p_random_scale_sym
+	random_scale_z = p_random_scale_z
+	random_scale_xy = p_random_scale_xy
 	if type_changed:
 		_destroy_ghost()
 	# 立刻按当前鼠标位置拉起/更新幽灵（不必等下一次 MouseMotion）
+	_poll_ghost_from_mouse()
+
+
+func set_place_random(
+	p_rotation: bool,
+	p_scale_sym: bool,
+	p_scale_z: bool,
+	p_scale_xy: bool,
+) -> void:
+	random_rotation = p_rotation
+	random_scale_sym = p_scale_sym
+	random_scale_z = p_scale_z
+	random_scale_xy = p_scale_xy
 	_poll_ghost_from_mouse()
 
 
@@ -142,20 +169,21 @@ func hover(screen_pos: Vector2) -> void:
 func stroke_press(screen_pos: Vector2) -> void:
 	if not enabled or document == null:
 		return
-	var picked: int = _pick_creation_number(screen_pos)
-	if picked >= 0:
+	# 无放置预览：点选 / 空白处取消选中（对齐 WE 选择态）
+	if type_id.is_empty():
 		_painting = false
 		_stroke_entries.clear()
-		if picked == _selected_cn:
-			_begin_drag(picked)
+		var picked: int = _pick_creation_number(screen_pos)
+		if picked >= 0:
+			if picked == _selected_cn:
+				_begin_drag(picked)
+			else:
+				select_creation_number(picked)
+				_begin_drag(picked)
 		else:
-			select_creation_number(picked)
-			_begin_drag(picked)
-		_hide_ghost()
+			clear_selection()
 		return
-	# 空白处：放置
-	if type_id.is_empty():
-		return
+	# 有预览：只放置
 	_painting = true
 	_stroke_entries.clear()
 	_last_place_wc3 = INVALID_POS
@@ -339,8 +367,10 @@ func _place_one(wc3_x: float, wc3_y: float) -> void:
 	var var_i: int = variation
 	if random_variation and num_var > 1:
 		var_i = randi() % num_var
+	var ang: float = _roll_place_angle_deg()
+	var sc: Vector3 = _roll_place_scale_xyz()
 	var entry: Dictionary = document.make_doodad_entry(
-		type_id, wc3_x, wc3_y, var_i, angle_deg, place_scale
+		type_id, wc3_x, wc3_y, var_i, ang, sc
 	)
 	document.add_doodad(entry)
 	var stored: Dictionary = document.get_doodad(document.doodads.size() - 1)
@@ -349,6 +379,51 @@ func _place_one(wc3_x: float, wc3_y: float) -> void:
 	_stroke_entries.append(stored.duplicate(true))
 	if map_loader != null:
 		map_loader.add_doodad_instance(stored, document.as_build_dict())
+
+
+func _roll_place_angle_deg() -> float:
+	if random_rotation:
+		return randf() * 360.0
+	return angle_deg
+
+
+## 返回 WC3 坐标系 scale（x/y=水平面，z=高度）。Godot 显示时再映射为 (x,z,y)。
+func _roll_place_scale_xyz() -> Vector3:
+	var base := place_scale
+	var sx := base
+	var sy := base
+	var sz := base
+	var want_rand := random_scale_sym or random_scale_z or random_scale_xy
+	if not want_rand:
+		return Vector3(sx, sy, sz)
+	var min_s := base
+	var max_s := base
+	var allow := true
+	if map_loader != null and map_loader.has_method("get_id_catalog"):
+		var catalog: Wc3IdCatalog = map_loader.get_id_catalog()
+		if catalog != null:
+			var info: Dictionary = catalog.lookup(type_id)
+			if not info.is_empty():
+				allow = bool(info.get("can_place_rand_scale", true))
+				min_s = float(info.get("min_scale", base))
+				max_s = float(info.get("max_scale", base))
+	if not allow:
+		return Vector3(sx, sy, sz)
+	if max_s < min_s:
+		var tmp := min_s
+		min_s = max_s
+		max_s = tmp
+	# 对称优先：三轴同一随机值（对齐 HiveWE random_scale）
+	if random_scale_sym:
+		var u: float = randf_range(min_s, max_s)
+		return Vector3(u, u, u)
+	if random_scale_xy:
+		var h: float = randf_range(min_s, max_s)
+		sx = h
+		sy = h
+	if random_scale_z:
+		sz = randf_range(min_s, max_s)
+	return Vector3(sx, sy, sz)
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +525,7 @@ func _pick_creation_number(screen_pos: Vector2) -> int:
 			continue
 		var d: Dictionary = d_var
 		var pos: Dictionary = d.get("position", {})
-		var gpos: Vector3 = Wc3Coords.wc3_xy_to_godot(
-			float(pos.get("x", 0.0)),
-			float(pos.get("y", 0.0)),
-			float(pos.get("z", 0.0)),
-		)
+		var gpos: Vector3 = _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
 		if camera.is_position_behind(gpos):
 			continue
 		var sp: Vector2 = camera.unproject_position(gpos)
@@ -583,6 +654,8 @@ func _ensure_ghost() -> void:
 	node.name = "DoodadGhost"
 	node.set_meta("ghost_base_scale", base_scale)
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
+	if not glb.is_empty():
+		_Pe2.attach_to(node, glb)
 	MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	add_child(node)
 	_apply_ghost_look(node)
@@ -610,6 +683,9 @@ func _apply_ghost_look(root: Node) -> void:
 		if gi != null:
 			gis.append(gi)
 	for gi in gis:
+		# 保留 PE2 粒子观感，勿改成半透明 ghost 材质
+		if gi is GPUParticles3D:
+			continue
 		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		# 实例级淡出 + 材质 alpha（部分不透明材质会忽略前者）
 		gi.transparency = clampf(1.0 - GHOST_ALPHA, 0.0, 1.0)
@@ -648,27 +724,63 @@ func _as_ghost_material(src: Material) -> Material:
 
 
 # ---------------------------------------------------------------------------
-# 选中标记
+# 选中标记（对齐 WE：贴地绿圈；直径来自 SLK selSize / pathTex 占地）
 # ---------------------------------------------------------------------------
+
+const SEL_RING_COLOR := Color(0.15, 1.0, 0.25, 1.0)
+const SEL_RING_Y_BIAS := 0.04
+const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
+
 
 func _ensure_sel_marker() -> void:
 	if _sel_marker != null and is_instance_valid(_sel_marker):
-		return
+		# 热重载后可能仍是旧 Torus；强制换成贴地 Plane
+		if _sel_marker.mesh is PlaneMesh and _sel_marker.top_level:
+			return
+		_sel_marker.queue_free()
+		_sel_marker = null
 	_sel_marker = MeshInstance3D.new()
 	_sel_marker.name = "DoodadSelMarker"
-	var mesh := TorusMesh.new()
-	mesh.inner_radius = 0.35
-	mesh.outer_radius = 0.48
-	mesh.rings = 12
-	mesh.ring_segments = 24
-	_sel_marker.mesh = mesh
+	_sel_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 脱离父节点旋转，保证永远贴 XZ 地面（PlaneMesh 默认法线 +Y）
+	_sel_marker.top_level = true
+	var plane := PlaneMesh.new()
+	plane.size = Vector2.ONE
+	plane.orientation = PlaneMesh.FACE_Y
+	_sel_marker.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1.0, 0.85, 0.15, 0.95)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.render_priority = 20
+	mat.albedo_color = SEL_RING_COLOR
+	var tex: Texture2D = RuntimeAssets.load_converted_texture(SEL_CIRCLE_TEX)
+	if tex != null:
+		mat.albedo_texture = tex
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_sel_marker.material_override = mat
 	_sel_marker.visible = false
 	add_child(_sel_marker)
+
+
+## 直径来自配置：selSize → pathTex(NxN×32) → 默认 1 寻路格；再乘实例水平 scale。
+func _sel_ring_diameter_world(entry: Dictionary) -> float:
+	var diam_wc3 := Wc3Coords.PATHING_CELL
+	var sid := str(entry.get("id", ""))
+	if map_loader != null and map_loader.has_method("get_id_catalog"):
+		var catalog: Wc3IdCatalog = map_loader.get_id_catalog()
+		if catalog != null:
+			var info: Dictionary = catalog.lookup(sid)
+			if not info.is_empty():
+				diam_wc3 = Wc3IdCatalog.selection_diameter_wc3(info)
+	var scale_data: Dictionary = entry.get("scale", {})
+	var sx: float = float(scale_data.get("x", 1.0))
+	var sy: float = float(scale_data.get("y", 1.0))
+	diam_wc3 *= maxf(maxf(sx, sy), 0.01)
+	diam_wc3 = clampf(diam_wc3, Wc3Coords.PATHING_CELL * 0.5, Wc3Coords.TILE_SIZE * 24.0)
+	return diam_wc3 * Wc3Coords.WORLD_SCALE
 
 
 func _update_sel_marker() -> void:
@@ -681,12 +793,17 @@ func _update_sel_marker() -> void:
 		_sel_marker.visible = false
 		return
 	var pos: Dictionary = entry.get("position", {})
-	_sel_marker.global_position = Wc3Coords.wc3_xy_to_godot(
-		float(pos.get("x", 0.0)),
-		float(pos.get("y", 0.0)),
-		float(pos.get("z", 0.0)),
-	)
-	_sel_marker.rotation_degrees = Vector3(-90.0, 0.0, 0.0) ## 环平铺地面
+	var world := _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
+	world.y += SEL_RING_Y_BIAS
+	# top_level：用全局变换钉死贴地，不受 DoodadBrush 父节点影响
+	_sel_marker.global_transform = Transform3D(Basis.IDENTITY, world)
+	var diam: float = _sel_ring_diameter_world(entry)
+	var plane := _sel_marker.mesh as PlaneMesh
+	if plane == null:
+		plane = PlaneMesh.new()
+		plane.orientation = PlaneMesh.FACE_Y
+		_sel_marker.mesh = plane
+	plane.size = Vector2(diam, diam)
 	_sel_marker.visible = true
 
 

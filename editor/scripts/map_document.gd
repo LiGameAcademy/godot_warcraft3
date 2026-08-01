@@ -600,25 +600,39 @@ func get_doodad(index: int) -> Dictionary:
 
 
 ## 在 WC3 世界 XY 处建一条可放置条目（Z 由 heightfield 插值）。
+## scale 可为 float（三轴相同）或 Vector3（WC3 x/y/z）。
 func make_doodad_entry(
 	type_id: String,
 	wc3_x: float,
 	wc3_y: float,
 	variation: int = 0,
 	angle_deg: float = 270.0,
-	scale: float = 1.0,
+	scale: Variant = 1.0,
 ) -> Dictionary:
 	var z: float = 0.0
 	if heightfield != null and heightfield.is_valid():
 		z = heightfield.interpolated_height(wc3_x, wc3_y)
 	var ang := deg_to_rad(angle_deg)
+	var sx := 1.0
+	var sy := 1.0
+	var sz := 1.0
+	if scale is Vector3:
+		var v: Vector3 = scale
+		sx = maxf(v.x, 0.01)
+		sy = maxf(v.y, 0.01)
+		sz = maxf(v.z, 0.01)
+	else:
+		var u: float = maxf(float(scale), 0.01)
+		sx = u
+		sy = u
+		sz = u
 	return {
 		"id": type_id,
 		"variation": variation,
 		"position": {"x": wc3_x, "y": wc3_y, "z": z},
 		"angle": ang,
 		"angleDegrees": angle_deg,
-		"scale": {"x": scale, "y": scale, "z": scale},
+		"scale": {"x": sx, "y": sy, "z": sz},
 		"flags": 2,
 		"life": 100,
 		"itemTablePtr": -1,

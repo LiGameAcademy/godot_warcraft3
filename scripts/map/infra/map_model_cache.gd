@@ -124,6 +124,7 @@ func _ensure_scene(path: String) -> Node3D:
 	var loaded := RuntimeAssets.load_gltf_scene(path)
 	if loaded == null:
 		return null
+	_fix_wc3_blend_materials(loaded)
 	var has_anim := _scene_has_skeletal_stand(loaded)
 	_anim_flags[path] = has_anim
 	# 静物：GeosetAnim 在 rest 可能 scale=0，强制可见
@@ -132,6 +133,56 @@ func _ensure_scene(path: String) -> Node3D:
 		_reveal_hidden_geosets(loaded)
 	_scene_cache[path] = loaded
 	return loaded
+
+
+## WC3 Additive / AddAlpha 在 glTF 只能标成 BLEND；黑底 Glow 会变成实心黑牌。
+## 按材质名 `_fm3`/`_fm4`（或 Glow 贴图启发式）改成 ADD。
+func _fix_wc3_blend_materials(root: Node) -> void:
+	if root == null:
+		return
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if not (n is MeshInstance3D):
+			continue
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for si in range(mi.mesh.get_surface_count()):
+			var mat: Material = mi.get_active_material(si)
+			if mat == null:
+				continue
+			var fixed := _as_wc3_additive_material(mat)
+			if fixed != null and fixed != mat:
+				mi.set_surface_override_material(si, fixed)
+
+
+func _as_wc3_additive_material(mat: Material) -> Material:
+	if not (mat is StandardMaterial3D):
+		return mat
+	var sm := mat as StandardMaterial3D
+	var key := str(sm.resource_name) + " " + str(sm.get_name())
+	var tex: Texture2D = sm.albedo_texture
+	var tex_path := ""
+	if tex != null:
+		tex_path = str(tex.resource_path) + " " + str(tex.resource_name)
+	var want_add := (
+		key.contains("_fm3")
+		or key.contains("_fm4")
+		or tex_path.to_lower().contains("glow")
+	)
+	if not want_add:
+		return mat
+	# 不改共享原型：duplicate 后写入 override
+	var out := sm.duplicate() as StandardMaterial3D
+	out.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	out.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	out.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	out.cull_mode = BaseMaterial3D.CULL_DISABLED
+	out.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	return out
 
 
 ## 真正会动的 Stand：pos/rot 轨足够多（空 Stand、树的微动轨排除）

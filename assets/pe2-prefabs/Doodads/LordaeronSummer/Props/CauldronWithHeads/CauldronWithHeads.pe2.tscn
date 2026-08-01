@@ -1,0 +1,60 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/doodads/LordaeronSummer/Props/CauldronWithHeads/BubbleParticle.png" id="1_rpkub"]
+
+[sub_resource type="Gradient" id="Gradient_xrjoi"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(0.301961, 0.721569, 0.333333, 1, 0.301961, 0.721569, 0.333333, 1, 0.301961, 0.721569, 0.333333, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_ho5as"]
+gradient = SubResource("Gradient_xrjoi")
+
+[sub_resource type="Curve" id="Curve_2b62d"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_uym0a"]
+curve = SubResource("Curve_2b62d")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_62t5e"]
+emission_shape = 3
+emission_box_extents = Vector3(23.7791, 0.5, 25.22425)
+direction = Vector3(0, 1, 0)
+spread = 0.0
+flatness = 0.15
+initial_velocity_min = 96.0299
+initial_velocity_max = 97.9699
+gravity = Vector3(0, 0, 0)
+scale_min = 5.7375
+scale_max = 7.79625
+scale_curve = SubResource("CurveTexture_uym0a")
+color_ramp = SubResource("GradientTexture1D_ho5as")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qtyo1"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_rpkub")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_fa03y"]
+material = SubResource("StandardMaterial3D_qtyo1")
+
+[node name="Pe2Root" type="Node3D" unique_id=1308937765]
+
+[node name="BlizParticle01" type="GPUParticles3D" parent="." unique_id=1281266681]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.21457, 19.1011, -2.28465)
+cast_shadow = 0
+amount = 7
+lifetime = 0.300001
+preprocess = 0.300001
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_62t5e")
+draw_pass_1 = SubResource("QuadMesh_fa03y")

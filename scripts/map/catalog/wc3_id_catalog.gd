@@ -158,6 +158,9 @@ func _load_destructables(path: String) -> void:
 			"can_place_rand_scale": int(rec.get("canPlaceRandScale", 0)) != 0,
 			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
 			"sel_size": float(rec.get("selSize", 0.0)),
+			"path_tex": str(rec.get("pathTex", "")),
+			"fixed_rot": float(rec.get("fixedRot", -1.0)),
+			"vis_radius": float(rec.get("visRadius", 50.0)),
 			"ignore_model_click": int(rec.get("ignoreModelClick", 0)) != 0,
 		}
 
@@ -186,6 +189,9 @@ func _load_doodads(path: String) -> void:
 			"can_place_rand_scale": int(rec.get("canPlaceRandScale", 0)) != 0,
 			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
 			"sel_size": float(rec.get("selSize", 0.0)),
+			"path_tex": str(rec.get("pathTex", "")),
+			"fixed_rot": float(rec.get("fixedRot", -1.0)),
+			"vis_radius": float(rec.get("visRadius", 50.0)),
 			"ignore_model_click": int(rec.get("ignoreModelClick", 0)) != 0,
 		}
 
@@ -203,3 +209,53 @@ func _read_json(path: String) -> Dictionary:
 		push_warning("Wc3IdCatalog: JSON 无效 %s" % path)
 		return {}
 	return parsed
+
+
+## 从 pathTex 文件名解析寻路格尺寸，如 `PathTextures\4x4Default.tga` → (4,4)。
+## 无法解析（none / 异形图）返回 Vector2i.ZERO。
+static func parse_path_tex_cells(path_tex: String) -> Vector2i:
+	var s := path_tex.replace("\\", "/").get_file()
+	if s.is_empty() or s.to_lower() == "none" or s == "_":
+		return Vector2i.ZERO
+	var re := RegEx.new()
+	if re.compile("(\\d+)x(\\d+)") != OK:
+		return Vector2i.ZERO
+	var m := re.search(s)
+	if m == null:
+		return Vector2i.ZERO
+	var w: int = int(m.get_string(1))
+	var h: int = int(m.get_string(2))
+	if w <= 0 or h <= 0:
+		return Vector2i.ZERO
+	return Vector2i(w, h)
+
+
+## 选中环直径（WC3 单位）：selSize > 0 → 用之；否则 pathTex NxN → max*PATHING_CELL；再否则默认 1 格。
+static func selection_diameter_wc3(info: Dictionary) -> float:
+	var sel: float = float(info.get("sel_size", 0.0))
+	if sel > 1.0:
+		return sel
+	var cells: Vector2i = parse_path_tex_cells(str(info.get("path_tex", "")))
+	if cells != Vector2i.ZERO:
+		return float(maxi(cells.x, cells.y)) * Wc3Coords.PATHING_CELL
+	# pathTex=none 的细杆/火炬等：1 寻路格
+	return Wc3Coords.PATHING_CELL
+
+
+## 放置默认朝向：fixedRot≥0 用固定角；-1（自由旋转）用 WE 默认 270°。
+static func default_facing_deg(info: Dictionary) -> float:
+	var fr: float = float(info.get("fixed_rot", -1.0))
+	if fr >= 0.0:
+		return fposmod(fr, 360.0)
+	return 270.0
+
+
+## 预览相机距离（WE「距离」框，WC3 单位）。
+## 经验对齐：常见 visRadius=50 → 400；大物件跟 selSize；瀑布 visRadius=100 → 800。
+static func preview_distance_wc3(info: Dictionary) -> float:
+	var vis: float = float(info.get("vis_radius", 50.0))
+	var from_vis: float = vis * 8.0 if vis > 0.0 else 400.0
+	var sel: float = float(info.get("sel_size", 0.0))
+	var from_sel: float = sel if sel > 1.0 else 0.0
+	var foot: float = selection_diameter_wc3(info)
+	return maxf(maxf(from_vis, from_sel), foot * 2.0)

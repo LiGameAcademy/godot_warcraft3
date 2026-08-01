@@ -48,3 +48,12 @@ export function mdxLogicalToGlb(logicalPath) {
   }
   return `${n}.glb`;
 }
+
+/** Map WC3 model path to ParticleEmitter2 sidecar JSON (next to GLB). */
+export function mdxLogicalToPe2(logicalPath) {
+  const glb = mdxLogicalToGlb(logicalPath);
+  if (glb.toLowerCase().endsWith(".glb")) {
+    return `${glb.slice(0, -4)}.pe2.json`;
+  }
+  return `${glb}.pe2.json`;
+}

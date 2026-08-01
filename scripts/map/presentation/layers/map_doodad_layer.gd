@@ -2,6 +2,8 @@ class_name MapDoodadLayer
 extends Node3D
 ## 静物 / 装饰物层：GLB 实例或按 Geoset 分片 MultiMesh。
 
+const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
+
 
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
@@ -47,6 +49,18 @@ func add_one(d: Dictionary, hf: Wc3Heightfield) -> bool:
 
 ## 按 creationNumber 移除 Present 节点（MultiMesh 组内无法精确删 → 返回 false，调用方应全量 rebuild）。
 func remove_by_creation_number(creation_number: int) -> bool:
+	var node := find_by_creation_number(creation_number)
+	if node == null:
+		return false
+	remove_child(node)
+	node.free()
+	return true
+
+
+## 单实例 Present（非 MultiMesh 组内条目）。找不到返回 null。
+func find_by_creation_number(creation_number: int) -> Node3D:
+	if creation_number < 0:
+		return null
 	for c in get_children():
 		if not (c is Node3D):
 			continue
@@ -55,11 +69,8 @@ func remove_by_creation_number(creation_number: int) -> bool:
 			continue
 		if int(d.get("creationNumber", -1)) != creation_number:
 			continue
-		# MultiMesh 根没有单条 meta 时跳过
-		remove_child(c)
-		c.free()
-		return true
-	return false
+		return c as Node3D
+	return null
 
 
 func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
@@ -113,11 +124,13 @@ func build(ctx: MapBuildContext) -> void:
 		var glb := _catalog.converted_glb_path(type_id, variation) if try_load_glb else ""
 		var has_anim := (not glb.is_empty()) and _cache.glb_has_animation(glb)
 		var use_helper := bool(info.get("use_click_helper", false))
-		# 空壳 / Click Helper / 动画：不走 MultiMesh（需逐实例挂 helper 或播 Stand）
-		var allow_mm := (
+		var has_pe2: bool = (not glb.is_empty()) and _Pe2.has_emitters(glb)
+		# 空壳 / Click Helper / 动画 / PE2：不走 MultiMesh（需逐实例挂 helper/粒子或播 Stand）
+		var allow_mm: bool = (
 			not glb.is_empty()
 			and (not has_anim)
 			and (not use_helper)
+			and (not has_pe2)
 			and list.size() >= multimesh_threshold
 			and _cache.glb_has_mesh(glb)
 		)
@@ -203,6 +216,7 @@ func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_an
 	node.set_meta("doodad_data", d)  # 供 refresh_heights 重算 Y 用
 	var info: Dictionary = _catalog.lookup(type_id) if _catalog != null else {}
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
+	_Pe2.attach_to(node, glb)
 	var helpers := MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	add_child(node)
 	if play_anim:

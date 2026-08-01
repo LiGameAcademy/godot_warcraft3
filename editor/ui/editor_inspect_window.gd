@@ -24,6 +24,7 @@ const ORBIT_PITCH_MAX := 80.0
 const ORBIT_PITCH_DEFAULT := 25.0
 const ORBIT_YAW_DEFAULT := 0.0
 const ZOOM_WHEEL_FACTOR := 1.12
+const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
 
 ## MMP 图标逻辑路径（AssetProvider / converted）。
 const ICON_PATHS := {
@@ -500,16 +501,56 @@ func set_random_variation(on: bool) -> void:
 	_emit_params()
 
 
-func show_doodad(type_id: String, variation: int = 0) -> void:
-	_type_id = type_id
+func show_doodad(type_id: String, variation: int = 0, apply_type_defaults: bool = true) -> void:
+	var new_id := type_id.strip_edges()
+	var type_changed := _type_id != new_id
+	_type_id = new_id
 	var info: Dictionary = {}
 	if _catalog != null:
-		info = _catalog.lookup(type_id)
+		info = _catalog.lookup(new_id)
 	_num_var = maxi(int(info.get("num_var", 1)), 1)
 	_variation = clampi(variation, 0, _num_var - 1)
+	if apply_type_defaults:
+		_apply_type_preview_defaults(info, type_changed)
 	_refresh_preview_title()
 	_refresh_var_label()
 	_reload_model()
+
+
+## 地图点选：预览该实例（类型默认距离 + 实例朝向/样式/缩放）。
+func show_map_doodad(entry: Dictionary) -> void:
+	if entry.is_empty():
+		return
+	var tid := str(entry.get("id", "")).strip_edges()
+	if tid.is_empty():
+		return
+	var var_i: int = int(entry.get("variation", 0))
+	# 换类型时重置距离；朝向/缩放随后用实例值覆盖
+	show_doodad(tid, var_i, true)
+	var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+	set_place_facing(deg, true, false)
+	var scale_data: Dictionary = entry.get("scale", {})
+	var sx: float = float(scale_data.get("x", 1.0))
+	var sy: float = float(scale_data.get("y", 1.0))
+	var sz: float = float(scale_data.get("z", 1.0))
+	_scale = maxf((sx + sy + sz) / 3.0, 0.01)
+	_apply_model_xform()
+
+
+## 按 SLK 重置预览距离 /（可选）放置朝向。换类型时重置环视角。
+func _apply_type_preview_defaults(info: Dictionary, reset_orbit: bool = true) -> void:
+	if info.is_empty():
+		_set_distance(PREVIEW_DIST_DEFAULT, true)
+		set_place_facing(PLACE_FACING_DEFAULT, true, false)
+	else:
+		_set_distance(Wc3IdCatalog.preview_distance_wc3(info), true)
+		set_place_facing(Wc3IdCatalog.default_facing_deg(info), true, false)
+		var ds: float = float(info.get("def_scale", 1.0))
+		_scale = maxf(ds, 0.01) if ds > 0.0 else PREVIEW_SCALE_DEFAULT
+	if reset_orbit:
+		_view_yaw_deg = ORBIT_YAW_DEFAULT
+		_cam_pitch_deg = ORBIT_PITCH_DEFAULT
+	_apply_preview_camera()
 
 
 func clear_preview() -> void:
@@ -596,6 +637,8 @@ func _reload_model() -> void:
 	_model_root.add_child(node)
 	_preview_instance = node
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
+	if not path.is_empty():
+		_Pe2.attach_to(node, path)
 	MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	_apply_model_xform()
 	_setup_animations(node)

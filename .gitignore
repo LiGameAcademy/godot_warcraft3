@@ -12,6 +12,10 @@
 assets/asset-converted/**
 !assets/asset-converted/.gitkeep
 
+# PE2 particle prefabs (*.pe2.tscn) — mirrored paths under pe2-prefabs/; OK to commit
+# (textures still reference asset-converted at runtime after local convert)
+# assets/pe2-prefabs/ is tracked
+
 # Parsed map JSON — regenerate via tools/map-parse
 assets/map-parsed/**
 !assets/map-parsed/.gitkeep

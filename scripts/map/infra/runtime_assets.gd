@@ -8,6 +8,8 @@ extends RefCounted
 
 const CONVERTED_RES_ROOT := "res://assets/asset-converted"
 const SLK_RES_ROOT := "res://assets/slk-exported"
+## 可提交的 PE2 粒子预制（路径镜像 asset-converted 逻辑子树，不含 Blizzard 贴图/网格）
+const PE2_PREFABS_RES_ROOT := "res://assets/pe2-prefabs"
 
 
 static func project_abs(res_or_abs: String) -> String:
@@ -43,6 +45,39 @@ static func slk_path(relative_or_res: String) -> String:
 	if p.begins_with("slk-exported/"):
 		return "res://assets/" + p
 	return SLK_RES_ROOT.path_join(p)
+
+
+## 逻辑路径（相对 asset-converted 子树）→ res://assets/pe2-prefabs/...
+## 例：Doodads/.../Foo.glb → res://assets/pe2-prefabs/Doodads/.../Foo.pe2.tscn
+static func pe2_prefab_path(relative_or_glb: String) -> String:
+	var p := relative_or_res_to_logical(relative_or_glb)
+	var lower := p.to_lower()
+	if lower.ends_with(".glb"):
+		p = p.substr(0, p.length() - 4) + ".pe2.tscn"
+	elif lower.ends_with(".pe2.json"):
+		p = p.substr(0, p.length() - ".pe2.json".length()) + ".pe2.tscn"
+	elif not lower.ends_with(".pe2.tscn"):
+		p = p + ".pe2.tscn"
+	return PE2_PREFABS_RES_ROOT.path_join(p)
+
+
+## 去掉 res://assets/asset-converted/ 等前缀，得到逻辑相对路径。
+static func relative_or_res_to_logical(relative_or_res: String) -> String:
+	var p := relative_or_res.replace("\\", "/")
+	if p.begins_with("res://"):
+		p = p.substr("res://".length())
+	while p.begins_with("/"):
+		p = p.substr(1)
+	const PREFIXES: Array[String] = [
+		"assets/asset-converted/",
+		"asset-converted/",
+		"assets/pe2-prefabs/",
+		"pe2-prefabs/",
+	]
+	for pre in PREFIXES:
+		if p.begins_with(pre):
+			return p.substr(pre.length())
+	return p
 
 
 ## 逻辑路径 → 绝对磁盘路径。优先 Autoload AssetProvider（含 converted + cache）。

@@ -139,8 +139,12 @@ static func attach_editor_helpers(
 	var helper := make_click_helper(sel)
 	root.add_child(helper)
 	_counter_parent_scale(helper, root)
-	# 无网格：补简易粒子，避免「只有棋盘盒」
-	if not has_visible_mesh and root.get_node_or_null("EffectParticles") == null:
+	# 无网格：补简易粒子（已有 PE2 旁路则跳过）
+	if (
+		not has_visible_mesh
+		and root.get_node_or_null("EffectParticles") == null
+		and root.get_node_or_null("Pe2Root") == null
+	):
 		var parts := make_effect_particles()
 		root.add_child(parts)
 		_counter_parent_scale(parts, root)

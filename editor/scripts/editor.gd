@@ -53,6 +53,10 @@ var _brush_doodad_num_var: int = 1
 var _brush_doodad_angle: float = 270.0
 var _brush_doodad_scale: float = 1.0
 var _brush_doodad_random: bool = true
+var _brush_doodad_rand_rotation: bool = true
+var _brush_doodad_rand_scale_sym: bool = false
+var _brush_doodad_rand_scale_z: bool = false
+var _brush_doodad_rand_scale_xy: bool = false
 var _doodads_present_built: bool = false
 
 
@@ -399,10 +403,15 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
 	if win.has_signal("doodad_selected"):
 		win.doodad_selected.connect(_on_doodad_selected)
-	if win.has_signal("doodad_variation_step"):
-		win.doodad_variation_step.connect(_on_doodad_variation_step)
-	if win.has_signal("doodad_random_toggled"):
-		win.doodad_random_toggled.connect(_on_doodad_random_toggled)
+	if win.has_signal("doodad_place_random_changed"):
+		win.doodad_place_random_changed.connect(_on_doodad_place_random_changed)
+		if win.has_method("set_doodad_place_random"):
+			win.set_doodad_place_random(
+				_brush_doodad_rand_rotation,
+				_brush_doodad_rand_scale_sym,
+				_brush_doodad_rand_scale_z,
+				_brush_doodad_rand_scale_xy,
+			)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	if win.has_signal("edit_undo_requested"):
@@ -593,10 +602,14 @@ func _on_doodad_selected(type_id: String, info: Dictionary) -> void:
 	_brush_doodad_name = str(info.get("name", type_id))
 	_brush_doodad_variation = 0
 	_brush_doodad_num_var = maxi(int(info.get("num_var", 1)), 1)
+	# 面板点选：朝向/缩放跟类型配置（fixedRot / defScale）
+	_brush_doodad_angle = Wc3IdCatalog.default_facing_deg(info)
+	_brush_doodad_scale = maxf(float(info.get("def_scale", 1.0)), 0.01)
 	_sync_active_brush()
 	_ensure_inspect_window(true)
 	if _inspect_window != null and _inspect_window.has_method("show_doodad"):
-		_inspect_window.show_doodad(type_id, _brush_doodad_variation)
+		_inspect_window.show_doodad(type_id, _brush_doodad_variation, true)
+	_push_doodad_palette_to_brush()
 	_refresh_hud_brush()
 	_refresh_hud_props()
 	_set_status_key("EDITOR_STATUS_DOODAD_SELECTED", [_brush_doodad_name, type_id])
@@ -616,18 +629,23 @@ func _on_preview_params_changed(variation: int, angle_deg: float, scale: float, 
 	_refresh_hud_props()
 
 
-func _on_doodad_variation_step(delta: int) -> void:
-	_ensure_inspect_window(false)
-	if _inspect_window != null and _inspect_window.has_method("step_variation"):
-		_inspect_window.step_variation(delta)
-
-
-func _on_doodad_random_toggled(enabled: bool) -> void:
-	_brush_doodad_random = enabled
-	_ensure_inspect_window(false)
-	if _inspect_window != null and _inspect_window.has_method("set_random_variation"):
-		_inspect_window.set_random_variation(enabled)
-	_refresh_hud_props()
+func _on_doodad_place_random_changed(
+	random_rotation: bool,
+	random_scale_sym: bool,
+	random_scale_z: bool,
+	random_scale_xy: bool,
+) -> void:
+	_brush_doodad_rand_rotation = random_rotation
+	_brush_doodad_rand_scale_sym = random_scale_sym
+	_brush_doodad_rand_scale_z = random_scale_z
+	_brush_doodad_rand_scale_xy = random_scale_xy
+	_push_doodad_palette_to_brush()
+	# 多开面板同步开关状态
+	for win in _tool_palettes:
+		if is_instance_valid(win) and win.has_method("set_doodad_place_random"):
+			win.set_doodad_place_random(
+				random_rotation, random_scale_sym, random_scale_z, random_scale_xy
+			)
 
 
 func _current_map_tileset() -> String:
@@ -838,6 +856,8 @@ func _apply_document(full_reload: bool) -> void:
 		await map_root.reload_from_hf(_doc.as_build_dict(), _doc.info, dir)
 	else:
 		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
+	# Document 已读 doodads.json；Present 始终按列表重建（打开地图即可看到装饰物）
+	_rebuild_doodads_present()
 	if camera_rig != null and camera_rig.has_method("focus_map_extent"):
 		camera_rig.focus_map_extent(_doc.map_size())
 	_refresh_inspect_minimap()
@@ -868,6 +888,10 @@ func _push_doodad_palette_to_brush() -> void:
 		_brush_doodad_scale,
 		_brush_doodad_random,
 		_brush_doodad_num_var,
+		_brush_doodad_rand_rotation,
+		_brush_doodad_rand_scale_sym,
+		_brush_doodad_rand_scale_z,
+		_brush_doodad_rand_scale_xy,
 	)
 
 
@@ -914,13 +938,26 @@ func _on_doodad_map_selection_changed(creation_number: int) -> void:
 	if creation_number < 0:
 		return
 	_set_status_key("EDITOR_STATUS_DOODAD_PICKED", [creation_number])
-	# 选中后把朝向同步到 Inspect，方便继续用 ↺/↻ 或 [ ]
-	if doodad_brush != null and _doc != null:
-		var idx: int = _doc.find_doodad_index_by_creation_number(creation_number)
-		var entry: Dictionary = _doc.get_doodad(idx) if idx >= 0 else {}
-		if not entry.is_empty():
-			var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
-			_on_doodad_facing_changed(deg)
+	if doodad_brush == null or _doc == null:
+		return
+	var idx: int = _doc.find_doodad_index_by_creation_number(creation_number)
+	var entry: Dictionary = _doc.get_doodad(idx) if idx >= 0 else {}
+	if entry.is_empty():
+		return
+	# 预览面板显示该实例（距离按类型配置，朝向/样式按实例）
+	_ensure_inspect_window(true)
+	if _inspect_window != null and _inspect_window.has_method("show_map_doodad"):
+		_inspect_window.show_map_doodad(entry)
+	elif _inspect_window != null and _inspect_window.has_method("show_doodad"):
+		_inspect_window.show_doodad(str(entry.get("id", "")), int(entry.get("variation", 0)), true)
+		var deg_fallback: float = float(
+			entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0))))
+		)
+		if _inspect_window.has_method("set_place_facing"):
+			_inspect_window.set_place_facing(deg_fallback, true, false)
+	var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+	_brush_doodad_angle = deg
+	_on_doodad_facing_changed(deg)
 
 
 func _on_doodads_deleted(count: int) -> void:

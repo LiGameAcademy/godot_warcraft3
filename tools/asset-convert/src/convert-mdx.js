@@ -14,10 +14,88 @@ import {
   wc3ToGltfQuat,
   wc3ToGltfVec3,
 } from "./mat4.js";
-import { blpLogicalToPng, mdxLogicalToGlb, normalizeLogicalPath } from "./paths.js";
+import {
+  blpLogicalToPng,
+  mdxLogicalToGlb,
+  mdxLogicalToPe2,
+  normalizeLogicalPath,
+} from "./paths.js";
 import { walkFiles } from "./walk.js";
 
 const MODEL_SCALE = 0.01;
+
+/** @param {unknown} v */
+function asVec3(v) {
+  if (v == null) return [0, 0, 0];
+  if (Array.isArray(v) || ArrayBuffer.isView(v)) {
+    return [Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0];
+  }
+  const o = /** @type {Record<string, number>} */ (v);
+  return [Number(o[0] ?? o["0"]) || 0, Number(o[1] ?? o["1"]) || 0, Number(o[2] ?? o["2"]) || 0];
+}
+
+/**
+ * Serialize ParticleEmitters2 (+ ensure textures on disk) next to the GLB.
+ * @param {object} model
+ * @param {string} logicalPath
+ * @param {string} inDir
+ * @param {string} outDir
+ */
+function writePe2Sidecar(model, logicalPath, inDir, outDir) {
+  const emittersIn = model.ParticleEmitters2 ?? [];
+  const textures = model.Textures ?? [];
+  const emitters = [];
+
+  for (const pe of emittersIn) {
+    const tid = typeof pe.TextureID === "number" ? pe.TextureID : 0;
+    const texInfo = textures[tid];
+    const resolved = resolveTexturePng(texInfo?.Image ?? "", inDir, outDir, {
+      isReplaceable: Boolean(texInfo?.ReplaceableId),
+      replaceableId: texInfo?.ReplaceableId || 0,
+    });
+    const pivotWc3 = asVec3(pe.PivotPoint);
+    const pivot = wc3ToGltfVec3(pivotWc3[0], pivotWc3[1], pivotWc3[2]);
+    const seg = Array.isArray(pe.SegmentColor) ? pe.SegmentColor : [];
+    emitters.push({
+      name: String(pe.Name || `PE2_${pe.ObjectId ?? emitters.length}`),
+      object_id: pe.ObjectId ?? -1,
+      parent: pe.Parent ?? null,
+      flags: pe.Flags ?? 0,
+      speed: Number(pe.Speed) || 0,
+      variation: Number(pe.Variation) || 0,
+      latitude: Number(pe.Latitude) || 0,
+      gravity: Number(pe.Gravity) || 0,
+      life_span: Number(pe.LifeSpan) || 0.1,
+      emission_rate: Number(pe.EmissionRate) || 0,
+      width: Number(pe.Width) || 0,
+      length: Number(pe.Length) || 0,
+      filter_mode: Number(pe.FilterMode) || 0,
+      rows: Math.max(1, Number(pe.Rows) || 1),
+      columns: Math.max(1, Number(pe.Columns) || 1),
+      frame_flags: Number(pe.FrameFlags) || 0,
+      time_middle: Number(pe.Time) || 0.5,
+      segment_color: [asVec3(seg[0]), asVec3(seg[1]), asVec3(seg[2])],
+      alpha: asVec3(pe.Alpha),
+      particle_scaling: asVec3(pe.ParticleScaling),
+      life_span_uv: asVec3(pe.LifeSpanUVAnim),
+      decay_uv: asVec3(pe.DecayUVAnim),
+      texture: resolved.pngLogical,
+      priority_plane: Number(pe.PriorityPlane) || 0,
+      pivot,
+    });
+  }
+
+  const pe2Logical = mdxLogicalToPe2(logicalPath);
+  const dest = path.join(outDir, ...pe2Logical.split("/"));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const payload = {
+    version: 1,
+    source: normalizeLogicalPath(logicalPath),
+    emitters,
+  };
+  fs.writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return dest;
+}
 
 /**
  * @param {ArrayBuffer | Buffer} data
@@ -131,15 +209,21 @@ function pickDiffuseLayer(matDef, textures) {
 }
 
 function alphaModeForFilter(filterMode) {
-  // 0 None/Opaque, 1 Transparent (alpha test), 2+ blend/additive ≈ BLEND
+  // WC3: 0 None, 1 Transparent, 2 Blend, 3 Additive, 4 AddAlpha, 5 Modulate, 6 Modulate2x
   if (filterMode === 0) return "OPAQUE";
   if (filterMode === 1) return "MASK";
+  // Additive 在 glTF 无对应；用 BLEND + 材质名 _fm3/_fm4，Godot 加载后再改 ADD
   return "BLEND";
 }
 
 function alphaCutoffForFilter(filterMode) {
   // Match war3-model discard threshold for Transparent layers (~0.75).
   return filterMode === 1 ? 0.75 : 0.5;
+}
+
+/** @param {number} filterMode */
+function isAdditiveFilter(filterMode) {
+  return filterMode === 3 || filterMode === 4;
 }
 
 function transformMat4Wc3ToGltf(m) {
@@ -193,14 +277,23 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     const matDef = model.Materials?.[materialId];
     const picked = pickDiffuseLayer(matDef, model.Textures);
     const filterMode = picked.layer?.FilterMode ?? 0;
+    // 名称带 _fmN，供 Godot 把 Additive(3/4) 改成 BLEND_MODE_ADD（否则黑底 Glow 成实心黑牌）
     const material = document
-      .createMaterial(`Material_${materialId}`)
+      .createMaterial(`Material_${materialId}_fm${filterMode}`)
       .setDoubleSided(true)
       .setAlphaMode(alphaModeForFilter(filterMode))
       .setAlphaCutoff(alphaCutoffForFilter(filterMode))
       .setMetallicFactor(0)
       .setRoughnessFactor(1);
+    material.setExtras({
+      wc3FilterMode: filterMode,
+      wc3Additive: isAdditiveFilter(filterMode),
+    });
     material.setBaseColorTexture(getTexture(picked.textureId));
+    if (isAdditiveFilter(filterMode)) {
+      // 略提亮，逼近 WC3 Additive 光晕
+      material.setEmissiveFactor([0.15, 0.15, 0.1]);
+    }
     materialCache.set(materialId, material);
     return material;
   }
@@ -507,6 +600,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   const dest = path.join(outDir, ...glbLogical.split("/"));
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   await new NodeIO().write(dest, document);
+  writePe2Sidecar(model, logicalPath, inDir, outDir);
   return dest;
 }
 
@@ -523,11 +617,17 @@ export async function convertMdxBatch(options) {
   for (const file of files) {
     const glbLogical = mdxLogicalToGlb(file.logicalPath);
     const dest = path.join(outDir, ...glbLogical.split("/"));
+    const pe2Dest = path.join(outDir, ...mdxLogicalToPe2(file.logicalPath).split("/"));
 
-    if (!force && fs.existsSync(dest)) {
+    if (!force && fs.existsSync(dest) && fs.existsSync(pe2Dest)) {
       const srcStat = fs.statSync(file.absPath);
       const dstStat = fs.statSync(dest);
-      if (dstStat.mtimeMs >= srcStat.mtimeMs && dstStat.size > 0) {
+      const pe2Stat = fs.statSync(pe2Dest);
+      if (
+        dstStat.mtimeMs >= srcStat.mtimeMs &&
+        dstStat.size > 0 &&
+        pe2Stat.mtimeMs >= srcStat.mtimeMs
+      ) {
         skipped += 1;
         continue;
       }

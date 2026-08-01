@@ -228,6 +228,13 @@ func remove_doodad_instance(creation_number: int) -> bool:
 	return _doodads.remove_by_creation_number(creation_number)
 
 
+## 查找装饰物 Present 节点（编辑器选中环等）。
+func find_doodad_node(creation_number: int) -> Node3D:
+	if _doodads == null:
+		return null
+	return _doodads.find_by_creation_number(creation_number)
+
+
 ## 更新一条 Present：先删后加；失败（MultiMesh）返回 false，调用方应全量 rebuild。
 func update_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
 	if _doodads == null or entry.is_empty():

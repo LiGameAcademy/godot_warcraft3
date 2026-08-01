@@ -1,0 +1,62 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Clouds8x8.png" id="1_yn3ih"]
+
+[sub_resource type="Gradient" id="Gradient_jo3h0"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(0.737255, 0.647059, 0.368627, 1, 0.737255, 0.647059, 0.368627, 1, 0.737255, 0.647059, 0.368627, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_twcda"]
+gradient = SubResource("Gradient_jo3h0")
+
+[sub_resource type="Curve" id="Curve_2efui"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_ju5yt"]
+curve = SubResource("Curve_2efui")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_q2j7a"]
+emission_shape = 3
+emission_box_extents = Vector3(10.49745, 0.5, 9.2862)
+direction = Vector3(0, 1, 0)
+spread = 20.0
+flatness = 0.15
+initial_velocity_min = 75.0
+initial_velocity_max = 125.0
+gravity = Vector3(0, -100, 0)
+scale_min = 68.85
+scale_max = 170.1
+scale_curve = SubResource("CurveTexture_ju5yt")
+color_ramp = SubResource("GradientTexture1D_twcda")
+anim_speed_min = 0.25
+anim_speed_max = 0.25
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ua5b6"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_yn3ih")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 8
+particles_anim_v_frames = 8
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_v427o"]
+material = SubResource("StandardMaterial3D_ua5b6")
+
+[node name="Pe2Root" type="Node3D" unique_id=1098795658]
+
+[node name="BlizParticleExplosion" type="GPUParticles3D" parent="." unique_id=54756648]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40.8701, 26.0467, -3.94016)
+cast_shadow = 0
+amount = 1
+lifetime = 2.0
+preprocess = 0.85
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_q2j7a")
+draw_pass_1 = SubResource("QuadMesh_v427o")

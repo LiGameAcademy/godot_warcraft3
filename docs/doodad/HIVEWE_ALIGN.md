@@ -23,7 +23,7 @@
 | Skin variation | `id#variation` 分桶 | `id + skin_id` 字段 | ⚠️ variation 覆盖 skin，但缺独立 skin 字段 |
 | 玩家色 | doodad **无** | doodad **无** | ✅ |
 | Placeholder | `MapPlaceholders.make_entity` | 简化 | ✅ |
-| 选中/拖动 brush | **缺**（HivEWE 有 DoodadBrush）| `DoodadBrush::click` + 位置/旋转 | ❌ 待补 |
+| 选中/拖动 brush | 无预览时点选 + 绿色地面环；拖动/Delete/`[` `]` | `DoodadBrush` | ✅ |
 | 旋转 90° 离散 | 任意角度 | 离散 90/180/270 | ⚠️ 我们更灵活 |
 
 ---
@@ -70,6 +70,8 @@ m2g 工具把 WC3 `.mdx` 转为 Godot `.glb`——`MapModelCache.instance_glb` �
 **朝向 UX（相对经典 WE）**：预览窗拖拽 = **环视相机**（不写地图）；**放置朝向**独立控件（输入框 + ↺↻）+ 快捷键；地图幽灵显示放置朝向。
 
 **Click Helper（粉黑棋盘）**：✅ 读 SLK `useClickHelper` / `selSize`；空壳 GLB（气泡等 PE2-only）与旗帜类特效挂洋红-黑立方体；蝙蝠等有网格者也挂 helper（对齐 WE）。Stand 动画随机相位，避免齐刷刷。空模另加简易上升粒子近似特效。
+
+**ParticleEmitter2**：✅ `convert-mdx` 写出 `*.pe2.json`；装饰层 / Inspect / 幽灵预览挂 `GPUParticles3D`（火盆火焰等）。MultiMesh 组对有 PE2 的类型关闭。
 
 **HivEWE**：`DoodadBrush`（`src/brush/doodad_brush.cpp`）
 - click → `add_doodad(id, position, angle, scale, variation, life)`

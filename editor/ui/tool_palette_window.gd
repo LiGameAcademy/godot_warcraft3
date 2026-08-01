@@ -9,8 +9,13 @@ signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
 signal doodad_selected(type_id: String, info: Dictionary)
-signal doodad_variation_step(delta: int)
-signal doodad_random_toggled(enabled: bool)
+## 放置时随机：旋转 / 对称缩放 / Z(高度) / XY 面（可多选组合）
+signal doodad_place_random_changed(
+	random_rotation: bool,
+	random_scale_sym: bool,
+	random_scale_z: bool,
+	random_scale_xy: bool,
+)
 signal closed_by_user
 ## 面板获焦时主窗收不到快捷键，转发撤销/重做
 signal edit_undo_requested
@@ -77,9 +82,10 @@ const DataScript := preload("res://editor/ui/world_edit_data.gd")
 @onready var _doodad_page: VBoxContainer = %DoodadPage
 @onready var _doodad_tileset_option: OptionButton = %DoodadTilesetOption
 @onready var _doodad_category_option: OptionButton = %DoodadCategoryOption
-@onready var _doodad_random_btn: Button = %DoodadRandomBtn
-@onready var _doodad_var_prev: Button = %DoodadVarPrev
-@onready var _doodad_var_next: Button = %DoodadVarNext
+@onready var _doodad_rand_rotation_btn: TextureButton = %DoodadRandRotationBtn
+@onready var _doodad_rand_scale_sym_btn: TextureButton = %DoodadRandScaleSymBtn
+@onready var _doodad_rand_scale_z_btn: TextureButton = %DoodadRandScaleZBtn
+@onready var _doodad_rand_scale_xy_btn: TextureButton = %DoodadRandScaleXYBtn
 @onready var _doodad_list: ItemList = %DoodadList
 @onready var _doodad_size_label: Label = %DoodadSizeLabel
 @onready var _doodad_shape_label: Label = %DoodadShapeLabel
@@ -129,7 +135,11 @@ var _id_catalog: Wc3IdCatalog
 var _doodad_entries: Array = []
 var _selected_doodad_id: String = ""
 var _map_tileset: String = "L" ## 当前地图主地形字母
-var _doodad_random: bool = true
+## 放置随机（对齐 WE 装饰物面板四按钮）
+var _doodad_rand_rotation: bool = true
+var _doodad_rand_scale_sym: bool = false
+var _doodad_rand_scale_z: bool = false
+var _doodad_rand_scale_xy: bool = false
 var _category_codes: PackedStringArray = PackedStringArray() ## Option 索引 → 分类码（含 ""=全部）
 
 var _cliff_buttons: Array = []
@@ -181,13 +191,7 @@ func _wire_doodad_page() -> void:
 		_doodad_category_option.item_selected.connect(_on_doodad_category)
 	if _doodad_list != null:
 		_doodad_list.item_selected.connect(_on_doodad_list_selected)
-	if _doodad_random_btn != null:
-		_doodad_random_btn.toggled.connect(_on_doodad_random_toggled)
-		_doodad_random_btn.set_pressed_no_signal(_doodad_random)
-	if _doodad_var_prev != null:
-		_doodad_var_prev.pressed.connect(_on_doodad_var_prev)
-	if _doodad_var_next != null:
-		_doodad_var_next.pressed.connect(_on_doodad_var_next)
+	_wire_doodad_place_rand_buttons()
 	_doodad_size_buttons = [
 		_doodad_size1, _doodad_size2, _doodad_size3, _doodad_size4, _doodad_size5,
 	]
@@ -477,12 +481,14 @@ func _apply_locale() -> void:
 	_rebuild_kind_option()
 	_refresh_section_labels()
 	_refresh_brush_labels()
-	if _doodad_random_btn != null:
-		_doodad_random_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RANDOM_VAR")
-	if _doodad_var_prev != null:
-		_doodad_var_prev.tooltip_text = EditorI18n.t("EDITOR_DOODAD_VAR_PREV")
-	if _doodad_var_next != null:
-		_doodad_var_next.tooltip_text = EditorI18n.t("EDITOR_DOODAD_VAR_NEXT")
+	if _doodad_rand_rotation_btn != null:
+		_doodad_rand_rotation_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RAND_ROTATION")
+	if _doodad_rand_scale_sym_btn != null:
+		_doodad_rand_scale_sym_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RAND_SCALE_SYM")
+	if _doodad_rand_scale_z_btn != null:
+		_doodad_rand_scale_z_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RAND_SCALE_Z")
+	if _doodad_rand_scale_xy_btn != null:
+		_doodad_rand_scale_xy_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RAND_SCALE_XY")
 	if _kind == PaletteKind.DOODADS:
 		_rebuild_doodad_tileset_option()
 		_rebuild_doodad_category_option()
@@ -690,17 +696,77 @@ func clear_doodad_selection() -> void:
 		_doodad_list.deselect_all()
 
 
-func _on_doodad_random_toggled(on: bool) -> void:
-	_doodad_random = on
-	doodad_random_toggled.emit(on)
+func _wire_doodad_place_rand_buttons() -> void:
+	var pairs: Array = [
+		[_doodad_rand_rotation_btn, "_doodad_rand_rotation"],
+		[_doodad_rand_scale_sym_btn, "_doodad_rand_scale_sym"],
+		[_doodad_rand_scale_z_btn, "_doodad_rand_scale_z"],
+		[_doodad_rand_scale_xy_btn, "_doodad_rand_scale_xy"],
+	]
+	for p in pairs:
+		var btn: TextureButton = p[0]
+		if btn == null:
+			continue
+		_ensure_sel_frame(btn)
+		var prop: String = str(p[1])
+		btn.set_pressed_no_signal(bool(get(prop)))
+		_set_button_selected(btn, bool(get(prop)))
+		btn.toggled.connect(_on_doodad_place_rand_toggled.bind(prop))
 
 
-func _on_doodad_var_prev() -> void:
-	doodad_variation_step.emit(-1)
+func _on_doodad_place_rand_toggled(on: bool, prop: String) -> void:
+	set(prop, on)
+	var btn: TextureButton = null
+	match prop:
+		"_doodad_rand_rotation":
+			btn = _doodad_rand_rotation_btn
+		"_doodad_rand_scale_sym":
+			btn = _doodad_rand_scale_sym_btn
+		"_doodad_rand_scale_z":
+			btn = _doodad_rand_scale_z_btn
+		"_doodad_rand_scale_xy":
+			btn = _doodad_rand_scale_xy_btn
+	if btn != null:
+		_set_button_selected(btn, on)
+	doodad_place_random_changed.emit(
+		_doodad_rand_rotation,
+		_doodad_rand_scale_sym,
+		_doodad_rand_scale_z,
+		_doodad_rand_scale_xy,
+	)
 
 
-func _on_doodad_var_next() -> void:
-	doodad_variation_step.emit(1)
+func get_doodad_place_random() -> Dictionary:
+	return {
+		"rotation": _doodad_rand_rotation,
+		"scale_sym": _doodad_rand_scale_sym,
+		"scale_z": _doodad_rand_scale_z,
+		"scale_xy": _doodad_rand_scale_xy,
+	}
+
+
+func set_doodad_place_random(
+	rotation: bool,
+	scale_sym: bool,
+	scale_z: bool,
+	scale_xy: bool,
+) -> void:
+	_doodad_rand_rotation = rotation
+	_doodad_rand_scale_sym = scale_sym
+	_doodad_rand_scale_z = scale_z
+	_doodad_rand_scale_xy = scale_xy
+	if _doodad_rand_rotation_btn != null:
+		_doodad_rand_rotation_btn.set_pressed_no_signal(rotation)
+		_set_button_selected(_doodad_rand_rotation_btn, rotation)
+	if _doodad_rand_scale_sym_btn != null:
+		_doodad_rand_scale_sym_btn.set_pressed_no_signal(scale_sym)
+		_set_button_selected(_doodad_rand_scale_sym_btn, scale_sym)
+	if _doodad_rand_scale_z_btn != null:
+		_doodad_rand_scale_z_btn.set_pressed_no_signal(scale_z)
+		_set_button_selected(_doodad_rand_scale_z_btn, scale_z)
+	if _doodad_rand_scale_xy_btn != null:
+		_doodad_rand_scale_xy_btn.set_pressed_no_signal(scale_xy)
+		_set_button_selected(_doodad_rand_scale_xy_btn, scale_xy)
 
 
 func _rebuild_tile_grid() -> void:

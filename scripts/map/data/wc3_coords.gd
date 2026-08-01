@@ -4,6 +4,8 @@ extends RefCounted
 ## WC3：X/Y 水平面，Z 高度；Godot：Y-up，Z 朝向用 -WC3.Y。
 
 const TILE_SIZE := 128.0
+## 寻路格边长（WC3 单位）。PathTextures\4x4* ≈ 1 地形格。
+const PATHING_CELL := 32.0
 ## 与 tools/asset-convert 中 MODEL_SCALE 一致，便于日后挂 GLB。
 const WORLD_SCALE := 0.01
 

@@ -1,0 +1,308 @@
+class_name Wc3Pe2Particles
+extends RefCounted
+
+## MDX ParticleEmitter2 旁路：读 `*.pe2.json`（与 GLB 同 stem），挂 GPUParticles3D。
+## 坐标与网格一致（glTF/Y-up，落在 convert 的 MODEL_SCALE=0.01 节点下）。
+## 可编辑预制在 `res://assets/pe2-prefabs/`（路径镜像 asset-converted，可提交 git）。
+
+const PE2_ROOT_NAME := "Pe2Root"
+const MODEL_SCALE := 0.01
+
+
+static func pe2_path_from_glb(glb_path: String) -> String:
+	var p := glb_path.replace("\\", "/")
+	if p.to_lower().ends_with(".glb"):
+		return p.substr(0, p.length() - 4) + ".pe2.json"
+	return p + ".pe2.json"
+
+
+## GLB / 逻辑路径 → 可提交的 pe2 预制路径（assets/pe2-prefabs/...）。
+static func pe2_tscn_path_from_glb(glb_path: String) -> String:
+	return RuntimeAssets.pe2_prefab_path(glb_path)
+
+
+static func load_payload(glb_path: String) -> Dictionary:
+	var pe2_path := pe2_path_from_glb(glb_path)
+	if pe2_path.is_empty() or not RuntimeAssets.file_exists(pe2_path):
+		return {}
+	var disk := RuntimeAssets.project_abs(pe2_path)
+	var f := FileAccess.open(disk, FileAccess.READ)
+	if f == null:
+		return {}
+	var text := f.get_as_text()
+	f.close()
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed as Dictionary
+
+
+static func has_emitters(glb_path: String) -> bool:
+	if _prefab_exists(glb_path):
+		return true
+	var data := load_payload(glb_path)
+	var emitters: Array = data.get("emitters", [])
+	return not emitters.is_empty()
+
+
+## 从 pe2.json 构建可保存的 Pe2Root（供批量导出 .pe2.tscn / 运行时回退）。
+static func build_root_from_glb(glb_path: String) -> Node3D:
+	return build_root_from_payload(load_payload(glb_path))
+
+
+static func build_root_from_payload(data: Dictionary) -> Node3D:
+	var emitters: Array = data.get("emitters", []) if typeof(data) == TYPE_DICTIONARY else []
+	if emitters.is_empty():
+		return null
+	var pe2_root := Node3D.new()
+	pe2_root.name = PE2_ROOT_NAME
+	for i in range(emitters.size()):
+		var em: Variant = emitters[i]
+		if typeof(em) != TYPE_DICTIONARY:
+			continue
+		var node := _make_emitter(em as Dictionary, i)
+		if node == null:
+			continue
+		pe2_root.add_child(node)
+		node.owner = pe2_root
+	if pe2_root.get_child_count() == 0:
+		pe2_root.free()
+		return null
+	return pe2_root
+
+
+## 挂到「带 MODEL_SCALE 的模型根」下（勿挂 GLTF 外包层，否则 pivot 变成百米级）。
+## 优先实例化旁路 `.pe2.tscn`（可编辑预制），否则从 `.pe2.json` 动态构建。
+## 返回发射器数量。
+static func attach_to(root: Node3D, glb_path: String) -> int:
+	if root == null or glb_path.is_empty():
+		return 0
+	if root.find_child(PE2_ROOT_NAME, true, false) != null:
+		return 0
+	var parent := _resolve_model_root(root)
+	var pe2_root := _instantiate_prefab(glb_path)
+	if pe2_root == null:
+		pe2_root = build_root_from_glb(glb_path)
+	if pe2_root == null:
+		return 0
+	# 找不到 0.01 根时（少见），自己补上 scale，避免粒子飞出地图
+	if not _is_model_scale(parent.scale) and not _is_model_scale(pe2_root.scale):
+		pe2_root.scale = Vector3.ONE * MODEL_SCALE
+	parent.add_child(pe2_root)
+	return _count_particle_nodes(pe2_root)
+
+
+static func _prefab_exists(glb_path: String) -> bool:
+	var tscn := pe2_tscn_path_from_glb(glb_path)
+	if tscn.is_empty():
+		return false
+	if ResourceLoader.exists(tscn):
+		return true
+	return RuntimeAssets.file_exists(tscn)
+
+
+static func _instantiate_prefab(glb_path: String) -> Node3D:
+	var tscn := pe2_tscn_path_from_glb(glb_path)
+	if tscn.is_empty() or not RuntimeAssets.file_exists(tscn):
+		return null
+	var packed: PackedScene = null
+	if ResourceLoader.exists(tscn):
+		packed = ResourceLoader.load(tscn, "PackedScene") as PackedScene
+	else:
+		# 文件已在磁盘、尚未 .import 时也可直接 load
+		packed = load(tscn) as PackedScene
+	if packed == null:
+		return null
+	var inst := packed.instantiate()
+	if inst is Node3D:
+		var n := inst as Node3D
+		n.name = PE2_ROOT_NAME
+		return n
+	if inst != null:
+		inst.free()
+	return null
+
+
+static func _count_particle_nodes(root: Node) -> int:
+	if root == null:
+		return 0
+	var n := 0
+	if root is GPUParticles3D:
+		n += 1
+	for c in root.get_children():
+		n += _count_particle_nodes(c)
+	return n
+
+
+## GLTF 常外包一层：InstanceRoot(scale≈1) → brazierOmni(scale=0.01)。PE2 必须挂后者。
+static func _resolve_model_root(instance_root: Node3D) -> Node3D:
+	if _is_model_scale(instance_root.scale):
+		return instance_root
+	for c in instance_root.get_children():
+		if not (c is Node3D):
+			continue
+		var n := c as Node3D
+		if n.name == PE2_ROOT_NAME:
+			continue
+		if _is_model_scale(n.scale):
+			return n
+	return instance_root
+
+
+static func _is_model_scale(s: Vector3) -> bool:
+	return (
+		absf(s.x - MODEL_SCALE) < 1e-3
+		and absf(s.y - MODEL_SCALE) < 1e-3
+		and absf(s.z - MODEL_SCALE) < 1e-3
+	)
+
+
+static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
+	var life: float = maxf(0.05, float(em.get("life_span", 0.5)))
+	var rate: float = maxf(0.0, float(em.get("emission_rate", 1.0)))
+	var amount: int = clampi(ceili(rate * life * 1.35), 1, 256)
+	var p := GPUParticles3D.new()
+	p.name = str(em.get("name", "PE2_%d" % index))
+	p.amount = amount
+	p.lifetime = life
+	p.preprocess = minf(life, 0.85)
+	p.visibility_aabb = AABB(Vector3(-80, -20, -80), Vector3(160, 200, 160))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.local_coords = true
+
+	var pivot: Array = em.get("pivot", [0, 0, 0]) as Array
+	if pivot.size() >= 3:
+		p.position = Vector3(float(pivot[0]), float(pivot[1]), float(pivot[2]))
+
+	var scale_seg: Array = em.get("particle_scaling", [10, 10, 10]) as Array
+	var s0 := maxf(0.1, float(scale_seg[0]) if scale_seg.size() > 0 else 10.0)
+	var s1 := maxf(0.1, float(scale_seg[1]) if scale_seg.size() > 1 else s0)
+	var s2 := maxf(0.1, float(scale_seg[2]) if scale_seg.size() > 2 else s1)
+
+	var tex_rel := str(em.get("texture", ""))
+	var tex: Texture2D = null
+	if not tex_rel.is_empty():
+		tex = _load_pe2_texture(tex_rel)
+
+	var filter_mode: int = int(em.get("filter_mode", 0))
+	var rows: int = maxi(1, int(em.get("rows", 1)))
+	var cols: int = maxi(1, int(em.get("columns", 1)))
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# 粒子色 / color_ramp 写在 INSTANCE 顶点色上，必须开启
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color.WHITE
+	# Particle Billboard 才能启用序列帧
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.billboard_keep_scale = true
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if tex != null:
+		mat.albedo_texture = tex
+	# WC3 FilterMode: 0 Blend, 1 Additive；火焰/光晕用 ADD，黑底灰贴图才看得见
+	if filter_mode == 1:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	else:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	if rows > 1 or cols > 1:
+		mat.particles_anim_h_frames = cols
+		mat.particles_anim_v_frames = rows
+		mat.particles_anim_loop = false
+
+	# 材质挂在 Mesh 上（GPUParticles3D 的 material_override 对粒子 billboard 不可靠）
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1, 1)
+	quad.material = mat
+	p.draw_pass_1 = quad
+
+	var proc := ParticleProcessMaterial.new()
+	proc.direction = Vector3(0, 1, 0)
+	proc.spread = clampf(float(em.get("latitude", 0.0)), 0.0, 180.0)
+	proc.flatness = 0.15
+	var speed: float = maxf(0.0, float(em.get("speed", 0.0)))
+	var variation: float = clampf(float(em.get("variation", 0.0)), 0.0, 1.0)
+	proc.initial_velocity_min = speed * (1.0 - variation * 0.5)
+	proc.initial_velocity_max = speed * (1.0 + variation * 0.5)
+	var grav: float = float(em.get("gravity", 0.0))
+	# WC3 gravity 沿 −Z；glTF 为 −Y
+	proc.gravity = Vector3(0, -grav, 0)
+	proc.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	var half_w := maxf(0.5, float(em.get("width", 1.0)) * 0.5)
+	var half_l := maxf(0.5, float(em.get("length", 1.0)) * 0.5)
+	proc.emission_box_extents = Vector3(half_w, 0.5, half_l)
+	# 三段缩放：用起止近似中段（略放大，编辑器预览更容易看见）
+	const SCALE_VIS := 1.35
+	proc.scale_min = minf(s0, s2) * 0.85 * SCALE_VIS
+	proc.scale_max = maxf(s0, s1) * 1.05 * SCALE_VIS
+	proc.scale_curve = _scale_curve(s0, s1, s2, float(em.get("time_middle", 0.5)))
+	proc.color = Color.WHITE
+	proc.color_ramp = _color_ramp(em)
+
+	if rows > 1 or cols > 1:
+		# speed=1 → 生命周期内播完整张表；用 life_span_uv 帧跨度估比例
+		var uv_life: Array = em.get("life_span_uv", [0, 0, 1]) as Array
+		var start_f := float(uv_life[0]) if uv_life.size() > 0 else 0.0
+		var end_f := float(uv_life[1]) if uv_life.size() > 1 else float(rows * cols - 1)
+		var total_frames := float(rows * cols)
+		var span := maxf(1.0, absf(end_f - start_f) + 1.0)
+		var speed_n := clampf(span / total_frames, 0.15, 1.0)
+		proc.anim_speed_min = speed_n
+		proc.anim_speed_max = speed_n
+		proc.anim_offset_min = start_f / total_frames
+		proc.anim_offset_max = start_f / total_frames
+
+	p.process_material = proc
+	p.emitting = true
+	return p
+
+
+## 优先 res:// 已导入贴图（便于 .pe2.tscn 保存 ExtResource）；否则磁盘 ImageTexture。
+static func _load_pe2_texture(tex_rel: String) -> Texture2D:
+	var res_path := RuntimeAssets.converted_path(tex_rel)
+	if ResourceLoader.exists(res_path):
+		var res: Resource = ResourceLoader.load(res_path)
+		if res is Texture2D:
+			return res as Texture2D
+	return RuntimeAssets.load_converted_texture(tex_rel)
+
+
+static func _segment_color(em: Dictionary, idx: int) -> Color:
+	var segs: Array = em.get("segment_color", []) as Array
+	var alphas: Array = em.get("alpha", [255, 255, 255]) as Array
+	var rgb := Vector3(1, 1, 1)
+	if idx < segs.size() and segs[idx] is Array:
+		var a: Array = segs[idx]
+		if a.size() >= 3:
+			rgb = Vector3(float(a[0]), float(a[1]), float(a[2]))
+	var alpha := 1.0
+	if idx < alphas.size():
+		alpha = clampf(float(alphas[idx]) / 255.0, 0.0, 1.0)
+	return Color(rgb.x, rgb.y, rgb.z, alpha)
+
+
+static func _color_ramp(em: Dictionary) -> GradientTexture1D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, float(em.get("time_middle", 0.5)), 1.0])
+	g.colors = PackedColorArray([
+		_segment_color(em, 0),
+		_segment_color(em, 1),
+		_segment_color(em, 2),
+	])
+	var tex := GradientTexture1D.new()
+	tex.gradient = g
+	return tex
+
+
+static func _scale_curve(s0: float, s1: float, s2: float, mid: float) -> CurveTexture:
+	var c := Curve.new()
+	var m := clampf(mid, 0.05, 0.95)
+	var denom := maxf(s0, 0.001)
+	c.add_point(Vector2(0.0, s0 / denom))
+	c.add_point(Vector2(m, s1 / denom))
+	c.add_point(Vector2(1.0, s2 / denom))
+	var tex := CurveTexture.new()
+	tex.curve = c
+	return tex
