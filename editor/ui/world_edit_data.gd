@@ -20,6 +20,9 @@ var default_map_size: Vector2i = Vector2i(64, 64)
 var min_map_size: int = 64
 var max_map_size: int = 256
 var default_tileset: String = "L"
+## 装饰物 / 可破坏物分类：{ id, name_key, icon, icon_res }
+var doodad_categories: Array = [] ## [DoodadCategories] O/S/W/C/E/Z
+var destructible_categories: Array = [] ## [DestructibleCategories] D/P/B
 ## 刷子表：{ id/key, name_key, icon }；icon 为 res://…png
 var cliff_brushes: Array = [] ## [CliffBrushes] 0..4 → 第一行
 var cliff_misc_brushes: Array = [] ## 浅水/深水/斜坡 → 第二行
@@ -103,6 +106,8 @@ func _load() -> void:
 	var section := ""
 	tilesets.clear()
 	map_size_tiers.clear()
+	doodad_categories.clear()
+	destructible_categories.clear()
 	cliff_brushes.clear()
 	cliff_misc_brushes.clear()
 	height_brushes.clear()
@@ -131,6 +136,10 @@ func _load() -> void:
 				var name_key := parts[0].strip_edges() if parts.size() > 0 else ""
 				var blight := parts[1].strip_edges() if parts.size() > 1 else ""
 				tilesets.append({"id": key.to_upper(), "name_key": name_key, "blight": blight})
+			"DoodadCategories":
+				doodad_categories.append(_parse_brush_entry(key.to_upper(), val))
+			"DestructibleCategories":
+				destructible_categories.append(_parse_brush_entry(key.to_upper(), val))
 			"MapSizes":
 				if key.begins_with("Size") and key.length() >= 6:
 					var parts2: PackedStringArray = val.split(",")
@@ -168,6 +177,8 @@ func _load() -> void:
 		if misc_raw.has(mk):
 			cliff_misc_brushes.append(misc_raw[mk])
 	misc_brushes = misc_raw
+	if doodad_categories.is_empty() or destructible_categories.is_empty():
+		_apply_category_fallback()
 
 
 func _parse_brush_entry(id_key: String, val: String) -> Dictionary:
@@ -249,3 +260,22 @@ func _apply_fallback() -> void:
 		"Nothing": _parse_brush_entry("Nothing", "WESTRING_NOTHINGTILE,ReplaceableTextures\\WorldEditUI\\BoundaryPlace"),
 		"Unnothing": _parse_brush_entry("Unnothing", "WESTRING_REMOVENOTHINGTILE,ReplaceableTextures\\WorldEditUI\\BoundaryRemove"),
 	}
+	_apply_category_fallback()
+
+
+func _apply_category_fallback() -> void:
+	if doodad_categories.is_empty():
+		doodad_categories = [
+			_parse_brush_entry("O", "WESTRING_DTYPE_PROPS,ReplaceableTextures\\WorldEditUI\\Doodad-Prop"),
+			_parse_brush_entry("S", "WESTRING_DTYPE_STRUCTURES,ReplaceableTextures\\WorldEditUI\\Doodad-Structures"),
+			_parse_brush_entry("W", "WESTRING_DTYPE_WATER,ReplaceableTextures\\WorldEditUI\\Doodad-Water"),
+			_parse_brush_entry("C", "WESTRING_DTYPE_CLIFF,ReplaceableTextures\\WorldEditUI\\Doodad-Cliff"),
+			_parse_brush_entry("E", "WESTRING_DTYPE_ENVIRONMENT,ReplaceableTextures\\WorldEditUI\\Doodad-Environment"),
+			_parse_brush_entry("Z", "WESTRING_DTYPE_CINEMATIC,ReplaceableTextures\\WorldEditUI\\Doodad-Cinematic"),
+		]
+	if destructible_categories.is_empty():
+		destructible_categories = [
+			_parse_brush_entry("D", "WESTRING_DTYPE_DESTRUCTABLE,ReplaceableTextures\\WorldEditUI\\Doodad-Destructible"),
+			_parse_brush_entry("P", "WESTRING_DTYPE_PATHING,ReplaceableTextures\\WorldEditUI\\Doodad-Destructible"),
+			_parse_brush_entry("B", "WESTRING_DTYPE_BRIDGE,ReplaceableTextures\\WorldEditUI\\Doodad-Bridge"),
+		]

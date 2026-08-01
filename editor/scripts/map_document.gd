@@ -31,6 +31,9 @@ var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
 var brush_cliff_type: int = 0
+## 装饰物权威列表（与 doodads.json 的 doodads[] 同形 Dictionary）
+var doodads: Array = []
+var _next_creation_number: int = 1
 var _dirty: bool = false
 ## 最近一次斜坡笔刷结果（状态栏 / 自测）
 var last_ramp_message: String = ""
@@ -221,6 +224,7 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 				info = ip
 	map_dir = path
 	source_name = path.get_file()
+	_load_doodads_from_map_dir(path)
 	_dirty = false
 	ensure_brush_index_valid()
 	dirty_changed.emit(false)
@@ -332,6 +336,8 @@ func create_from_options(options: Dictionary) -> void:
 	map_dir = ""
 	source_name = "untitled"
 	brush_tile_index = tile_index
+	doodads.clear()
+	_next_creation_number = 1
 	_dirty = true
 	dirty_changed.emit(true)
 	changed.emit()
@@ -517,6 +523,146 @@ func save_json(path: String = "") -> Error:
 		push_error("MapDocument: cannot write %s (err=%s)" % [out_path, FileAccess.get_open_error()])
 		return ERR_CANT_CREATE
 	f.store_string(JSON.stringify(heightfield.to_dict(), "\t"))
+	# 若落在 map-parsed 目录旁，同步 doodads.json
+	var dood_path: String = out_path.get_base_dir().path_join("doodads.json")
+	if out_path.get_file().begins_with("terrain") or map_dir.is_empty() == false:
+		if not map_dir.is_empty():
+			dood_path = map_dir.path_join("doodads.json")
+		_save_doodads_json(dood_path)
 	clear_dirty()
 	print("MapDocument: saved %s" % out_path)
+	return OK
+
+
+## —— 装饰物 CRUD ——
+
+func doodads_as_dict() -> Dictionary:
+	return {
+		"formatVersion": 8,
+		"count": doodads.size(),
+		"doodads": doodads,
+	}
+
+
+func add_doodad(entry: Dictionary) -> int:
+	var d: Dictionary = entry.duplicate(true)
+	if int(d.get("creationNumber", -1)) < 0:
+		d["creationNumber"] = _alloc_creation_number()
+	else:
+		_next_creation_number = maxi(_next_creation_number, int(d["creationNumber"]) + 1)
+	doodads.append(d)
+	mark_dirty()
+	return doodads.size() - 1
+
+
+func remove_doodad(index: int) -> Dictionary:
+	if index < 0 or index >= doodads.size():
+		return {}
+	var removed: Dictionary = doodads[index]
+	doodads.remove_at(index)
+	mark_dirty()
+	return removed if typeof(removed) == TYPE_DICTIONARY else {}
+
+
+func remove_doodad_by_creation_number(creation_number: int) -> Dictionary:
+	for i in range(doodads.size()):
+		var d: Dictionary = doodads[i]
+		if int(d.get("creationNumber", -1)) == creation_number:
+			return remove_doodad(i)
+	return {}
+
+
+func find_doodad_index_by_creation_number(creation_number: int) -> int:
+	for i in range(doodads.size()):
+		var d: Dictionary = doodads[i]
+		if int(d.get("creationNumber", -1)) == creation_number:
+			return i
+	return -1
+
+
+## 按 creationNumber 整体替换条目（移动 / 旋转）；保留 cn。
+func update_doodad_by_creation_number(creation_number: int, entry: Dictionary) -> bool:
+	var idx: int = find_doodad_index_by_creation_number(creation_number)
+	if idx < 0 or entry.is_empty():
+		return false
+	var d: Dictionary = entry.duplicate(true)
+	d["creationNumber"] = creation_number
+	doodads[idx] = d
+	mark_dirty()
+	return true
+
+
+func get_doodad(index: int) -> Dictionary:
+	if index < 0 or index >= doodads.size():
+		return {}
+	var d: Variant = doodads[index]
+	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+## 在 WC3 世界 XY 处建一条可放置条目（Z 由 heightfield 插值）。
+func make_doodad_entry(
+	type_id: String,
+	wc3_x: float,
+	wc3_y: float,
+	variation: int = 0,
+	angle_deg: float = 270.0,
+	scale: float = 1.0,
+) -> Dictionary:
+	var z: float = 0.0
+	if heightfield != null and heightfield.is_valid():
+		z = heightfield.interpolated_height(wc3_x, wc3_y)
+	var ang := deg_to_rad(angle_deg)
+	return {
+		"id": type_id,
+		"variation": variation,
+		"position": {"x": wc3_x, "y": wc3_y, "z": z},
+		"angle": ang,
+		"angleDegrees": angle_deg,
+		"scale": {"x": scale, "y": scale, "z": scale},
+		"flags": 2,
+		"life": 100,
+		"itemTablePtr": -1,
+		"droppedItemSets": [],
+		"creationNumber": -1,
+	}
+
+
+func _alloc_creation_number() -> int:
+	var n: int = _next_creation_number
+	_next_creation_number += 1
+	return n
+
+
+func _load_doodads_from_map_dir(path: String) -> void:
+	doodads.clear()
+	_next_creation_number = 1
+	var dood_path: String = path.path_join("doodads.json")
+	if not FileAccess.file_exists(dood_path):
+		return
+	var f: FileAccess = FileAccess.open(dood_path, FileAccess.READ)
+	if f == null:
+		return
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var list: Variant = (parsed as Dictionary).get("doodads", [])
+	if typeof(list) != TYPE_ARRAY:
+		return
+	for item in list:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = (item as Dictionary).duplicate(true)
+		doodads.append(d)
+		_next_creation_number = maxi(_next_creation_number, int(d.get("creationNumber", 0)) + 1)
+
+
+func _save_doodads_json(path: String) -> Error:
+	var parent: String = path.get_base_dir()
+	if not parent.is_empty():
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(parent))
+	var f: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_error("MapDocument: cannot write %s" % path)
+		return ERR_CANT_CREATE
+	f.store_string(JSON.stringify(doodads_as_dict(), "\t"))
 	return OK

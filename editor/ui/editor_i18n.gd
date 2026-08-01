@@ -7,16 +7,19 @@ extends Node
 signal locale_changed(locale: String)
 
 const CSV_PATH := "res://editor/locale/editor_strings.csv"
+const ZH_NAME_SORT_PATH := "res://editor/locale/westring_name_sort_zh.json"
 const CONFIG_PATH := "user://editor_locale.cfg"
 const SUPPORTED := ["zh_CN", "en"]
 
 var _mpq: Dictionary = {} ## WESTRING_* from classic client (optional)
 var _tables: Dictionary = {} ## locale → { key → text }
+var _zh_name_sort: Dictionary = {} ## WESTRING_DOOD_/DEST_ → 中文排序序号
 var _locale: String = "zh_CN"
 
 
 func _ready() -> void:
 	_load_csv()
+	_load_zh_name_sort()
 	_load_mpq_overlay()
 	var saved := _read_saved_locale()
 	if not saved.is_empty():
@@ -97,12 +100,20 @@ func strip_accel(s: String) -> String:
 
 
 func _lookup(key: String) -> String:
-	# 1) 中文 + MPQ 官方文案
+	# 经典 WE 面板文案：CSV 短标签优先（避免 GameStrings「洛丹伦的夏天」「圆周」等长文案）
+	if _locale == "zh_CN" and _tables.has("zh_CN"):
+		var zh_table: Dictionary = _tables["zh_CN"]
+		if zh_table.has(key) and (
+			key.begins_with("WESTRING_LOCALE_")
+			or key.begins_with("WESTRING_BRUSH")
+		):
+			return str(zh_table[key])
+	# 中文 + MPQ 官方文案（装饰物名等）
 	if _locale == "zh_CN" and _mpq.has(key):
 		var resolved := _resolve_mpq(key)
 		if not resolved.is_empty() and not resolved.begins_with("WESTRING_"):
 			return resolved
-	# 2) CSV 表（不依赖 TranslationServer 的 locale 匹配）
+	# CSV 表（不依赖 TranslationServer 的 locale 匹配）
 	if _tables.has(_locale):
 		var table: Dictionary = _tables[_locale]
 		if table.has(key):
@@ -112,6 +123,28 @@ func _lookup(key: String) -> String:
 		if en_table.has(key):
 			return str(en_table[key])
 	return key
+
+
+## 中文面板排序键（与经典中文 WE 列表顺序一致）；英文返回 -1 由调用方按显示名比。
+func placeable_sort_index(name_key: String) -> int:
+	if _locale != "zh_CN" or name_key.is_empty():
+		return -1
+	if _zh_name_sort.has(name_key):
+		return int(_zh_name_sort[name_key])
+	return -1
+
+
+func _load_zh_name_sort() -> void:
+	_zh_name_sort.clear()
+	if not FileAccess.file_exists(ZH_NAME_SORT_PATH):
+		return
+	var f := FileAccess.open(ZH_NAME_SORT_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	_zh_name_sort = parsed as Dictionary
 
 
 func _resolve_mpq(key: String) -> String:

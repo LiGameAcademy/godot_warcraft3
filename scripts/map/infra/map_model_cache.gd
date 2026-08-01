@@ -14,6 +14,14 @@ func instance_glb(path: String) -> Node3D:
 	var proto := _ensure_scene(path)
 	if proto == null:
 		return null
+	# PackedScene.instantiate 比 duplicate 更稳（AnimationPlayer / 库引用）
+	var packed := PackedScene.new()
+	if packed.pack(proto) == OK:
+		var inst := packed.instantiate()
+		if inst is Node3D:
+			return inst as Node3D
+		if inst != null:
+			inst.free()
 	return proto.duplicate() as Node3D
 
 
@@ -26,7 +34,8 @@ func glb_has_animation(path: String) -> bool:
 
 
 ## 优先播 Stand（及 Stand -1 等变体），否则第一条；循环。
-func autoplay_stand(root: Node) -> bool:
+## random_phase：多实例错开相位，避免蝙蝠/鸟群齐刷刷扑翅。
+func autoplay_stand(root: Node, random_phase: bool = true) -> bool:
 	if root == null:
 		return false
 	var ap := _find_animation_player(root)
@@ -34,12 +43,52 @@ func autoplay_stand(root: Node) -> bool:
 		return false
 	var chosen := _pick_stand_name(ap)
 	if chosen.is_empty():
+		var names := ap.get_animation_list()
+		if names.is_empty():
+			return false
+		chosen = str(names[0])
+	if not play_animation(root, chosen, true):
 		return false
-	var anim := ap.get_animation(chosen)
-	if anim:
-		anim.loop_mode = Animation.LOOP_LINEAR
-	ap.play(chosen)
+	if random_phase:
+		var len: float = ap.current_animation_length
+		if len > 0.05:
+			ap.seek(randf() * len, true)
 	return true
+
+
+## 模型上全部动画名（含 Death / Birth 等；不限骨骼 Stand）。
+func list_animations(root: Node) -> PackedStringArray:
+	var ap := _find_animation_player(root)
+	if ap == null:
+		return PackedStringArray()
+	return ap.get_animation_list()
+
+
+## 播放指定动画；loop=true 时强制线性循环（预览用）。
+func play_animation(root: Node, anim_name: String, loop: bool = true) -> bool:
+	if root == null or anim_name.is_empty():
+		return false
+	var ap := _find_animation_player(root)
+	if ap == null or not ap.has_animation(anim_name):
+		return false
+	ap.active = true
+	var anim := ap.get_animation(anim_name)
+	if anim != null and loop:
+		anim.loop_mode = Animation.LOOP_LINEAR
+	ap.play(anim_name)
+	return true
+
+
+## GLB / 实例是否含可见网格（空壳 PE2-only GLB → false）。
+func glb_has_mesh(path: String) -> bool:
+	if path.is_empty():
+		return false
+	var parts := mesh_parts_from_glb(path)
+	return not parts.is_empty()
+
+
+func node_has_mesh(root: Node) -> bool:
+	return MapPlaceholders.node_has_mesh(root)
 
 
 ## 兼容旧调用：取第一个可见网格

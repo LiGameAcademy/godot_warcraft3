@@ -73,6 +73,10 @@ func get_model_cache() -> MapModelCache:
 	return _cache
 
 
+func get_doodad_layer() -> MapDoodadLayer:
+	return _doodads
+
+
 func get_terrain_layer() -> MapTerrainLayer:
 	return _terrain
 
@@ -191,6 +195,49 @@ func set_show_ramp_debug(on: bool) -> void:
 		_cliff_catalog
 	)
 	_build_ramp_debug(ctx)
+
+
+## 编辑器：用 Document 的 doodads[] 重建装饰物层（不读盘）。
+func rebuild_doodads_from_list(hf: Dictionary, doodads_list: Array) -> void:
+	if _doodads == null:
+		return
+	_doodads.setup(get_id_catalog(), _cache)
+	_doodads.try_load_glb = try_load_glb
+	_doodads.multimesh_threshold = multimesh_threshold
+	var heightfield: Wc3Heightfield = null
+	if not hf.is_empty():
+		heightfield = Wc3Heightfield.from_dict(hf, true)
+	_doodads.rebuild_from_list(heightfield, doodads_list)
+
+
+## 编辑器增量放置一条。
+func add_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
+	if _doodads == null:
+		return false
+	_doodads.setup(get_id_catalog(), _cache)
+	var heightfield: Wc3Heightfield = null
+	if not hf.is_empty():
+		heightfield = Wc3Heightfield.from_dict(hf, true)
+	return _doodads.add_one(entry, heightfield)
+
+
+## 按 creationNumber 移除 Present；MultiMesh 组内失败时返回 false。
+func remove_doodad_instance(creation_number: int) -> bool:
+	if _doodads == null:
+		return false
+	return _doodads.remove_by_creation_number(creation_number)
+
+
+## 更新一条 Present：先删后加；失败（MultiMesh）返回 false，调用方应全量 rebuild。
+func update_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
+	if _doodads == null or entry.is_empty():
+		return false
+	var cn: int = int(entry.get("creationNumber", -1))
+	if cn < 0:
+		return false
+	if not _doodads.remove_by_creation_number(cn):
+		return false
+	return add_doodad_instance(entry, hf)
 
 
 ## 仅重建地面（笔刷脏更新）；不重载装饰/单位。

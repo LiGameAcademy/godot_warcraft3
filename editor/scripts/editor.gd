@@ -14,6 +14,8 @@ const InspectWindowScene := preload("res://editor/ui/editor_inspect_window.tscn"
 @export var map_root: MapLoader
 @export var camera_rig: Node3D
 @export var brush: Node3D
+@export var doodad_brush: Node3D
+@export var input_router: Node
 @export var new_map_dialog: Window
 @export var open_map_dialog: Window
 @export var menu: Node
@@ -47,9 +49,11 @@ var _brush_mode: String = "terrain" ## terrain | doodad
 var _brush_doodad_id: String = ""
 var _brush_doodad_name: String = ""
 var _brush_doodad_variation: int = 0
+var _brush_doodad_num_var: int = 1
 var _brush_doodad_angle: float = 270.0
 var _brush_doodad_scale: float = 1.0
 var _brush_doodad_random: bool = true
+var _doodads_present_built: bool = false
 
 
 func _ready() -> void:
@@ -84,6 +88,21 @@ func _ready() -> void:
 			brush.ramp_feedback.connect(_on_ramp_feedback)
 		if brush.has_signal("brush_settings_changed"):
 			brush.brush_settings_changed.connect(_on_brush_settings_changed)
+	if doodad_brush != null:
+		if doodad_brush.has_signal("rebuild_requested"):
+			doodad_brush.rebuild_requested.connect(_on_doodad_brush_rebuild)
+		if doodad_brush.has_signal("brush_settings_changed"):
+			doodad_brush.brush_settings_changed.connect(_on_brush_settings_changed)
+		if doodad_brush.has_signal("placed"):
+			doodad_brush.placed.connect(_on_doodads_placed)
+		if doodad_brush.has_signal("facing_changed"):
+			doodad_brush.facing_changed.connect(_on_doodad_facing_changed)
+		if doodad_brush.has_signal("selection_changed"):
+			doodad_brush.selection_changed.connect(_on_doodad_map_selection_changed)
+		if doodad_brush.has_signal("deleted"):
+			doodad_brush.deleted.connect(_on_doodads_deleted)
+		if doodad_brush.has_signal("palette_cleared"):
+			doodad_brush.palette_cleared.connect(_on_doodad_palette_cleared)
 	EditorI18n.locale_changed.connect(_on_locale_changed)
 	_apply_chrome_locale()
 
@@ -125,6 +144,10 @@ func _resolve_exports() -> void:
 		camera_rig = get_node_or_null("../EditorCamera") as Node3D
 	if brush == null:
 		brush = get_node_or_null("../TerrainBrush") as Node3D
+	if doodad_brush == null:
+		doodad_brush = get_node_or_null("../DoodadBrush") as Node3D
+	if input_router == null:
+		input_router = get_node_or_null("../EditorInputRouter")
 	if new_map_dialog == null:
 		new_map_dialog = get_node_or_null("../NewMapDialog") as Window
 	if open_map_dialog == null:
@@ -279,10 +302,12 @@ func _on_menu_action(action_id: StringName) -> void:
 			_set_status_key("EDITOR_STATUS_IDLE")
 		"layer_terrain", "tools_sel_brush", "module_terrain":
 			_brush_mode = "terrain"
+			_sync_active_brush()
 			_refresh_hud_brush()
 			_set_status_key("EDITOR_STATUS_TERRAIN_BRUSH")
 		"layer_doodads", "module_doodads":
 			_brush_mode = "doodad"
+			_sync_active_brush()
 			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.DOODADS)
 			_ensure_inspect_window(true)
 			_refresh_hud_brush()
@@ -316,14 +341,23 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 	MapLog.info(
 		MapLog.Layer.EDITOR,
 		"History",
-		"%s rebuild=%s cliff=%s — %s"
+		"%s rebuild=%s cliff=%s doodad=%s — %s"
 		% [
 			"undo" if is_undo else "apply",
 			should_rebuild,
 			cmd.affects_cliffs_water() if cmd else false,
+			cmd.affects_doodads() if cmd else false,
 			cmd.get_label() if cmd else "?",
 		]
 	)
+	if cmd != null and cmd.affects_doodads():
+		# record() 已落地、should_rebuild=false：勿清选中（旋转/拖动会立刻丢选）
+		if should_rebuild:
+			if doodad_brush != null and doodad_brush.has_method("clear_selection"):
+				doodad_brush.clear_selection()
+			_rebuild_doodads_present()
+		_refresh_hud_props()
+		return
 	if not should_rebuild or map_root == null or _doc == null:
 		return
 	var cliff: bool = cmd.affects_cliffs_water() if cmd else false
@@ -365,14 +399,22 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
 	if win.has_signal("doodad_selected"):
 		win.doodad_selected.connect(_on_doodad_selected)
+	if win.has_signal("doodad_variation_step"):
+		win.doodad_variation_step.connect(_on_doodad_variation_step)
+	if win.has_signal("doodad_random_toggled"):
+		win.doodad_random_toggled.connect(_on_doodad_random_toggled)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	if win.has_signal("edit_undo_requested"):
 		win.edit_undo_requested.connect(_undo)
 	if win.has_signal("edit_redo_requested"):
 		win.edit_redo_requested.connect(_redo)
+	if win.has_signal("escape_pressed"):
+		win.escape_pressed.connect(_on_palette_escape)
 	_tool_palettes.append(win)
 	win.set_id_catalog(map_root.get_id_catalog())
+	if win.has_method("set_map_tileset"):
+		win.set_map_tileset(_current_map_tileset())
 	win.rebuild_terrain(_doc, map_root.get_tiles(), map_root.get_cliff_catalog())
 	_palettes_visible = true
 	if menu != null and menu.has_method("set_show_palettes_checked"):
@@ -394,6 +436,7 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.grab_focus()
 	if kind == ToolPaletteWindowScript.PaletteKind.DOODADS:
 		_brush_mode = "doodad"
+		_sync_active_brush()
 		_ensure_inspect_window(true)
 		_refresh_hud_brush()
 
@@ -404,6 +447,8 @@ func _on_brush_settings_changed(size: int, shape: int) -> void:
 	if brush != null and brush.has_method("set_brush_settings"):
 		brush.set_brush_settings(_brush_size, _brush_shape)
 		_brush_size = int(brush.brush_size)
+	if doodad_brush != null and doodad_brush.has_method("set_brush_settings"):
+		doodad_brush.set_brush_settings(_brush_size, _brush_shape)
 	for win in _tool_palettes:
 		if is_instance_valid(win):
 			win.set_brush_settings(_brush_size, _brush_shape)
@@ -451,10 +496,13 @@ func _refresh_all_tool_palettes() -> void:
 	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles()
 	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
 	var ids: Wc3IdCatalog = map_root.get_id_catalog()
+	var ts := _current_map_tileset()
 	for win in _tool_palettes:
 		if is_instance_valid(win):
 			if win.has_method("set_id_catalog"):
 				win.set_id_catalog(ids)
+			if win.has_method("set_map_tileset"):
+				win.set_map_tileset(ts)
 			win.rebuild_terrain(_doc, tiles, cliffs_cat)
 
 
@@ -529,6 +577,7 @@ func _on_save() -> void:
 
 func _on_tile_selected(index: int) -> void:
 	_brush_mode = "terrain"
+	_sync_active_brush()
 	_doc.brush_tile_index = index
 	_refresh_brush_label()
 	_refresh_hud_brush()
@@ -543,6 +592,8 @@ func _on_doodad_selected(type_id: String, info: Dictionary) -> void:
 	_brush_doodad_id = type_id
 	_brush_doodad_name = str(info.get("name", type_id))
 	_brush_doodad_variation = 0
+	_brush_doodad_num_var = maxi(int(info.get("num_var", 1)), 1)
+	_sync_active_brush()
 	_ensure_inspect_window(true)
 	if _inspect_window != null and _inspect_window.has_method("show_doodad"):
 		_inspect_window.show_doodad(type_id, _brush_doodad_variation)
@@ -556,7 +607,37 @@ func _on_preview_params_changed(variation: int, angle_deg: float, scale: float, 
 	_brush_doodad_angle = angle_deg
 	_brush_doodad_scale = scale
 	_brush_doodad_random = random_var
+	_push_doodad_palette_to_brush()
+	# Inspect 朝向变更时：若地图上有选中，一并旋转该实例（与快捷键一致）
+	if doodad_brush != null and doodad_brush.has_method("get_selected_creation_number"):
+		var cn: int = int(doodad_brush.get_selected_creation_number())
+		if cn >= 0 and doodad_brush.has_method("apply_facing_to_selection"):
+			doodad_brush.apply_facing_to_selection(angle_deg)
 	_refresh_hud_props()
+
+
+func _on_doodad_variation_step(delta: int) -> void:
+	_ensure_inspect_window(false)
+	if _inspect_window != null and _inspect_window.has_method("step_variation"):
+		_inspect_window.step_variation(delta)
+
+
+func _on_doodad_random_toggled(enabled: bool) -> void:
+	_brush_doodad_random = enabled
+	_ensure_inspect_window(false)
+	if _inspect_window != null and _inspect_window.has_method("set_random_variation"):
+		_inspect_window.set_random_variation(enabled)
+	_refresh_hud_props()
+
+
+func _current_map_tileset() -> String:
+	if _doc != null and _doc.heightfield != null:
+		var letter := str(_doc.heightfield.main_tileset).strip_edges().to_upper()
+		if not letter.is_empty():
+			return letter
+	if _we_data != null and not str(_we_data.default_tileset).is_empty():
+		return str(_we_data.default_tileset).to_upper()
+	return "L"
 
 
 func _on_tile_hovered(tile: Vector2i) -> void:
@@ -586,6 +667,8 @@ func _ensure_inspect_window(focus: bool = false) -> void:
 		_inspect_window.setup(map_root.get_id_catalog(), map_root.get_model_cache())
 		_inspect_window.minimap_clicked.connect(_on_minimap_clicked)
 		_inspect_window.preview_params_changed.connect(_on_preview_params_changed)
+		if _inspect_window.has_signal("preview_clear_requested"):
+			_inspect_window.preview_clear_requested.connect(_on_inspect_preview_clear_requested)
 		_inspect_window.closed_by_user.connect(func() -> void: pass)
 		var main_win := get_viewport().get_window()
 		_inspect_window.transient = false
@@ -736,14 +819,20 @@ func _apply_document(full_reload: bool) -> void:
 	_refresh_brush_label()
 	if toolbar != null and toolbar.has_method("set_dirty"):
 		toolbar.set_dirty(_doc.is_dirty())
+	var cam: Camera3D = null
+	if camera_rig != null and camera_rig.has_method("get_camera"):
+		cam = camera_rig.get_camera()
 	if brush != null and brush.has_method("setup"):
-		var cam: Camera3D = null
-		if camera_rig != null and camera_rig.has_method("get_camera"):
-			cam = camera_rig.get_camera()
 		brush.setup(_doc, cam, map_root.get_world_3d(), _history)
 		brush.set_brush_settings(_brush_size, _brush_shape)
 		brush.apply_texture = _apply_texture
 		brush.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
+	if doodad_brush != null and doodad_brush.has_method("setup"):
+		doodad_brush.setup(_doc, cam, map_root.get_world_3d(), _history, map_root)
+		doodad_brush.set_brush_settings(_brush_size, _brush_shape)
+		_push_doodad_palette_to_brush()
+	_doodads_present_built = false
+	_sync_active_brush()
 	if full_reload:
 		var dir: String = _doc.map_dir if not _doc.map_dir.is_empty() else "res://"
 		await map_root.reload_from_hf(_doc.as_build_dict(), _doc.info, dir)
@@ -754,6 +843,131 @@ func _apply_document(full_reload: bool) -> void:
 	_refresh_inspect_minimap()
 	_refresh_hud_brush()
 	_refresh_hud_props()
+
+
+func _sync_active_brush() -> void:
+	var use_doodad := _brush_mode == "doodad"
+	if brush != null:
+		brush.set("enabled", not use_doodad)
+	if doodad_brush != null:
+		doodad_brush.set("enabled", use_doodad)
+		if use_doodad:
+			_push_doodad_palette_to_brush()
+			_ensure_doodads_present()
+	if input_router != null:
+		input_router.set("brush", doodad_brush if use_doodad else brush)
+
+
+func _push_doodad_palette_to_brush() -> void:
+	if doodad_brush == null or not doodad_brush.has_method("set_palette"):
+		return
+	doodad_brush.set_palette(
+		_brush_doodad_id,
+		_brush_doodad_variation,
+		_brush_doodad_angle,
+		_brush_doodad_scale,
+		_brush_doodad_random,
+		_brush_doodad_num_var,
+	)
+
+
+func _ensure_doodads_present() -> void:
+	if _doodads_present_built or map_root == null or _doc == null:
+		return
+	_rebuild_doodads_present()
+	_doodads_present_built = true
+
+
+func _rebuild_doodads_present() -> void:
+	if map_root == null or _doc == null:
+		return
+	map_root.rebuild_doodads_from_list(_doc.as_build_dict(), _doc.doodads)
+	_doodads_present_built = true
+
+
+func _on_doodad_brush_rebuild() -> void:
+	# 增量 Present 已在笔刷内完成；仅刷新脏标记 HUD
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_doodads_placed(count: int) -> void:
+	if count <= 0:
+		return
+	_set_status_key("EDITOR_STATUS_DOODAD_PLACED", [count, _brush_doodad_name])
+	_refresh_hud_props()
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_doodad_facing_changed(angle_deg: float) -> void:
+	_brush_doodad_angle = angle_deg
+	# 只同步朝向，不要 show_doodad（会重载模型，旋转时看起来像没转）
+	if _inspect_window != null and is_instance_valid(_inspect_window):
+		if _inspect_window.has_method("set_place_facing"):
+			_inspect_window.set_place_facing(angle_deg, true, false)
+	_push_doodad_palette_to_brush()
+	_refresh_hud_props()
+
+
+func _on_doodad_map_selection_changed(creation_number: int) -> void:
+	if creation_number < 0:
+		return
+	_set_status_key("EDITOR_STATUS_DOODAD_PICKED", [creation_number])
+	# 选中后把朝向同步到 Inspect，方便继续用 ↺/↻ 或 [ ]
+	if doodad_brush != null and _doc != null:
+		var idx: int = _doc.find_doodad_index_by_creation_number(creation_number)
+		var entry: Dictionary = _doc.get_doodad(idx) if idx >= 0 else {}
+		if not entry.is_empty():
+			var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+			_on_doodad_facing_changed(deg)
+
+
+func _on_doodads_deleted(count: int) -> void:
+	if count <= 0:
+		return
+	_set_status_key("EDITOR_STATUS_DOODAD_DELETED", [count])
+	_refresh_hud_props()
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_doodad_palette_cleared() -> void:
+	_brush_doodad_id = ""
+	_brush_doodad_name = ""
+	_brush_doodad_variation = 0
+	_brush_doodad_num_var = 1
+	if _inspect_window != null and is_instance_valid(_inspect_window):
+		if _inspect_window.has_method("clear_preview"):
+			_inspect_window.clear_preview()
+	for win in _tool_palettes:
+		if win != null and is_instance_valid(win) and win.has_method("clear_doodad_selection"):
+			win.clear_doodad_selection()
+	_push_doodad_palette_to_brush()
+	_refresh_hud_brush()
+	_refresh_hud_props()
+	_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
+
+
+## 浮窗 Esc：与主视口笔刷 Esc 同序（先地图选中，再放置预览）。
+func _cancel_doodad_preview_like_we() -> void:
+	if doodad_brush == null:
+		return
+	if doodad_brush.has_method("get_selected_creation_number"):
+		if int(doodad_brush.get_selected_creation_number()) >= 0:
+			if doodad_brush.has_method("clear_selection"):
+				doodad_brush.clear_selection()
+			return
+	if not _brush_doodad_id.is_empty() and doodad_brush.has_method("clear_palette"):
+		doodad_brush.clear_palette()
+
+
+func _on_palette_escape() -> void:
+	_cancel_doodad_preview_like_we()
+
+
+func _on_inspect_preview_clear_requested() -> void:
+	_cancel_doodad_preview_like_we()
 
 
 func _refresh_brush_label() -> void:

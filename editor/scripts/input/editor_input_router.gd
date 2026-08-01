@@ -96,6 +96,10 @@ func _handle_edit_hotkeys(k: InputEventKey) -> bool:
 		if editor.has_method("_redo"):
 			editor.call("_redo")
 			return true
+	# 装饰物：Delete / Esc / [ ] / R — 交给当前 brush
+	if brush != null and brush.has_method("handle_key"):
+		if brush.handle_key(k):
+			return true
 	return false
 
 
@@ -134,6 +138,9 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> bool:
 			return true
 		MOUSE_BUTTON_WHEEL_UP:
 			if mb.pressed:
+				if mb.ctrl_pressed and brush != null and brush.has_method("nudge_facing"):
+					brush.nudge_facing(-45.0)
+					return true
 				if mb.shift_pressed:
 					_nudge_brush_size(1)
 				elif camera_rig != null and camera_rig.has_method("apply_zoom"):
@@ -141,6 +148,9 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> bool:
 			return true
 		MOUSE_BUTTON_WHEEL_DOWN:
 			if mb.pressed:
+				if mb.ctrl_pressed and brush != null and brush.has_method("nudge_facing"):
+					brush.nudge_facing(45.0)
+					return true
 				if mb.shift_pressed:
 					_nudge_brush_size(-1)
 				elif camera_rig != null and camera_rig.has_method("apply_zoom"):
@@ -173,6 +183,9 @@ func _handle_mouse_motion(mm: InputEventMouseMotion) -> bool:
 		if not _rmb_shift_erase and camera_rig.has_method("apply_pan_screen"):
 			camera_rig.apply_pan_screen(mm.relative)
 			return true
+	# 装饰物幽灵 / 悬停预览（不吞事件，便于其它 UI）
+	if not _lmb_down and not _rmb_down and brush != null and brush.has_method("hover"):
+		brush.hover(mm.position)
 	return false
 
 

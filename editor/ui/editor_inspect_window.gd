@@ -5,9 +5,25 @@ extends Window
 signal closed_by_user
 signal minimap_clicked(norm_uv: Vector2) ## 0..1，地图 UV（x→东，y→北）
 signal preview_params_changed(variation: int, angle_deg: float, scale: float, random_var: bool)
+## angle_deg = 放置朝向（写入地图）；预览环视 yaw/pitch 不在此信号中。
+signal preview_clear_requested ## Esc：取消装饰物预览 / 笔刷类型
 
-const PREVIEW_DIST_DEFAULT := 450.0 ## WE 像素感距离；内部换算到 Godot 相机
+const PREVIEW_DIST_DEFAULT := 400.0 ## WE 预览距离默认
+const PREVIEW_DIST_MIN := 50.0
+const PREVIEW_DIST_MAX := 2000.0
+const PREVIEW_DIST_STEP := 50.0
+const PLACE_FACING_DEFAULT := 270.0 ## 放置朝向（写入地图）；与预览环视无关
+const PLACE_FACING_STEP := 45.0 ## 输入框提交对齐
+const PLACE_FACING_NUDGE := 45.0 ## ↺/↻ 与快捷键步进
+const PREVIEW_SCALE_DEFAULT := 1.0
 const WORLD_SCALE := 0.01 ## 与 Wc3Coords.WORLD_SCALE 近似：预览用本地尺度
+const ORBIT_YAW_SENS := 0.35 ## 度 / 像素（仅观察相机）
+const ORBIT_PITCH_SENS := 0.25
+const ORBIT_PITCH_MIN := 5.0
+const ORBIT_PITCH_MAX := 80.0
+const ORBIT_PITCH_DEFAULT := 25.0
+const ORBIT_YAW_DEFAULT := 0.0
+const ZOOM_WHEEL_FACTOR := 1.12
 
 ## MMP 图标逻辑路径（AssetProvider / converted）。
 const ICON_PATHS := {
@@ -27,26 +43,43 @@ const ICON_PATHS := {
 @onready var _preview_title: Label = %PreviewTitle
 @onready var _model_root: Node3D = %ModelRoot
 @onready var _preview_cam: Camera3D = %PreviewCamera
+@onready var _preview_viewport: SubViewport = %PreviewViewport
+@onready var _preview_input: Control = %PreviewInput
 @onready var _chk_random: CheckBox = %ChkRandom
 @onready var _var_label: Label = %VarLabel
 @onready var _var_prev: Button = %VarPrev
 @onready var _var_next: Button = %VarNext
 @onready var _anim_label: Label = %AnimLabel
+@onready var _anim_prev: Button = %AnimPrev
+@onready var _anim_option: OptionButton = %AnimOption
+@onready var _anim_next: Button = %AnimNext
 @onready var _dist_label: Label = %DistLabel
-@onready var _dist_spin: SpinBox = %DistSpin
+@onready var _dist_edit: LineEdit = %DistEdit
 @onready var _angle_label: Label = %AngleLabel
-@onready var _angle_spin: SpinBox = %AngleSpin
-@onready var _scale_label: Label = %ScaleLabel
-@onready var _scale_spin: SpinBox = %ScaleSpin
+@onready var _angle_edit: LineEdit = %AngleEdit
+@onready var _facing_ccw: Button = %FacingCcw
+@onready var _facing_cw: Button = %FacingCw
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
 var _type_id: String = ""
 var _variation: int = 0
 var _num_var: int = 1
-var _angle_deg: float = 270.0
-var _scale: float = 1.0
+var _dist_we: float = PREVIEW_DIST_DEFAULT
+## 放置朝向（度）：幽灵 / 落笔 / 模型正面朝向。与下方环视 yaw 分离。
+var _place_facing_deg: float = PLACE_FACING_DEFAULT
+## 预览相机环视（仅观察，不写入地图）。
+var _view_yaw_deg: float = ORBIT_YAW_DEFAULT
+var _cam_pitch_deg: float = ORBIT_PITCH_DEFAULT
+var _scale: float = PREVIEW_SCALE_DEFAULT ## 放置用，预览 UI 已移除；固定 1
 var _random_var: bool = true
+var _preview_gen: int = 0
+var _preview_instance: Node3D = null
+var _anim_names: PackedStringArray = PackedStringArray()
+var _suppress_anim_signal: bool = false
+var _suppress_edit_signal: bool = false
+var _orbit_dragging: bool = false
+var _orbit_last: Vector2 = Vector2.ZERO
 var _minimap_raster: MapMinimapRaster
 var _minimap_image: Image
 var _viewport_quad: PackedVector2Array = PackedVector2Array()
@@ -66,9 +99,7 @@ func _ready() -> void:
 	_apply_locale()
 	if not EditorI18n.locale_changed.is_connected(_on_locale):
 		EditorI18n.locale_changed.connect(_on_locale)
-	_dist_spin.value = PREVIEW_DIST_DEFAULT
-	_angle_spin.value = _angle_deg
-	_scale_spin.value = _scale
+	_sync_param_edits()
 	_chk_random.button_pressed = _random_var
 	_chk_viewport.button_pressed = true
 	_chk_buildings.button_pressed = true
@@ -106,17 +137,137 @@ func _wire() -> void:
 	)
 	_var_prev.pressed.connect(func() -> void: _step_variation(-1))
 	_var_next.pressed.connect(func() -> void: _step_variation(1))
-	_dist_spin.value_changed.connect(func(_v: float) -> void: _apply_preview_camera())
-	_angle_spin.value_changed.connect(func(v: float) -> void:
-		_angle_deg = v
-		_apply_model_xform()
+	if _anim_prev != null:
+		_anim_prev.pressed.connect(func() -> void: _step_animation(-1))
+	if _anim_next != null:
+		_anim_next.pressed.connect(func() -> void: _step_animation(1))
+	if _anim_option != null:
+		_anim_option.item_selected.connect(_on_anim_selected)
+	if _preview_input != null:
+		_preview_input.gui_input.connect(_on_preview_gui_input)
+	if _dist_edit != null:
+		_dist_edit.text_submitted.connect(func(_t: String) -> void: _commit_dist_edit())
+		_dist_edit.focus_exited.connect(_commit_dist_edit)
+	if _angle_edit != null:
+		_angle_edit.text_submitted.connect(func(_t: String) -> void: _commit_facing_edit())
+		_angle_edit.focus_exited.connect(_commit_facing_edit)
+	if _facing_ccw != null:
+		_facing_ccw.pressed.connect(func() -> void: nudge_place_facing(-PLACE_FACING_NUDGE))
+	if _facing_cw != null:
+		_facing_cw.pressed.connect(func() -> void: nudge_place_facing(PLACE_FACING_NUDGE))
+
+
+func _sync_param_edits() -> void:
+	_suppress_edit_signal = true
+	if _dist_edit != null:
+		_dist_edit.text = str(int(round(_dist_we)))
+	if _angle_edit != null:
+		_angle_edit.text = str(int(round(_place_facing_deg)))
+	_suppress_edit_signal = false
+
+
+func _commit_dist_edit() -> void:
+	if _suppress_edit_signal or _dist_edit == null:
+		return
+	var v := _dist_edit.text.strip_edges().to_float()
+	if not is_finite(v):
+		_sync_param_edits()
+		return
+	_set_distance(v, true)
+
+
+func _commit_facing_edit() -> void:
+	if _suppress_edit_signal or _angle_edit == null:
+		return
+	var v := _angle_edit.text.strip_edges().to_float()
+	if not is_finite(v):
+		_sync_param_edits()
+		return
+	# 输入框按 45° 对齐；按钮/快捷键用 90°
+	set_place_facing(snappedf(v, PLACE_FACING_STEP), true)
+
+
+func _set_distance(value: float, sync_edit: bool = true) -> void:
+	_dist_we = clampf(value, PREVIEW_DIST_MIN, PREVIEW_DIST_MAX)
+	if sync_edit:
+		_sync_param_edits()
+	_apply_preview_camera()
+
+
+## 设置放置朝向（度）。sync_edit 刷新输入框；默认发出 preview_params_changed。
+func set_place_facing(value: float, sync_edit: bool = true, emit_params: bool = true) -> void:
+	_place_facing_deg = fposmod(value, 360.0)
+	if sync_edit:
+		_sync_param_edits()
+	_apply_model_xform()
+	if emit_params:
 		_emit_params()
-	)
-	_scale_spin.value_changed.connect(func(v: float) -> void:
-		_scale = v
-		_apply_model_xform()
-		_emit_params()
-	)
+
+
+func nudge_place_facing(delta_deg: float) -> void:
+	set_place_facing(_place_facing_deg + delta_deg, true, true)
+
+
+func get_place_facing() -> float:
+	return _place_facing_deg
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	# 预览窗有焦点时主视口收不到快捷键，在此转发
+	if not visible or not (event is InputEventKey):
+		return
+	var k := event as InputEventKey
+	if not k.pressed or k.echo:
+		return
+	var focus := gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	var code: Key = k.keycode
+	if code == KEY_NONE:
+		code = k.physical_keycode
+	match code:
+		KEY_ESCAPE:
+			preview_clear_requested.emit()
+			get_viewport().set_input_as_handled()
+		KEY_BRACKETLEFT, KEY_COMMA:
+			nudge_place_facing(-PLACE_FACING_NUDGE)
+			get_viewport().set_input_as_handled()
+		KEY_BRACKETRIGHT, KEY_PERIOD:
+			nudge_place_facing(PLACE_FACING_NUDGE)
+			get_viewport().set_input_as_handled()
+		KEY_R:
+			nudge_place_facing(-PLACE_FACING_NUDGE if k.shift_pressed else PLACE_FACING_NUDGE)
+			get_viewport().set_input_as_handled()
+
+
+func _on_preview_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			_orbit_dragging = mb.pressed
+			_orbit_last = mb.position
+			_preview_input.accept_event()
+			return
+		if mb.pressed and (
+			mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN
+		):
+			var factor := ZOOM_WHEEL_FACTOR if mb.button_index == MOUSE_BUTTON_WHEEL_UP else (1.0 / ZOOM_WHEEL_FACTOR)
+			_set_distance(_dist_we / factor, true)
+			_preview_input.accept_event()
+			return
+	if event is InputEventMouseMotion and _orbit_dragging:
+		var mm := event as InputEventMouseMotion
+		var delta: Vector2 = mm.position - _orbit_last
+		_orbit_last = mm.position
+		# 仅环视相机；不改放置朝向（避免 WE「预览角=放置角」歧义）
+		_view_yaw_deg = fposmod(_view_yaw_deg - delta.x * ORBIT_YAW_SENS, 360.0)
+		_cam_pitch_deg = clampf(
+			_cam_pitch_deg + delta.y * ORBIT_PITCH_SENS,
+			ORBIT_PITCH_MIN,
+			ORBIT_PITCH_MAX,
+		)
+		_apply_preview_camera()
+		_preview_input.accept_event()
 
 
 func _apply_minimap_frame_style() -> void:
@@ -154,11 +305,24 @@ func _apply_locale() -> void:
 	_chk_viewport.text = EditorI18n.t("EDITOR_MINIMAP_SHOW_VIEWPORT")
 	_chk_random.text = EditorI18n.t("EDITOR_PREVIEW_RANDOM_VAR")
 	_dist_label.text = EditorI18n.t("EDITOR_PREVIEW_DISTANCE")
-	_angle_label.text = EditorI18n.t("EDITOR_PREVIEW_ANGLE")
-	_scale_label.text = EditorI18n.t("EDITOR_PREVIEW_SCALE")
+	_angle_label.text = EditorI18n.t("EDITOR_PREVIEW_FACING")
+	if _facing_ccw != null:
+		_facing_ccw.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_FACING_CCW")
+	if _facing_cw != null:
+		_facing_cw.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_FACING_CW")
+	if _preview_input != null:
+		_preview_input.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_ORBIT_HINT")
+	if _anim_label != null:
+		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_ANIM")
+	if _anim_prev != null:
+		_anim_prev.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_ANIM_PREV")
+	if _anim_next != null:
+		_anim_next.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_ANIM_NEXT")
 	_refresh_var_label()
 	if _type_id.is_empty():
 		_preview_title.text = EditorI18n.t("EDITOR_PREVIEW_EMPTY")
+	else:
+		_refresh_preview_title()
 
 
 func _on_close() -> void:
@@ -325,6 +489,17 @@ func control_pos_to_minimap_uv(pos: Vector2) -> Vector2:
 	return Vector2(local.x / drawn.size.x, local.y / drawn.size.y)
 
 
+func step_variation(delta: int) -> void:
+	_step_variation(delta)
+
+
+func set_random_variation(on: bool) -> void:
+	_random_var = on
+	if _chk_random != null:
+		_chk_random.set_pressed_no_signal(on)
+	_emit_params()
+
+
 func show_doodad(type_id: String, variation: int = 0) -> void:
 	_type_id = type_id
 	var info: Dictionary = {}
@@ -332,8 +507,7 @@ func show_doodad(type_id: String, variation: int = 0) -> void:
 		info = _catalog.lookup(type_id)
 	_num_var = maxi(int(info.get("num_var", 1)), 1)
 	_variation = clampi(variation, 0, _num_var - 1)
-	var display := str(info.get("name", type_id))
-	_preview_title.text = display if not display.is_empty() else type_id
+	_refresh_preview_title()
 	_refresh_var_label()
 	_reload_model()
 
@@ -342,17 +516,35 @@ func clear_preview() -> void:
 	_type_id = ""
 	_preview_title.text = EditorI18n.t("EDITOR_PREVIEW_EMPTY")
 	_clear_model()
-	_anim_label.text = ""
+	_reset_anim_ui()
 
 
 func get_selection() -> Dictionary:
 	return {
 		"id": _type_id,
 		"variation": _variation,
-		"angle": _angle_deg,
+		"angle": _place_facing_deg,
 		"scale": _scale,
 		"random_var": _random_var,
 	}
+
+
+func _refresh_preview_title() -> void:
+	if _type_id.is_empty():
+		_preview_title.text = EditorI18n.t("EDITOR_PREVIEW_EMPTY")
+		return
+	var info: Dictionary = _catalog.lookup(_type_id) if _catalog != null else {}
+	var nk := str(info.get("name_key", ""))
+	var display := ""
+	if nk.begins_with("WESTRING_"):
+		var loc := EditorI18n.t(nk)
+		if not loc.is_empty() and loc != nk and not loc.begins_with("WESTRING_"):
+			display = loc
+	if display.is_empty():
+		display = str(info.get("name", _type_id))
+	if display.is_empty():
+		display = _type_id
+	_preview_title.text = "%s  [%s]" % [display, _type_id]
 
 
 func _step_variation(delta: int) -> void:
@@ -369,66 +561,190 @@ func _refresh_var_label() -> void:
 
 
 func _emit_params() -> void:
-	preview_params_changed.emit(_variation, _angle_deg, _scale, _random_var)
+	preview_params_changed.emit(_variation, _place_facing_deg, _scale, _random_var)
 
 
 func _clear_model() -> void:
+	_preview_instance = null
 	for c in _model_root.get_children():
-		c.queue_free()
+		_model_root.remove_child(c)
+		c.free()
 
 
 func _reload_model() -> void:
+	_preview_gen += 1
+	var gen := _preview_gen
 	_clear_model()
-	_anim_label.text = ""
-	if _type_id.is_empty() or _catalog == null or _cache == null:
+	_reset_anim_ui()
+	if _type_id.is_empty() or _catalog == null:
 		return
-	var path: String = _catalog.converted_glb_path(_type_id, _variation)
-	if path.is_empty():
-		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_MISSING_MODEL")
-		return
-	var node: Node3D = _cache.instance_glb(path)
+	var info: Dictionary = _catalog.lookup(_type_id)
+	var path: String = _catalog.converted_glb_path(_type_id, _variation) if _cache != null else ""
+	var node: Node3D = null
+	if not path.is_empty() and _cache != null:
+		node = _cache.instance_glb(path)
 	if node == null:
-		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_MISSING_MODEL")
-		return
+		# 缺模但仍可能是 Click Helper 特效物
+		if bool(info.get("use_click_helper", false)):
+			node = Node3D.new()
+			node.add_child(MapPlaceholders.make_click_helper(float(info.get("sel_size", 0.0))))
+			node.add_child(MapPlaceholders.make_effect_particles())
+			_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_ANIM_NONE"))
+		else:
+			_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_MISSING_MODEL"))
+			return
 	_model_root.add_child(node)
+	_preview_instance = node
+	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
+	MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	_apply_model_xform()
-	if _cache.glb_has_animation(path):
-		_cache.autoplay_stand(node)
-		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_ANIM_STAND")
-	else:
-		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_ANIM_NONE")
-	_frame_model(node)
+	_setup_animations(node)
+	call_deferred("_frame_model_deferred", gen)
+
+
+func _setup_animations(node: Node3D) -> void:
+	_anim_names = PackedStringArray()
+	if _cache == null or node == null:
+		_reset_anim_ui()
+		return
+	_anim_names = _cache.list_animations(node)
+	_suppress_anim_signal = true
+	if _anim_option != null:
+		_anim_option.clear()
+		for i in range(_anim_names.size()):
+			_anim_option.add_item(str(_anim_names[i]), i)
+	_suppress_anim_signal = false
+	var has_anim := _anim_names.size() > 0
+	if _anim_prev != null:
+		_anim_prev.disabled = not has_anim
+	if _anim_next != null:
+		_anim_next.disabled = not has_anim
+	if _anim_option != null:
+		_anim_option.disabled = not has_anim
+	if not has_anim:
+		_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_ANIM_NONE"))
+		return
+	# 优先 Stand，否则第一条
+	var prefer := 0
+	for i in range(_anim_names.size()):
+		var n := str(_anim_names[i])
+		if n == "Stand" or n == "stand" or n.begins_with("Stand ") or n.begins_with("stand "):
+			prefer = i
+			break
+	if _anim_option != null:
+		_suppress_anim_signal = true
+		_anim_option.select(prefer)
+		_suppress_anim_signal = false
+	_play_anim_at(prefer)
+
+
+func _reset_anim_ui() -> void:
+	_anim_names = PackedStringArray()
+	_suppress_anim_signal = true
+	if _anim_option != null:
+		_anim_option.clear()
+		_anim_option.disabled = true
+	_suppress_anim_signal = false
+	if _anim_prev != null:
+		_anim_prev.disabled = true
+	if _anim_next != null:
+		_anim_next.disabled = true
+
+
+func _set_anim_status(text: String) -> void:
+	# 无动画时 OptionButton 留空，状态写到 tooltip / 占位项
+	if _anim_option == null:
+		return
+	_suppress_anim_signal = true
+	_anim_option.clear()
+	_anim_option.add_item(text, 0)
+	_anim_option.select(0)
+	_anim_option.disabled = true
+	_suppress_anim_signal = false
+
+
+func _step_animation(delta: int) -> void:
+	if _anim_names.is_empty():
+		return
+	var i: int = _anim_option.selected if _anim_option != null else 0
+	i = posmod(i + delta, _anim_names.size())
+	if _anim_option != null:
+		_suppress_anim_signal = true
+		_anim_option.select(i)
+		_suppress_anim_signal = false
+	_play_anim_at(i)
+
+
+func _on_anim_selected(index: int) -> void:
+	if _suppress_anim_signal:
+		return
+	_play_anim_at(index)
+
+
+func _play_anim_at(index: int) -> void:
+	if _preview_instance == null or _cache == null:
+		return
+	if index < 0 or index >= _anim_names.size():
+		return
+	_cache.play_animation(_preview_instance, str(_anim_names[index]), true)
 
 
 func _apply_model_xform() -> void:
-	# WE 角度：绕 Z；Godot Y-up → 绕 Y
-	_model_root.rotation_degrees = Vector3(0.0, -_angle_deg, 0.0)
+	# 放置朝向：WE 绕 Z；Godot Y-up → 绕 Y。环视只动相机，不动模型。
+	_model_root.rotation_degrees = Vector3(0.0, -_place_facing_deg, 0.0)
 	_model_root.scale = Vector3.ONE * maxf(_scale, 0.01)
 
 
-func _frame_model(node: Node3D) -> void:
-	var aabb := _calc_aabb(node)
-	if aabb.size.length() < 0.001:
+func _frame_model_deferred(gen: int) -> void:
+	if gen != _preview_gen:
 		return
-	var center := aabb.get_center()
-	node.position -= center
+	if _preview_instance == null or not is_instance_valid(_preview_instance):
+		return
+	_frame_model(_preview_instance)
+
+
+func _frame_model(node: Node3D) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	if _preview_viewport != null:
+		_preview_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	node.force_update_transform()
+	var aabb := _calc_aabb_local(node)
+	if aabb.size.length() < 0.001:
+		_apply_model_xform()
+		_apply_preview_camera()
+		return
+	# 包围盒中心拉回原点；距离/角度由预览拖拽与下方输入框控制
+	node.position -= aabb.get_center()
+	node.force_update_transform()
+	_apply_model_xform()
 	_apply_preview_camera()
 
 
 func _apply_preview_camera() -> void:
-	var dist_we: float = float(_dist_spin.value)
-	# WE 距离量级较大；换算到预览相机 Z
-	var z: float = clampf(dist_we * WORLD_SCALE * 1.2, 2.0, 80.0)
-	_preview_cam.position = Vector3(0.0, z * 0.35, z)
+	var z: float = clampf(_dist_we * WORLD_SCALE * 1.2, 1.5, 120.0)
+	var pitch := deg_to_rad(_cam_pitch_deg)
+	var yaw := deg_to_rad(_view_yaw_deg)
+	var y: float = sin(pitch) * z
+	var horiz: float = cos(pitch) * z
+	_preview_cam.position = Vector3(sin(yaw) * horiz, y, cos(yaw) * horiz)
 	_preview_cam.look_at(Vector3.ZERO, Vector3.UP)
 
 
-func _calc_aabb(node: Node) -> AABB:
+## 相对 model 根节点局部空间的合并 AABB（含各 VisualInstance 变换）。
+func _calc_aabb_local(root: Node3D) -> AABB:
 	var result := AABB()
 	var first := true
-	for child in node.find_children("*", "VisualInstance3D", true, false):
+	root.force_update_transform()
+	for child in root.find_children("*", "VisualInstance3D", true, false):
 		var vi := child as VisualInstance3D
-		var a: AABB = vi.get_aabb()
+		if vi == null or not is_instance_valid(vi):
+			continue
+		vi.force_update_transform()
+		var xf: Transform3D = root.global_transform.affine_inverse() * vi.global_transform
+		var a: AABB = xf * vi.get_aabb()
+		if a.size.length_squared() < 1e-12:
+			continue
 		if first:
 			result = a
 			first = false

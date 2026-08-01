@@ -3,9 +3,19 @@
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
 > 最后更新：2026-08-01
 
-## 当前焦点：小地图对齐收尾 + 实时光栅（自定义图）
+## 当前焦点：装饰物放置笔刷（一期已接通）+ 小地图实时光栅
 
-悬崖 / 斜坡 Present 已可用。编辑器小地图已能加载 `war3mapMap` + MMP 图标 + 梯形视口；自定义图编辑时需跟 HiveWE 一样**实时光栅**地形色。
+悬崖 / 斜坡 Present 已可用。小地图静态对齐 ✅。装饰物面板筛选 UI ✅。装饰物单击/拖拽放置（含撤销）✅；选中/删除/移动下一期。
+
+| 模块 | 状态 | 备注 |
+|------|------|------|
+| **装饰物放置笔刷** | ✅ 一期 | LMB 放置 + 尺寸形状 + 随机样式 + Ctrl+Z |
+
+- [x] `editor/scripts/tools/doodad_brush.gd`：LMB 单击/拖拽放置（尺寸/形状批量戳点）
+- [x] `MapDocument`：`doodads` 数组 + add/remove + doodads.json 读写
+- [x] `DoodadEditCommand` 撤销/重做
+- [ ] Delete 删除 / 选中拖动 / 旋转 90°
+- [ ] `MapDoodadLayer` MultiMesh 组内精确删除优化
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
@@ -14,7 +24,39 @@
 | **坡 Present** | ✅ | CliffTrans + dig/undig/hide + 入口低角 +0.5 |
 | **小地图（静态）** | ✅ 初版 | `war3mapMap.png` + `minimap.json` + 梯形视口 + 灰框 |
 | **小地图（实时）** | 待开 | 对齐 HiveWE `terrain.ixx::minimap_image` |
+| **装饰物面板（筛选 UI）** | ✅ | tileset / 分类 / 列表 / 变体 / 尺寸形状 |
+| **装饰物放置笔刷** | ✅ 一期 | LMB 放置 + 尺寸形状 + 随机样式 + Ctrl+Z |
 | **水体** | 部分 | 见 [WATER.md](../water/WATER.md)；岸浪精调暂搁 |
+
+---
+
+## 装饰物面板
+
+### 已完成（一期）
+
+- [x] `Wc3IdCatalog`：`category` / `tilesets` + `list_placeables_filtered`
+- [x] `WorldEditData` 解析 `[DoodadCategories]` / `[DestructibleCategories]`
+- [x] 工具面板装饰物页：地形集 / 分类 / ItemList（无「全部」、无来源下拉；空分类隐藏；WESTRING 中文名）
+- [x] 变体 ←→ / 随机样式 → Inspect 预览同步
+- [x] Inspect 3D 模型预览 + 动画列表切换（Stand/Death/…）
+- [x] 尺寸 / 形状控件（与地形笔刷共享状态，供下期放置用）
+
+### 已完成（一期放置）
+
+- [x] `editor/scripts/tools/doodad_brush.gd`：LMB 单击/拖拽放置（尺寸/形状）
+- [x] `MapDocument`：`doodads` + add/remove + doodads.json
+- [x] `DoodadEditCommand` + 撤销/重做刷新 Present
+- [x] `MapDoodadLayer.add_one` / `rebuild_from_list` 增量 + 全量
+
+### 已完成（二期编辑 + 朝向 UX）
+
+- [x] 放置幽灵预览（半透明，朝向随「放置朝向」）
+- [x] 选中（点击已有）/ 拖动 / Delete / `[` `]` / R 旋转 90°
+- [x] Inspect：**环视**（拖拽仅相机）与 **放置朝向**（输入框 + ↺↻）分离
+
+### 待做
+
+- [ ] MultiMesh 组内精确删除（当前失败时回退全量 rebuild）
 
 ---
 

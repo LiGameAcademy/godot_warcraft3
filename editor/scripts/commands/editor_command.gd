@@ -13,6 +13,11 @@ func affects_cliffs_water() -> bool:
 	return false
 
 
+## 是否影响装饰物层（撤销/重做时刷新 doodads Present）。
+func affects_doodads() -> bool:
+	return false
+
+
 func execute(_document) -> void:
 	pass
 

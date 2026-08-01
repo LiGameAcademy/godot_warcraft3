@@ -60,7 +60,16 @@ m2g 工具把 WC3 `.mdx` 转为 Godot `.glb`——`MapModelCache.instance_glb` �
 
 ### 3.1 编辑器 brush（选中 / 拖动 / 删除 / 旋转 90°）
 
-**位置**：`editor/scripts/tools/doodad_brush.gd`（**缺**）
+**位置**：`editor/scripts/tools/doodad_brush.gd`（✅ 一期放置）
+
+**面板筛选（一期）**：✅ …  
+**放置笔刷（一期）**：✅ LMB 放置 / 尺寸形状 / 随机样式 / Inspect 朝向 / Ctrl+Z。
+
+**二期编辑**：✅ 幽灵预览；点选 / 拖动 / Delete；`[` `]` / R 旋转 45°。
+
+**朝向 UX（相对经典 WE）**：预览窗拖拽 = **环视相机**（不写地图）；**放置朝向**独立控件（输入框 + ↺↻）+ 快捷键；地图幽灵显示放置朝向。
+
+**Click Helper（粉黑棋盘）**：✅ 读 SLK `useClickHelper` / `selSize`；空壳 GLB（气泡等 PE2-only）与旗帜类特效挂洋红-黑立方体；蝙蝠等有网格者也挂 helper（对齐 WE）。Stand 动画随机相位，避免齐刷刷。空模另加简易上升粒子近似特效。
 
 **HivEWE**：`DoodadBrush`（`src/brush/doodad_brush.cpp`）
 - click → `add_doodad(id, position, angle, scale, variation, life)`
@@ -68,16 +77,9 @@ m2g 工具把 WC3 `.mdx` 转为 Godot `.glb`——`MapModelCache.instance_glb` �
 - 旋转 90° 离散（Shift+R）
 - 选中 → 拖动 → 删除（Delete / Backspace）
 
-**我们**：
-- 地图打开后 doodad **只读**（`_place_doodad_instance` 仅加载，**不**支持编辑）
-- 经典 WE 实际有完整 brush（玩家必用）
-
 **待补**：
-- `editor/scripts/tools/doodad_brush.gd` 新建
-- 选中（点击 doodad → 红色高亮框）
-- 拖动（按住左键拖 → 平移）
-- 旋转（Shift+R / 滚轮 → 旋转 90°）
-- 删除（Delete）
+- MultiMesh 组内精确删除 / 更新
+- pathing 自动避让
 - 玩家色切换（**仅 unit**，doodad 不接）
 
 ### 3.2 大量 mesh 渲染策略（同步动画 / 错相位）

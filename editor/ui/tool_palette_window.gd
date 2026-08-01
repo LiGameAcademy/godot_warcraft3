@@ -9,10 +9,13 @@ signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
 signal doodad_selected(type_id: String, info: Dictionary)
+signal doodad_variation_step(delta: int)
+signal doodad_random_toggled(enabled: bool)
 signal closed_by_user
 ## 面板获焦时主窗收不到快捷键，转发撤销/重做
 signal edit_undo_requested
 signal edit_redo_requested
+signal escape_pressed ## 面板获焦时 Esc → 取消装饰物预览等
 
 enum PaletteKind { TERRAIN, UNITS, DOODADS, REGIONS, CAMERAS }
 enum BrushShape { CIRCLE, SQUARE }
@@ -72,8 +75,21 @@ const DataScript := preload("res://editor/ui/world_edit_data.gd")
 @onready var _shape_label: Label = %ShapeLabel
 @onready var _placeholder: Label = %Placeholder
 @onready var _doodad_page: VBoxContainer = %DoodadPage
-@onready var _doodad_filter: OptionButton = %DoodadFilter
+@onready var _doodad_tileset_option: OptionButton = %DoodadTilesetOption
+@onready var _doodad_category_option: OptionButton = %DoodadCategoryOption
+@onready var _doodad_random_btn: Button = %DoodadRandomBtn
+@onready var _doodad_var_prev: Button = %DoodadVarPrev
+@onready var _doodad_var_next: Button = %DoodadVarNext
 @onready var _doodad_list: ItemList = %DoodadList
+@onready var _doodad_size_label: Label = %DoodadSizeLabel
+@onready var _doodad_shape_label: Label = %DoodadShapeLabel
+@onready var _doodad_size1: TextureButton = %DoodadSize1
+@onready var _doodad_size2: TextureButton = %DoodadSize2
+@onready var _doodad_size3: TextureButton = %DoodadSize3
+@onready var _doodad_size4: TextureButton = %DoodadSize4
+@onready var _doodad_size5: TextureButton = %DoodadSize5
+@onready var _doodad_shape_circle: TextureButton = %DoodadShapeCircle
+@onready var _doodad_shape_square: TextureButton = %DoodadShapeSquare
 
 @onready var _height_raise: TextureButton = %HeightRaise
 @onready var _height_lower: TextureButton = %HeightLower
@@ -112,10 +128,14 @@ var _apply_height: bool = false
 var _id_catalog: Wc3IdCatalog
 var _doodad_entries: Array = []
 var _selected_doodad_id: String = ""
+var _map_tileset: String = "L" ## 当前地图主地形字母
+var _doodad_random: bool = true
+var _category_codes: PackedStringArray = PackedStringArray() ## Option 索引 → 分类码（含 ""=全部）
 
 var _cliff_buttons: Array = []
 var _height_buttons: Array = []
 var _size_buttons: Array = []
+var _doodad_size_buttons: Array = []
 var _size_circle_tex: Array = []
 var _size_square_tex: Array = []
 var _sel_style: StyleBoxFlat
@@ -140,15 +160,49 @@ func _ready() -> void:
 	_cache_size_textures()
 	_wire_cliff_tool_buttons()
 	_wire_static_tool_buttons()
+	_wire_doodad_page()
 	_rebuild_kind_option()
-	if _doodad_filter != null and not _doodad_filter.item_selected.is_connected(_on_doodad_filter):
-		_doodad_filter.item_selected.connect(_on_doodad_filter)
-	if _doodad_list != null and not _doodad_list.item_selected.is_connected(_on_doodad_list_selected):
-		_doodad_list.item_selected.connect(_on_doodad_list_selected)
 	_apply_locale()
 	_show_kind(_kind)
 	_highlight_all_tools()
 	EditorI18n.locale_changed.connect(func(_loc: String) -> void: _apply_locale())
+
+
+var _doodad_page_wired: bool = false
+
+
+func _wire_doodad_page() -> void:
+	if _doodad_page_wired:
+		return
+	_doodad_page_wired = true
+	if _doodad_tileset_option != null:
+		_doodad_tileset_option.item_selected.connect(_on_doodad_tileset)
+	if _doodad_category_option != null:
+		_doodad_category_option.item_selected.connect(_on_doodad_category)
+	if _doodad_list != null:
+		_doodad_list.item_selected.connect(_on_doodad_list_selected)
+	if _doodad_random_btn != null:
+		_doodad_random_btn.toggled.connect(_on_doodad_random_toggled)
+		_doodad_random_btn.set_pressed_no_signal(_doodad_random)
+	if _doodad_var_prev != null:
+		_doodad_var_prev.pressed.connect(_on_doodad_var_prev)
+	if _doodad_var_next != null:
+		_doodad_var_next.pressed.connect(_on_doodad_var_next)
+	_doodad_size_buttons = [
+		_doodad_size1, _doodad_size2, _doodad_size3, _doodad_size4, _doodad_size5,
+	]
+	for i in range(_doodad_size_buttons.size()):
+		var btn: TextureButton = _doodad_size_buttons[i]
+		if btn == null:
+			continue
+		_ensure_sel_frame(btn)
+		btn.pressed.connect(_on_size_picked.bind(BRUSH_SIZES[i]))
+	if _doodad_shape_circle != null:
+		_ensure_sel_frame(_doodad_shape_circle)
+		_doodad_shape_circle.pressed.connect(_on_shape_picked.bind(BrushShape.CIRCLE))
+	if _doodad_shape_square != null:
+		_ensure_sel_frame(_doodad_shape_square)
+		_doodad_shape_square.pressed.connect(_on_shape_picked.bind(BrushShape.SQUARE))
 
 
 func _input(event: InputEvent) -> void:
@@ -163,6 +217,9 @@ func _input(event: InputEvent) -> void:
 		or (k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_Z)
 	):
 		edit_redo_requested.emit()
+		set_input_as_handled()
+	elif k.keycode == KEY_ESCAPE or k.physical_keycode == KEY_ESCAPE:
+		escape_pressed.emit()
 		set_input_as_handled()
 
 
@@ -258,6 +315,20 @@ func _emit_cliff_settings() -> void:
 func set_id_catalog(catalog: Wc3IdCatalog) -> void:
 	_id_catalog = catalog
 	if is_node_ready() and _kind == PaletteKind.DOODADS:
+		_rebuild_doodad_tileset_option()
+		_rebuild_doodad_category_option()
+		_rebuild_doodad_list()
+
+
+## 当前地图主地形字母（如 L / I），用于装饰物 tileset 下拉默认值。
+func set_map_tileset(tileset_letter: String) -> void:
+	var letter := tileset_letter.strip_edges().to_upper()
+	if letter.is_empty():
+		letter = "L"
+	_map_tileset = letter
+	if is_node_ready() and _kind == PaletteKind.DOODADS:
+		_rebuild_doodad_tileset_option()
+		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
 
 
@@ -406,8 +477,15 @@ func _apply_locale() -> void:
 	_rebuild_kind_option()
 	_refresh_section_labels()
 	_refresh_brush_labels()
+	if _doodad_random_btn != null:
+		_doodad_random_btn.tooltip_text = EditorI18n.t("EDITOR_DOODAD_RANDOM_VAR")
+	if _doodad_var_prev != null:
+		_doodad_var_prev.tooltip_text = EditorI18n.t("EDITOR_DOODAD_VAR_PREV")
+	if _doodad_var_next != null:
+		_doodad_var_next.tooltip_text = EditorI18n.t("EDITOR_DOODAD_VAR_NEXT")
 	if _kind == PaletteKind.DOODADS:
-		_rebuild_doodad_filter()
+		_rebuild_doodad_tileset_option()
+		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
 	elif _kind == PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t("EDITOR_PALETTE_PLACEHOLDER")
@@ -440,7 +518,8 @@ func _show_kind(kind: int) -> void:
 	if _doodad_page != null:
 		_doodad_page.visible = is_doodads
 	if is_doodads:
-		_rebuild_doodad_filter()
+		_rebuild_doodad_tileset_option()
+		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
 	elif _kind != PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t(
@@ -449,15 +528,68 @@ func _show_kind(kind: int) -> void:
 		)
 
 
-func _rebuild_doodad_filter() -> void:
-	if _doodad_filter == null:
+func _rebuild_doodad_tileset_option() -> void:
+	if _doodad_tileset_option == null:
 		return
-	var prev: int = _doodad_filter.selected if _doodad_filter.item_count > 0 else 0
-	_doodad_filter.clear()
-	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_ALL"), 0)
-	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_DOODADS"), 1)
-	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_DESTRUCTABLES"), 2)
-	_doodad_filter.select(clampi(prev, 0, 2))
+	var prev_id := _selected_doodad_tileset_id()
+	_doodad_tileset_option.clear()
+	var select_i := 0
+	if _we_data != null:
+		for i in range(_we_data.tilesets.size()):
+			var ts: Dictionary = _we_data.tilesets[i]
+			var tid := str(ts.get("id", "")).to_upper()
+			var nk := str(ts.get("name_key", ""))
+			var label := EditorI18n.t(nk) if not nk.is_empty() else tid
+			var idx: int = _doodad_tileset_option.item_count
+			_doodad_tileset_option.add_item(label, idx)
+			_doodad_tileset_option.set_item_metadata(idx, tid)
+			if tid == prev_id or (prev_id.is_empty() and tid == _map_tileset):
+				select_i = idx
+	if prev_id.is_empty() or prev_id == "*":
+		for i in range(_doodad_tileset_option.item_count):
+			if str(_doodad_tileset_option.get_item_metadata(i)) == _map_tileset:
+				select_i = i
+				break
+	if _doodad_tileset_option.item_count > 0:
+		_doodad_tileset_option.select(clampi(select_i, 0, _doodad_tileset_option.item_count - 1))
+
+
+func _rebuild_doodad_category_option() -> void:
+	if _doodad_category_option == null:
+		return
+	var prev := _selected_doodad_category_code()
+	_doodad_category_option.clear()
+	_category_codes = PackedStringArray()
+	var select_i := 0
+	var cats: Array = []
+	if _we_data != null:
+		for c in _we_data.doodad_categories:
+			cats.append(c)
+		for c2 in _we_data.destructible_categories:
+			cats.append(c2)
+	var ts := _selected_doodad_tileset_id()
+	for c3 in cats:
+		var code := str(c3.get("id", "")).to_upper()
+		if code.is_empty():
+			continue
+		# 对齐 WE：当前地形集下无条目的分类不显示
+		if not _doodad_category_has_entries(ts, code):
+			continue
+		var nk := str(c3.get("name_key", ""))
+		var label := EditorI18n.t(nk) if not nk.is_empty() else code
+		var idx: int = _doodad_category_option.item_count
+		_doodad_category_option.add_item(label, idx)
+		_category_codes.append(code)
+		if code == prev:
+			select_i = idx
+	if _doodad_category_option.item_count > 0:
+		_doodad_category_option.select(clampi(select_i, 0, _doodad_category_option.item_count - 1))
+
+
+func _doodad_category_has_entries(tileset_letter: String, category_code: String) -> bool:
+	if _id_catalog == null:
+		return false
+	return not _id_catalog.list_placeables_filtered(tileset_letter, category_code).is_empty()
 
 
 func _rebuild_doodad_list() -> void:
@@ -468,30 +600,78 @@ func _rebuild_doodad_list() -> void:
 	if _id_catalog == null:
 		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))
 		return
-	var _mode: int = _doodad_filter.selected if _doodad_filter != null else 0
-	var include_d: bool = _mode == 0 or _mode == 1
-	var include_x: bool = _mode == 0 or _mode == 2
-	_doodad_entries = _id_catalog.list_placeables(include_d, include_x)
+	var ts := _selected_doodad_tileset_id()
+	var cat := _selected_doodad_category_code()
+	# 同时查装饰物 + 可破坏物（原作 WE 同一面板，无「来源」过滤）
+	_doodad_entries = _id_catalog.list_placeables_filtered(ts, cat, true, true)
 	if _doodad_entries.is_empty():
 		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))
 		return
+	_doodad_entries.sort_custom(_cmp_placeable_entries)
 	var sel := 0
 	for i in range(_doodad_entries.size()):
 		var e: Dictionary = _doodad_entries[i]
 		var id := str(e.get("id", ""))
-		var name_str := str(e.get("name", id))
-		var kind := str(e.get("kind", ""))
-		var label := "%s  [%s]" % [name_str, id]
-		if kind == "destructable":
-			label = "◆ " + label
-		_doodad_list.add_item(label)
+		var display := _placeable_display_name(e)
+		# 对齐 WE：列表只显示本地化名；四字符 ID 放 tooltip
+		_doodad_list.add_item(display)
+		_doodad_list.set_item_tooltip(i, "%s [%s]" % [display, id])
 		if id == _selected_doodad_id:
 			sel = i
 	_doodad_list.select(sel)
 	_on_doodad_list_selected(sel)
 
 
-func _on_doodad_filter(_index: int) -> void:
+## 中文：按经典 WE 中文序；英文：按 SLK comment（英文名）序。
+func _cmp_placeable_entries(a: Dictionary, b: Dictionary) -> bool:
+	var ka := EditorI18n.placeable_sort_index(str(a.get("name_key", "")))
+	var kb := EditorI18n.placeable_sort_index(str(b.get("name_key", "")))
+	if ka >= 0 and kb >= 0 and ka != kb:
+		return ka < kb
+	var na := _placeable_display_name(a)
+	var nb := _placeable_display_name(b)
+	var by_name := na.nocasecmp_to(nb)
+	if by_name != 0:
+		return by_name < 0
+	return str(a.get("id", "")).nocasecmp_to(str(b.get("id", ""))) < 0
+
+
+## SLK Name（WESTRING_DOOD_* / WESTRING_DEST_*）→ 中文；缺省回退 comment。
+func _placeable_display_name(e: Dictionary) -> String:
+	var nk := str(e.get("name_key", ""))
+	if nk.begins_with("WESTRING_"):
+		var loc := EditorI18n.t(nk)
+		if not loc.is_empty() and loc != nk and not loc.begins_with("WESTRING_"):
+			return loc
+	var fallback := str(e.get("name", ""))
+	if not fallback.is_empty():
+		return fallback
+	return str(e.get("id", ""))
+
+
+func _selected_doodad_tileset_id() -> String:
+	if _doodad_tileset_option == null or _doodad_tileset_option.item_count <= 0:
+		return _map_tileset
+	var i: int = _doodad_tileset_option.selected
+	var tid := str(_doodad_tileset_option.get_item_metadata(i))
+	return tid if not tid.is_empty() else _map_tileset
+
+
+func _selected_doodad_category_code() -> String:
+	if _doodad_category_option == null:
+		return ""
+	var i: int = _doodad_category_option.selected
+	if i < 0 or i >= _category_codes.size():
+		return ""
+	return _category_codes[i]
+
+
+func _on_doodad_tileset(_index: int) -> void:
+	_rebuild_doodad_category_option()
+	_rebuild_doodad_list()
+
+
+func _on_doodad_category(_index: int) -> void:
 	_rebuild_doodad_list()
 
 
@@ -501,6 +681,26 @@ func _on_doodad_list_selected(index: int) -> void:
 	var e: Dictionary = _doodad_entries[index]
 	_selected_doodad_id = str(e.get("id", ""))
 	doodad_selected.emit(_selected_doodad_id, e)
+
+
+## Esc 取消放置预览时：去掉列表高亮，不触发 doodad_selected。
+func clear_doodad_selection() -> void:
+	_selected_doodad_id = ""
+	if _doodad_list != null:
+		_doodad_list.deselect_all()
+
+
+func _on_doodad_random_toggled(on: bool) -> void:
+	_doodad_random = on
+	doodad_random_toggled.emit(on)
+
+
+func _on_doodad_var_prev() -> void:
+	doodad_variation_step.emit(-1)
+
+
+func _on_doodad_var_next() -> void:
+	doodad_variation_step.emit(1)
 
 
 func _rebuild_tile_grid() -> void:
@@ -601,17 +801,23 @@ func _refresh_cliff_type_label() -> void:
 
 
 func _refresh_brush_labels() -> void:
-	_size_label.text = EditorI18n.t(
+	var size_text := EditorI18n.t(
 		"EDITOR_NEWMAP_VALUE",
 		[EditorI18n.t("WESTRING_BRUSHSIZE"), str(_brush_size)],
 	)
+	_size_label.text = size_text
+	if _doodad_size_label != null:
+		_doodad_size_label.text = size_text
 	var shape_key := (
 		"WESTRING_BRUSH_CIRCLE" if _brush_shape == BrushShape.CIRCLE else "WESTRING_BRUSH_SQUARE"
 	)
-	_shape_label.text = EditorI18n.t(
+	var shape_text := EditorI18n.t(
 		"EDITOR_NEWMAP_VALUE",
 		[EditorI18n.t("WESTRING_BRUSHSHAPE"), EditorI18n.t(shape_key)],
 	)
+	_shape_label.text = shape_text
+	if _doodad_shape_label != null:
+		_doodad_shape_label.text = shape_text
 
 
 func _apply_size_button_textures() -> void:
@@ -619,7 +825,9 @@ func _apply_size_button_textures() -> void:
 	for i in range(_size_buttons.size()):
 		if i < texs.size() and texs[i] != null:
 			_size_buttons[i].texture_normal = texs[i]
-
+	for i in range(_doodad_size_buttons.size()):
+		if i < texs.size() and texs[i] != null and _doodad_size_buttons[i] != null:
+			_doodad_size_buttons[i].texture_normal = texs[i]
 
 func _highlight_all_tools() -> void:
 	_highlight_tiles()
@@ -662,11 +870,18 @@ func _highlight_cliff_types() -> void:
 func _highlight_size() -> void:
 	for i in range(_size_buttons.size()):
 		_set_button_selected(_size_buttons[i], BRUSH_SIZES[i] == _brush_size)
+	for i in range(_doodad_size_buttons.size()):
+		if _doodad_size_buttons[i] != null:
+			_set_button_selected(_doodad_size_buttons[i], BRUSH_SIZES[i] == _brush_size)
 
 
 func _highlight_shape() -> void:
 	_set_button_selected(_shape_circle, _brush_shape == BrushShape.CIRCLE)
 	_set_button_selected(_shape_square, _brush_shape == BrushShape.SQUARE)
+	if _doodad_shape_circle != null:
+		_set_button_selected(_doodad_shape_circle, _brush_shape == BrushShape.CIRCLE)
+	if _doodad_shape_square != null:
+		_set_button_selected(_doodad_shape_square, _brush_shape == BrushShape.SQUARE)
 
 
 func _on_kind_selected(index: int) -> void:
