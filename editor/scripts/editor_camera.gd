@@ -33,6 +33,14 @@ func get_camera() -> Camera3D:
 	return _camera
 
 
+func get_orbit_distance() -> float:
+	return _distance
+
+
+func get_look_at() -> Vector3:
+	return global_position
+
+
 func focus_map_extent(_map_tiles: Vector2i, _tile_size_godot: float = 1.28) -> void:
 	# 编辑默认近距：约 3 个大栅格，不再按整图拉远
 	_distance = EDIT_DISTANCE_GRIDS * LARGE_GRID_GODOT
@@ -45,8 +53,8 @@ func apply_pan_screen(screen_delta: Vector2) -> void:
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var right: Vector3 = basis_yaw * Vector3.RIGHT
 	var forward: Vector3 = basis_yaw * Vector3(0, 0, -1)
-	var scale: float = maxf(_distance, 4.0) * pan_drag_scale
-	global_position += (-right * screen_delta.x + forward * screen_delta.y) * scale
+	var pan_scale: float = maxf(_distance, 4.0) * pan_drag_scale
+	global_position += (-right * screen_delta.x + forward * screen_delta.y) * pan_scale
 
 
 ## Ctrl+RMB 轨道旋转。

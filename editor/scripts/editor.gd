@@ -391,7 +391,7 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.unfocusable = false
 	win.visible = true
 	win.show()
-	win.move_to_foreground()
+	win.grab_focus()
 	if kind == ToolPaletteWindowScript.PaletteKind.DOODADS:
 		_brush_mode = "doodad"
 		_ensure_inspect_window(true)
@@ -608,7 +608,8 @@ func _refresh_inspect_minimap() -> void:
 	if _inspect_window == null or not is_instance_valid(_inspect_window):
 		return
 	if _doc != null and _doc.heightfield != null and _inspect_window.has_method("refresh_minimap"):
-		_inspect_window.refresh_minimap(_doc.heightfield)
+		var map_dir: String = _doc.map_dir if _doc != null else ""
+		_inspect_window.refresh_minimap(_doc.heightfield, map_dir)
 	_update_inspect_viewport_rect()
 
 
@@ -617,30 +618,58 @@ func _update_inspect_viewport_rect() -> void:
 		return
 	if _doc == null or _doc.heightfield == null or camera_rig == null:
 		return
-	var hf: Wc3Heightfield = _doc.heightfield
-	var map_w: float = float(maxi(hf.width - 1, 1))
-	var map_h: float = float(maxi(hf.height - 1, 1))
-	# 相机在 Godot XZ；地图角点索引约对应世界尺度
-	var pos: Vector3 = camera_rig.global_position
-	var tile_g := 128.0 * Wc3Coords.WORLD_SCALE
-	var cx: float = (pos.x / tile_g) / map_w
-	var cy: float = 1.0 - ((-pos.z / tile_g) / map_h)
-	var half := 0.08
-	var rect := Rect2(cx - half, cy - half, half * 2.0, half * 2.0)
-	if _inspect_window.has_method("set_viewport_uv"):
-		_inspect_window.set_viewport_uv(rect)
+	var quad: PackedVector2Array = _compute_camera_minimap_uv_quad()
+	if _inspect_window.has_method("set_viewport_uv_quad"):
+		_inspect_window.set_viewport_uv_quad(quad)
+	elif _inspect_window.has_method("set_viewport_uv"):
+		_inspect_window.set_viewport_uv(_compute_camera_minimap_uv_rect())
+
+
+## 世界坐标 → 小地图 UV（委托给 MapMinimapUtils）。
+func _world_to_minimap_uv(world: Vector3) -> Vector2:
+	if _doc == null or _doc.heightfield == null:
+		return Vector2.ZERO
+	return MapMinimapUtils.world_to_minimap_uv(world, _doc.heightfield)
+
+
+## 小地图 UV → 轨道观察点世界坐标（委托给 MapMinimapUtils）。
+func _minimap_uv_to_world(uv: Vector2) -> Vector3:
+	if _doc == null or _doc.heightfield == null:
+		return Vector3.ZERO
+	var world_y: float = camera_rig.global_position.y if camera_rig != null else 0.0
+	return MapMinimapUtils.minimap_uv_to_world(uv, _doc.heightfield, world_y)
+
+
+## 将主相机视锥投影到地面，得到与真实视野一致的小地图框。
+func _compute_camera_minimap_uv_rect() -> Rect2:
+	if camera_rig == null or _doc == null or _doc.heightfield == null:
+		return Rect2()
+	var cam: Camera3D = _get_editor_camera()
+	if cam == null:
+		return Rect2()
+	return MapMinimapUtils.compute_camera_minimap_uv_rect(cam, camera_rig, _doc.heightfield)
+
+
+## 视锥四角 → 小地图 UV 梯形（可出图外）。
+func _compute_camera_minimap_uv_quad() -> PackedVector2Array:
+	if camera_rig == null or _doc == null or _doc.heightfield == null:
+		return PackedVector2Array()
+	var cam: Camera3D = _get_editor_camera()
+	if cam == null:
+		return PackedVector2Array()
+	return MapMinimapUtils.compute_camera_minimap_uv_quad(cam, camera_rig, _doc.heightfield)
+
+
+func _get_editor_camera() -> Camera3D:
+	if camera_rig != null and camera_rig.has_method("get_camera"):
+		return camera_rig.get_camera()
+	return null
 
 
 func _on_minimap_clicked(norm_uv: Vector2) -> void:
 	if camera_rig == null or _doc == null or _doc.heightfield == null:
 		return
-	var hf: Wc3Heightfield = _doc.heightfield
-	var map_w: float = float(maxi(hf.width - 1, 1))
-	var map_h: float = float(maxi(hf.height - 1, 1))
-	var tile_g := 128.0 * Wc3Coords.WORLD_SCALE
-	var ix: float = norm_uv.x * map_w
-	var iy: float = (1.0 - norm_uv.y) * map_h
-	camera_rig.global_position = Vector3(ix * tile_g, camera_rig.global_position.y, -iy * tile_g)
+	camera_rig.global_position = _minimap_uv_to_world(norm_uv)
 	_update_inspect_viewport_rect()
 
 

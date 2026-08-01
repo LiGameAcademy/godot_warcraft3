@@ -662,9 +662,9 @@ static func plan_diagonal_dig_mask(hf: Wc3Heightfield) -> PackedByteArray:
 			var bl := int(layers[i_bl])
 			var br := int(layers[i_br])
 			var tl := int(layers[i_tl])
-			var tr := int(layers[i_tr])
+			var _tr := int(layers[i_tr])
 			## BL == TR（对角等高）但 TL != BR（另一对角不等）→ 对角 ramp
-			if bl == tr and tl != br:
+			if bl == _tr and tl != br:
 				out[ty * map_w + tx] = 1
 	return out
 

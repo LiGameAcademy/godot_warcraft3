@@ -13,6 +13,8 @@ import { parseDoodadsDoo } from "./parsers/doo-doodads.js";
 import { parseUnitsDoo } from "./parsers/doo-units.js";
 import { parseW3r } from "./parsers/w3r.js";
 import { parseW3c } from "./parsers/w3c.js";
+import { parseMmp } from "./parsers/mmp.js";
+import { blpBufferToPng } from "../../asset-convert/src/convert-blp.js";
 
 /**
  * @param {string} name
@@ -196,6 +198,34 @@ export function parseMap(mapPath, opts) {
       errors.cameras = String(e);
     }
 
+    /** @type {{count:number}|null} */
+    let minimap = null;
+    try {
+      if (findArchiveName("war3map.mmp", archiveNames)) {
+        minimap = parseMmp(readFile(archive, "war3map.mmp", archiveNames));
+        writeJson(path.join(outDir, "minimap.json"), minimap);
+      }
+    } catch (e) {
+      errors.minimap = String(e);
+    }
+
+    try {
+      // 官方预烘焙小地图：优先 BLP，其次 TGA
+      const mapBlp = findArchiveName("war3mapMap.blp", archiveNames);
+      const mapTga = findArchiveName("war3mapMap.tga", archiveNames);
+      if (mapBlp) {
+        const png = blpBufferToPng(extractToBuffer(archive, mapBlp));
+        fs.writeFileSync(path.join(outDir, "war3mapMap.png"), png);
+      } else if (mapTga) {
+        fs.writeFileSync(
+          path.join(outDir, "war3mapMap.tga"),
+          extractToBuffer(archive, mapTga),
+        );
+      }
+    } catch (e) {
+      errors.war3mapMap = String(e);
+    }
+
     const summary = {
       version: 1,
       parsedAt: new Date().toISOString(),
@@ -260,6 +290,12 @@ export function parseMap(mapPath, opts) {
         : null,
       regions: regions ? { count: regions.count } : null,
       cameras: cameras ? { count: cameras.count } : null,
+      minimap: minimap ? { count: minimap.count } : null,
+      war3mapMap: fs.existsSync(path.join(outDir, "war3mapMap.png"))
+        ? "war3mapMap.png"
+        : fs.existsSync(path.join(outDir, "war3mapMap.tga"))
+          ? "war3mapMap.tga"
+          : null,
       strings: { count: Object.keys(strings).length },
       errors: Object.keys(errors).length ? errors : undefined,
     };

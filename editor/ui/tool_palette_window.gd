@@ -468,9 +468,9 @@ func _rebuild_doodad_list() -> void:
 	if _id_catalog == null:
 		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))
 		return
-	var mode: int = _doodad_filter.selected if _doodad_filter != null else 0
-	var include_d: bool = mode == 0 or mode == 1
-	var include_x: bool = mode == 0 or mode == 2
+	var _mode: int = _doodad_filter.selected if _doodad_filter != null else 0
+	var include_d: bool = _mode == 0 or _mode == 1
+	var include_x: bool = _mode == 0 or _mode == 2
 	_doodad_entries = _id_catalog.list_placeables(include_d, include_x)
 	if _doodad_entries.is_empty():
 		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))

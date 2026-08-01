@@ -11,7 +11,7 @@
 
 ## 当前焦点（看 [TODO.md](TODO.md) 顶部）
 
-按 TODO.md 最后更新（2026-07-28），焦点：**斜坡脏区 / tag + 水体**。
+按 TODO.md 最后更新（2026-08-01），焦点：**小地图实时光栅（自定义图）+ 视口校准**。
 
 - ✅ 悬崖 M0–M2 完成（tag `milestone/cliff-layered`）
 - ✅ 斜坡 Logic + Present 核心（入口低角 +0.5、undig 入口、romp dig、hide 直崖）
