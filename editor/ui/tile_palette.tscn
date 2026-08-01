@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3]
 
-[ext_resource type="Script" path="res://editor/scripts/ui/tile_palette.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://cp3dvpkghlju3" path="res://editor/ui/tile_palette.gd" id="1_script"]
 
 [node name="TilePalette" type="VBoxContainer"]
 script = ExtResource("1_script")

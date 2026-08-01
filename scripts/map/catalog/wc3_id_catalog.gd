@@ -23,6 +23,30 @@ func lookup(type_id: String) -> Dictionary:
 	return {"id": type_id, "name": type_id, "file": "", "kind": "unknown", "num_var": 1}
 
 
+## 可放置物列表（装饰物 + 可破坏物），按显示名排序。
+## 每项为 lookup() 同形 Dictionary。
+func list_placeables(include_doodads: bool = true, include_destructables: bool = true) -> Array:
+	var out: Array = []
+	if include_doodads:
+		for id in _doodads.keys():
+			out.append(_doodads[id])
+	if include_destructables:
+		for id in _destructables.keys():
+			out.append(_destructables[id])
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("name", "")).nocasecmp_to(str(b.get("name", ""))) < 0
+	)
+	return out
+
+
+func doodad_count() -> int:
+	return _doodads.size()
+
+
+func destructable_count() -> int:
+	return _destructables.size()
+
+
 func model_base_path(type_id: String) -> String:
 	var info: Dictionary = lookup(type_id)
 	var file := str(info.get("file", "")).replace("\\", "/")

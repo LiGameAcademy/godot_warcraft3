@@ -6,9 +6,10 @@ extends Node
 
 
 const MapDocumentScript := preload("res://editor/scripts/map_document.gd")
-const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
-const ToolPaletteScene := preload("res://editor/scripts/ui/tool_palette_window.tscn")
-const ToolPaletteWindowScript := preload("res://editor/scripts/ui/tool_palette_window.gd")
+const DataScript := preload("res://editor/ui/world_edit_data.gd")
+const ToolPaletteScene := preload("res://editor/ui/tool_palette_window.tscn")
+const ToolPaletteWindowScript := preload("res://editor/ui/tool_palette_window.gd")
+const InspectWindowScene := preload("res://editor/ui/editor_inspect_window.tscn")
 
 @export var map_root: MapLoader
 @export var camera_rig: Node3D
@@ -18,6 +19,7 @@ const ToolPaletteWindowScript := preload("res://editor/scripts/ui/tool_palette_w
 @export var menu: Node
 @export var toolbar: Node
 @export var palette: Node
+@export var status_bar: Node
 @export var status_label: Label
 @export var hover_label: Label
 
@@ -40,6 +42,14 @@ var _apply_texture: bool = true
 var _apply_cliff: bool = false ## 地面阶段默认关：避免崖 sync 干扰地表笔刷；面板可再打开
 var _cliff_tool_id: String = "2"
 var _cliff_type_index: int = 0
+var _inspect_window: Window
+var _brush_mode: String = "terrain" ## terrain | doodad
+var _brush_doodad_id: String = ""
+var _brush_doodad_name: String = ""
+var _brush_doodad_variation: int = 0
+var _brush_doodad_angle: float = 270.0
+var _brush_doodad_scale: float = 1.0
+var _brush_doodad_random: bool = true
 
 
 func _ready() -> void:
@@ -89,9 +99,12 @@ func _ready() -> void:
 	if menu != null and menu.has_method("set_ramp_debug_checked") and map_root != null:
 		menu.set_ramp_debug_checked(map_root.get_show_ramp_debug())
 	_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.TERRAIN)
+	_ensure_inspect_window()
 	if not _history.changed.is_connected(_refresh_undo_redo_menu):
 		_history.changed.connect(_refresh_undo_redo_menu)
 	_refresh_undo_redo_menu()
+	_refresh_hud_brush()
+	_refresh_hud_props()
 
 
 func get_history() -> EditorCommandHistory:
@@ -120,10 +133,12 @@ func _resolve_exports() -> void:
 		toolbar = get_node_or_null("../UI/ToolStrip/Toolbar")
 	if palette == null:
 		palette = get_node_or_null("../UI/SideBar/TilePalette")
+	if status_bar == null:
+		status_bar = get_node_or_null("../UI/StatusBar")
 	if status_label == null:
-		status_label = get_node_or_null("../UI/StatusBar/Status") as Label
+		status_label = get_node_or_null("../UI/StatusBar/Margin/Row/StatusChip/StatusValue") as Label
 	if hover_label == null:
-		hover_label = get_node_or_null("../UI/StatusBar/Hover") as Label
+		hover_label = get_node_or_null("../UI/StatusBar/Margin/Row/CoordsChip/CoordsValue") as Label
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -198,17 +213,24 @@ func _default_new_map_options() -> Dictionary:
 
 func _on_locale_changed(_loc: String) -> void:
 	_apply_chrome_locale()
-	_refresh_brush_label()
+	_refresh_hud_brush()
+	_refresh_hud_props()
 	_set_status_key(_status_key, _status_args)
 
 
 func _apply_chrome_locale() -> void:
-	if hover_label == null:
-		return
-	if _hover_tile.x < 0:
-		hover_label.text = EditorI18n.t("EDITOR_HOVER_CELL_EMPTY")
-	else:
-		hover_label.text = EditorI18n.t("EDITOR_HOVER_CELL", [_hover_tile.x, _hover_tile.y])
+	var coords := EditorI18n.t("EDITOR_HOVER_CELL_EMPTY")
+	if _hover_tile.x >= 0:
+		coords = EditorI18n.t("EDITOR_HOVER_CELL", [_hover_tile.x, _hover_tile.y])
+	if status_bar != null and status_bar.has_method("set_coords_text"):
+		status_bar.set_coords_text(coords)
+	elif hover_label != null:
+		hover_label.text = coords
+
+
+func _process(_delta: float) -> void:
+	if _inspect_window != null and is_instance_valid(_inspect_window) and _inspect_window.visible:
+		_update_inspect_viewport_rect()
 
 
 func _on_menu_action(action_id: StringName) -> void:
@@ -254,6 +276,8 @@ func _on_menu_action(action_id: StringName) -> void:
 			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.CAMERAS)
 		"window_show_palettes":
 			_toggle_tool_palettes_visible()
+		"window_minimap", "window_previewer":
+			_ensure_inspect_window(true)
 		"lang_zh_CN":
 			EditorI18n.set_locale("zh_CN")
 			_set_status_key("EDITOR_STATUS_IDLE")
@@ -261,7 +285,15 @@ func _on_menu_action(action_id: StringName) -> void:
 			EditorI18n.set_locale("en")
 			_set_status_key("EDITOR_STATUS_IDLE")
 		"layer_terrain", "tools_sel_brush", "module_terrain":
+			_brush_mode = "terrain"
+			_refresh_hud_brush()
 			_set_status_key("EDITOR_STATUS_TERRAIN_BRUSH")
+		"layer_doodads", "module_doodads":
+			_brush_mode = "doodad"
+			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.DOODADS)
+			_ensure_inspect_window(true)
+			_refresh_hud_brush()
+			_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
 		"help_about":
 			_set_status_key("EDITOR_STATUS_ABOUT", [EditorI18n.t("WESTRING_APPNAME")])
 		_:
@@ -338,6 +370,8 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.brush_settings_changed.connect(_on_brush_settings_changed)
 	win.apply_texture_changed.connect(_on_apply_texture_changed)
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
+	if win.has_signal("doodad_selected"):
+		win.doodad_selected.connect(_on_doodad_selected)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	if win.has_signal("edit_undo_requested"):
@@ -345,6 +379,7 @@ func _spawn_tool_palette(kind: int) -> void:
 	if win.has_signal("edit_redo_requested"):
 		win.edit_redo_requested.connect(_redo)
 	_tool_palettes.append(win)
+	win.set_id_catalog(map_root.get_id_catalog())
 	win.rebuild_terrain(_doc, map_root.get_tiles(), map_root.get_cliff_catalog())
 	_palettes_visible = true
 	if menu != null and menu.has_method("set_show_palettes_checked"):
@@ -364,6 +399,10 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.visible = true
 	win.show()
 	win.move_to_foreground()
+	if kind == ToolPaletteWindowScript.PaletteKind.DOODADS:
+		_brush_mode = "doodad"
+		_ensure_inspect_window(true)
+		_refresh_hud_brush()
 
 
 func _on_brush_settings_changed(size: int, shape: int) -> void:
@@ -418,8 +457,11 @@ func _on_tool_palette_exiting(win) -> void:
 func _refresh_all_tool_palettes() -> void:
 	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles()
 	var cliffs_cat: Wc3CliffCatalog = map_root.get_cliff_catalog()
+	var ids: Wc3IdCatalog = map_root.get_id_catalog()
 	for win in _tool_palettes:
 		if is_instance_valid(win):
+			if win.has_method("set_id_catalog"):
+				win.set_id_catalog(ids)
 			win.rebuild_terrain(_doc, tiles, cliffs_cat)
 
 
@@ -493,17 +535,44 @@ func _on_save() -> void:
 
 
 func _on_tile_selected(index: int) -> void:
+	_brush_mode = "terrain"
 	_doc.brush_tile_index = index
 	_refresh_brush_label()
+	_refresh_hud_brush()
+	_refresh_hud_props()
 	if palette != null and palette.has_method("rebuild"):
 		palette.rebuild(_doc, map_root.get_tiles())
 	_refresh_all_tool_palettes()
 
 
+func _on_doodad_selected(type_id: String, info: Dictionary) -> void:
+	_brush_mode = "doodad"
+	_brush_doodad_id = type_id
+	_brush_doodad_name = str(info.get("name", type_id))
+	_brush_doodad_variation = 0
+	_ensure_inspect_window(true)
+	if _inspect_window != null and _inspect_window.has_method("show_doodad"):
+		_inspect_window.show_doodad(type_id, _brush_doodad_variation)
+	_refresh_hud_brush()
+	_refresh_hud_props()
+	_set_status_key("EDITOR_STATUS_DOODAD_SELECTED", [_brush_doodad_name, type_id])
+
+
+func _on_preview_params_changed(variation: int, angle_deg: float, scale: float, random_var: bool) -> void:
+	_brush_doodad_variation = variation
+	_brush_doodad_angle = angle_deg
+	_brush_doodad_scale = scale
+	_brush_doodad_random = random_var
+	_refresh_hud_props()
+
+
 func _on_tile_hovered(tile: Vector2i) -> void:
 	_hover_tile = tile
-	if hover_label != null:
-		hover_label.text = EditorI18n.t("EDITOR_HOVER_CELL", [tile.x, tile.y])
+	var coords := EditorI18n.t("EDITOR_HOVER_CELL", [tile.x, tile.y])
+	if status_bar != null and status_bar.has_method("set_coords_text"):
+		status_bar.set_coords_text(coords)
+	elif hover_label != null:
+		hover_label.text = coords
 
 
 func _on_ramp_feedback(message: String) -> void:
@@ -515,6 +584,98 @@ func _on_ramp_feedback(message: String) -> void:
 func _on_dirty_changed(dirty: bool) -> void:
 	if toolbar != null and toolbar.has_method("set_dirty"):
 		toolbar.set_dirty(dirty)
+
+
+func _ensure_inspect_window(focus: bool = false) -> void:
+	if _inspect_window == null or not is_instance_valid(_inspect_window):
+		_inspect_window = InspectWindowScene.instantiate()
+		add_child(_inspect_window)
+		_inspect_window.setup(map_root.get_id_catalog(), map_root.get_model_cache())
+		_inspect_window.minimap_clicked.connect(_on_minimap_clicked)
+		_inspect_window.preview_params_changed.connect(_on_preview_params_changed)
+		_inspect_window.closed_by_user.connect(func() -> void: pass)
+		var main_win := get_viewport().get_window()
+		_inspect_window.transient = false
+		_inspect_window.always_on_top = true
+		if main_win != null:
+			# 默认靠主窗右侧，与左侧工具面板对置
+			_inspect_window.position = main_win.position + Vector2i(maxi(main_win.size.x - 320, 40), 72)
+		else:
+			_inspect_window.position = Vector2i(960, 72)
+	_refresh_inspect_minimap()
+	if not _brush_doodad_id.is_empty() and _inspect_window.has_method("show_doodad"):
+		_inspect_window.show_doodad(_brush_doodad_id, _brush_doodad_variation)
+	_inspect_window.visible = true
+	_inspect_window.show()
+	if focus:
+		_inspect_window.move_to_foreground()
+
+
+func _refresh_inspect_minimap() -> void:
+	if _inspect_window == null or not is_instance_valid(_inspect_window):
+		return
+	if _doc != null and _doc.heightfield != null and _inspect_window.has_method("refresh_minimap"):
+		_inspect_window.refresh_minimap(_doc.heightfield)
+	_update_inspect_viewport_rect()
+
+
+func _update_inspect_viewport_rect() -> void:
+	if _inspect_window == null or not is_instance_valid(_inspect_window):
+		return
+	if _doc == null or _doc.heightfield == null or camera_rig == null:
+		return
+	var hf: Wc3Heightfield = _doc.heightfield
+	var map_w: float = float(maxi(hf.width - 1, 1))
+	var map_h: float = float(maxi(hf.height - 1, 1))
+	# 相机在 Godot XZ；地图角点索引约对应世界尺度
+	var pos: Vector3 = camera_rig.global_position
+	var tile_g := 128.0 * Wc3Coords.WORLD_SCALE
+	var cx: float = (pos.x / tile_g) / map_w
+	var cy: float = 1.0 - ((-pos.z / tile_g) / map_h)
+	var half := 0.08
+	var rect := Rect2(cx - half, cy - half, half * 2.0, half * 2.0)
+	if _inspect_window.has_method("set_viewport_uv"):
+		_inspect_window.set_viewport_uv(rect)
+
+
+func _on_minimap_clicked(norm_uv: Vector2) -> void:
+	if camera_rig == null or _doc == null or _doc.heightfield == null:
+		return
+	var hf: Wc3Heightfield = _doc.heightfield
+	var map_w: float = float(maxi(hf.width - 1, 1))
+	var map_h: float = float(maxi(hf.height - 1, 1))
+	var tile_g := 128.0 * Wc3Coords.WORLD_SCALE
+	var ix: float = norm_uv.x * map_w
+	var iy: float = (1.0 - norm_uv.y) * map_h
+	camera_rig.global_position = Vector3(ix * tile_g, camera_rig.global_position.y, -iy * tile_g)
+	_update_inspect_viewport_rect()
+
+
+func _refresh_hud_brush() -> void:
+	var text := ""
+	if _brush_mode == "doodad" and not _brush_doodad_id.is_empty():
+		text = EditorI18n.t("EDITOR_HUD_BRUSH_DOODAD", [_brush_doodad_name, _brush_doodad_id])
+	else:
+		var tid: String = str(_doc.brush_tile_id()) if _doc != null else ""
+		var label: String = EditorI18n.tile_display_name(map_root.get_tiles(), tid) if map_root != null else tid
+		if label.is_empty():
+			label = tid if not tid.is_empty() else "—"
+		text = EditorI18n.t("EDITOR_HUD_BRUSH_TERRAIN", [label])
+	if status_bar != null and status_bar.has_method("set_brush_text"):
+		status_bar.set_brush_text(text)
+	if toolbar != null and toolbar.has_method("set_brush_text"):
+		toolbar.set_brush_text(_brush_doodad_name if _brush_mode == "doodad" else text)
+
+
+func _refresh_hud_props() -> void:
+	var text := "—"
+	if _brush_mode == "doodad" and not _brush_doodad_id.is_empty():
+		text = EditorI18n.t(
+			"EDITOR_HUD_PROPS_DOODAD",
+			[_brush_doodad_variation, int(_brush_doodad_angle), _brush_doodad_scale]
+		)
+	if status_bar != null and status_bar.has_method("set_props_text"):
+		status_bar.set_props_text(text)
 
 
 func _on_brush_rebuild() -> void:
@@ -568,16 +729,13 @@ func _apply_document(full_reload: bool) -> void:
 		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
 	if camera_rig != null and camera_rig.has_method("focus_map_extent"):
 		camera_rig.focus_map_extent(_doc.map_size())
+	_refresh_inspect_minimap()
+	_refresh_hud_brush()
+	_refresh_hud_props()
 
 
 func _refresh_brush_label() -> void:
-	if toolbar == null or not toolbar.has_method("set_brush_text"):
-		return
-	var tid: String = str(_doc.brush_tile_id())
-	var label: String = EditorI18n.tile_display_name(map_root.get_tiles(), tid)
-	if label.is_empty():
-		label = tid
-	toolbar.set_brush_text(label)
+	_refresh_hud_brush()
 
 
 func _set_status_key(key: String, args: Array = []) -> void:
@@ -587,6 +745,8 @@ func _set_status_key(key: String, args: Array = []) -> void:
 
 
 func _set_status(text: String) -> void:
-	if status_label != null:
+	if status_bar != null and status_bar.has_method("set_status_text"):
+		status_bar.set_status_text(text)
+	elif status_label != null:
 		status_label.text = text
 	print("Editor: %s" % text)

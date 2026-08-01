@@ -1,13 +1,20 @@
-[gd_resource type="ShaderMaterial" format=3]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dtb7nqhdcyygs"]
 
 [ext_resource type="Shader" uid="uid://q67h4njfuwwp" path="res://assets/shaders/wc3_ground.gdshader" id="1_shader"]
 
 [resource]
 resource_name = "Wc3Ground"
+render_priority = 0
 shader = ExtResource("1_shader")
-shader_parameter/roughness_value = 0.92
-shader_parameter/albedo_scale = 1.0
-shader_parameter/world_scale = 0.01
 shader_parameter/dbg_grid_tile = false
 shader_parameter/dbg_grid_path = false
 shader_parameter/dbg_grid_fine = false
+shader_parameter/dbg_tile_size = 128.0
+shader_parameter/dbg_center_offset = Vector2(0, 0)
+shader_parameter/dbg_line_px = 1.2
+shader_parameter/dbg_color_tile = Vector4(1, 0.92, 0.12, 0.98)
+shader_parameter/dbg_color_path = Vector4(0.95, 0.95, 0.98, 0.78)
+shader_parameter/dbg_color_fine = Vector4(0.62, 0.62, 0.65, 0.5)
+shader_parameter/roughness_value = 0.92
+shader_parameter/albedo_scale = 1.0
+shader_parameter/world_scale = 0.01

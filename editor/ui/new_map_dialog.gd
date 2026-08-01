@@ -5,7 +5,7 @@ extends Window
 
 signal confirmed(options: Dictionary)
 
-const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
+const DataScript := preload("res://editor/ui/world_edit_data.gd")
 const TILE_ICON := 48
 ## WC3 地表 BLP 图集：8 列 × 4 行，预览取左上角第 1 格。
 const TILE_ATLAS_COLS := 8

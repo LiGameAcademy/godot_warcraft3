@@ -1,102 +1,200 @@
-[gd_scene load_steps=12 format=3 uid="uid://bgpdr7ovrx422"]
+[gd_scene format=3 uid="uid://bgpdr7ovrx422"]
 
-[ext_resource type="Script" path="res://editor/scripts/editor_shell.gd" id="1_shell"]
-[ext_resource type="Script" path="res://editor/scripts/editor.gd" id="1b_editor"]
+[ext_resource type="Script" uid="uid://cmcse56y5iy4" path="res://editor/scripts/editor.gd" id="1b_editor"]
+[ext_resource type="Script" uid="uid://bt835wxh3srsy" path="res://editor/scripts/editor_shell.gd" id="1_shell"]
 [ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="2_map"]
-[ext_resource type="Script" path="res://editor/scripts/editor_camera.gd" id="3_cam"]
-[ext_resource type="PackedScene" path="res://editor/scripts/ui/toolbar.tscn" id="4_toolbar"]
-[ext_resource type="PackedScene" path="res://editor/scripts/ui/tile_palette.tscn" id="5_palette"]
-[ext_resource type="PackedScene" path="res://editor/scripts/ui/menu_bar.tscn" id="6_menu"]
+[ext_resource type="Script" uid="uid://dxgdjm83uo0l2" path="res://editor/scripts/editor_camera.gd" id="3_cam"]
+[ext_resource type="PackedScene" path="res://editor/ui/toolbar.tscn" id="4_toolbar"]
+[ext_resource type="PackedScene" path="res://editor/ui/tile_palette.tscn" id="5_palette"]
+[ext_resource type="PackedScene" path="res://editor/ui/menu_bar.tscn" id="6_menu"]
 [ext_resource type="Environment" path="res://editor/resources/editor_environment.tres" id="7_env"]
-[ext_resource type="PackedScene" path="res://editor/scripts/ui/new_map_dialog.tscn" id="8_newmap"]
-[ext_resource type="PackedScene" path="res://editor/scripts/ui/open_map_dialog.tscn" id="8b_openmap"]
-[ext_resource type="Script" path="res://editor/scripts/tools/terrain_brush.gd" id="9_brush"]
+[ext_resource type="PackedScene" uid="uid://3yrhgljwb6r5" path="res://editor/ui/open_map_dialog.tscn" id="8b_openmap"]
+[ext_resource type="PackedScene" uid="uid://dphccp4bf1ij5" path="res://editor/ui/new_map_dialog.tscn" id="8_newmap"]
+[ext_resource type="Script" uid="uid://8oswoni0b7wf" path="res://editor/scripts/tools/terrain_brush.gd" id="9_brush"]
+[ext_resource type="Script" uid="uid://chx7so6rggsnj" path="res://editor/ui/editor_status_bar.gd" id="10_statusbar"]
 
-[node name="EditorMain" type="Node3D"]
+[node name="EditorMain" type="Node3D" unique_id=112749149]
 script = ExtResource("1_shell")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1613313878]
 environment = ExtResource("7_env")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1896899719]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
 light_energy = 1.1
 
-[node name="MapRoot" parent="." instance=ExtResource("2_map")]
+[node name="MapRoot" parent="." unique_id=1366656073 instance=ExtResource("2_map")]
 place_doodads = false
 status_path = NodePath("")
 auto_load_on_ready = false
 build_terrain_collision = true
 show_pathing_debug_grid = false
 
-[node name="EditorCamera" type="Node3D" parent="."]
+[node name="EditorCamera" type="Node3D" parent="." unique_id=1904143169]
 script = ExtResource("3_cam")
 
-[node name="Pivot" type="Node3D" parent="EditorCamera"]
+[node name="Pivot" type="Node3D" parent="EditorCamera" unique_id=653066054]
 
-[node name="Camera3D" type="Camera3D" parent="EditorCamera/Pivot"]
+[node name="Camera3D" type="Camera3D" parent="EditorCamera/Pivot" unique_id=580724767]
 current = true
 
-[node name="TerrainBrush" type="Node3D" parent="."]
+[node name="TerrainBrush" type="Node3D" parent="." unique_id=1905798659]
 script = ExtResource("9_brush")
 
-[node name="NewMapDialog" parent="." instance=ExtResource("8_newmap")]
+[node name="NewMapDialog" parent="." unique_id=471861079 instance=ExtResource("8_newmap")]
 
-[node name="OpenMapDialog" parent="." instance=ExtResource("8b_openmap")]
+[node name="OpenMapDialog" parent="." unique_id=134833771 instance=ExtResource("8b_openmap")]
+oversampling_override = 1.0
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=250575434]
 
-[node name="MenuBarPanel" type="PanelContainer" parent="UI"]
+[node name="MenuBarPanel" type="PanelContainer" parent="UI" unique_id=1319523218]
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 28.0
 grow_horizontal = 2
 
-[node name="MenuBar" parent="UI/MenuBarPanel" instance=ExtResource("6_menu")]
+[node name="MenuBar" parent="UI/MenuBarPanel" unique_id=473949524 instance=ExtResource("6_menu")]
 layout_mode = 2
 
-[node name="ToolStrip" type="PanelContainer" parent="UI"]
+[node name="ToolStrip" type="PanelContainer" parent="UI" unique_id=1104895724]
 anchors_preset = 10
 anchor_right = 1.0
 offset_top = 28.0
 offset_bottom = 56.0
 grow_horizontal = 2
 
-[node name="Toolbar" parent="UI/ToolStrip" instance=ExtResource("4_toolbar")]
+[node name="Toolbar" parent="UI/ToolStrip" unique_id=1207389155 instance=ExtResource("4_toolbar")]
 layout_mode = 2
 
-[node name="SideBar" type="PanelContainer" parent="UI"]
+[node name="SideBar" type="PanelContainer" parent="UI" unique_id=85933056]
 visible = false
 anchors_preset = 9
 anchor_bottom = 1.0
 offset_top = 60.0
 offset_right = 177.0
-offset_bottom = -28.0
+offset_bottom = -48.0
 grow_vertical = 2
 
-[node name="TilePalette" parent="UI/SideBar" instance=ExtResource("5_palette")]
+[node name="TilePalette" parent="UI/SideBar" unique_id=2015452970 instance=ExtResource("5_palette")]
 layout_mode = 2
 
-[node name="StatusBar" type="HBoxContainer" parent="UI"]
+[node name="StatusBar" type="PanelContainer" parent="UI" unique_id=1144999797]
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -24.0
+offset_top = -44.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_constants/separation = 16
+script = ExtResource("10_statusbar")
 
-[node name="Status" type="Label" parent="UI/StatusBar"]
+[node name="Margin" type="MarginContainer" parent="UI/StatusBar" unique_id=495403065]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 2
+
+[node name="Row" type="HBoxContainer" parent="UI/StatusBar/Margin" unique_id=833520446]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Accent" type="ColorRect" parent="UI/StatusBar/Margin/Row" unique_id=1608417432]
+custom_minimum_size = Vector2(3, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(0.95, 0.72, 0.28, 0.9)
+
+[node name="StatusChip" type="VBoxContainer" parent="UI/StatusBar/Margin/Row" unique_id=599980484]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "EDITOR_STATUS_IDLE"
+theme_override_constants/separation = 0
 
-[node name="Hover" type="Label" parent="UI/StatusBar"]
+[node name="StatusCaption" type="Label" parent="UI/StatusBar/Margin/Row/StatusChip" unique_id=1114332780]
+unique_name_in_owner = true
 layout_mode = 2
-text = "EDITOR_HOVER_CELL_EMPTY"
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_STATUS"
 
-[node name="Editor" type="Node" parent="."]
+[node name="StatusValue" type="Label" parent="UI/StatusBar/Margin/Row/StatusChip" unique_id=1573017075]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.94, 0.96, 1)
+text = "EDITOR_STATUS_IDLE"
+text_overrun_behavior = 3
+
+[node name="Sep1" type="ColorRect" parent="UI/StatusBar/Margin/Row" unique_id=954666348]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="CoordsChip" type="VBoxContainer" parent="UI/StatusBar/Margin/Row" unique_id=334194427]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="CoordsCaption" type="Label" parent="UI/StatusBar/Margin/Row/CoordsChip" unique_id=717122389]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_COORDS"
+
+[node name="CoordsValue" type="Label" parent="UI/StatusBar/Margin/Row/CoordsChip" unique_id=1486751789]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.9, 1, 1)
+text = "—"
+
+[node name="Sep2" type="ColorRect" parent="UI/StatusBar/Margin/Row" unique_id=1279161620]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="BrushChip" type="VBoxContainer" parent="UI/StatusBar/Margin/Row" unique_id=1403578101]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="BrushCaption" type="Label" parent="UI/StatusBar/Margin/Row/BrushChip" unique_id=1406814463]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_BRUSH"
+
+[node name="BrushValue" type="Label" parent="UI/StatusBar/Margin/Row/BrushChip" unique_id=926160475]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.86, 0.55, 1)
+text = "—"
+
+[node name="Sep3" type="ColorRect" parent="UI/StatusBar/Margin/Row" unique_id=1296455430]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="PropsChip" type="VBoxContainer" parent="UI/StatusBar/Margin/Row" unique_id=1362410251]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="PropsCaption" type="Label" parent="UI/StatusBar/Margin/Row/PropsChip" unique_id=1451677411]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_PROPS"
+
+[node name="PropsValue" type="Label" parent="UI/StatusBar/Margin/Row/PropsChip" unique_id=1511577742]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.95, 0.78, 1)
+text = "—"
+
+[node name="Editor" type="Node" parent="." unique_id=1811291115]
 script = ExtResource("1b_editor")
 map_root = NodePath("../MapRoot")
 camera_rig = NodePath("../EditorCamera")
@@ -106,5 +204,6 @@ open_map_dialog = NodePath("../OpenMapDialog")
 menu = NodePath("../UI/MenuBarPanel/MenuBar")
 toolbar = NodePath("../UI/ToolStrip/Toolbar")
 palette = NodePath("../UI/SideBar/TilePalette")
-status_label = NodePath("../UI/StatusBar/Status")
-hover_label = NodePath("../UI/StatusBar/Hover")
+status_bar = NodePath("../UI/StatusBar")
+status_label = NodePath("../UI/StatusBar/Margin/Row/StatusChip/StatusValue")
+hover_label = NodePath("../UI/StatusBar/Margin/Row/CoordsChip/CoordsValue")

@@ -1,0 +1,177 @@
+[gd_scene format=3 uid="uid://401plk4ubrk7"]
+
+[ext_resource type="Script" uid="uid://couwjej62bclh" path="res://editor/ui/editor_inspect_window.gd" id="1_script"]
+
+[node name="EditorInspectWindow" type="Window"]
+title = "EDITOR_INSPECT_TITLE"
+initial_position = 2
+size = Vector2i(300, 640)
+min_size = Vector2i(260, 480)
+always_on_top = true
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Root" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MinimapTex" type="TextureRect" parent="Margin/Root"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 220)
+layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 0
+
+[node name="MinimapChecks" type="VBoxContainer" parent="Margin/Root"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ChkBuildings" type="CheckBox" parent="Margin/Root/MinimapChecks"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "EDITOR_MINIMAP_SHOW_BUILDINGS"
+
+[node name="ChkUnits" type="CheckBox" parent="Margin/Root/MinimapChecks"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "EDITOR_MINIMAP_SHOW_UNITS"
+
+[node name="ChkViewport" type="CheckBox" parent="Margin/Root/MinimapChecks"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "EDITOR_MINIMAP_SHOW_VIEWPORT"
+
+[node name="Sep" type="HSeparator" parent="Margin/Root"]
+layout_mode = 2
+
+[node name="PreviewTitle" type="Label" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "EDITOR_PREVIEW_EMPTY"
+autowrap_mode = 3
+
+[node name="PreviewBox" type="PanelContainer" parent="Margin/Root"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PreviewViewportContainer" type="SubViewportContainer" parent="Margin/Root/PreviewBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+stretch = true
+
+[node name="PreviewViewport" type="SubViewport" parent="Margin/Root/PreviewBox/PreviewViewportContainer"]
+unique_name_in_owner = true
+own_world_3d = true
+handle_input_locally = false
+size = Vector2i(260, 200)
+render_target_update_mode = 4
+
+[node name="PreviewWorld" type="Node3D" parent="Margin/Root/PreviewBox/PreviewViewportContainer/PreviewViewport"]
+
+[node name="PreviewLight" type="DirectionalLight3D" parent="Margin/Root/PreviewBox/PreviewViewportContainer/PreviewViewport/PreviewWorld"]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 4, 0)
+light_energy = 1.15
+
+[node name="PreviewCamera" type="Camera3D" parent="Margin/Root/PreviewBox/PreviewViewportContainer/PreviewViewport/PreviewWorld"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 0.92, 0.39, 0, -0.39, 0.92, 0, 2, 6)
+current = true
+
+[node name="ModelRoot" type="Node3D" parent="Margin/Root/PreviewBox/PreviewViewportContainer/PreviewViewport/PreviewWorld"]
+unique_name_in_owner = true
+
+[node name="ChkRandom" type="CheckBox" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "EDITOR_PREVIEW_RANDOM_VAR"
+
+[node name="VarRow" type="HBoxContainer" parent="Margin/Root"]
+layout_mode = 2
+
+[node name="VarPrev" type="Button" parent="Margin/Root/VarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "<"
+
+[node name="VarLabel" type="Label" parent="Margin/Root/VarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EDITOR_PREVIEW_VARIATION"
+horizontal_alignment = 1
+
+[node name="VarNext" type="Button" parent="Margin/Root/VarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ">"
+
+[node name="AnimLabel" type="Label" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+
+[node name="ParamGrid" type="GridContainer" parent="Margin/Root"]
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 4
+
+[node name="DistLabel" type="Label" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "EDITOR_PREVIEW_DISTANCE"
+
+[node name="DistSpin" type="SpinBox" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 50.0
+max_value = 2000.0
+step = 10.0
+value = 450.0
+
+[node name="AngleLabel" type="Label" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "EDITOR_PREVIEW_ANGLE"
+
+[node name="AngleSpin" type="SpinBox" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 359.0
+step = 1.0
+value = 270.0
+allow_greater = true
+allow_lesser = true
+
+[node name="ScaleLabel" type="Label" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "EDITOR_PREVIEW_SCALE"
+
+[node name="ScaleSpin" type="SpinBox" parent="Margin/Root/ParamGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.1
+max_value = 5.0
+step = 0.05
+value = 1.0

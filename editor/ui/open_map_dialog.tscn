@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://3yrhgljwb6r5"]
 
-[ext_resource type="Script" path="res://editor/scripts/ui/open_map_dialog.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bynn6h8xpqsd5" path="res://editor/ui/open_map_dialog.gd" id="1_script"]
 
 [node name="OpenMapDialog" type="Window"]
 title = "EDITOR_OPENMAP_TITLE"

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cxqauera443ph"]
 
-[ext_resource type="Script" uid="uid://bqu2h0ywu2y78" path="res://editor/scripts/ui/tool_palette_window.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bqu2h0ywu2y78" path="res://editor/ui/tool_palette_window.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://bdg0rfip0qhw7" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush07.png" id="4_x365p"]
 [ext_resource type="Texture2D" uid="uid://hdyv3lug5pdu" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush04.png" id="8_be5ku"]
 [ext_resource type="Texture2D" uid="uid://rorq3x4741fs" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/BoundaryPlace.png" id="boundary_place"]
@@ -429,3 +429,20 @@ text = "EDITOR_PALETTE_PLACEHOLDER"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
+
+[node name="DoodadPage" type="VBoxContainer" parent="Margin/Root/Pages/PlaceholderPage" unique_id=1362167068]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="DoodadFilter" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage" unique_id=1103222362]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="DoodadList" type="ItemList" parent="Margin/Root/Pages/PlaceholderPage/DoodadPage" unique_id=479818122]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true

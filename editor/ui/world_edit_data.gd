@@ -31,7 +31,7 @@ var misc_brushes: Dictionary = {} ## Blight/Nothing/Unnothing/…
 
 
 static func load_default():
-	var d = (load("res://editor/scripts/ui/world_edit_data.gd") as GDScript).new()
+	var d = new()
 	d._load()
 	return d
 

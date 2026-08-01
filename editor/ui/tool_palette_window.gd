@@ -8,6 +8,7 @@ signal tile_selected(index: int)
 signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
+signal doodad_selected(type_id: String, info: Dictionary)
 signal closed_by_user
 ## 面板获焦时主窗收不到快捷键，转发撤销/重做
 signal edit_undo_requested
@@ -46,7 +47,7 @@ const BRUSH_SIZE_ICON_IDX := [0, 1, 2, 4, 7]
 const WE_UI := "res://assets/asset-converted/ReplaceableTextures/WorldEditUI/"
 const SEL_BORDER := Color(1.0, 0.85, 0.15, 1.0)
 const SEL_BORDER_W := 2
-const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
+const DataScript := preload("res://editor/ui/world_edit_data.gd")
 
 @onready var _kind_option: OptionButton = %KindOption
 @onready var _pages: TabContainer = %Pages
@@ -70,6 +71,9 @@ const DataScript := preload("res://editor/scripts/ui/world_edit_data.gd")
 @onready var _size_label: Label = %SizeLabel
 @onready var _shape_label: Label = %ShapeLabel
 @onready var _placeholder: Label = %Placeholder
+@onready var _doodad_page: VBoxContainer = %DoodadPage
+@onready var _doodad_filter: OptionButton = %DoodadFilter
+@onready var _doodad_list: ItemList = %DoodadList
 
 @onready var _height_raise: TextureButton = %HeightRaise
 @onready var _height_lower: TextureButton = %HeightLower
@@ -105,6 +109,9 @@ var _height_tool: int = HeightTool.RAISE
 var _apply_texture: bool = true
 var _apply_cliff: bool = true
 var _apply_height: bool = false
+var _id_catalog: Wc3IdCatalog
+var _doodad_entries: Array = []
+var _selected_doodad_id: String = ""
 
 var _cliff_buttons: Array = []
 var _height_buttons: Array = []
@@ -134,6 +141,10 @@ func _ready() -> void:
 	_wire_cliff_tool_buttons()
 	_wire_static_tool_buttons()
 	_rebuild_kind_option()
+	if _doodad_filter != null and not _doodad_filter.item_selected.is_connected(_on_doodad_filter):
+		_doodad_filter.item_selected.connect(_on_doodad_filter)
+	if _doodad_list != null and not _doodad_list.item_selected.is_connected(_on_doodad_list_selected):
+		_doodad_list.item_selected.connect(_on_doodad_list_selected)
 	_apply_locale()
 	_show_kind(_kind)
 	_highlight_all_tools()
@@ -242,6 +253,12 @@ func is_apply_cliff() -> bool:
 
 func _emit_cliff_settings() -> void:
 	cliff_settings_changed.emit(_apply_cliff, get_cliff_tool_id(), _selected_cliff_type)
+
+
+func set_id_catalog(catalog: Wc3IdCatalog) -> void:
+	_id_catalog = catalog
+	if is_node_ready() and _kind == PaletteKind.DOODADS:
+		_rebuild_doodad_list()
 
 
 func rebuild_terrain(doc, tiles: Wc3TerrainTileCatalog, cliff_catalog: Wc3CliffCatalog = null) -> void:
@@ -389,7 +406,10 @@ func _apply_locale() -> void:
 	_rebuild_kind_option()
 	_refresh_section_labels()
 	_refresh_brush_labels()
-	if _kind == PaletteKind.TERRAIN:
+	if _kind == PaletteKind.DOODADS:
+		_rebuild_doodad_filter()
+		_rebuild_doodad_list()
+	elif _kind == PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t("EDITOR_PALETTE_PLACEHOLDER")
 	else:
 		_placeholder.text = EditorI18n.t(
@@ -414,11 +434,73 @@ func _show_kind(kind: int) -> void:
 		_kind_option.select(_kind)
 	_suppress_kind_signal = false
 	_pages.current_tab = 0 if _kind == PaletteKind.TERRAIN else 1
-	if _kind != PaletteKind.TERRAIN:
+	var is_doodads := _kind == PaletteKind.DOODADS
+	if _placeholder != null:
+		_placeholder.visible = not is_doodads
+	if _doodad_page != null:
+		_doodad_page.visible = is_doodads
+	if is_doodads:
+		_rebuild_doodad_filter()
+		_rebuild_doodad_list()
+	elif _kind != PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t(
 			"EDITOR_PALETTE_PLACEHOLDER_KIND",
 			[EditorI18n.t(KIND_KEYS[_kind])]
 		)
+
+
+func _rebuild_doodad_filter() -> void:
+	if _doodad_filter == null:
+		return
+	var prev: int = _doodad_filter.selected if _doodad_filter.item_count > 0 else 0
+	_doodad_filter.clear()
+	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_ALL"), 0)
+	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_DOODADS"), 1)
+	_doodad_filter.add_item(EditorI18n.t("EDITOR_DOODAD_FILTER_DESTRUCTABLES"), 2)
+	_doodad_filter.select(clampi(prev, 0, 2))
+
+
+func _rebuild_doodad_list() -> void:
+	if _doodad_list == null:
+		return
+	_doodad_list.clear()
+	_doodad_entries.clear()
+	if _id_catalog == null:
+		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))
+		return
+	var mode: int = _doodad_filter.selected if _doodad_filter != null else 0
+	var include_d: bool = mode == 0 or mode == 1
+	var include_x: bool = mode == 0 or mode == 2
+	_doodad_entries = _id_catalog.list_placeables(include_d, include_x)
+	if _doodad_entries.is_empty():
+		_doodad_list.add_item(EditorI18n.t("EDITOR_DOODAD_LIST_EMPTY"))
+		return
+	var sel := 0
+	for i in range(_doodad_entries.size()):
+		var e: Dictionary = _doodad_entries[i]
+		var id := str(e.get("id", ""))
+		var name_str := str(e.get("name", id))
+		var kind := str(e.get("kind", ""))
+		var label := "%s  [%s]" % [name_str, id]
+		if kind == "destructable":
+			label = "◆ " + label
+		_doodad_list.add_item(label)
+		if id == _selected_doodad_id:
+			sel = i
+	_doodad_list.select(sel)
+	_on_doodad_list_selected(sel)
+
+
+func _on_doodad_filter(_index: int) -> void:
+	_rebuild_doodad_list()
+
+
+func _on_doodad_list_selected(index: int) -> void:
+	if index < 0 or index >= _doodad_entries.size():
+		return
+	var e: Dictionary = _doodad_entries[index]
+	_selected_doodad_id = str(e.get("id", ""))
+	doodad_selected.emit(_selected_doodad_id, e)
 
 
 func _rebuild_tile_grid() -> void:

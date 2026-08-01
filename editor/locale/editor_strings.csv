@@ -4,6 +4,32 @@ EDITOR_STATUS_TERRAIN_BRUSH,当前：地形编辑器 / 地表笔刷（左键绘�
 EDITOR_STATUS_ABOUT,%s — Godot 复刻竖切,%s — Godot remake slice
 EDITOR_STATUS_NOT_IMPLEMENTED,尚未实现：%s,Not implemented: %s
 EDITOR_STATUS_MAP_CREATED,已新建 %dx%d · %s,Created %dx%d · %s
+EDITOR_STATUS_DOODAD_BRUSH,当前：装饰物面板（选列表项预览；放置待接）,Current: Doodad palette (select to preview; place TBD)
+EDITOR_STATUS_DOODAD_SELECTED,已选装饰物：%s [%s],Selected doodad: %s [%s]
+EDITOR_INSPECT_TITLE,导航 / 预览,Navigator / Preview
+EDITOR_MINIMAP_SHOW_BUILDINGS,显示中立建筑图标,Show neutral building icons
+EDITOR_MINIMAP_SHOW_UNITS,显示中立生物图标,Show neutral unit icons
+EDITOR_MINIMAP_SHOW_VIEWPORT,显示当前视口范围,Show viewport frame
+EDITOR_PREVIEW_EMPTY,（未选择装饰物）,No doodad selected
+EDITOR_PREVIEW_RANDOM_VAR,放置随机样式,Place random variation
+EDITOR_PREVIEW_VARIATION,样式 (%d / %d),Variation (%d / %d)
+EDITOR_PREVIEW_DISTANCE,距离,Distance
+EDITOR_PREVIEW_ANGLE,角度,Angle
+EDITOR_PREVIEW_SCALE,比例,Scale
+EDITOR_PREVIEW_ANIM_STAND,动画: stand,Anim: stand
+EDITOR_PREVIEW_ANIM_NONE,动画: （无）,Anim: (none)
+EDITOR_PREVIEW_MISSING_MODEL,缺少模型 GLB,Missing model GLB
+EDITOR_DOODAD_FILTER_ALL,全部,All
+EDITOR_DOODAD_FILTER_DOODADS,装饰物,Doodads
+EDITOR_DOODAD_FILTER_DESTRUCTABLES,可破坏物,Destructibles
+EDITOR_DOODAD_LIST_EMPTY,无可用条目（检查 slk-exported）,No entries (check slk-exported)
+EDITOR_HUD_STATUS,状态,Status
+EDITOR_HUD_COORDS,坐标,Coords
+EDITOR_HUD_BRUSH,笔刷,Brush
+EDITOR_HUD_PROPS,属性,Props
+EDITOR_HUD_BRUSH_TERRAIN,地表 · %s,Terrain · %s
+EDITOR_HUD_BRUSH_DOODAD,装饰物 · %s [%s],Doodad · %s [%s]
+EDITOR_HUD_PROPS_DOODAD,"样式 %d · 角 %d° · 比例 %.2f","Var %d · Ang %d° · Scale %.2f"
 EDITOR_STATUS_OPEN_FAILED,打开失败：%s,Open failed: %s
 EDITOR_STATUS_OPENED_MAP,已打开 %s（只编辑内存文档，不改磁盘）,Opened %s (in-memory only; disk unchanged)
 EDITOR_OPENMAP_TITLE,打开地图,Open Map

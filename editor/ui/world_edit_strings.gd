@@ -3,7 +3,7 @@ extends RefCounted
 
 
 static func load_default():
-	return (load("res://editor/scripts/ui/world_edit_strings.gd") as GDScript).new()
+	return new()
 
 
 func get_text(key: String, _fallback: String = "") -> String:

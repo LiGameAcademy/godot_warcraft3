@@ -62,6 +62,17 @@ func get_cliff_catalog() -> Wc3CliffCatalog:
 	return _cliff_catalog
 
 
+func get_id_catalog() -> Wc3IdCatalog:
+	# 编辑器默认 place_doodads=false，_ready 可能跳过 load
+	if _catalog.doodad_count() == 0 and _catalog.destructable_count() == 0:
+		_catalog.load_default()
+	return _catalog
+
+
+func get_model_cache() -> MapModelCache:
+	return _cache
+
+
 func get_terrain_layer() -> MapTerrainLayer:
 	return _terrain
 
