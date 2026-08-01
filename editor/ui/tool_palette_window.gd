@@ -8,6 +8,8 @@ signal tile_selected(index: int)
 signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
+## 特殊「纹理」：无 / 荒芜 / 边界 / 去除边界
+signal special_texture_changed(kind: int)
 signal doodad_selected(type_id: String, info: Dictionary)
 ## 放置时随机：旋转 / 对称缩放 / Z(高度) / XY 面（可多选组合）
 signal doodad_place_random_changed(
@@ -958,11 +960,14 @@ func _on_kind_selected(index: int) -> void:
 
 func _on_tile_picked(index: int) -> void:
 	_selected_tile = index
+	var cleared_special: bool = _special_texture != SpecialTexture.NONE
 	_special_texture = SpecialTexture.NONE
 	_highlight_tiles()
 	_highlight_special()
 	_refresh_section_labels()
 	tile_selected.emit(index)
+	if cleared_special:
+		special_texture_changed.emit(_special_texture)
 
 
 func _on_special_picked(kind: int) -> void:
@@ -971,6 +976,18 @@ func _on_special_picked(kind: int) -> void:
 		_special_texture = SpecialTexture.NONE
 	else:
 		_special_texture = kind
+	_highlight_tiles()
+	_highlight_special()
+	_refresh_section_labels()
+	special_texture_changed.emit(_special_texture)
+
+
+func get_special_texture() -> int:
+	return _special_texture
+
+
+func set_special_texture(kind: int) -> void:
+	_special_texture = clampi(kind, 0, SpecialTexture.BOUNDARY_REMOVE)
 	_highlight_tiles()
 	_highlight_special()
 	_refresh_section_labels()

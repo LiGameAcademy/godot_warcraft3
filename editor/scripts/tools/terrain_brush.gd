@@ -41,6 +41,8 @@ var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
 var apply_texture: bool = true
 var apply_cliff: bool = true
+## 特殊纹理：0 无 / 1 荒芜(未接) / 2 边界 / 3 去除边界（对齐 ToolPaletteWindow.SpecialTexture）
+var special_texture: int = 0
 ## 悬崖/斜坡笔刷开启时 → 全 heightfield 快照（防 cliff 级联 clamp 漏快照）。
 ## 由 set_cliff_settings() 自动设；地表笔刷保持局部 CAPTURE_RADIUS 行为。
 var use_full_snapshot: bool = false
@@ -123,6 +125,14 @@ func set_cliff_settings(p_apply: bool, tool_id: String, type_idx: int) -> void:
 		document.brush_cliff_type = cliff_type_index
 		document.ensure_cliff_type_valid()
 		cliff_type_index = int(document.brush_cliff_type)
+
+
+func set_special_texture(kind: int) -> void:
+	special_texture = clampi(kind, 0, 3)
+
+
+func is_boundary_tool() -> bool:
+	return special_texture == 2 or special_texture == 3
 
 
 static func _sanitize_brush_size(p_size: int) -> int:
@@ -301,7 +311,8 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	if vert == _last_vert and _painting:
 		return
 	_last_vert = vert
-	if not apply_texture and not apply_cliff:
+	var boundary_mode: bool = is_boundary_tool()
+	if not apply_texture and not apply_cliff and not boundary_mode:
 		return
 
 	if apply_cliff and cliff_tool_id == "2" and _cliff_level_anchor < 0:
@@ -309,9 +320,11 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 
 	var painted_any := false
 	var cliff_any := false
+	var boundary_enable: bool = special_texture == 2
 
 	# 先悬崖后地表：cliff sync 会写 groundTile，必须让 paint_corner 最后盖住笔刷纹理
-	if apply_cliff and cliff_tool_id == "Ramp":
+	# 边界特殊纹理：cell 模式写 BL（HiveWE Nothing）；不画普通地表
+	if apply_cliff and cliff_tool_id == "Ramp" and not boundary_mode:
 		# 鼠标相对角点的坡向（对齐 HiveWE apply_ramps）
 		var dirs: Vector2i = _ramp_dirs_from_mouse(vert, screen_pos)
 		var hx: int = dirs.x
@@ -340,7 +353,7 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 			var ix: int = vert.x + p.x
 			var iy: int = vert.y + p.y
 			_stroke.capture_before_at(ix, iy)
-			if apply_cliff and bool(
+			if apply_cliff and not boundary_mode and bool(
 				document.paint_cliff_corner(
 					ix, iy, cliff_tool_id, cliff_type_index, _cliff_level_anchor
 				)
@@ -348,7 +361,10 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 				painted_any = true
 				cliff_any = true
 				_stroke.mark_cliff()
-			if apply_texture and bool(document.paint_corner(ix, iy)):
+			if boundary_mode:
+				if bool(document.paint_boundary_cell(ix, iy, boundary_enable)):
+					painted_any = true
+			elif apply_texture and bool(document.paint_corner(ix, iy)):
 				painted_any = true
 			_stroke.capture_after_at(ix, iy)
 	if painted_any:
@@ -360,8 +376,8 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 		MapLog.info(
 			MapLog.Layer.EDITOR,
 			"Brush",
-			"paint @(%d,%d) brush_tex=%d cliff=%s tex=%s tool=%s"
-			% [vert.x, vert.y, brush_tex, cliff_any, apply_texture, cliff_tool_id]
+			"paint @(%d,%d) brush_tex=%d cliff=%s tex=%s special=%d tool=%s"
+			% [vert.x, vert.y, brush_tex, cliff_any, apply_texture, special_texture, cliff_tool_id]
 		)
 
 
@@ -402,7 +418,9 @@ func _end_stroke() -> void:
 		_stroke.cancel()
 		return
 	var label := "Paint"
-	if apply_cliff and cliff_tool_id == "Ramp":
+	if is_boundary_tool():
+		label = "Boundary" if special_texture == 2 else "BoundaryRemove"
+	elif apply_cliff and cliff_tool_id == "Ramp":
 		label = "Ramp"
 	elif apply_cliff and not apply_texture:
 		label = "Cliff"

@@ -12,14 +12,36 @@ const WORLD_SCALE := 0.01
 ## war3map.w3e tilepoint flags
 ## 位分配（不要冲突；改前先看这里）：
 ##   bit 0 (1)    FLAG_WATER
-##   bit 1 (2)    FLAG_BLIGHT       — 污染（亡灵的腐地）；当前未使用，预留给 ROADMAP §⑪
+##   bit 1 (2)    FLAG_BLIGHT       — 污染（亡灵的腐地）
 ##   bit 2 (4)    FLAG_RAMP
-##   bit 3 (8)    FLAG_BOUNDARY     — 边界（深水不可建）；当前未使用，预留给 CellOperator
-##   bit 4..31    保留
+##   bit 3 (8)    FLAG_BOUNDARY     — Nothing 笔刷边界（flags 字节 0x80 / boundary2）
+##   bit 4 (16)   FLAG_MAP_EDGE     — 实用区外缘（water short 0x4000 / boundary1）
+##   bit 5..31    保留
 const FLAG_WATER := 1
 const FLAG_BLIGHT := 2
 const FLAG_RAMP := 4
 const FLAG_BOUNDARY := 8
+const FLAG_MAP_EDGE := 16
+
+## 新建图默认 cameraBoundsComplements（Blizzard / HiveWE：L6 R6 B4 T8，合计每轴 −12）
+const DEFAULT_BOUNDS_LEFT := 6
+const DEFAULT_BOUNDS_RIGHT := 6
+const DEFAULT_BOUNDS_BOTTOM := 4
+const DEFAULT_BOUNDS_TOP := 8
+
+
+## 不可玩区判定：cell 以左下角（BL）flag 为准（HiveWE cell-as-corner）。
+static func is_unplayable_cell_flags(bl_flags: int) -> bool:
+	return (bl_flags & (FLAG_BOUNDARY | FLAG_MAP_EDGE)) != 0
+
+
+static func default_camera_bounds_complements() -> Dictionary:
+	return {
+		"left": DEFAULT_BOUNDS_LEFT,
+		"right": DEFAULT_BOUNDS_RIGHT,
+		"bottom": DEFAULT_BOUNDS_BOTTOM,
+		"top": DEFAULT_BOUNDS_TOP,
+	}
 
 
 static func wc3_to_godot(wc3: Vector3) -> Vector3:

@@ -44,6 +44,7 @@ var _apply_texture: bool = true
 var _apply_cliff: bool = false ## 地面阶段默认关：避免崖 sync 干扰地表笔刷；面板可再打开
 var _cliff_tool_id: String = "2"
 var _cliff_type_index: int = 0
+var _special_texture: int = 0 ## ToolPaletteWindow.SpecialTexture
 var _inspect_window: Window
 var _brush_mode: String = "terrain" ## terrain | doodad
 var _brush_doodad_id: String = ""
@@ -397,10 +398,14 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.set_brush_settings(_brush_size, _brush_shape)
 	win.set_apply_texture(_apply_texture)
 	win.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
+	if win.has_method("set_special_texture"):
+		win.set_special_texture(_special_texture)
 	win.tile_selected.connect(_on_tile_selected)
 	win.brush_settings_changed.connect(_on_brush_settings_changed)
 	win.apply_texture_changed.connect(_on_apply_texture_changed)
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
+	if win.has_signal("special_texture_changed"):
+		win.special_texture_changed.connect(_on_special_texture_changed)
 	if win.has_signal("doodad_selected"):
 		win.doodad_selected.connect(_on_doodad_selected)
 	if win.has_signal("doodad_place_random_changed"):
@@ -470,6 +475,15 @@ func _on_apply_texture_changed(enabled: bool) -> void:
 	for win in _tool_palettes:
 		if is_instance_valid(win):
 			win.set_apply_texture(enabled)
+
+
+func _on_special_texture_changed(kind: int) -> void:
+	_special_texture = clampi(kind, 0, 3)
+	if brush != null and brush.has_method("set_special_texture"):
+		brush.set_special_texture(_special_texture)
+	for win in _tool_palettes:
+		if is_instance_valid(win) and win.has_method("set_special_texture"):
+			win.set_special_texture(_special_texture)
 
 
 func _on_cliff_settings_changed(p_apply: bool, tool_id: String, type_idx: int) -> void:
@@ -845,6 +859,8 @@ func _apply_document(full_reload: bool) -> void:
 		brush.set_brush_settings(_brush_size, _brush_shape)
 		brush.apply_texture = _apply_texture
 		brush.set_cliff_settings(_apply_cliff, _cliff_tool_id, _cliff_type_index)
+		if brush.has_method("set_special_texture"):
+			brush.set_special_texture(_special_texture)
 	if doodad_brush != null and doodad_brush.has_method("setup"):
 		doodad_brush.setup(_doc, cam, map_root.get_world_3d(), _history, map_root)
 		doodad_brush.set_brush_settings(_brush_size, _brush_shape)

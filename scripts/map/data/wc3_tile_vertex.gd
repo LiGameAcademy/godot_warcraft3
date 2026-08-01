@@ -117,6 +117,28 @@ var has_blight: bool:
 			flags = flags & ~Wc3Coords.FLAG_BLIGHT
 
 
+## Nothing 笔刷边界（boundary2 / flags 0x80）。
+var has_boundary: bool:
+	get:
+		return (flags & Wc3Coords.FLAG_BOUNDARY) != 0
+	set(v):
+		if v:
+			flags = flags | Wc3Coords.FLAG_BOUNDARY
+		else:
+			flags = flags & ~Wc3Coords.FLAG_BOUNDARY
+
+
+## 实用区外缘（boundary1 / water 0x4000）；由 cameraBoundsComplements 写入。
+var has_map_edge: bool:
+	get:
+		return (flags & Wc3Coords.FLAG_MAP_EDGE) != 0
+	set(v):
+		if v:
+			flags = flags | Wc3Coords.FLAG_MAP_EDGE
+		else:
+			flags = flags & ~Wc3Coords.FLAG_MAP_EDGE
+
+
 func wc3_xy() -> Vector2:
 	return Wc3Coords.tilepoint_wc3(
 		ix, iy, heightfield.center_offset, heightfield.tile_size

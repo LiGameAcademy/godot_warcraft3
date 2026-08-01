@@ -225,11 +225,53 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 	map_dir = path
 	source_name = path.get_file()
 	_load_doodads_from_map_dir(path)
+	# 已解析图若 flags 未含 MAP_EDGE，用 info.cameraBoundsComplements 补写
+	_ensure_map_edge_from_info()
 	_dirty = false
 	ensure_brush_index_valid()
 	dirty_changed.emit(false)
 	changed.emit()
 	return OK
+
+
+## 从 info 补写 FLAG_MAP_EDGE（兼容旧 map-parse 未打包 boundary1 的 JSON）。
+func _ensure_map_edge_from_info() -> void:
+	if heightfield == null or terrain == null:
+		return
+	var complements: Dictionary = {}
+	if typeof(info.get("cameraBoundsComplements", null)) == TYPE_DICTIONARY:
+		complements = info.get("cameraBoundsComplements", {}) as Dictionary
+	if complements.is_empty():
+		# 有 playable 尺寸则反推对称补边；否则用默认
+		var pw: int = int(info.get("playableWidth", 0))
+		var ph: int = int(info.get("playableHeight", 0))
+		if pw > 0 and ph > 0 and heightfield.map_width > 0:
+			var lx: int = maxi(heightfield.map_width - pw, 0)
+			var ly: int = maxi(heightfield.map_height - ph, 0)
+			complements = {
+				"left": lx / 2,
+				"right": lx - lx / 2,
+				"bottom": ly / 2,
+				"top": ly - ly / 2,
+			}
+		else:
+			complements = Wc3Coords.default_camera_bounds_complements()
+	terrain.apply_unplayable_boundaries(complements)
+
+
+## Nothing / 移除边界：写 cell BL 的 FLAG_BOUNDARY（不改 MAP_EDGE）。
+func paint_boundary_cell(ix: int, iy: int, enable: bool) -> bool:
+	if is_empty() or terrain == null:
+		return false
+	# cell 左下角必须能当 BL：ix/iy 落在 [0, map_w) × [0, map_h)
+	if heightfield == null:
+		return false
+	if ix < 0 or iy < 0 or ix >= heightfield.map_width or iy >= heightfield.map_height:
+		return false
+	if not terrain.set_boundary(ix, iy, enable):
+		return false
+	mark_dirty()
+	return true
 
 
 func create_blank(
@@ -332,7 +374,19 @@ func create_from_options(options: Dictionary) -> void:
 		"flagsPacked": flags,
 	}, false)
 	_rebind_logic()
-	info = {"name": "Untitled", "flags": {}}
+	var complements: Dictionary = Wc3Coords.default_camera_bounds_complements()
+	var play_w: int = maxi(map_w - int(complements.left) - int(complements.right), 0)
+	var play_h: int = maxi(map_h - int(complements.bottom) - int(complements.top), 0)
+	info = {
+		"name": "Untitled",
+		"flags": {},
+		"cameraBoundsComplements": complements.duplicate(),
+		"playableWidth": play_w,
+		"playableHeight": play_h,
+	}
+	# 实用区外缘 → FLAG_MAP_EDGE（对齐 HiveWE set_unplayable_boundaries）
+	if terrain != null:
+		terrain.apply_unplayable_boundaries(complements)
 	map_dir = ""
 	source_name = "untitled"
 	brush_tile_index = tile_index

@@ -47,6 +47,9 @@ func rasterize() -> Image:
 			var flags: int = int(hf.flags_packed[idx]) if idx < hf.flags_packed.size() else 0
 			if (flags & Wc3Coords.FLAG_WATER) != 0:
 				col = Color(0.15, 0.35, 0.72).lerp(Color(0.35, 0.55, 0.9), t)
+			# 实用区外 / Nothing 边界：小地图压暗（对齐 WE）
+			if Wc3Coords.is_unplayable_cell_flags(flags):
+				col = col.darkened(0.55)
 			_img.set_pixel(px, py, col)
 	_dirty_rects.clear()
 	return _img
@@ -98,4 +101,6 @@ func _raster_pixel_dirty(px: int, py: int) -> void:
 	var col := Color(0.18 + t * 0.55, 0.42 + t * 0.35, 0.22 + t * 0.15)
 	if (flags & Wc3Coords.FLAG_WATER) != 0:
 		col = Color(0.15, 0.35, 0.72).lerp(Color(0.35, 0.55, 0.9), t)
+	if Wc3Coords.is_unplayable_cell_flags(flags):
+		col = col.darkened(0.55)
 	_img.set_pixel(px, py, col)

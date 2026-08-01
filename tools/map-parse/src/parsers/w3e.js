@@ -57,7 +57,7 @@ export function parseW3e(buffer, opts = {}) {
   const heights = new Array(tilepointCount);
   /** @type {number[]} ground texture index 0-15 */
   const groundTextures = new Array(tilepointCount);
-  /** bit0 water, bit1 blight, bit2 ramp */
+  /** bit0 water, bit1 blight, bit2 ramp, bit3 boundary(Nothing), bit4 map_edge */
   /** @type {number[]} */
   const flagsPacked = new Array(tilepointCount);
   /** @type {number[]} cliff tileset index 0-15 */
@@ -113,7 +113,12 @@ export function parseW3e(buffer, opts = {}) {
     cliffTextures[i] = cliffTexture;
     layerHeights[i] = layerHeight;
     waterHeights[i] = waterHeight;
-    flagsPacked[i] = (water ? 1 : 0) | (blight ? 2 : 0) | (ramp ? 4 : 0);
+    flagsPacked[i] =
+      (water ? 1 : 0) |
+      (blight ? 2 : 0) |
+      (ramp ? 4 : 0) |
+      (boundary2 ? 8 : 0) |
+      (boundary1 ? 16 : 0);
 
     if (finalHeight < minHeight) minHeight = finalHeight;
     if (finalHeight > maxHeight) maxHeight = finalHeight;

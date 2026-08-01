@@ -42,6 +42,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @onready var _units: MapUnitLayer = $Units
 @onready var _debug_grid: Node = $DebugGrid
 @onready var _ramp_debug: Node = $RampDebug
+@onready var _boundary: MapBoundaryLayer = get_node_or_null("Boundary") as MapBoundaryLayer
 
 var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTileCatalog.new()
@@ -136,6 +137,12 @@ func reload_from_hf(hf: Dictionary, info: Dictionary = {}, p_map_dir: String = "
 		_cliff_catalog.load_default()
 		_tiles_ready = true
 	await _load_all()
+
+
+func _build_boundary(ctx: MapBuildContext) -> void:
+	if _boundary == null:
+		return
+	_boundary.build(ctx)
 
 
 func _build_ramps(ctx: MapBuildContext) -> void:
@@ -271,6 +278,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	)
 	ctx.ensure_cliff_topology()
 	_terrain.build(ctx)
+	_build_boundary(ctx)
 	_build_ramps(ctx)
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
@@ -305,6 +313,7 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 	)
 	_apply_ramp_cliff_filter(ctx)
 	_terrain.build(ctx)
+	_build_boundary(ctx)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 	if build_cliffs:
@@ -338,6 +347,7 @@ func _load_all() -> void:
 
 	_set_status("生成贴图地形高度图（悬崖留缝）…")
 	_terrain.build(ctx)
+	_build_boundary(ctx)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 	await get_tree().process_frame

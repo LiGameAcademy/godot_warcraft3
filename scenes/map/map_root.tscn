@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://dr3nhjy7vuinq" path="res://scripts/map/presentation/layers/map_ramp_debug_layer.gd" id="9_rampdbg"]
 [ext_resource type="Material" path="res://assets/materials/wc3_ground_material.tres" id="10_gmat"]
 [ext_resource type="Script" uid="uid://c0178kg74vwwt" path="res://scripts/map/presentation/layers/map_ramp_layer.gd" id="11_ramp"]
+[ext_resource type="Script" path="res://scripts/map/presentation/layers/map_boundary_layer.gd" id="12_boundary"]
 
 [node name="MapRoot" type="Node3D" unique_id=1421899306]
 script = ExtResource("1_loader")
@@ -21,6 +22,11 @@ ground_material = ExtResource("10_gmat")
 
 [node name="Ground" type="MeshInstance3D" parent="Terrain" unique_id=1955837850]
 script = ExtResource("7_hfmesh")
+
+[node name="Boundary" type="Node3D" parent="."]
+script = ExtResource("12_boundary")
+
+[node name="Overlay" type="MeshInstance3D" parent="Boundary"]
 
 [node name="Cliffs" type="Node3D" parent="." unique_id=871987469]
 script = ExtResource("4_cliff")

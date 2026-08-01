@@ -196,6 +196,69 @@ func set_blight(ix: int, iy: int, v: bool, force: bool = false) -> bool:
 	return true
 
 
+## Nothing 笔刷边界（FLAG_BOUNDARY）。HiveWE：cell 模式写 BL corner。
+func set_boundary(ix: int, iy: int, v: bool) -> bool:
+	if not is_bound() or not heightfield.in_bounds(ix, iy):
+		return false
+	var i: int = heightfield.index_at(ix, iy)
+	if i < 0 or i >= heightfield.flags_packed.size():
+		return false
+	var cur: int = int(heightfield.flags_packed[i])
+	var nf: int = (cur | Wc3Coords.FLAG_BOUNDARY) if v else (cur & ~Wc3Coords.FLAG_BOUNDARY)
+	if cur == nf:
+		return false
+	heightfield.flags_packed[i] = nf
+	_mark_dirty(ix, iy)
+	return true
+
+
+## 实用区外缘（FLAG_MAP_EDGE）。由 cameraBoundsComplements 批量写入。
+func set_map_edge(ix: int, iy: int, v: bool) -> bool:
+	if not is_bound() or not heightfield.in_bounds(ix, iy):
+		return false
+	var i: int = heightfield.index_at(ix, iy)
+	if i < 0 or i >= heightfield.flags_packed.size():
+		return false
+	var cur: int = int(heightfield.flags_packed[i])
+	var nf: int = (cur | Wc3Coords.FLAG_MAP_EDGE) if v else (cur & ~Wc3Coords.FLAG_MAP_EDGE)
+	if cur == nf:
+		return false
+	heightfield.flags_packed[i] = nf
+	_mark_dirty(ix, iy)
+	return true
+
+
+## 按补边重写整图 FLAG_MAP_EDGE（对齐 HiveWE set_unplayable_boundaries）。
+## complements 以「格」为单位（playable = map − L/R/B/T）；写在 cell BL 角点上。
+## complements: {left,right,bottom,top}；缺省用 Blizzard 默认 L6R6B4T8。
+func apply_unplayable_boundaries(complements: Dictionary = {}) -> int:
+	if not is_bound():
+		return 0
+	var left: int = int(complements.get("left", Wc3Coords.DEFAULT_BOUNDS_LEFT))
+	var right: int = int(complements.get("right", Wc3Coords.DEFAULT_BOUNDS_RIGHT))
+	var bottom: int = int(complements.get("bottom", Wc3Coords.DEFAULT_BOUNDS_BOTTOM))
+	var top: int = int(complements.get("top", Wc3Coords.DEFAULT_BOUNDS_TOP))
+	var tp_w: int = heightfield.width
+	var tp_h: int = heightfield.height
+	# map_* = 格数；tilepoint 多一圈。不可玩判定只看 cell BL。
+	var mw: int = heightfield.map_width if heightfield.map_width > 0 else maxi(tp_w - 1, 0)
+	var mh: int = heightfield.map_height if heightfield.map_height > 0 else maxi(tp_h - 1, 0)
+	var changed := 0
+	for iy in range(tp_h):
+		for ix in range(tp_w):
+			var edge := false
+			if ix < mw and iy < mh:
+				edge = (
+					ix < left
+					or ix >= mw - right
+					or iy < bottom
+					or iy >= mh - top
+				)
+			if set_map_edge(ix, iy, edge):
+				changed += 1
+	return changed
+
+
 ## 写高度
 ## [param ix: int] 坐标 x
 ## [param iy: int] 坐标 y

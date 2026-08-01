@@ -11,7 +11,7 @@ class_name WorldEditData
 
 
 const LOGICAL_PATH := "UI/WorldEditData.txt"
-const CAMERA_BORDER := 6 ## 每侧镜头边距格数 → 可用区域 = 尺寸 - 12
+const CAMERA_BORDER := 6 ## 兼容旧调用：每侧名义边距；实际默认补边见 Wc3Coords L6R6B4T8
 const CONVERTED_UI := "res://assets/asset-converted/"
 
 var tilesets: Array = [] ## { id, name_key, blight }
@@ -54,8 +54,11 @@ func size_options() -> PackedInt32Array:
 
 
 func playable_size(map_w: int, map_h: int) -> Vector2i:
-	var border := CAMERA_BORDER * 2
-	return Vector2i(maxi(map_w - border, 0), maxi(map_h - border, 0))
+	var c: Dictionary = Wc3Coords.default_camera_bounds_complements()
+	return Vector2i(
+		maxi(map_w - int(c.left) - int(c.right), 0),
+		maxi(map_h - int(c.bottom) - int(c.top), 0),
+	)
 
 
 func size_desc_key(map_w: int, map_h: int) -> String:
