@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://copenmapdialog01"]
+[gd_scene format=3 uid="uid://3yrhgljwb6r5"]
 
 [ext_resource type="Script" path="res://editor/scripts/ui/open_map_dialog.gd" id="1_script"]
 
