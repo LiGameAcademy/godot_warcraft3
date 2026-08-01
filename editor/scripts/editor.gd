@@ -82,6 +82,8 @@ func _ready() -> void:
 			brush.rebuild_requested.connect(_on_brush_rebuild)
 		if brush.has_signal("ramp_feedback"):
 			brush.ramp_feedback.connect(_on_ramp_feedback)
+		if brush.has_signal("brush_settings_changed"):
+			brush.brush_settings_changed.connect(_on_brush_settings_changed)
 	EditorI18n.locale_changed.connect(_on_locale_changed)
 	_apply_chrome_locale()
 
@@ -141,18 +143,9 @@ func _resolve_exports() -> void:
 		hover_label = get_node_or_null("../UI/StatusBar/Margin/Row/CoordsChip/CoordsValue") as Label
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		var k := event as InputEventKey
-		if k.ctrl_pressed and k.keycode == KEY_Z and not k.shift_pressed:
-			_undo()
-			get_viewport().set_input_as_handled()
-		elif (
-			(k.ctrl_pressed and k.keycode == KEY_Y)
-			or (k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_Z)
-		):
-			_redo()
-			get_viewport().set_input_as_handled()
+func _unhandled_input(_event: InputEvent) -> void:
+	# 撤销/重做与鼠标键盘路由改由 EditorInputRouter 处理
+	pass
 
 
 func _startup_new_map() -> void:

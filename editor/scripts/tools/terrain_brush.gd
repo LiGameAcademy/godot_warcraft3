@@ -6,6 +6,7 @@ signal tile_hovered(tile: Vector2i) ## 实为顶点坐标 (ix, iy)
 signal painted
 signal rebuild_requested
 signal ramp_feedback(message: String)
+signal brush_settings_changed(size: int, shape: int)
 
 const REBUILD_INTERVAL_MS := 80
 ## 略抬高，避免与地面 z-fight（Godot 单位）
@@ -19,7 +20,7 @@ const RAMP_SPINE_EDGE := Color(0.40, 1.0, 0.65, 0.95)
 ## Ramp 落坡会失败（plan_fail）时画红框单格，提示"点这无效"。
 const RAMP_REJECT_COLOR := Color(0.95, 0.30, 0.30, 0.50)
 const RAMP_REJECT_EDGE := Color(1.0, 0.50, 0.50, 0.95)
-## Ramp 工具：右击删邻域半径（HivEWE 经典行为）
+## Ramp 工具：Shift+RMB 单击删邻域（RMB 拖动留给相机平移）
 const RAMP_ERASE_RADIUS := 1
 const INVALID_VERT := Vector2i(-99999, -99999)
 
@@ -63,6 +64,52 @@ func set_brush_settings(size: int, shape: int) -> void:
 	brush_shape = 0 if shape == 0 else 1
 	if _hover_vert != INVALID_VERT:
 		_update_hover_preview(_hover_vert)
+
+
+func nudge_brush_size(dir: int) -> void:
+	const SIZES := [1, 2, 3, 5, 8]
+	var idx: int = SIZES.find(brush_size)
+	if idx < 0:
+		idx = 0
+	idx = clampi(idx + dir, 0, SIZES.size() - 1)
+	set_brush_settings(SIZES[idx], brush_shape)
+	brush_settings_changed.emit(brush_size, brush_shape)
+
+
+func is_ramp_tool() -> bool:
+	return apply_cliff and cliff_tool_id == "Ramp"
+
+
+## —— 输入由 EditorInputRouter 调用 ——
+
+func stroke_press(screen_pos: Vector2) -> void:
+	if not enabled or document == null or camera == null:
+		return
+	_painting = true
+	_cliff_level_anchor = -1
+	_begin_stroke()
+	_paint_at_mouse(screen_pos)
+
+
+func stroke_drag(screen_pos: Vector2) -> void:
+	if not enabled or not _painting:
+		return
+	_paint_at_mouse(screen_pos)
+
+
+func stroke_release() -> void:
+	_finish_paint_gesture()
+
+
+func erase_ramp_at(screen_pos: Vector2) -> void:
+	if not enabled or document == null or camera == null:
+		return
+	if not is_ramp_tool():
+		return
+	_cliff_level_anchor = -1
+	_begin_stroke()
+	_erase_ramp_at_mouse(screen_pos)
+	_finish_paint_gesture()
 
 
 func set_cliff_settings(p_apply: bool, tool_id: String, type_idx: int) -> void:
@@ -170,37 +217,9 @@ func _ensure_hover_visuals() -> void:
 	add_child(_edge_mesh)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if not enabled or document == null or camera == null:
-		return
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			_painting = mb.pressed
-			if mb.pressed:
-				_cliff_level_anchor = -1
-				_begin_stroke()
-				_paint_at_mouse(mb.position)
-				get_viewport().set_input_as_handled()
-			else:
-				_finish_paint_gesture()
-				get_viewport().set_input_as_handled()
-		# Ramp 工具：右击删斜坡邻域（HivEWE 经典：单击即删，非拖动）
-		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed \
-				and apply_cliff and cliff_tool_id == "Ramp":
-			_cliff_level_anchor = -1
-			_begin_stroke()
-			_erase_ramp_at_mouse(mb.position)
-			_finish_paint_gesture()
-			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion:
-		var mm := event as InputEventMouseMotion
-		if _painting:
-			_paint_at_mouse(mm.position)
-			get_viewport().set_input_as_handled()
-		else:
-			# 悬停主要由 _process 轮询；此处覆盖有焦点时的即时更新
-			_set_hover_vert(_pick_vertex(mm.position))
+func _unhandled_input(_event: InputEvent) -> void:
+	# 输入改由 EditorInputRouter 统一路由（editor_main 子节点）
+	pass
 
 
 func _process(_delta: float) -> void:

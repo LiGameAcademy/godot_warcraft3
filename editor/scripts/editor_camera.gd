@@ -1,9 +1,11 @@
 extends Node3D
-## 编辑器用轨道相机：WASD 平移，右键旋转，滚轮缩放；左键留给笔刷。
+## 编辑器用轨道相机。输入由 EditorInputRouter 注入（WE：RMB 平移 / Ctrl+RMB 旋转）。
+
 
 @export var move_speed: float = 40.0
 @export var look_sensitivity: float = 0.003
 @export var zoom_speed: float = 4.0
+@export var pan_drag_scale: float = 0.0025
 @export var min_pitch_deg: float = -85.0
 @export var max_pitch_deg: float = -15.0
 ## 约 3 个大栅格（512 WC3 单位）距离，便于近距编辑
@@ -19,7 +21,6 @@ const EDIT_DISTANCE_GRIDS := 3.0
 var _yaw: float = 0.0
 var _pitch: float = deg_to_rad(-50.0)
 var _distance: float = 15.36
-var _dragging: bool = false
 
 
 func _ready() -> void:
@@ -39,47 +40,39 @@ func focus_map_extent(_map_tiles: Vector2i, _tile_size_godot: float = 1.28) -> v
 	_apply()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			_dragging = mb.pressed
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_distance = maxf(4.0, _distance - zoom_speed)
-			_apply()
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_distance = minf(280.0, _distance + zoom_speed)
-			_apply()
-	elif event is InputEventMouseMotion and _dragging:
-		var mm := event as InputEventMouseMotion
-		_yaw -= mm.relative.x * look_sensitivity
-		_pitch -= mm.relative.y * look_sensitivity
-		_pitch = clampf(_pitch, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
-		_apply()
+## 屏幕像素位移 → 地面平移（RMB / 中键）。
+func apply_pan_screen(screen_delta: Vector2) -> void:
+	var basis_yaw := Basis(Vector3.UP, _yaw)
+	var right: Vector3 = basis_yaw * Vector3.RIGHT
+	var forward: Vector3 = basis_yaw * Vector3(0, 0, -1)
+	var scale: float = maxf(_distance, 4.0) * pan_drag_scale
+	global_position += (-right * screen_delta.x + forward * screen_delta.y) * scale
 
 
-func _process(delta: float) -> void:
-	var input_dir := Vector3.ZERO
-	if Input.is_key_pressed(KEY_W):
-		input_dir.z -= 1.0
-	if Input.is_key_pressed(KEY_S):
-		input_dir.z += 1.0
-	if Input.is_key_pressed(KEY_A):
-		input_dir.x -= 1.0
-	if Input.is_key_pressed(KEY_D):
-		input_dir.x += 1.0
-	if Input.is_key_pressed(KEY_Q):
-		input_dir.y -= 1.0
-	if Input.is_key_pressed(KEY_E):
-		input_dir.y += 1.0
+## Ctrl+RMB 轨道旋转。
+func apply_orbit(screen_delta: Vector2) -> void:
+	_yaw -= screen_delta.x * look_sensitivity
+	_pitch -= screen_delta.y * look_sensitivity
+	_pitch = clampf(_pitch, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
+	_apply()
 
-	if input_dir != Vector3.ZERO:
-		var basis_yaw := Basis(Vector3.UP, _yaw)
-		var move := (basis_yaw * input_dir).normalized()
-		var speed := move_speed
-		if Input.is_key_pressed(KEY_SHIFT):
-			speed *= 3.0
-		global_position += move * speed * delta
+
+## steps < 0 拉近，> 0 拉远。
+func apply_zoom(steps: int) -> void:
+	if steps == 0:
+		return
+	_distance = clampf(_distance + float(steps) * zoom_speed, 4.0, 280.0)
+	_apply()
+
+
+## 由 InputRouter 每帧注入（方向键 / WASD / QE）。
+func set_keyboard_move(dir: Vector3, sprint: bool, delta: float) -> void:
+	if dir == Vector3.ZERO:
+		return
+	var basis_yaw := Basis(Vector3.UP, _yaw)
+	var move := (basis_yaw * dir).normalized()
+	var speed := move_speed * (3.0 if sprint else 1.0)
+	global_position += move * speed * delta
 
 
 func _apply() -> void:
