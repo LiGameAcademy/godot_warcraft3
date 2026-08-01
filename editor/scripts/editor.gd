@@ -46,7 +46,7 @@ var _cliff_tool_id: String = "2"
 var _cliff_type_index: int = 0
 var _special_texture: int = 0 ## ToolPaletteWindow.SpecialTexture
 var _inspect_window: Window
-var _brush_mode: String = "terrain" ## terrain | doodad
+var _brush_mode: String = "terrain" ## terrain | doodad | unit
 var _brush_doodad_id: String = ""
 var _brush_doodad_name: String = ""
 var _brush_doodad_variation: int = 0
@@ -58,6 +58,9 @@ var _brush_doodad_rand_rotation: bool = true
 var _brush_doodad_rand_scale_sym: bool = false
 var _brush_doodad_rand_scale_z: bool = false
 var _brush_doodad_rand_scale_xy: bool = false
+var _brush_unit_id: String = ""
+var _brush_unit_name: String = ""
+var _brush_unit_owner: int = 0
 var _doodads_present_built: bool = false
 
 
@@ -262,6 +265,8 @@ func _on_menu_action(action_id: StringName) -> void:
 			_show_open_map_dialog()
 		"file_save":
 			_on_save()
+		"file_export_minimap":
+			_on_export_minimap()
 		"file_exit":
 			get_tree().quit()
 		"edit_undo":
@@ -317,6 +322,13 @@ func _on_menu_action(action_id: StringName) -> void:
 			_ensure_inspect_window(true)
 			_refresh_hud_brush()
 			_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
+		"layer_units", "module_units":
+			_brush_mode = "unit"
+			_sync_active_brush()
+			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.UNITS)
+			_ensure_inspect_window(true)
+			_refresh_hud_brush()
+			_set_status_key("EDITOR_STATUS_UNIT_BRUSH")
 		"help_about":
 			_set_status_key("EDITOR_STATUS_ABOUT", [EditorI18n.t("WESTRING_APPNAME")])
 		_:
@@ -383,6 +395,7 @@ func _run_history_rebuild(cliff: bool) -> void:
 	else:
 		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
+	_refresh_inspect_minimap_live()
 	if _pending_history_rebuild:
 		var again_cliff: bool = _pending_history_cliff
 		_pending_history_rebuild = false
@@ -408,6 +421,10 @@ func _spawn_tool_palette(kind: int) -> void:
 		win.special_texture_changed.connect(_on_special_texture_changed)
 	if win.has_signal("doodad_selected"):
 		win.doodad_selected.connect(_on_doodad_selected)
+	if win.has_signal("unit_selected"):
+		win.unit_selected.connect(_on_unit_selected)
+	if win.has_signal("unit_owner_changed"):
+		win.unit_owner_changed.connect(_on_unit_owner_changed)
 	if win.has_signal("doodad_place_random_changed"):
 		win.doodad_place_random_changed.connect(_on_doodad_place_random_changed)
 		if win.has_method("set_doodad_place_random"):
@@ -450,6 +467,11 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.grab_focus()
 	if kind == ToolPaletteWindowScript.PaletteKind.DOODADS:
 		_brush_mode = "doodad"
+		_sync_active_brush()
+		_ensure_inspect_window(true)
+		_refresh_hud_brush()
+	elif kind == ToolPaletteWindowScript.PaletteKind.UNITS:
+		_brush_mode = "unit"
 		_sync_active_brush()
 		_ensure_inspect_window(true)
 		_refresh_hud_brush()
@@ -595,7 +617,40 @@ func _on_save() -> void:
 	if err != OK:
 		_set_status_key("EDITOR_STATUS_SAVE_FAILED")
 		return
+	# 始终强制实时光栅后再 bake，避免「游戏预览」模式下把旧 PNG 写回盘
+	var bake_err: Error = _bake_war3map_map(true)
+	if bake_err != OK:
+		_set_status("地形已保存，但 war3mapMap.png 导出失败")
+		return
 	_set_status_key("EDITOR_STATUS_SAVED")
+
+
+func _on_export_minimap() -> void:
+	if _doc == null or _doc.heightfield == null:
+		_set_status_key("EDITOR_STATUS_SAVE_FAILED")
+		return
+	var err: Error = _bake_war3map_map(true)
+	if err != OK:
+		_set_status_key("EDITOR_STATUS_SAVE_FAILED")
+		return
+	_set_status("已导出 war3mapMap.png")
+
+
+## 将当前实时光栅 bake 为 map_dir/war3mapMap.png（256 Nearest）。
+func _bake_war3map_map(force_live: bool = false) -> Error:
+	if _doc == null or _doc.map_dir.is_empty():
+		return ERR_INVALID_PARAMETER
+	var img: Image = null
+	if not force_live and _inspect_window != null and _inspect_window.has_method("get_minimap_image"):
+		img = _inspect_window.get_minimap_image()
+	if img == null:
+		var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root != null else null
+		var cliffs: Wc3CliffCatalog = map_root.get_cliff_catalog() if map_root != null else null
+		img = MapMinimapRaster.rasterize_from(_doc.heightfield, tiles, cliffs)
+	if img == null:
+		return ERR_INVALID_DATA
+	var path: String = _doc.map_dir.path_join("war3mapMap.png")
+	return MapMinimapRaster.bake_war3map_png(img, path)
 
 
 func _on_tile_selected(index: int) -> void:
@@ -627,6 +682,39 @@ func _on_doodad_selected(type_id: String, info: Dictionary) -> void:
 	_refresh_hud_brush()
 	_refresh_hud_props()
 	_set_status_key("EDITOR_STATUS_DOODAD_SELECTED", [_brush_doodad_name, type_id])
+
+
+func _on_unit_selected(type_id: String, info: Dictionary, owner_id: int) -> void:
+	_brush_mode = "unit"
+	_brush_unit_id = type_id
+	_brush_unit_name = str(info.get("name", type_id))
+	_brush_unit_owner = clampi(owner_id, 0, 15)
+	_sync_active_brush()
+	_ensure_inspect_window(true)
+	if _inspect_window != null:
+		if _inspect_window.has_method("show_unit"):
+			_inspect_window.show_unit(type_id, _brush_unit_owner, true)
+		elif _inspect_window.has_method("show_doodad"):
+			_inspect_window.show_doodad(type_id, 0, true)
+	_refresh_hud_brush()
+	_refresh_hud_props()
+	_set_status_key(
+		"EDITOR_STATUS_UNIT_SELECTED",
+		[_brush_unit_name, type_id, _brush_unit_owner + 1]
+	)
+
+
+func _on_unit_owner_changed(owner_id: int) -> void:
+	_brush_unit_owner = clampi(owner_id, 0, 15)
+	if _brush_mode == "unit" and not _brush_unit_id.is_empty():
+		if _inspect_window != null and _inspect_window.has_method("set_preview_team_color"):
+			_inspect_window.set_preview_team_color(_brush_unit_owner)
+		_refresh_hud_brush()
+		_refresh_hud_props()
+		_set_status_key(
+			"EDITOR_STATUS_UNIT_SELECTED",
+			[_brush_unit_name, _brush_unit_id, _brush_unit_owner + 1]
+		)
 
 
 func _on_preview_params_changed(variation: int, angle_deg: float, scale: float, random_var: bool) -> void:
@@ -724,7 +812,24 @@ func _refresh_inspect_minimap() -> void:
 		return
 	if _doc != null and _doc.heightfield != null and _inspect_window.has_method("refresh_minimap"):
 		var map_dir: String = _doc.map_dir if _doc != null else ""
-		_inspect_window.refresh_minimap(_doc.heightfield, map_dir)
+		var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root != null else null
+		var cliffs: Wc3CliffCatalog = map_root.get_cliff_catalog() if map_root != null else null
+		_inspect_window.refresh_minimap(_doc.heightfield, map_dir, tiles, cliffs)
+	_update_inspect_viewport_rect()
+
+
+## 地形 Mesh rebuild 后刷新实时小地图（与 brush/history 同拍）。
+func _refresh_inspect_minimap_live() -> void:
+	if _inspect_window == null or not is_instance_valid(_inspect_window):
+		return
+	if _doc == null or _doc.heightfield == null:
+		return
+	if not _inspect_window.has_method("refresh_minimap_live"):
+		_refresh_inspect_minimap()
+		return
+	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root != null else null
+	var cliffs: Wc3CliffCatalog = map_root.get_cliff_catalog() if map_root != null else null
+	_inspect_window.refresh_minimap_live(_doc.heightfield, tiles, cliffs)
 	_update_inspect_viewport_rect()
 
 
@@ -792,6 +897,11 @@ func _refresh_hud_brush() -> void:
 	var text := ""
 	if _brush_mode == "doodad" and not _brush_doodad_id.is_empty():
 		text = EditorI18n.t("EDITOR_HUD_BRUSH_DOODAD", [_brush_doodad_name, _brush_doodad_id])
+	elif _brush_mode == "unit" and not _brush_unit_id.is_empty():
+		text = EditorI18n.t(
+			"EDITOR_HUD_BRUSH_UNIT",
+			[_brush_unit_name, _brush_unit_id, _brush_unit_owner + 1]
+		)
 	else:
 		var tid: String = str(_doc.brush_tile_id()) if _doc != null else ""
 		var label: String = EditorI18n.tile_display_name(map_root.get_tiles(), tid) if map_root != null else tid
@@ -801,7 +911,12 @@ func _refresh_hud_brush() -> void:
 	if status_bar != null and status_bar.has_method("set_brush_text"):
 		status_bar.set_brush_text(text)
 	if toolbar != null and toolbar.has_method("set_brush_text"):
-		toolbar.set_brush_text(_brush_doodad_name if _brush_mode == "doodad" else text)
+		if _brush_mode == "doodad":
+			toolbar.set_brush_text(_brush_doodad_name)
+		elif _brush_mode == "unit":
+			toolbar.set_brush_text(_brush_unit_name)
+		else:
+			toolbar.set_brush_text(text)
 
 
 func _refresh_hud_props() -> void:
@@ -811,6 +926,8 @@ func _refresh_hud_props() -> void:
 			"EDITOR_HUD_PROPS_DOODAD",
 			[_brush_doodad_variation, int(_brush_doodad_angle), _brush_doodad_scale]
 		)
+	elif _brush_mode == "unit" and not _brush_unit_id.is_empty():
+		text = EditorI18n.t("EDITOR_HUD_PROPS_UNIT", [_brush_unit_owner + 1])
 	if status_bar != null and status_bar.has_method("set_props_text"):
 		status_bar.set_props_text(text)
 
@@ -837,6 +954,7 @@ func _on_brush_rebuild() -> void:
 	else:
 		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
+	_refresh_inspect_minimap_live()
 	if _pending_history_rebuild:
 		var again_cliff: bool = _pending_history_cliff
 		_pending_history_rebuild = false
@@ -883,8 +1001,9 @@ func _apply_document(full_reload: bool) -> void:
 
 func _sync_active_brush() -> void:
 	var use_doodad := _brush_mode == "doodad"
+	var use_unit := _brush_mode == "unit"
 	if brush != null:
-		brush.set("enabled", not use_doodad)
+		brush.set("enabled", not use_doodad and not use_unit)
 	if doodad_brush != null:
 		doodad_brush.set("enabled", use_doodad)
 		if use_doodad:

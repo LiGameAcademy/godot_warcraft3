@@ -210,10 +210,8 @@ func corner_mask_for_type(t_bl: int, t_br: int, t_tl: int, t_tr: int, terrain_ty
 	return mask
 
 
-## 邻近直崖/斜坡格时改用 cliff.groundTile（对齐 HivEWE `real_tile_texture` terrain.ixx L711-743）。
-## 优先级：附近 a_romp（CliffTrans 过渡） || (附近 a_cliff && 自己非 ramp) → cliff.groundTile；否则原地表。
-## HivEWE L729：自己为 ramp corner 时不染崖地砖（避免冲掉 ramp 顶颜色）。
-## HivEWE L738：corner_blight 优先级留 ROADMAP §⑪（待 blight 路径实现）。
+## 邻近直崖/斜坡格时改用 cliff.groundTile（对齐 HivEWE `real_tile_texture`）。
+## 实现已上提至 Wc3TerrainLogic.real_tile_texture；此处保留同名供 Present 调用。
 func corner_texture(
 	ground_tex: Array,
 	layer_heights: Array,
@@ -224,48 +222,19 @@ func corner_texture(
 	col: int,
 	row: int
 ) -> int:
-	var self_idx := row * tp_w + col
-	var self_is_ramp: bool = (
-		_last_hf != null
-		and self_idx < _last_hf.flags_packed.size()
-		and (int(_last_hf.flags_packed[self_idx]) & Wc3Coords.FLAG_RAMP) != 0
+	var flags: Array = _last_hf.flags_packed if _last_hf != null else []
+	return Wc3TerrainLogic.real_tile_texture(
+		ground_tex,
+		layer_heights,
+		cliff_tex,
+		cliff_to_ground,
+		flags,
+		_last_romp,
+		tp_w,
+		tp_h,
+		col,
+		row
 	)
-	if not cliff_to_ground.is_empty():
-		# 1) 附近 cliff（HivEWE L714-727 a_cliff 检查：自己 + 左 + 下 + 左下）
-		for dy in range(-1, 1):
-			for dx in range(-1, 1):
-				var tx := col + dx
-				var ty := row + dy
-				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
-					continue
-				if not Wc3CliffLogic.is_cliff_tile(layer_heights, tp_w, tx, ty):
-					continue
-				# 自己为 ramp corner 时不染崖地砖（HivEWE L729 !corner_ramp[idx] 排除）
-				if self_is_ramp and tx == col and ty == row:
-					continue
-				var i00 := ty * tp_w + tx
-				var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
-				if ci == 15:
-					ci = 1
-				if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
-					return cliff_to_ground[ci]
-		# 2) 附近 romp（HivEWE L714-727 a_romp 检查）
-		if not _last_romp.is_empty():
-			for dy in range(-1, 1):
-				for dx in range(-1, 1):
-					var tx := col + dx
-					var ty := row + dy
-					if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
-						continue
-					var i00: int = ty * tp_w + tx
-					if i00 < _last_romp.size() and _last_romp[i00] != 0:
-						# 用 self 的 cliff_tex（HivEWE L730 corner_cliff_texture[idx]）
-						var ci := int(cliff_tex[self_idx]) if self_idx < cliff_tex.size() else 0
-						if ci == 15:
-							ci = 1
-						if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
-							return cliff_to_ground[ci]
-	return _tex_at(ground_tex, self_idx)
 
 
 ## 返回 gap_count；网格写在 _ground 上。挖洞只消费传入 mask（直崖 ± 斜坡 API 合成）。

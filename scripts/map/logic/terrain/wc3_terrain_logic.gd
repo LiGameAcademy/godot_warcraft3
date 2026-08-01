@@ -341,3 +341,60 @@ func _mark_dirty(ix: int, iy: int) -> void:
 	dirty_min.y = mini(dirty_min.y, iy)
 	dirty_max.x = maxi(dirty_max.x, ix)
 	dirty_max.y = maxi(dirty_max.y, iy)
+
+
+## 角点「实际」地表纹理下标（对齐 HiveWE `real_tile_texture` / MapTerrainLayer.corner_texture）。
+## 优先级：附近 romp 或 (附近 cliff 且自身非 ramp) → cliff_to_ground；否则 ground_tex。
+## blight 路径留后置。
+static func real_tile_texture(
+	ground_tex: Array,
+	layer_heights: Array,
+	cliff_tex: Array,
+	cliff_to_ground: PackedInt32Array,
+	flags_packed: Array,
+	romp: PackedByteArray,
+	tp_w: int,
+	tp_h: int,
+	col: int,
+	row: int,
+) -> int:
+	var self_idx := row * tp_w + col
+	var self_is_ramp: bool = (
+		self_idx >= 0
+		and self_idx < flags_packed.size()
+		and (int(flags_packed[self_idx]) & Wc3Coords.FLAG_RAMP) != 0
+	)
+	if not cliff_to_ground.is_empty():
+		for dy in range(-1, 1):
+			for dx in range(-1, 1):
+				var tx := col + dx
+				var ty := row + dy
+				if tx < 0 or ty < 0 or tx >= tp_w - 1 or ty >= tp_h - 1:
+					continue
+				if not Wc3CliffLogic.is_cliff_tile(layer_heights, tp_w, tx, ty):
+					continue
+				if self_is_ramp and tx == col and ty == row:
+					continue
+				var i00 := ty * tp_w + tx
+				var ci := int(cliff_tex[i00]) if i00 < cliff_tex.size() else 0
+				if ci == 15:
+					ci = 1
+				if ci >= 0 and ci < cliff_to_ground.size() and cliff_to_ground[ci] >= 0:
+					return cliff_to_ground[ci]
+		if not romp.is_empty():
+			for dy in range(-1, 1):
+				for dx in range(-1, 1):
+					var tx2 := col + dx
+					var ty2 := row + dy
+					if tx2 < 0 or ty2 < 0 or tx2 >= tp_w - 1 or ty2 >= tp_h - 1:
+						continue
+					var i_romp: int = ty2 * tp_w + tx2
+					if i_romp < romp.size() and romp[i_romp] != 0:
+						var ci2 := int(cliff_tex[self_idx]) if self_idx < cliff_tex.size() else 0
+						if ci2 == 15:
+							ci2 = 1
+						if ci2 >= 0 and ci2 < cliff_to_ground.size() and cliff_to_ground[ci2] >= 0:
+							return cliff_to_ground[ci2]
+	if self_idx < 0 or self_idx >= ground_tex.size():
+		return 0
+	return int(ground_tex[self_idx])

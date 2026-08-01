@@ -43,6 +43,48 @@ static func build_texture_array(ground_tilesets: Array, tiles: Wc3TerrainTileCat
 	return tex
 
 
+## 各地表 tileset 的小地图代表色（对齐 HiveWE：取变体 0 块平均色 ≈ 最低 mip）。
+## [param ground_tilesets: Array] 地面纹理集 ID 列表
+## [param tiles: Wc3TerrainTileCatalog] 地形瓷砖 Catalog
+## [return PackedColorArray] 与 ground_tilesets 等长；缺图时灰绿占位
+static func build_minimap_colors(ground_tilesets: Array, tiles: Wc3TerrainTileCatalog) -> PackedColorArray:
+	var colors := PackedColorArray()
+	colors.resize(ground_tilesets.size())
+	for i in range(ground_tilesets.size()):
+		var png := tiles.png_for_ground_index(ground_tilesets, i) if is_instance_valid(tiles) else ""
+		var img := RuntimeAssets.load_image(png) if not png.is_empty() else null
+		if img == null:
+			colors[i] = Color(0.4, 0.45, 0.35, 1.0)
+			continue
+		colors[i] = _average_tile_color(img)
+	return colors
+
+
+## 对 atlas 左上角变体 0（tile_size×tile_size）求平均色。
+static func _average_tile_color(atlas: Image) -> Color:
+	var h: int = atlas.get_height()
+	var w: int = atlas.get_width()
+	if h < 1 or w < 1:
+		return Color(0.4, 0.45, 0.35, 1.0)
+	var tile_size: int = maxi(int(h * 0.25), 1)
+	tile_size = mini(tile_size, mini(w, h))
+	var src := atlas
+	if src.get_format() != Image.FORMAT_RGBA8:
+		src = atlas.duplicate()
+		src.convert(Image.FORMAT_RGBA8)
+	var sum := Color(0, 0, 0, 0)
+	var n: int = 0
+	# 降采样步进，大图不必逐像素（仍逼近 mip 平均）
+	var step: int = maxi(int(tile_size / 16.0), 1)
+	for y in range(0, tile_size, step):
+		for x in range(0, tile_size, step):
+			sum += src.get_pixel(x, y)
+			n += 1
+	if n <= 0:
+		return Color(0.4, 0.45, 0.35, 1.0)
+	return sum / float(n)
+
+
 ## 宽图集（过渡块）标记：1=extended，0=普通。
 ## [param ground_tilesets: Array] 地面纹理集
 ## [param tiles: Wc3TerrainTileCatalog] 地形瓷砖

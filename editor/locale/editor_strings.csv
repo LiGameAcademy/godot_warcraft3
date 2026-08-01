@@ -13,6 +13,7 @@ EDITOR_INSPECT_TITLE,导航 / 预览,Navigator / Preview
 EDITOR_MINIMAP_SHOW_BUILDINGS,显示中立建筑图标,Show neutral building icons
 EDITOR_MINIMAP_SHOW_UNITS,显示中立生物图标,Show neutral unit icons
 EDITOR_MINIMAP_SHOW_VIEWPORT,显示当前视口范围,Show viewport frame
+EDITOR_MINIMAP_GAME_PREVIEW,察看游戏小地图,Show game minimap preview
 EDITOR_PREVIEW_EMPTY,（未选择装饰物）,No doodad selected
 EDITOR_PREVIEW_RANDOM_VAR,放置随机样式,Place random variation
 EDITOR_PREVIEW_VARIATION,样式 (%d / %d),Variation (%d / %d)
@@ -244,3 +245,24 @@ WESTRING_LOCALE_ICECROWN,冰封王座,Icecrown
 WESTRING_TILE_DIRT,泥土,Dirt
 WESTRING_TILE_GRASS,草地,Grass
 EDITOR_MENU_RAMP_DEBUG,斜坡标记(&R),Ramp Marks(&R)
+EDITOR_UNIT_GROUP_STANDARD,标准单位,Standard Units
+EDITOR_UNIT_GROUP_CAMPAIGN,战役单位,Campaign Units
+EDITOR_UNIT_GROUP_SPECIAL,特殊单位,Special Units
+EDITOR_UNIT_GROUP_ALL,全部,All
+EDITOR_UNIT_SET_MELEE,对战,Melee
+EDITOR_UNIT_SET_CAMPAIGN,战役,Campaign
+EDITOR_UNIT_CURRENT_FMT,单位: %s,Unit: %s
+EDITOR_UNIT_LIST_EMPTY,(无单位), (No units)
+EDITOR_UNIT_ANY_LEVEL,任何等级,Any Level
+EDITOR_UNIT_LEVEL_FMT,等级 %d,Level %d
+EDITOR_UNIT_RACE_CREEPS,中立敌对,Neutral Hostile
+EDITOR_UNIT_RACE_CRITTERS,中立被动,Neutral Passive
+EDITOR_UNIT_RACE_COMMONER,平民,Commoner
+EDITOR_UNIT_RACE_DEMON,恶魔,Demon
+EDITOR_UNIT_OWNER_NEUTRAL_PASSIVE,中立被动,Neutral Passive
+EDITOR_UNIT_OWNER_NEUTRAL_HOSTILE,中立敌对,Neutral Hostile
+EDITOR_UNIT_OWNER_PLAYER_FMT,玩家 %d（%s）,Player %d (%s)
+EDITOR_STATUS_UNIT_SELECTED,已选单位：%s [%s] 玩家 %d,Selected unit: %s [%s] player %d
+EDITOR_STATUS_UNIT_BRUSH,单位面板（放置笔刷下期）,Unit palette (placement brush next)
+EDITOR_HUD_BRUSH_UNIT,%s [%s] P%d,%s [%s] P%d
+EDITOR_HUD_PROPS_UNIT,玩家 %d,Player %d

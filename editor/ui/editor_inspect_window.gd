@@ -41,6 +41,7 @@ const ICON_PATHS := {
 @onready var _chk_buildings: CheckBox = %ChkBuildings
 @onready var _chk_units: CheckBox = %ChkUnits
 @onready var _chk_viewport: CheckBox = %ChkViewport
+@onready var _chk_game_preview: CheckBox = %ChkGamePreview
 @onready var _preview_title: Label = %PreviewTitle
 @onready var _model_root: Node3D = %ModelRoot
 @onready var _preview_cam: Camera3D = %PreviewCamera
@@ -66,6 +67,8 @@ var _cache: MapModelCache
 var _type_id: String = ""
 var _variation: int = 0
 var _num_var: int = 1
+var _team_color_owner: int = 0 ## 单位预览队伍色；装饰物忽略
+var _preview_kind: String = "" ## "unit" | "doodad" | ""
 var _dist_we: float = PREVIEW_DIST_DEFAULT
 ## 放置朝向（度）：幽灵 / 落笔 / 模型正面朝向。与下方环视 yaw 分离。
 var _place_facing_deg: float = PLACE_FACING_DEFAULT
@@ -87,8 +90,14 @@ var _viewport_quad: PackedVector2Array = PackedVector2Array()
 var _show_viewport_rect: bool = true
 var _show_buildings: bool = true
 var _show_units: bool = true
+var _game_preview: bool = false ## true=磁盘 war3mapMap；false=实时光栅
 var _mmp_icons: Array = [] ## [{type,x,y,color:[r,g,b,a]}]
 var _icon_textures: Dictionary = {} ## type -> Texture2D
+var _last_hf: Wc3Heightfield
+var _last_map_dir: String = ""
+var _last_tiles: Wc3TerrainTileCatalog
+var _last_cliff_catalog: Wc3CliffCatalog
+var _last_romp: PackedByteArray = PackedByteArray()
 
 
 func _ready() -> void:
@@ -105,7 +114,10 @@ func _ready() -> void:
 	_chk_viewport.button_pressed = true
 	_chk_buildings.button_pressed = true
 	_chk_units.button_pressed = true
+	if _chk_game_preview != null:
+		_chk_game_preview.button_pressed = false
 	_refresh_var_label()
+	_update_variation_ui_visibility()
 	_apply_preview_camera()
 	_load_icon_textures()
 	_apply_minimap_frame_style()
@@ -132,6 +144,11 @@ func _wire() -> void:
 		_show_units = on
 		_minimap_overlay.queue_redraw()
 	)
+	if _chk_game_preview != null:
+		_chk_game_preview.toggled.connect(func(on: bool) -> void:
+			_game_preview = on
+			_reload_minimap_from_cache()
+		)
 	_chk_random.toggled.connect(func(on: bool) -> void:
 		_random_var = on
 		_emit_params()
@@ -280,6 +297,26 @@ func _apply_minimap_frame_style() -> void:
 	sb.set_border_width_all(3)
 	sb.set_content_margin_all(4)
 	_minimap_frame.add_theme_stylebox_override("panel", sb)
+	# 外框保持正方形（宽由窗口决定时同步高度）
+	if not _minimap_frame.resized.is_connected(_sync_minimap_frame_square):
+		_minimap_frame.resized.connect(_sync_minimap_frame_square)
+	call_deferred("_sync_minimap_frame_square")
+	if _minimap_tex != null:
+		_minimap_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_minimap_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_minimap_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+
+
+## Panel 被拉宽时把高度设成相同，避免方图横向拉伸。
+func _sync_minimap_frame_square() -> void:
+	if _minimap_frame == null:
+		return
+	var w: float = _minimap_frame.size.x
+	if w < 64.0:
+		w = 280.0
+	var target := Vector2(w, w)
+	if not _minimap_frame.custom_minimum_size.is_equal_approx(target):
+		_minimap_frame.custom_minimum_size = target
 
 
 func _load_icon_textures() -> void:
@@ -304,6 +341,8 @@ func _apply_locale() -> void:
 	_chk_buildings.text = EditorI18n.t("EDITOR_MINIMAP_SHOW_BUILDINGS")
 	_chk_units.text = EditorI18n.t("EDITOR_MINIMAP_SHOW_UNITS")
 	_chk_viewport.text = EditorI18n.t("EDITOR_MINIMAP_SHOW_VIEWPORT")
+	if _chk_game_preview != null:
+		_chk_game_preview.text = EditorI18n.t("EDITOR_MINIMAP_GAME_PREVIEW")
 	_chk_random.text = EditorI18n.t("EDITOR_PREVIEW_RANDOM_VAR")
 	_dist_label.text = EditorI18n.t("EDITOR_PREVIEW_DISTANCE")
 	_angle_label.text = EditorI18n.t("EDITOR_PREVIEW_FACING")
@@ -331,22 +370,101 @@ func _on_close() -> void:
 	hide()
 
 
-## 刷新小地图底图：优先 map_dir/war3mapMap.png，否则 heightfield 光栅。
-func refresh_minimap(hf: Wc3Heightfield, map_dir: String = "") -> void:
+## 刷新小地图底图。
+## game_preview 勾选时优先磁盘 war3mapMap；否则纹理采样实时光栅（显示 256 Nearest）。
+func refresh_minimap(
+	hf: Wc3Heightfield,
+	map_dir: String = "",
+	tiles: Wc3TerrainTileCatalog = null,
+	cliff_catalog: Wc3CliffCatalog = null,
+	romp: PackedByteArray = PackedByteArray(),
+) -> void:
+	_last_hf = hf
+	_last_map_dir = map_dir
+	_last_tiles = tiles
+	_last_cliff_catalog = cliff_catalog
+	_last_romp = romp
 	_mmp_icons.clear()
 	_minimap_image = null
 	_minimap_raster = null
 	if not map_dir.is_empty():
-		_minimap_image = _try_load_war3map_map(map_dir)
 		_mmp_icons = _try_load_mmp_icons(map_dir)
+	if _game_preview and not map_dir.is_empty():
+		_minimap_image = _try_load_war3map_map(map_dir)
 	if _minimap_image == null:
-		if hf == null or hf.width < 2 or hf.height < 2:
-			_minimap_tex.texture = null
-			_minimap_overlay.queue_redraw()
-			return
-		_minimap_raster = MapMinimapRaster.new(hf, 256)
-		_minimap_image = _minimap_raster.rasterize()
-	_minimap_tex.texture = ImageTexture.create_from_image(_minimap_image)
+		_minimap_image = _rasterize_live(hf, tiles, cliff_catalog, romp)
+	_apply_minimap_texture(_minimap_image)
+
+
+## 仅强制实时光栅（笔刷 / undo 后调用；忽略 game_preview 勾选的磁盘图）。
+func refresh_minimap_live(
+	hf: Wc3Heightfield,
+	tiles: Wc3TerrainTileCatalog = null,
+	cliff_catalog: Wc3CliffCatalog = null,
+	romp: PackedByteArray = PackedByteArray(),
+) -> void:
+	_last_hf = hf
+	if tiles != null:
+		_last_tiles = tiles
+	if cliff_catalog != null:
+		_last_cliff_catalog = cliff_catalog
+	_last_romp = romp
+	if _game_preview:
+		_minimap_overlay.queue_redraw()
+		return
+	_minimap_image = _rasterize_live(
+		hf,
+		_last_tiles,
+		_last_cliff_catalog,
+		_last_romp,
+	)
+	_apply_minimap_texture(_minimap_image)
+
+
+## 工作图（1:1）优先；无 raster 时退回当前显示图（如磁盘 PNG）。
+func get_minimap_image() -> Image:
+	if _minimap_raster != null:
+		var work: Image = _minimap_raster.get_image()
+		if work != null:
+			return work
+	return _minimap_image
+
+
+func _reload_minimap_from_cache() -> void:
+	refresh_minimap(_last_hf, _last_map_dir, _last_tiles, _last_cliff_catalog, _last_romp)
+
+
+func _rasterize_live(
+	hf: Wc3Heightfield,
+	tiles: Wc3TerrainTileCatalog,
+	cliff_catalog: Wc3CliffCatalog,
+	romp: PackedByteArray,
+) -> Image:
+	if hf == null or hf.width < 2 or hf.height < 2:
+		return null
+	_minimap_raster = MapMinimapRaster.new(hf)
+	var colors := PackedColorArray()
+	if tiles != null:
+		colors = Wc3GroundTileCatalog.build_minimap_colors(hf.ground_tilesets, tiles)
+	else:
+		colors.resize(maxi(hf.ground_tilesets.size(), 1))
+		for i in range(colors.size()):
+			colors[i] = MapMinimapUtils.ground_tex_to_color(i)
+	var c2g := PackedInt32Array()
+	if cliff_catalog != null:
+		c2g = cliff_catalog.build_cliff_to_ground_map(hf.cliff_tilesets, hf.ground_tilesets)
+	_minimap_raster.setup_terrain(colors, c2g, romp)
+	_minimap_raster.rasterize()
+	return _minimap_raster.get_display_image()
+
+
+func _apply_minimap_texture(img: Image) -> void:
+	if img == null:
+		_minimap_tex.texture = null
+		_minimap_overlay.queue_redraw()
+		return
+	_minimap_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_minimap_tex.texture = ImageTexture.create_from_image(img)
 	_minimap_overlay.queue_redraw()
 
 
@@ -505,6 +623,7 @@ func show_doodad(type_id: String, variation: int = 0, apply_type_defaults: bool 
 	var new_id := type_id.strip_edges()
 	var type_changed := _type_id != new_id
 	_type_id = new_id
+	_preview_kind = "doodad"
 	var info: Dictionary = {}
 	if _catalog != null:
 		info = _catalog.lookup(new_id)
@@ -514,7 +633,36 @@ func show_doodad(type_id: String, variation: int = 0, apply_type_defaults: bool 
 		_apply_type_preview_defaults(info, type_changed)
 	_refresh_preview_title()
 	_refresh_var_label()
+	_update_variation_ui_visibility()
 	_reload_model()
+
+
+## 单位预览：应用 owner 队伍色；单位无 variation。
+func show_unit(type_id: String, owner_id: int = 0, apply_type_defaults: bool = true) -> void:
+	var new_id := type_id.strip_edges()
+	var type_changed := _type_id != new_id
+	_type_id = new_id
+	_preview_kind = "unit"
+	_team_color_owner = clampi(owner_id, 0, 15)
+	var info: Dictionary = {}
+	if _catalog != null:
+		info = _catalog.lookup(new_id)
+	_num_var = 1
+	_variation = 0
+	if apply_type_defaults:
+		_apply_type_preview_defaults(info, type_changed)
+	_refresh_preview_title()
+	_refresh_var_label()
+	_update_variation_ui_visibility()
+	_reload_model()
+
+
+## 切换单位面板玩家色时刷新预览染色（不重载模型）。
+func set_preview_team_color(owner_id: int) -> void:
+	_team_color_owner = clampi(owner_id, 0, 15)
+	if _preview_kind != "unit" or _preview_instance == null or _cache == null:
+		return
+	_cache.apply_team_color(_preview_instance, _team_color_owner)
 
 
 ## 地图点选：预览该实例（类型默认距离 + 实例朝向/样式/缩放）。
@@ -555,9 +703,29 @@ func _apply_type_preview_defaults(info: Dictionary, reset_orbit: bool = true) ->
 
 func clear_preview() -> void:
 	_type_id = ""
+	_preview_kind = ""
+	_num_var = 1
+	_variation = 0
 	_preview_title.text = EditorI18n.t("EDITOR_PREVIEW_EMPTY")
 	_clear_model()
 	_reset_anim_ui()
+	_update_variation_ui_visibility()
+
+
+func _update_variation_ui_visibility() -> void:
+	var show_var := _num_var > 1 and _preview_kind != "unit"
+	if _chk_random != null:
+		_chk_random.visible = show_var
+	var var_row: Control = get_node_or_null("%VarRow") as Control
+	if var_row == null and _var_label != null:
+		var_row = _var_label.get_parent() as Control
+	if var_row != null:
+		var_row.visible = show_var
+
+
+func _refresh_var_label() -> void:
+	_var_label.text = EditorI18n.t("EDITOR_PREVIEW_VARIATION", [_variation, _num_var])
+	_update_variation_ui_visibility()
 
 
 func get_selection() -> Dictionary:
@@ -595,10 +763,6 @@ func _step_variation(delta: int) -> void:
 	_refresh_var_label()
 	_reload_model()
 	_emit_params()
-
-
-func _refresh_var_label() -> void:
-	_var_label.text = EditorI18n.t("EDITOR_PREVIEW_VARIATION", [_variation, _num_var])
 
 
 func _emit_params() -> void:
@@ -639,7 +803,11 @@ func _reload_model() -> void:
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
 	if not path.is_empty():
 		_Pe2.attach_to(node, path)
-	MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
+	# 单位预览不挂 Click Helper（避免大红框）；装饰物仍按 SLK
+	if _preview_kind != "unit":
+		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
+	if _preview_kind == "unit" and _cache != null:
+		_cache.apply_team_color(node, _team_color_owner)
 	_apply_model_xform()
 	_setup_animations(node)
 	call_deferred("_frame_model_deferred", gen)
@@ -650,7 +818,7 @@ func _setup_animations(node: Node3D) -> void:
 	if _cache == null or node == null:
 		_reset_anim_ui()
 		return
-	_anim_names = _cache.list_animations(node)
+	_anim_names = _cache.list_animations(node, true)
 	_suppress_anim_signal = true
 	if _anim_option != null:
 		_anim_option.clear()

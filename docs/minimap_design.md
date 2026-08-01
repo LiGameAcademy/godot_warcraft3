@@ -1,13 +1,13 @@
 # 小地图模块设计方案 / Minimap Module Design
 
 > 最后更新：2026-08-01
-> 状态：**Phase 1 + Phase 2 完成**（基础设施 + 编辑器 Static 模式重构）
+> 状态：**Phase 1 + Phase 2 完成**；下一阶段见 **[minimap_phase3_design.md](minimap_phase3_design.md)**（讨论稿）
 
 已完成：
 
-- `scripts/map/minimap/map_minimap_utils.gd` — 坐标转换 + 颜色映射
-- `scripts/map/minimap/map_minimap_raster.gd` — Heightfield → Image rasterizer
-- `editor/ui/editor_inspect_window.gd` — 重构为使用 MapMinimapRaster
+- `scripts/map/minimap/map_minimap_utils.gd` — 坐标转换 + 颜色映射 + 视口梯形
+- `scripts/map/minimap/map_minimap_raster.gd` — Heightfield → Image（当前为高度伪彩 fallback）
+- `editor/ui/editor_inspect_window.gd` — 重构为使用 MapMinimapRaster；优先加载 `war3mapMap.png`
 - `editor/scripts/editor.gd` — 迁移方法委托给 MapMinimapUtils
 
 ---
