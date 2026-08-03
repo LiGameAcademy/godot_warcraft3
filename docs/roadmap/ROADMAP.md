@@ -3,7 +3,7 @@
 > 总纲：[LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)  
 > 原则：**先搭框架与映射，再按「数据 → 逻辑 → 表现 → 编辑」逐模块推进**。  
 > 当前阶段 **不是** 斜坡功能冲刺，而是底层可维护性重构；斜坡排在悬崖之后。  
-> 最后更新：2026-07-24
+> 最后更新：2026-08-03
 
 ---
 
@@ -36,7 +36,10 @@
 ⑩ 应用高度（装饰物等 Y 落地）
 ⑪ 装饰物绘制
 ⑫ 单位绘制
+⑬ 游戏场景（对战竖切）→ 见 docs/game/
 ```
+
+地图编辑相关 ①–⑫ 告一段落后，玩法进入 **[docs/game/ROADMAP.md](../game/ROADMAP.md)**（Echo Isles、Melee Bootstrap；触发器远期）。
 
 ---
 
