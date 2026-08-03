@@ -120,6 +120,9 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> bool:
 			if brush == null:
 				return false
 			if mb.pressed:
+				if mb.double_click and brush.has_method("handle_double_click"):
+					brush.handle_double_click(mb.position)
+					return true
 				if brush.has_method("stroke_press"):
 					brush.stroke_press(mb.position)
 			else:

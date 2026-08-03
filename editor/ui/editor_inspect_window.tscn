@@ -41,14 +41,10 @@ custom_minimum_size = Vector2(280, 280)
 layout_mode = 2
 size_flags_horizontal = 4
 
-[node name="MinimapAspect" type="AspectRatioContainer" parent="Margin/Root/MinimapFrame"]
+[node name="MinimapAspect" type="AspectRatioContainer" parent="Margin/Root/MinimapFrame" unique_id=132146168]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-ratio = 1.0
-alignment_horizontal = 1
-alignment_vertical = 1
-stretch_mode = 2
 
 [node name="MinimapStack" type="Control" parent="Margin/Root/MinimapFrame/MinimapAspect" unique_id=912345001]
 custom_minimum_size = Vector2(256, 256)
@@ -58,6 +54,7 @@ size_flags_vertical = 3
 
 [node name="MinimapTex" type="TextureRect" parent="Margin/Root/MinimapFrame/MinimapAspect/MinimapStack" unique_id=338182851]
 unique_name_in_owner = true
+texture_filter = 1
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -68,7 +65,6 @@ mouse_filter = 2
 texture = SubResource("PlaceholderTexture2D_3tof1")
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
 
 [node name="MinimapOverlay" type="Control" parent="Margin/Root/MinimapFrame/MinimapAspect/MinimapStack" unique_id=338182852]
 unique_name_in_owner = true
@@ -104,7 +100,6 @@ text = "EDITOR_MINIMAP_SHOW_VIEWPORT"
 [node name="ChkGamePreview" type="CheckBox" parent="Margin/Root/MinimapChecks" unique_id=157521774]
 unique_name_in_owner = true
 layout_mode = 2
-button_pressed = false
 text = "EDITOR_MINIMAP_GAME_PREVIEW"
 
 [node name="Sep" type="HSeparator" parent="Margin/Root" unique_id=751552806]
@@ -141,7 +136,7 @@ stretch = true
 unique_name_in_owner = true
 own_world_3d = true
 handle_input_locally = false
-size = Vector2i(652, 241)
+size = Vector2i(652, 240)
 render_target_update_mode = 4
 
 [node name="PreviewWorld" type="Node3D" parent="Margin/Root/PreviewBox/PreviewStack/PreviewViewportContainer/PreviewViewport" unique_id=2047537352]
@@ -176,6 +171,22 @@ grow_horizontal = 2
 grow_vertical = 2
 tooltip_text = "EDITOR_PREVIEW_ORBIT_HINT"
 mouse_default_cursor_shape = 13
+
+[node name="PreviewLoadingLabel" type="Label" parent="Margin/Root/PreviewBox/PreviewStack" unique_id=538192677]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 18
+text = "EDITOR_PREVIEW_LOADING"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ChkRandom" type="CheckBox" parent="Margin/Root" unique_id=1894586962]
 unique_name_in_owner = true

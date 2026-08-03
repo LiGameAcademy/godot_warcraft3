@@ -4,10 +4,32 @@
 
 1. **贴图** `BLP` → `PNG`（`war3-model` 解码 + `pngjs`）
 2. **模型** `MDX`/`MDL` → `GLB`（`war3-model` 解析 + `@gltf-transform/core`）
-3. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`（Godot 运行时挂 `GPUParticles3D`）
-4. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
+3. **场景** `GLB` → 同目录 `.scn`（Godot headless 烘焙；运行时优先，免 `GLTFDocument`）
+4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`（Godot 运行时挂 `GPUParticles3D`）
+5. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
 
-默认顺序：`textures → models`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 时会重新转换该模型。
+默认顺序：`textures → models → scn`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 时会重新转换该模型。  
+`.scn` 需本机 Godot 4.x（环境变量 `GODOT` / `GODOT_BIN`）；找不到 Godot 时跳过烘焙并警告，不阻断 convert。
+
+### 转换（含自动烘焙 .scn）
+
+```bash
+npm install
+# 贴图 + 模型 + 同目录 .scn
+npm run convert -- --include "Units/Human/Footman/**" --include "Textures/**"
+# 只要贴图
+npm run convert:textures -- --include "Textures/**"
+# 只要模型（仍会自动 bake .scn；可加 --skip-scn）
+npm run convert:models -- --include "Units/Human/Footman/**"
+# 只补烤 .scn
+npm run bake:scn -- --include Units/Human/
+# 或
+npm run convert -- --scn-only --include Units/Human/
+```
+
+输出根目录默认：`../../assets/asset-converted`（`Foo.glb` + `Foo.scn` 同目录，已 gitignore）。
+
+未烘焙时：编辑器首次预览后会懒写入同目录（失败则 `user://model-scenes/`）。
 
 ### 批量重转 Additive 光晕
 
@@ -30,13 +52,6 @@ godot --headless --path ../.. -s res://tools/export_pe2_scenes.gd -- --include D
 ```
 
 `Wc3Pe2Particles.attach_to` 优先 `res://assets/pe2-prefabs/.../*.pe2.tscn`，没有再回退 JSON。
-
-```bash
-npm install
-npm run convert -- --include "Units/Human/Footman/**" --include "Textures/**"
-```
-
-输出根目录默认：`../../assets/asset-converted`（`res://assets/asset-converted/...`，已 gitignore）。
 
 ## 已知问题与处理
 

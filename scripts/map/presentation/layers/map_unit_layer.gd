@@ -1,12 +1,34 @@
 class_name MapUnitLayer
 extends Node3D
-## 单位 / 建筑层。
+## 单位 / 建筑层：单 Node3D 实例（骨骼动画，不用 MultiMesh）。
+## 大批量重建走分帧队列，避免开图卡死主线程。
 
+
+signal batch_progress(done: int, total: int)
+signal batch_finished(placed: int, placeholders: int)
 
 @export var try_load_glb: bool = true
+## 每帧放置预算（毫秒）；模型已缓存时 instantiate 很快。
+@export var batch_budget_ms: int = 8
+@export var batch_max_per_frame: int = 24
+## 每帧最多在主线程解析几个尚无 .scn 的 GLB（GLTFDocument 非线程安全）。
+@export var gltf_parse_per_frame: int = 1
+
+const DROP_RING_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
+const DROP_RING_COLOR := Color(1.0, 1.0, 1.0, 0.95)
+const DROP_RING_Y_BIAS := 0.15
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
+var last_placed: int = 0
+var last_placeholder: int = 0
+
+var _batch_active: bool = false
+var _batch_pending: Array = [] ## 待放置 Dictionary
+var _batch_done_count: int = 0
+var _batch_total: int = 0
+var _batch_hf: Wc3Heightfield = null
+var _batch_gen: int = 0
 
 
 func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
@@ -15,54 +37,331 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 
 
 func build(ctx: MapBuildContext) -> void:
+	## 预览场景同步路径（单位少 / 非编辑器）。
+	cancel_batch()
 	_clear_children()
-	var loaded := 0
-	var placeholder := 0
+	last_placed = 0
+	last_placeholder = 0
 	if ctx == null:
 		return
-	for u in ctx.units.get("units", []):
-		var type_id := str(u.get("typeId", ""))
-		var variation := int(u.get("variation", 0))
-		var pos: Dictionary = u.get("position", {})
-		var owner_id := int(u.get("owner", 12))
-		var angle := float(u.get("angle", 0.0))
-		var scale_data: Dictionary = u.get("scale", {})
-		var gpos := Wc3Coords.wc3_xy_to_godot(
-			float(pos.get("x", 0.0)),
-			float(pos.get("y", 0.0)),
-			float(pos.get("z", 0.0))
+	var units: Array = ctx.units.get("units", [])
+	for u in units:
+		if typeof(u) != TYPE_DICTIONARY:
+			continue
+		_place_one_internal(u as Dictionary, ctx.heightfield, true)
+	print("Units: glb=%d placeholder=%d" % [last_placed, last_placeholder])
+
+
+## 用 Document 的 AoS 条目全量重建（同步，仅小列表或测试用）。
+func rebuild_from_list(hf: Wc3Heightfield, units: Array) -> void:
+	var ctx := MapBuildContext.new()
+	ctx.heightfield = hf
+	ctx.units = {"units": units}
+	build(ctx)
+
+
+## 分帧 + 后台预载重建：.scn/GLB 字节在线程加载，主线程只实例化入树。
+func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
+	cancel_batch()
+	_clear_children()
+	last_placed = 0
+	last_placeholder = 0
+	_batch_pending.clear()
+	var unique_paths := PackedStringArray()
+	var seen: Dictionary = {}
+	for u in units:
+		if typeof(u) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = (u as Dictionary).duplicate(true)
+		_batch_pending.append(entry)
+		if not try_load_glb or _catalog == null:
+			continue
+		var glb := _catalog.converted_glb_path(
+			str(entry.get("typeId", "")), int(entry.get("variation", 0))
 		)
-		var node := _make_unit_node(type_id, variation, owner_id)
-		if node.get_meta("is_placeholder", false):
-			placeholder += 1
-		else:
-			loaded += 1
-			var sx := float(scale_data.get("x", 1.0))
-			var sy := float(scale_data.get("y", 1.0))
-			var sz := float(scale_data.get("z", 1.0))
-			var b := node.scale
-			node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
-		node.name = "%s_%s" % [type_id, str(u.get("creationNumber", 0))]
-		node.position = gpos
-		node.rotation.y = Wc3Coords.yaw_wc3_to_godot(angle)
-		add_child(node)
-	print("Units: glb=%d placeholder=%d" % [loaded, placeholder])
+		if glb.is_empty() or seen.has(glb):
+			continue
+		seen[glb] = true
+		unique_paths.append(glb)
+	_batch_hf = hf
+	_batch_done_count = 0
+	_batch_total = _batch_pending.size()
+	_batch_gen += 1
+	_batch_active = _batch_total > 0
+	if _cache != null and not unique_paths.is_empty():
+		_cache.request_preload_many(unique_paths)
+	set_process(_batch_active)
+	if not _batch_active:
+		batch_finished.emit(0, 0)
+		return
+	batch_progress.emit(0, _batch_total)
 
 
-func _make_unit_node(type_id: String, variation: int, owner_id: int) -> Node3D:
-	if try_load_glb:
+func cancel_batch() -> void:
+	_batch_active = false
+	_batch_pending.clear()
+	_batch_done_count = 0
+	_batch_total = 0
+	_batch_hf = null
+	_batch_gen += 1
+	if _cache != null and _cache.has_method("cancel_preloads"):
+		_cache.cancel_preloads()
+	set_process(false)
+
+
+func is_batch_loading() -> bool:
+	return _batch_active
+
+
+func batch_total() -> int:
+	return _batch_total
+
+
+func batch_done() -> int:
+	return _batch_done_count
+
+
+## 增量追加一条（笔刷放置）。
+func add_one(u: Dictionary, hf: Wc3Heightfield) -> bool:
+	if u.is_empty() or _catalog == null:
+		return false
+	_place_one_internal(u, hf, true)
+	return true
+
+
+func remove_by_creation_number(creation_number: int) -> bool:
+	var node := find_by_creation_number(creation_number)
+	if node == null:
+		return false
+	remove_child(node)
+	node.free()
+	return true
+
+
+func find_by_creation_number(creation_number: int) -> Node3D:
+	if creation_number < 0:
+		return null
+	for c in get_children():
+		if not (c is Node3D):
+			continue
+		var d: Dictionary = c.get_meta("unit_data", {})
+		if d.is_empty():
+			continue
+		if int(d.get("creationNumber", -1)) != creation_number:
+			continue
+		return c as Node3D
+	return null
+
+
+## 地形改高后重算单位 Y。
+func refresh_heights(hf: Wc3Heightfield) -> void:
+	if hf == null or not hf.is_valid():
+		return
+	for c in get_children():
+		_refresh_one_height(c, hf)
+
+
+func _process(_delta: float) -> void:
+	if not _batch_active:
+		set_process(false)
+		return
+	var gen: int = _batch_gen
+	if _cache != null:
+		_cache.poll_preloads(gltf_parse_per_frame)
+	if gen != _batch_gen:
+		return
+
+	var t0: int = Time.get_ticks_msec()
+	var placed_this_frame: int = 0
+	var i: int = 0
+	while i < _batch_pending.size():
+		if gen != _batch_gen:
+			return
+		var u: Dictionary = _batch_pending[i]
+		var glb_path := _unit_glb_path(u)
+		# 模型仍在后台加载：跳过，本帧先放其它已就绪的
+		if (
+			try_load_glb
+			and not glb_path.is_empty()
+			and _cache != null
+			and not _cache.has_cached(glb_path)
+			and _cache.is_preload_pending(glb_path)
+		):
+			i += 1
+			continue
+		_batch_pending.remove_at(i)
+		# allow_sync=false：未缓存则占位，绝不在开图路径同步解析 GLB
+		_place_one_internal(u, _batch_hf, false)
+		_batch_done_count += 1
+		placed_this_frame += 1
+		var elapsed: int = Time.get_ticks_msec() - t0
+		if placed_this_frame >= batch_max_per_frame:
+			break
+		if elapsed >= batch_budget_ms and placed_this_frame >= 1:
+			break
+
+	if gen != _batch_gen:
+		return
+	batch_progress.emit(_batch_done_count, _batch_total)
+
+	var preload_left: int = _cache.preload_pending_count() if _cache != null else 0
+	if _batch_pending.is_empty():
+		_batch_active = false
+		_batch_hf = null
+		set_process(false)
+		print("Units threaded: glb=%d placeholder=%d" % [last_placed, last_placeholder])
+		batch_finished.emit(last_placed, last_placeholder)
+		return
+	# 全部卡在 pending 且预载已结束 → 强制占位收尾，避免死等
+	if preload_left == 0 and placed_this_frame == 0:
+		while not _batch_pending.is_empty():
+			var left: Dictionary = _batch_pending.pop_front()
+			_place_one_internal(left, _batch_hf, false)
+			_batch_done_count += 1
+		batch_progress.emit(_batch_done_count, _batch_total)
+		_batch_active = false
+		_batch_hf = null
+		set_process(false)
+		batch_finished.emit(last_placed, last_placeholder)
+
+
+func _unit_glb_path(u: Dictionary) -> String:
+	if _catalog == null:
+		return ""
+	return _catalog.converted_glb_path(str(u.get("typeId", "")), int(u.get("variation", 0)))
+
+
+func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: bool = true) -> void:
+	var type_id := str(u.get("typeId", ""))
+	var variation := int(u.get("variation", 0))
+	var pos: Dictionary = u.get("position", {})
+	var owner_id := int(u.get("owner", 12))
+	var angle := float(u.get("angle", 0.0))
+	var scale_data: Dictionary = u.get("scale", {})
+	var wx := float(pos.get("x", 0.0))
+	var wy := float(pos.get("y", 0.0))
+	var wz := float(pos.get("z", 0.0))
+	if hf != null and hf.is_valid():
+		wz = hf.interpolated_height(wx, wy)
+		pos = pos.duplicate()
+		pos["z"] = wz
+		u = u.duplicate(true)
+		u["position"] = pos
+	var gpos := Wc3Coords.wc3_xy_to_godot(wx, wy, wz)
+	var node := _make_unit_node(type_id, variation, owner_id, allow_sync_load)
+	if node.get_meta("is_placeholder", false):
+		last_placeholder += 1
+	else:
+		last_placed += 1
+		var sx := float(scale_data.get("x", 1.0))
+		var sy := float(scale_data.get("y", 1.0))
+		var sz := float(scale_data.get("z", 1.0))
+		var b := node.scale
+		node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
+	node.name = "%s_%s" % [type_id, str(u.get("creationNumber", 0))]
+	node.position = gpos
+	node.rotation.y = Wc3Coords.yaw_wc3_to_godot(angle)
+	node.set_meta("unit_data", u.duplicate(true))
+	add_child(node)
+	if not node.get_meta("is_placeholder", false) and _cache != null:
+		_cache.autoplay_stand(node)
+	_sync_drop_ring(node, u)
+
+
+func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
+	if node == null or not (node is Node3D) or hf == null or not hf.is_valid():
+		return
+	var d: Dictionary = node.get_meta("unit_data", {})
+	if d.is_empty():
+		return
+	var pos: Dictionary = d.get("position", {})
+	var wx: float = float(pos.get("x", 0.0))
+	var wy: float = float(pos.get("y", 0.0))
+	var new_z_wc3: float = hf.interpolated_height(wx, wy)
+	(node as Node3D).position = Wc3Coords.wc3_xy_to_godot(wx, wy, new_z_wc3)
+	pos = pos.duplicate()
+	pos["z"] = new_z_wc3
+	d = d.duplicate(true)
+	d["position"] = pos
+	node.set_meta("unit_data", d)
+
+
+func _make_unit_node(
+	type_id: String, variation: int, owner_id: int, allow_sync_load: bool = true
+) -> Node3D:
+	if try_load_glb and _catalog != null and _cache != null:
 		var glb := _catalog.converted_glb_path(type_id, variation)
 		if not glb.is_empty():
-			var inst := _cache.instance_glb(glb)
-			if inst:
-				inst.set_meta("is_placeholder", false)
-				_cache.autoplay_stand(inst)
-				return inst
+			if _cache.has_cached(glb) or allow_sync_load:
+				var inst := _cache.instance_glb(glb)
+				if inst:
+					inst.set_meta("is_placeholder", false)
+					# 开始点本体即队伍色环，不可按 TeamGlow 隐藏
+					_cache.apply_team_color(inst, owner_id, type_id != "sloc")
+					return inst
 	var ph := MapPlaceholders.make_entity(type_id, owner_id, true)
 	ph.set_meta("is_placeholder", true)
 	return ph
 
 
+## 有死亡掉落时在头顶挂白色提示环（对齐 WE）。
+func _sync_drop_ring(node: Node3D, u: Dictionary) -> void:
+	if node == null:
+		return
+	var existing := node.get_node_or_null("DeathDropRing")
+	var want := Wc3DroppedItemEntry.has_any_drops(u.get("droppedItemSets", []))
+	if not want:
+		if existing != null:
+			existing.queue_free()
+		return
+	var ring: MeshInstance3D = existing as MeshInstance3D
+	if ring == null:
+		ring = MeshInstance3D.new()
+		ring.name = "DeathDropRing"
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(1.2, 1.2)
+		plane.orientation = PlaneMesh.FACE_Y
+		ring.mesh = plane
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		mat.render_priority = 25
+		mat.albedo_color = DROP_RING_COLOR
+		var tex: Texture2D = RuntimeAssets.load_converted_texture(DROP_RING_TEX)
+		if tex != null:
+			mat.albedo_texture = tex
+		ring.material_override = mat
+		node.add_child(ring)
+	var height := _estimate_unit_height(node)
+	ring.position = Vector3(0.0, height + DROP_RING_Y_BIAS, 0.0)
+
+
+func _estimate_unit_height(node: Node3D) -> float:
+	var aabb := AABB()
+	var first := true
+	for c in node.find_children("*", "VisualInstance3D", true, false):
+		var vi := c as VisualInstance3D
+		if vi == null:
+			continue
+		var local := vi.get_aabb()
+		var xf: Transform3D = node.global_transform.affine_inverse() * vi.global_transform
+		var world_aabb := xf * local
+		if first:
+			aabb = world_aabb
+			first = false
+		else:
+			aabb = aabb.merge(world_aabb)
+	if first:
+		return 2.0
+	return maxf(aabb.size.y, 1.0)
+
+
 func _clear_children() -> void:
+	# 立即释放，避免分帧重建时与旧节点并存
 	for c in get_children():
-		c.queue_free()
+		remove_child(c)
+		c.free()

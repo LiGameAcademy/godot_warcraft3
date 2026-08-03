@@ -31,9 +31,13 @@ var map_dir: String = ""
 var source_name: String = ""
 var brush_tile_index: int = 0
 var brush_cliff_type: int = 0
-## 装饰物权威列表（与 doodads.json 的 doodads[] 同形 Dictionary）
-var doodads: Array = []
+## 装饰物 / 单位权威（内存 SoA；存盘 to_dict → AoS JSON）
+var doodads: Wc3DoodadList = Wc3DoodadList.new()
+var units: Wc3UnitList = Wc3UnitList.new()
+## 寻路面（WPM / 合成）；放置校验与 View→路径-地面
+var pathing: Wc3PathingMap = null
 var _next_creation_number: int = 1
+var _next_unit_creation_number: int = 1
 var _dirty: bool = false
 ## 最近一次斜坡笔刷结果（状态栏 / 自测）
 var last_ramp_message: String = ""
@@ -225,6 +229,8 @@ func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
 	map_dir = path
 	source_name = path.get_file()
 	_load_doodads_from_map_dir(path)
+	_load_units_from_map_dir(path)
+	_load_pathing_from_map_dir(path)
 	# 已解析图若 flags 未含 MAP_EDGE，用 info.cameraBoundsComplements 补写
 	_ensure_map_edge_from_info()
 	_dirty = false
@@ -390,8 +396,11 @@ func create_from_options(options: Dictionary) -> void:
 	map_dir = ""
 	source_name = "untitled"
 	brush_tile_index = tile_index
-	doodads.clear()
+	doodads = Wc3DoodadList.new()
+	units = Wc3UnitList.new()
+	pathing = null
 	_next_creation_number = 1
+	_next_unit_creation_number = 1
 	_dirty = true
 	dirty_changed.emit(true)
 	changed.emit()
@@ -577,80 +586,79 @@ func save_json(path: String = "") -> Error:
 		push_error("MapDocument: cannot write %s (err=%s)" % [out_path, FileAccess.get_open_error()])
 		return ERR_CANT_CREATE
 	f.store_string(JSON.stringify(heightfield.to_dict(), "\t"))
-	# 若落在 map-parsed 目录旁，同步 doodads.json
-	var dood_path: String = out_path.get_base_dir().path_join("doodads.json")
-	if out_path.get_file().begins_with("terrain") or map_dir.is_empty() == false:
-		if not map_dir.is_empty():
-			dood_path = map_dir.path_join("doodads.json")
-		_save_doodads_json(dood_path)
+	# 若落在 map-parsed 目录旁，同步 doodads.json / units.json
+	if out_path.get_file().begins_with("terrain") or not map_dir.is_empty():
+		var base: String = map_dir if not map_dir.is_empty() else out_path.get_base_dir()
+		_save_doodads_json(base.path_join("doodads.json"))
+		_save_units_json(base.path_join("units.json"))
 	clear_dirty()
 	print("MapDocument: saved %s" % out_path)
 	return OK
 
 
-## —— 装饰物 CRUD ——
+## —— 装饰物 CRUD（对外仍用 Dictionary；内部写 SoA）——
 
 func doodads_as_dict() -> Dictionary:
-	return {
-		"formatVersion": 8,
-		"count": doodads.size(),
-		"doodads": doodads,
-	}
+	return doodads.to_dict() if doodads != null else {"formatVersion": 8, "count": 0, "doodads": []}
+
+
+## Present / 旧 API 过渡：AoS 条目数组（勿长期缓存）。
+func doodad_entries() -> Array:
+	return doodads.to_entries_array() if doodads != null else []
 
 
 func add_doodad(entry: Dictionary) -> int:
+	if doodads == null:
+		doodads = Wc3DoodadList.new()
 	var d: Dictionary = entry.duplicate(true)
 	if int(d.get("creationNumber", -1)) < 0:
 		d["creationNumber"] = _alloc_creation_number()
 	else:
 		_next_creation_number = maxi(_next_creation_number, int(d["creationNumber"]) + 1)
-	doodads.append(d)
+	var idx: int = doodads.append_dict(d)
 	mark_dirty()
-	return doodads.size() - 1
+	return idx
 
 
 func remove_doodad(index: int) -> Dictionary:
-	if index < 0 or index >= doodads.size():
+	if doodads == null or not doodads.in_bounds(index):
 		return {}
-	var removed: Dictionary = doodads[index]
+	var removed: Dictionary = doodads.at(index).to_dict()
 	doodads.remove_at(index)
 	mark_dirty()
-	return removed if typeof(removed) == TYPE_DICTIONARY else {}
+	return removed
 
 
 func remove_doodad_by_creation_number(creation_number: int) -> Dictionary:
-	for i in range(doodads.size()):
-		var d: Dictionary = doodads[i]
-		if int(d.get("creationNumber", -1)) == creation_number:
-			return remove_doodad(i)
-	return {}
+	var i: int = find_doodad_index_by_creation_number(creation_number)
+	if i < 0:
+		return {}
+	return remove_doodad(i)
 
 
 func find_doodad_index_by_creation_number(creation_number: int) -> int:
-	for i in range(doodads.size()):
-		var d: Dictionary = doodads[i]
-		if int(d.get("creationNumber", -1)) == creation_number:
-			return i
-	return -1
+	if doodads == null:
+		return -1
+	return doodads.find_index_by_creation_number(creation_number)
 
 
 ## 按 creationNumber 整体替换条目（移动 / 旋转）；保留 cn。
 func update_doodad_by_creation_number(creation_number: int, entry: Dictionary) -> bool:
 	var idx: int = find_doodad_index_by_creation_number(creation_number)
-	if idx < 0 or entry.is_empty():
+	if idx < 0 or entry.is_empty() or doodads == null:
 		return false
 	var d: Dictionary = entry.duplicate(true)
 	d["creationNumber"] = creation_number
-	doodads[idx] = d
+	if not doodads.set_dict_at(idx, d):
+		return false
 	mark_dirty()
 	return true
 
 
 func get_doodad(index: int) -> Dictionary:
-	if index < 0 or index >= doodads.size():
+	if doodads == null or not doodads.in_bounds(index):
 		return {}
-	var d: Variant = doodads[index]
-	return d if typeof(d) == TYPE_DICTIONARY else {}
+	return doodads.at(index).to_dict()
 
 
 ## 在 WC3 世界 XY 处建一条可放置条目（Z 由 heightfield 插值）。
@@ -701,27 +709,22 @@ func _alloc_creation_number() -> int:
 	return n
 
 
+func _alloc_unit_creation_number() -> int:
+	var n: int = _next_unit_creation_number
+	_next_unit_creation_number += 1
+	return n
+
+
 func _load_doodads_from_map_dir(path: String) -> void:
-	doodads.clear()
 	_next_creation_number = 1
 	var dood_path: String = path.path_join("doodads.json")
 	if not FileAccess.file_exists(dood_path):
+		doodads = Wc3DoodadList.new()
 		return
-	var f: FileAccess = FileAccess.open(dood_path, FileAccess.READ)
-	if f == null:
-		return
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return
-	var list: Variant = (parsed as Dictionary).get("doodads", [])
-	if typeof(list) != TYPE_ARRAY:
-		return
-	for item in list:
-		if typeof(item) != TYPE_DICTIONARY:
-			continue
-		var d: Dictionary = (item as Dictionary).duplicate(true)
-		doodads.append(d)
-		_next_creation_number = maxi(_next_creation_number, int(d.get("creationNumber", 0)) + 1)
+	var loaded: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
+	doodads = loaded if loaded != null else Wc3DoodadList.new()
+	for i in range(doodads.count()):
+		_next_creation_number = maxi(_next_creation_number, int(doodads.creation_numbers[i]) + 1)
 
 
 func _save_doodads_json(path: String) -> Error:
@@ -733,4 +736,155 @@ func _save_doodads_json(path: String) -> Error:
 		push_error("MapDocument: cannot write %s" % path)
 		return ERR_CANT_CREATE
 	f.store_string(JSON.stringify(doodads_as_dict(), "\t"))
+	return OK
+
+
+## —— 单位放置（权威 SoA；Present 仍用 unit_entries）——
+
+func units_as_dict() -> Dictionary:
+	return units.to_dict() if units != null else {"formatVersion": 8, "count": 0, "units": []}
+
+
+func unit_entries() -> Array:
+	return units.to_entries_array() if units != null else []
+
+
+func add_unit(entry: Dictionary) -> int:
+	if units == null:
+		units = Wc3UnitList.new()
+	var d: Dictionary = entry.duplicate(true)
+	if int(d.get("creationNumber", -1)) < 0:
+		d["creationNumber"] = _alloc_unit_creation_number()
+	else:
+		_next_unit_creation_number = maxi(_next_unit_creation_number, int(d["creationNumber"]) + 1)
+	var idx: int = units.append_dict(d)
+	mark_dirty()
+	return idx
+
+
+func remove_unit(index: int) -> Dictionary:
+	if units == null or not units.in_bounds(index):
+		return {}
+	var removed: Dictionary = units.at(index).to_dict()
+	units.remove_at(index)
+	mark_dirty()
+	return removed
+
+
+func remove_unit_by_creation_number(creation_number: int) -> Dictionary:
+	var i: int = find_unit_index_by_creation_number(creation_number)
+	if i < 0:
+		return {}
+	return remove_unit(i)
+
+
+func find_unit_index_by_creation_number(creation_number: int) -> int:
+	if units == null:
+		return -1
+	return units.find_index_by_creation_number(creation_number)
+
+
+func update_unit_by_creation_number(creation_number: int, entry: Dictionary) -> bool:
+	var idx: int = find_unit_index_by_creation_number(creation_number)
+	if idx < 0 or entry.is_empty() or units == null:
+		return false
+	var d: Dictionary = entry.duplicate(true)
+	d["creationNumber"] = creation_number
+	if not units.set_dict_at(idx, d):
+		return false
+	mark_dirty()
+	return true
+
+
+func get_unit(index: int) -> Dictionary:
+	if units == null or not units.in_bounds(index):
+		return {}
+	return units.at(index).to_dict()
+
+
+## 在 WC3 世界 XY 处建一条可放置单位（Z 由 heightfield 插值）。
+func make_unit_entry(
+	type_id: String,
+	wc3_x: float,
+	wc3_y: float,
+	owner: int = 0,
+	angle_deg: float = 270.0,
+	variation: int = 0,
+) -> Dictionary:
+	var z: float = 0.0
+	if heightfield != null and heightfield.is_valid():
+		z = heightfield.interpolated_height(wc3_x, wc3_y)
+	var ang := deg_to_rad(angle_deg)
+	return {
+		"typeId": type_id,
+		"variation": variation,
+		"position": {"x": wc3_x, "y": wc3_y, "z": z},
+		"angle": ang,
+		"angleDegrees": angle_deg,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"flags": 2,
+		"owner": clampi(owner, 0, 15),
+		"unknown": [0, 0],
+		"hitPoints": -1,
+		"manaPoints": -1,
+		"itemTablePtr": -1,
+		"droppedItemSets": [],
+		"goldAmount": 12500,
+		"targetAcquisition": -2,
+		"heroLevel": 1,
+		"strength": 0,
+		"agility": 0,
+		"intelligence": 0,
+		"inventory": [],
+		"abilities": [],
+		"random": {"flag": 0, "level": 1, "itemClass": 0},
+		"customColor": -1,
+		"waygate": -1,
+		"creationNumber": -1,
+	}
+
+
+func _load_units_from_map_dir(path: String) -> void:
+	_next_unit_creation_number = 1
+	var unit_path: String = path.path_join("units.json")
+	if not FileAccess.file_exists(unit_path):
+		units = Wc3UnitList.new()
+		return
+	var loaded: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
+	units = loaded if loaded != null else Wc3UnitList.new()
+	for i in range(units.count()):
+		_next_unit_creation_number = maxi(
+			_next_unit_creation_number, int(units.creation_numbers[i]) + 1
+		)
+
+
+func _load_pathing_from_map_dir(path: String) -> void:
+	pathing = null
+	var p: String = path.path_join("pathing.json")
+	if FileAccess.file_exists(p):
+		pathing = Wc3PathingMap.load_json_path(p)
+	ensure_pathing(null)
+
+
+## tiles 可空：仅在已有 pathing 时同步 origin；无 pathing 时用合成（需 tiles）。
+func ensure_pathing(tiles: Wc3TerrainTileCatalog) -> void:
+	if heightfield == null or not heightfield.is_valid():
+		return
+	if pathing != null and pathing.is_valid():
+		pathing.sync_origin_from_heightfield(heightfield)
+		return
+	if tiles == null:
+		return
+	pathing = Wc3PathingMap.synthesize_from_heightfield(heightfield, tiles)
+
+
+func _save_units_json(path: String) -> Error:
+	var parent: String = path.get_base_dir()
+	if not parent.is_empty():
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(parent))
+	var f: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_error("MapDocument: cannot write %s" % path)
+		return ERR_CANT_CREATE
+	f.store_string(JSON.stringify(units_as_dict(), "\t"))
 	return OK

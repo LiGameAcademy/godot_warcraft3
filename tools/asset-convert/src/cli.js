@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { convertBlpBatch } from "./convert-blp.js";
 import { convertMdxBatch } from "./convert-mdx.js";
 import { resolveFromPackage } from "./paths.js";
+import { bakeModelScenes } from "../scripts/bake-model-scenes.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
@@ -13,23 +14,27 @@ function printHelp() {
   npm run convert -- [选项]
 
 顺序说明:
-  默认先转换贴图 (BLP→PNG)，再转换模型 (MDX→GLB)。
-  模型会引用已转换的 PNG；若 PNG 缺失会尝试即时从 BLP 转换。
+  默认先转换贴图 (BLP→PNG)，再转换模型 (MDX→GLB)，
+  再调用 Godot 将 GLB 烘焙为同目录 .scn（最终运行时优先格式）。
 
 选项:
   --in <path>           解包资产根目录（默认: ../../.cache/wc3-assets）
   --out <path>          转换输出根目录（默认: ../../assets/asset-converted）
-  --force               忽略增量，强制重转
+  --force               忽略增量，强制重转（含 .scn）
   --textures-only       只转贴图
   --models-only         只转模型（建议已跑过贴图）
+  --skip-scn            跳过 Godot .scn 烘焙
+  --scn-only            只烘焙 .scn（不转贴图/模型）
   --include <glob>      仅包含逻辑路径（可重复）
   --exclude <glob>      排除逻辑路径（可重复）
+  --godot <path>        Godot 可执行文件（也可设环境变量 GODOT）
   -h, --help            帮助
 
 示例:
   npm run convert -- --include "Units/Human/Footman/**" --include "Textures/Footman.blp"
   npm run convert:textures -- --include "Textures/**"
   npm run convert:models -- --include "Units/Human/Footman/**"
+  npm run bake:scn -- --include Units/Human/
 `);
 }
 
@@ -40,8 +45,11 @@ function parseArgs(argv) {
     force: false,
     texturesOnly: false,
     modelsOnly: false,
+    skipScn: false,
+    scnOnly: false,
     include: [],
     exclude: [],
+    godot: "",
     help: false,
   };
 
@@ -61,6 +69,12 @@ function parseArgs(argv) {
       case "--models-only":
         opts.modelsOnly = true;
         break;
+      case "--skip-scn":
+        opts.skipScn = true;
+        break;
+      case "--scn-only":
+        opts.scnOnly = true;
+        break;
       case "--in":
         opts.inDir = argv[++i] ?? opts.inDir;
         break;
@@ -73,12 +87,29 @@ function parseArgs(argv) {
       case "--exclude":
         if (argv[i + 1]) opts.exclude.push(argv[++i]);
         break;
+      case "--godot":
+        if (argv[i + 1]) opts.godot = argv[++i];
+        break;
       default:
         if (arg.startsWith("-")) throw new Error(`未知参数: ${arg}`);
         break;
     }
   }
   return opts;
+}
+
+/** include glob → bake 用的路径子串（Godot 脚本是 findn，非 glob） */
+function includesForBake(includeGlobs) {
+  return includeGlobs
+    .map((g) =>
+      String(g)
+        .replace(/\\/g, "/")
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+|\/+$/g, ""),
+    )
+    .filter(Boolean);
 }
 
 async function main() {
@@ -100,17 +131,26 @@ async function main() {
     console.error("不能同时指定 --textures-only 与 --models-only");
     process.exit(1);
   }
+  if (opts.scnOnly && (opts.texturesOnly || opts.modelsOnly)) {
+    console.error("--scn-only 不能与 --textures-only / --models-only 同用");
+    process.exit(1);
+  }
 
   const inDir = resolveFromPackage(opts.inDir, PACKAGE_ROOT);
   const outDir = resolveFromPackage(opts.outDir, PACKAGE_ROOT);
-  const doTextures = !opts.modelsOnly;
-  const doModels = !opts.texturesOnly;
+  const doTextures = !opts.scnOnly && !opts.modelsOnly;
+  const doModels = !opts.scnOnly && !opts.texturesOnly;
+  const doScn = opts.scnOnly || (!opts.skipScn && !opts.texturesOnly);
 
   console.log("godot_warcraft3 资产转换工具");
   console.log(`  in:      ${inDir}`);
   console.log(`  out:     ${outDir}`);
   console.log(`  force:   ${opts.force}`);
-  console.log(`  steps:   ${[doTextures && "textures", doModels && "models"].filter(Boolean).join(" → ")}`);
+  console.log(
+    `  steps:   ${[doTextures && "textures", doModels && "models", doScn && "scn"]
+      .filter(Boolean)
+      .join(" → ")}`,
+  );
   if (opts.include.length) console.log(`  include: ${opts.include.join(", ")}`);
   if (opts.exclude.length) console.log(`  exclude: ${opts.exclude.join(", ")}`);
 
@@ -138,8 +178,18 @@ async function main() {
     errors += r.errors;
   }
 
+  if (doScn) {
+    console.log("\n—— 烘焙 .scn（与 GLB 同目录）——");
+    const code = bakeModelScenes({
+      include: includesForBake(opts.include),
+      force: opts.force,
+      godot: opts.godot,
+    });
+    if (code !== 0) errors += 1;
+  }
+
   console.log(
-    "\n全部完成。Godot 路径示例: res://assets/asset-converted/Units/.../Foo.glb（已 gitignore）",
+    "\n全部完成。输出示例: res://assets/asset-converted/Units/.../Foo.glb + Foo.scn（已 gitignore）",
   );
   process.exit(errors > 0 ? 2 : 0);
 }

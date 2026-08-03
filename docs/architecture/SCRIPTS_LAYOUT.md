@@ -71,8 +71,12 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](../LAYERED_ARCHITECTURE.md)）：
 |----|------|----------|
 | `Wc3Heightfield` | SoA 平行数组；对应 `terrain-heightfield.json` | `width/height` / `map_width/height` / `tile_size` / `center_offset` / `main_tileset` / `ground_tilesets` / `cliff_tilesets`；SoA: `heights` / `layer_heights` / `water_heights` / `flags_packed` / `ground_textures` / `ground_variations` / `cliff_textures` / `cliff_variations` |
 | `Wc3TileVertex` | 单顶点视图，getter/setter 直写 SoA | `heightfield` / `ix` / `iy` / `index`；属性 `height` / `layer` / `water_height` / `ground_texture` / `ground_variation` / `cliff_texture` / `cliff_variation` |
+| `Wc3DoodadList` | doodads.json 内存 SoA；`to_dict()` → AoS | 根：`format_version` / `subversion` / `special_doodads` / `bytes_remaining`；SoA：`ids` / `variations` / `pos_*` / …；`rebuild_by_id` / `at(i)` / `append_dict` / `load_json_path` |
+| `Wc3Doodad` | 单条 doodad 视图 | `list` / `index`；`id` / `variation` / `position` / `angle` / `scale` / `life` / … |
+| `Wc3UnitList` | units.json 内存 SoA；`to_dict()` → AoS | 根：`format_version` / `subversion` / `bytes_remaining`；SoA：`type_ids` / `owners` / …；`rebuild_by_type_id` / `rebuild_by_owner` / `at(i)` / `load_json_path` |
+| `Wc3UnitPlacement` | 单条单位放置视图 | `list` / `index`；`type_id` / `owner` / `position` / `hero_level` / … |
 | `Wc3Coords` | WC3 ↔ Godot 坐标 | 常量：`TILE_SIZE=128.0` / `WORLD_SCALE=0.01` / `FLAG_WATER=1` / `FLAG_RAMP=4`；静态方法 `wc3_to_godot` / `tilepoint_wc3` / `yaw_wc3_to_godot` |
-| `Wc3ParsedMap` | `map-parsed/<slug>/` 薄包装 | `slug` / `dir_res` / `heightfield` / `terrain_header` / `info` / `summary`；`static load_dir(path)` |
+| `Wc3ParsedMap` | `map-parsed/<slug>/` 薄包装 | `slug` / `dir_res` / `heightfield` / `doodads` / `units` / `terrain_header` / `info` / `summary`；`load_dir` / `doodad_at` / `unit_at` |
 
 ### 4.2 Logic → Present 契约
 

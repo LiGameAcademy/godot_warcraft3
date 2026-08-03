@@ -62,7 +62,7 @@ void fragment() {
 	vec4 o3 = sample_layer(v_tex.w, v_var.w, v_local);
 	color = mix(color, o3, o3.a);
 
-	ALBEDO = dbg_apply_grid(color.rgb * albedo_scale);
+	ALBEDO = dbg_apply_pathing(dbg_apply_grid(color.rgb * albedo_scale));
 	ROUGHNESS = roughness_value;
 	METALLIC = 0.0;
 }

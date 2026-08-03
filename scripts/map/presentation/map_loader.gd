@@ -21,6 +21,8 @@ extends Node3D
 @export var show_pathing_debug_grid: bool = true
 ## FLAG_RAMP 蓝菱形（逻辑验收；不依赖 Present 坡模）
 @export var show_ramp_debug: bool = true
+## View→路径-地面：不可走 / 不可建造色块
+@export var show_pathing_ground: bool = false
 
 ## 查看→栅格：0无 / 1大黄 / 2大+中白 / 3大+中+小灰
 enum ViewGridLevel { NONE = 0, LARGE = 1, MEDIUM = 2, SMALL = 3 }
@@ -43,6 +45,7 @@ var _view_grid_level: int = ViewGridLevel.NONE
 @onready var _debug_grid: Node = $DebugGrid
 @onready var _ramp_debug: Node = $RampDebug
 @onready var _boundary: MapBoundaryLayer = get_node_or_null("Boundary") as MapBoundaryLayer
+@onready var _pathing_layer: MapPathingLayer = get_node_or_null("Pathing") as MapPathingLayer
 
 var _catalog := Wc3IdCatalog.new()
 var _tiles := Wc3TerrainTileCatalog.new()
@@ -53,6 +56,7 @@ var _status: Label
 var _external_hf: Dictionary = {}
 var _external_info: Dictionary = {}
 var _tiles_ready: bool = false
+var _pathing_map: Wc3PathingMap = null
 
 
 func get_tiles() -> Wc3TerrainTileCatalog:
@@ -204,17 +208,136 @@ func set_show_ramp_debug(on: bool) -> void:
 	_build_ramp_debug(ctx)
 
 
-## 编辑器：用 Document 的 doodads[] 重建装饰物层（不读盘）。
-func rebuild_doodads_from_list(hf: Dictionary, doodads_list: Array) -> void:
+func get_pathing_map() -> Wc3PathingMap:
+	return _pathing_map
+
+
+func get_show_pathing_ground() -> bool:
+	return show_pathing_ground
+
+
+func get_pathing_overlay_cell_count() -> int:
+	if _pathing_layer == null:
+		_pathing_layer = get_node_or_null("Pathing") as MapPathingLayer
+	if _pathing_layer == null:
+		return 0
+	return int(_pathing_layer.last_cell_count)
+
+
+func set_show_pathing_ground(on: bool) -> void:
+	show_pathing_ground = on
+	_rebuild_pathing_overlay()
+
+
+## 编辑器注入 Document 的寻路面（优先于磁盘 / 合成）。
+func set_pathing_map(pathing: Wc3PathingMap) -> void:
+	_pathing_map = pathing
+	_rebuild_pathing_overlay()
+
+
+func _ensure_pathing_map(hf: Wc3Heightfield) -> void:
+	if _pathing_map != null and _pathing_map.is_valid():
+		_pathing_map.sync_origin_from_heightfield(hf)
+		return
+	var path_json := map_dir.path_join("pathing.json") if not map_dir.is_empty() else ""
+	if not path_json.is_empty():
+		var loaded := Wc3PathingMap.load_json_path(path_json)
+		if loaded != null and loaded.is_valid():
+			loaded.sync_origin_from_heightfield(hf)
+			_pathing_map = loaded
+			return
+	_pathing_map = Wc3PathingMap.synthesize_from_heightfield(hf, _tiles)
+
+
+func _rebuild_pathing_overlay() -> void:
+	if _pathing_layer == null:
+		_pathing_layer = get_node_or_null("Pathing") as MapPathingLayer
+	if _pathing_layer == null:
+		push_warning("MapLoader: 缺少 Pathing 层，无法显示路径-地面")
+		return
+	_pathing_layer.set_visible_overlay(show_pathing_ground)
+	if not show_pathing_ground:
+		_pathing_layer.clear()
+		return
+	var hf: Wc3Heightfield = null
+	if not _external_hf.is_empty():
+		hf = Wc3Heightfield.from_dict(_external_hf, true)
+	_ensure_pathing_map(hf)
+	_pathing_layer.rebuild(_pathing_map, hf)
+
+
+## 编辑器：用 Document 的 doodads 重建装饰物层（不读盘）。
+## doodads_src 可为 AoS Array，或 Wc3DoodadList。
+func rebuild_doodads_from_list(hf: Dictionary, doodads_src: Variant) -> void:
 	if _doodads == null:
 		return
 	_doodads.setup(get_id_catalog(), _cache)
 	_doodads.try_load_glb = try_load_glb
 	_doodads.multimesh_threshold = multimesh_threshold
+	var entries: Array = _coerce_doodad_entries(doodads_src)
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
-	_doodads.rebuild_from_list(heightfield, doodads_list)
+	_doodads.rebuild_from_list(heightfield, entries)
+
+
+## 编辑器：用 Document 的 units 重建单位层（不读盘）。
+## batched=true 时分帧放置，避免大图卡死。
+func rebuild_units_from_list(hf: Dictionary, units_src: Variant, batched: bool = false) -> void:
+	if _units == null:
+		return
+	_units.setup(get_id_catalog(), _cache)
+	_units.try_load_glb = try_load_glb
+	var entries: Array = _coerce_unit_entries(units_src)
+	var heightfield: Wc3Heightfield = null
+	if not hf.is_empty():
+		heightfield = Wc3Heightfield.from_dict(hf, true)
+	if batched and _units.has_method("rebuild_from_list_batched"):
+		_units.rebuild_from_list_batched(heightfield, entries)
+	else:
+		_units.rebuild_from_list(heightfield, entries)
+
+
+func get_unit_layer() -> MapUnitLayer:
+	return _units
+
+
+func is_units_batch_loading() -> bool:
+	return _units != null and _units.has_method("is_batch_loading") and _units.is_batch_loading()
+
+
+## 编辑器增量放置一条单位。
+func add_unit_instance(entry: Dictionary, hf: Dictionary) -> bool:
+	if _units == null:
+		return false
+	_units.setup(get_id_catalog(), _cache)
+	var heightfield: Wc3Heightfield = null
+	if not hf.is_empty():
+		heightfield = Wc3Heightfield.from_dict(hf, true)
+	return _units.add_one(entry, heightfield)
+
+
+func remove_unit_instance(creation_number: int) -> bool:
+	if _units == null:
+		return false
+	return _units.remove_by_creation_number(creation_number)
+
+
+func find_unit_node(creation_number: int) -> Node3D:
+	if _units == null:
+		return null
+	return _units.find_by_creation_number(creation_number)
+
+
+func update_unit_instance(entry: Dictionary, hf: Dictionary) -> bool:
+	if _units == null or entry.is_empty():
+		return false
+	var cn: int = int(entry.get("creationNumber", -1))
+	if cn < 0:
+		return false
+	if not _units.remove_by_creation_number(cn):
+		return false
+	return add_unit_instance(entry, hf)
 
 
 ## 编辑器增量放置一条。
@@ -285,6 +408,8 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	# 改地形后刷 doodad Y（change_doodad_heights 等价；HF 走 undo 自动同步 doodad 状态）
 	if _doodads != null:
 		_doodads.refresh_heights(ctx.heightfield)
+	if _units != null:
+		_units.refresh_heights(ctx.heightfield)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 
@@ -326,9 +451,11 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_water.build(ctx)
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
-	# 改地形后刷 doodad Y（同 rebuild_terrain_only）
+	# 改地形后刷 doodad / unit Y（同 rebuild_terrain_only）
 	if _doodads != null:
 		_doodads.refresh_heights(ctx.heightfield)
+	if _units != null:
+		_units.refresh_heights(ctx.heightfield)
 
 func _load_all() -> void:
 	var t0 := Time.get_ticks_msec()
@@ -368,19 +495,28 @@ func _load_all() -> void:
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		_water.build(ctx)
 		await get_tree().process_frame
-	# Doodad/Unit JSON 预读到 ctx（统一 Layer build(ctx) 契约；与 _terrain/_cliffs/_water 一致）
+	# Doodad/Unit：SoA 加载后再 to_dict 填 ctx（Layer 仍吃 AoS）
 	if place_units:
-		ctx.units = _read_json(map_dir.path_join("units.json"))
+		var unit_path: String = map_dir.path_join("units.json")
+		if FileAccess.file_exists(unit_path):
+			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
+			ctx.units = unit_list.to_dict() if unit_list != null else {}
 		_units.build(ctx)
 		await get_tree().process_frame
 	if place_doodads:
-		ctx.doodads = _read_json(map_dir.path_join("doodads.json"))
+		var dood_path: String = map_dir.path_join("doodads.json")
+		if FileAccess.file_exists(dood_path):
+			var dood_list: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
+			ctx.doodads = dood_list.to_dict() if dood_list != null else {}
 		_doodads.build(ctx)
 		await get_tree().process_frame
 	if show_pathing_debug_grid and _debug_grid:
 		_set_status("开启调试栅格（GPU）…")
 		_debug_grid.build(ctx)
 		await get_tree().process_frame
+	_ensure_pathing_map(ctx.heightfield as Wc3Heightfield)
+	if show_pathing_ground:
+		_rebuild_pathing_overlay()
 
 	var ms := Time.get_ticks_msec() - t0
 	var cliff_n := _cliffs.last_placed if build_cliffs else 0
@@ -406,6 +542,28 @@ func _ensure_terrain_collision() -> void:
 		if c is StaticBody3D:
 			c.free()
 	ground.create_trimesh_collision()
+
+
+func _coerce_doodad_entries(src: Variant) -> Array:
+	if src is Wc3DoodadList:
+		return (src as Wc3DoodadList).to_entries_array()
+	if typeof(src) == TYPE_ARRAY:
+		return src as Array
+	if typeof(src) == TYPE_DICTIONARY:
+		var arr: Variant = (src as Dictionary).get("doodads", [])
+		return arr as Array if typeof(arr) == TYPE_ARRAY else []
+	return []
+
+
+func _coerce_unit_entries(src: Variant) -> Array:
+	if src is Wc3UnitList:
+		return (src as Wc3UnitList).to_entries_array()
+	if typeof(src) == TYPE_ARRAY:
+		return src as Array
+	if typeof(src) == TYPE_DICTIONARY:
+		var arr: Variant = (src as Dictionary).get("units", [])
+		return arr as Array if typeof(arr) == TYPE_ARRAY else []
+	return []
 
 
 func _read_json(path: String) -> Dictionary:

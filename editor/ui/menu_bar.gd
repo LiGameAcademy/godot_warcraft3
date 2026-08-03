@@ -171,6 +171,16 @@ func set_ramp_debug_checked(on: bool) -> void:
 			break
 
 
+func set_pathing_checked(on: bool) -> void:
+	var view := get_node_or_null("View") as PopupMenu
+	if view == null:
+		return
+	for i in range(view.item_count):
+		if view.get_item_id(i) == 38:
+			view.set_item_checked(i, on)
+			break
+
+
 func _set_grid_level_checked(level: int) -> void:
 	if _grid_popup == null:
 		return

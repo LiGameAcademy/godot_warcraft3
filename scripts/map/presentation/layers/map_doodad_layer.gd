@@ -19,7 +19,7 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 	_cache = cache
 
 
-## 用 Document 的 doodads[] 全量重建（编辑器撤销/进入装饰物模式）。
+## 用 Document 的 AoS 条目全量重建（编辑器撤销/进入装饰物模式）。
 func rebuild_from_list(hf: Wc3Heightfield, doodads: Array) -> void:
 	var ctx := MapBuildContext.new()
 	ctx.heightfield = hf

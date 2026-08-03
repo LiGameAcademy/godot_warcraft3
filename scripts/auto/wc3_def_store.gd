@@ -36,6 +36,7 @@ func _register_builtin_tables() -> void:
 	TerrainTileDef.register_to(self)
 	WaterTypeDef.register_to(self)
 	WeatherEffectDef.register_to(self)
+	ItemDef.register_to(self)
 
 
 ## 注册一张 SLK 表。

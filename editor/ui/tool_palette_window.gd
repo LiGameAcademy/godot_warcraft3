@@ -18,11 +18,18 @@ signal doodad_place_random_changed(
 	random_scale_z: bool,
 	random_scale_xy: bool,
 )
+## 单位面板：选中类型 + 当前玩家色 owner
+signal unit_selected(type_id: String, info: Dictionary, owner_id: int)
+signal unit_owner_changed(owner_id: int)
+## 图标网格重建后：可见 type_id 列表（供 Inspect 预读 GLB 字节）
+signal unit_icons_ready(type_ids: PackedStringArray)
 signal closed_by_user
 ## 面板获焦时主窗收不到快捷键，转发撤销/重做
 signal edit_undo_requested
 signal edit_redo_requested
 signal escape_pressed ## 面板获焦时 Esc → 取消装饰物预览等
+## 顶部下拉切换面板类型（地形/单位/装饰物…）时通知 Editor 切笔刷
+signal palette_kind_changed(kind: int)
 
 enum PaletteKind { TERRAIN, UNITS, DOODADS, REGIONS, CAMERAS }
 enum BrushShape { CIRCLE, SQUARE }
@@ -98,6 +105,16 @@ const DataScript := preload("res://editor/ui/world_edit_data.gd")
 @onready var _doodad_size5: TextureButton = %DoodadSize5
 @onready var _doodad_shape_circle: TextureButton = %DoodadShapeCircle
 @onready var _doodad_shape_square: TextureButton = %DoodadShapeSquare
+@onready var _unit_page: VBoxContainer = %UnitPage
+@onready var _unit_race_option: OptionButton = %UnitRaceOption
+@onready var _unit_group_option: OptionButton = %UnitGroupOption
+@onready var _unit_neutral_filter_row: HBoxContainer = %UnitNeutralFilterRow
+@onready var _unit_tileset_option: OptionButton = %UnitTilesetOption
+@onready var _unit_level_option: OptionButton = %UnitLevelOption
+@onready var _unit_owner_option: OptionButton = %UnitOwnerOption
+@onready var _unit_owner_color: ColorRect = %UnitOwnerColor
+@onready var _unit_current_label: Label = %UnitCurrentLabel
+@onready var _unit_sections: VBoxContainer = %UnitSections
 
 @onready var _height_raise: TextureButton = %HeightRaise
 @onready var _height_lower: TextureButton = %HeightLower
@@ -143,6 +160,11 @@ var _doodad_rand_scale_sym: bool = false
 var _doodad_rand_scale_z: bool = false
 var _doodad_rand_scale_xy: bool = false
 var _category_codes: PackedStringArray = PackedStringArray() ## Option 索引 → 分类码（含 ""=全部）
+## 单位面板
+var _unit_entries: Array = [] ## 当前筛选下全部条目（扁平，供选中查找）
+var _unit_icon_buttons: Array = [] ## TextureButton
+var _selected_unit_id: String = ""
+var _unit_owner_id: int = 0 ## 默认玩家 1（索引 0）
 
 var _cliff_buttons: Array = []
 var _height_buttons: Array = []
@@ -151,6 +173,33 @@ var _doodad_size_buttons: Array = []
 var _size_circle_tex: Array = []
 var _size_square_tex: Array = []
 var _sel_style: StyleBoxFlat
+
+## 经典 WE 玩家色（0–12）
+const UNIT_PLAYER_COLORS: Array[Color] = [
+	Color(1.00, 0.05, 0.05), # 红
+	Color(0.05, 0.25, 1.00), # 蓝
+	Color(0.10, 0.90, 0.90), # 青
+	Color(0.55, 0.10, 0.85), # 紫
+	Color(0.95, 0.90, 0.10), # 黄
+	Color(1.00, 0.55, 0.05), # 橙
+	Color(0.10, 0.80, 0.15), # 绿
+	Color(0.95, 0.45, 0.70), # 粉
+	Color(0.55, 0.55, 0.55), # 灰
+	Color(0.45, 0.75, 1.00), # 淡蓝
+	Color(0.10, 0.45, 0.10), # 暗绿
+	Color(0.55, 0.30, 0.10), # 棕
+	Color(0.12, 0.12, 0.12), # 黑/中立
+]
+
+const UNIT_ICON_PX := 40
+const UNIT_ICON_COLS := 5
+const UNIT_SECTION_ORDER := ["units", "heroes", "buildings", "special"]
+const UNIT_SECTION_KEYS := {
+	"units": "WESTRING_UNITS",
+	"heroes": "WESTRING_UTYPE_HEROES",
+	"buildings": "WESTRING_UTYPE_BUILDINGS",
+	"special": "WESTRING_UTYPE_SPECIAL",
+}
 
 
 func _ready() -> void:
@@ -173,6 +222,7 @@ func _ready() -> void:
 	_wire_cliff_tool_buttons()
 	_wire_static_tool_buttons()
 	_wire_doodad_page()
+	_wire_unit_page()
 	_rebuild_kind_option()
 	_apply_locale()
 	_show_kind(_kind)
@@ -181,6 +231,7 @@ func _ready() -> void:
 
 
 var _doodad_page_wired: bool = false
+var _unit_page_wired: bool = false
 
 
 func _wire_doodad_page() -> void:
@@ -209,6 +260,22 @@ func _wire_doodad_page() -> void:
 	if _doodad_shape_square != null:
 		_ensure_sel_frame(_doodad_shape_square)
 		_doodad_shape_square.pressed.connect(_on_shape_picked.bind(BrushShape.SQUARE))
+
+
+func _wire_unit_page() -> void:
+	if _unit_page_wired:
+		return
+	_unit_page_wired = true
+	if _unit_race_option != null:
+		_unit_race_option.item_selected.connect(_on_unit_race)
+	if _unit_group_option != null:
+		_unit_group_option.item_selected.connect(_on_unit_group)
+	if _unit_owner_option != null:
+		_unit_owner_option.item_selected.connect(_on_unit_owner)
+	if _unit_tileset_option != null:
+		_unit_tileset_option.item_selected.connect(_on_unit_tileset_or_level)
+	if _unit_level_option != null:
+		_unit_level_option.item_selected.connect(_on_unit_tileset_or_level)
 
 
 func _input(event: InputEvent) -> void:
@@ -320,10 +387,18 @@ func _emit_cliff_settings() -> void:
 
 func set_id_catalog(catalog: Wc3IdCatalog) -> void:
 	_id_catalog = catalog
-	if is_node_ready() and _kind == PaletteKind.DOODADS:
+	if not is_node_ready():
+		return
+	if _kind == PaletteKind.DOODADS:
 		_rebuild_doodad_tileset_option()
 		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
+	elif _kind == PaletteKind.UNITS:
+		_rebuild_unit_race_option()
+		_rebuild_unit_group_option()
+		_rebuild_unit_owner_option()
+		_rebuild_unit_neutral_filters()
+		_rebuild_unit_list()
 
 
 ## 当前地图主地形字母（如 L / I），用于装饰物 tileset 下拉默认值。
@@ -332,10 +407,32 @@ func set_map_tileset(tileset_letter: String) -> void:
 	if letter.is_empty():
 		letter = "L"
 	_map_tileset = letter
-	if is_node_ready() and _kind == PaletteKind.DOODADS:
+	if not is_node_ready():
+		return
+	if _kind == PaletteKind.DOODADS:
 		_rebuild_doodad_tileset_option()
 		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
+	elif _kind == PaletteKind.UNITS:
+		_rebuild_unit_neutral_filters()
+		_rebuild_unit_list()
+
+
+func get_selected_unit_id() -> String:
+	return _selected_unit_id
+
+
+func get_unit_owner_id() -> int:
+	return _unit_owner_id
+
+
+func set_unit_owner_id(owner_id: int) -> void:
+	_unit_owner_id = clampi(owner_id, 0, 15)
+	if _unit_owner_option != null and _unit_owner_option.item_count > 0:
+		for i in range(_unit_owner_option.item_count):
+			if int(_unit_owner_option.get_item_metadata(i)) == _unit_owner_id:
+				_unit_owner_option.select(i)
+				break
 
 
 func rebuild_terrain(doc, tiles: Wc3TerrainTileCatalog, cliff_catalog: Wc3CliffCatalog = null) -> void:
@@ -495,6 +592,13 @@ func _apply_locale() -> void:
 		_rebuild_doodad_tileset_option()
 		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
+	elif _kind == PaletteKind.UNITS:
+		_rebuild_unit_race_option()
+		_rebuild_unit_group_option()
+		_rebuild_unit_owner_option()
+		_rebuild_unit_neutral_filters()
+		_rebuild_unit_list()
+		_refresh_unit_current_label()
 	elif _kind == PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t("EDITOR_PALETTE_PLACEHOLDER")
 	else:
@@ -514,6 +618,7 @@ func _rebuild_kind_option() -> void:
 
 
 func _show_kind(kind: int) -> void:
+	var prev: int = _kind
 	_kind = clampi(kind, 0, KIND_KEYS.size() - 1)
 	_suppress_kind_signal = true
 	if _kind_option.selected != _kind:
@@ -521,19 +626,30 @@ func _show_kind(kind: int) -> void:
 	_suppress_kind_signal = false
 	_pages.current_tab = 0 if _kind == PaletteKind.TERRAIN else 1
 	var is_doodads := _kind == PaletteKind.DOODADS
+	var is_units := _kind == PaletteKind.UNITS
 	if _placeholder != null:
-		_placeholder.visible = not is_doodads
+		_placeholder.visible = not is_doodads and not is_units
 	if _doodad_page != null:
 		_doodad_page.visible = is_doodads
+	if _unit_page != null:
+		_unit_page.visible = is_units
 	if is_doodads:
 		_rebuild_doodad_tileset_option()
 		_rebuild_doodad_category_option()
 		_rebuild_doodad_list()
+	elif is_units:
+		_rebuild_unit_race_option()
+		_rebuild_unit_group_option()
+		_rebuild_unit_owner_option()
+		_rebuild_unit_neutral_filters()
+		_rebuild_unit_list()
 	elif _kind != PaletteKind.TERRAIN:
 		_placeholder.text = EditorI18n.t(
 			"EDITOR_PALETTE_PLACEHOLDER_KIND",
 			[EditorI18n.t(KIND_KEYS[_kind])]
 		)
+	if prev != _kind:
+		palette_kind_changed.emit(_kind)
 
 
 func _rebuild_doodad_tileset_option() -> void:
@@ -696,6 +812,368 @@ func clear_doodad_selection() -> void:
 	_selected_doodad_id = ""
 	if _doodad_list != null:
 		_doodad_list.deselect_all()
+
+
+func _rebuild_unit_race_option() -> void:
+	if _unit_race_option == null:
+		return
+	var prev := _selected_unit_race()
+	_unit_race_option.clear()
+	var select_i := 0
+	var races := PackedStringArray()
+	if _id_catalog != null:
+		races = _id_catalog.list_unit_races()
+	if races.is_empty():
+		races = PackedStringArray(["human"])
+	for i in range(races.size()):
+		var rid := str(races[i])
+		_unit_race_option.add_item(_unit_race_label(rid), i)
+		_unit_race_option.set_item_metadata(i, rid)
+		if rid == prev:
+			select_i = i
+	if _unit_race_option.item_count > 0:
+		_unit_race_option.select(clampi(select_i, 0, _unit_race_option.item_count - 1))
+
+
+func _rebuild_unit_group_option() -> void:
+	if _unit_group_option == null:
+		return
+	var prev := _selected_unit_group()
+	_unit_group_option.clear()
+	# 对齐 WE：对战 / 战役（右侧下拉）
+	const GROUPS := [
+		["melee", "EDITOR_UNIT_SET_MELEE"],
+		["campaign", "EDITOR_UNIT_SET_CAMPAIGN"],
+	]
+	var select_i := 0
+	for i in range(GROUPS.size()):
+		var gid := str(GROUPS[i][0])
+		_unit_group_option.add_item(EditorI18n.t(str(GROUPS[i][1])), i)
+		_unit_group_option.set_item_metadata(i, gid)
+		if gid == prev or (prev == "standard" and gid == "melee"):
+			select_i = i
+	if _unit_group_option.item_count > 0:
+		_unit_group_option.select(clampi(select_i, 0, _unit_group_option.item_count - 1))
+
+
+func _rebuild_unit_owner_option() -> void:
+	if _unit_owner_option == null:
+		return
+	var prev := _unit_owner_id
+	_unit_owner_option.clear()
+	var owners: Array = []
+	for p in range(12):
+		owners.append(p)
+	owners.append(12)
+	owners.append(15)
+	var select_i := 0
+	for i in range(owners.size()):
+		var oid: int = int(owners[i])
+		_unit_owner_option.add_item(_unit_owner_label(oid), i)
+		_unit_owner_option.set_item_metadata(i, oid)
+		if oid == prev:
+			select_i = i
+	if _unit_owner_option.item_count > 0:
+		_unit_owner_option.select(clampi(select_i, 0, _unit_owner_option.item_count - 1))
+		_unit_owner_id = int(_unit_owner_option.get_item_metadata(_unit_owner_option.selected))
+	_refresh_unit_owner_swatch()
+
+
+func _rebuild_unit_list() -> void:
+	_rebuild_unit_icon_grids()
+
+
+func _rebuild_unit_icon_grids() -> void:
+	if _unit_sections == null:
+		return
+	for c in _unit_sections.get_children():
+		_unit_sections.remove_child(c)
+		c.queue_free()
+	_unit_icon_buttons.clear()
+	_unit_entries.clear()
+	if _id_catalog == null:
+		_refresh_unit_current_label()
+		return
+	var race := _selected_unit_race()
+	var set_id := _selected_unit_group()
+	var ts := "*"
+	var lv := -1
+	if race == "neutral":
+		ts = _selected_unit_tileset_id()
+		lv = _selected_unit_level()
+	var sections: Dictionary = _id_catalog.list_units_palette_sections(race, set_id, ts, lv)
+	var keep_sel := _selected_unit_id
+	var found_sel := false
+	for sec_id in UNIT_SECTION_ORDER:
+		var entries: Array = sections.get(sec_id, []) as Array
+		if entries.is_empty():
+			continue
+		var title := Label.new()
+		var key := str(UNIT_SECTION_KEYS.get(sec_id, sec_id))
+		title.text = EditorI18n.t(key)
+		if title.text == key or title.text.begins_with("WESTRING_"):
+			match sec_id:
+				"units":
+					title.text = "单位"
+				"heroes":
+					title.text = "英雄"
+				"buildings":
+					title.text = "建筑"
+				"special":
+					title.text = "特殊"
+		elif sec_id == "special" and title.text.begins_with("特殊"):
+			title.text = "特殊" # WE 用「特殊」，非「特殊的」
+		_unit_sections.add_child(title)
+		var grid := GridContainer.new()
+		grid.columns = UNIT_ICON_COLS
+		grid.add_theme_constant_override("h_separation", 2)
+		grid.add_theme_constant_override("v_separation", 2)
+		_unit_sections.add_child(grid)
+		for e in entries:
+			var info: Dictionary = e
+			_unit_entries.append(info)
+			var id := str(info.get("id", ""))
+			var btn := _make_unit_icon_button(info)
+			grid.add_child(btn)
+			_unit_icon_buttons.append(btn)
+			if id == keep_sel:
+				found_sel = true
+				_set_button_selected(btn, true)
+	if not found_sel:
+		_selected_unit_id = ""
+	_refresh_unit_current_label()
+	# 保持选中时再 emit，方便切种族后若仍在列表则同步
+	if found_sel and not _selected_unit_id.is_empty():
+		for e2 in _unit_entries:
+			if str(e2.get("id", "")) == _selected_unit_id:
+				unit_selected.emit(_selected_unit_id, e2, _unit_owner_id)
+				break
+	var ready_ids := PackedStringArray()
+	for e3 in _unit_entries:
+		var tid := str(e3.get("id", ""))
+		if not tid.is_empty():
+			ready_ids.append(tid)
+	unit_icons_ready.emit(ready_ids)
+
+
+func _make_unit_icon_button(info: Dictionary) -> TextureButton:
+	var btn := TextureButton.new()
+	btn.custom_minimum_size = Vector2(UNIT_ICON_PX, UNIT_ICON_PX)
+	btn.toggle_mode = true
+	btn.ignore_texture_size = true
+	btn.stretch_mode = TextureButton.STRETCH_SCALE
+	var id := str(info.get("id", ""))
+	btn.set_meta("unit_id", id)
+	var display := _unit_display_name(info)
+	btn.tooltip_text = "%s [%s]" % [display, id]
+	var tex: Texture2D = null
+	if _id_catalog != null:
+		tex = _id_catalog.unit_art_texture(id)
+	if tex != null:
+		btn.texture_normal = tex
+	else:
+		# 无图标时画色块占位
+		var img := Image.create(UNIT_ICON_PX, UNIT_ICON_PX, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0.22, 0.22, 0.25, 1))
+		btn.texture_normal = ImageTexture.create_from_image(img)
+	_ensure_sel_frame(btn)
+	btn.pressed.connect(_on_unit_icon_pressed.bind(btn, info))
+	return btn
+
+
+func _on_unit_icon_pressed(btn: TextureButton, info: Dictionary) -> void:
+	_selected_unit_id = str(info.get("id", ""))
+	for b in _unit_icon_buttons:
+		if b is TextureButton:
+			var tb := b as TextureButton
+			var on := tb == btn
+			tb.set_pressed_no_signal(on)
+			_set_button_selected(tb, on)
+	_refresh_unit_current_label()
+	unit_selected.emit(_selected_unit_id, info, _unit_owner_id)
+
+
+func _refresh_unit_current_label() -> void:
+	if _unit_current_label == null:
+		return
+	if _selected_unit_id.is_empty():
+		_unit_current_label.text = EditorI18n.t(
+			"EDITOR_UNIT_CURRENT_FMT",
+			[EditorI18n.t("WESTRING_NONE")]
+		)
+		return
+	var name_str := _selected_unit_id
+	for e in _unit_entries:
+		if str(e.get("id", "")) == _selected_unit_id:
+			name_str = _unit_display_name(e)
+			break
+	_unit_current_label.text = EditorI18n.t("EDITOR_UNIT_CURRENT_FMT", [name_str])
+
+
+func _refresh_unit_owner_swatch() -> void:
+	if _unit_owner_color == null:
+		return
+	var idx := _unit_owner_id
+	if idx == 15:
+		idx = 0 # 敌对用红色示意
+	elif idx > 12:
+		idx = 12
+	idx = clampi(idx, 0, UNIT_PLAYER_COLORS.size() - 1)
+	_unit_owner_color.color = UNIT_PLAYER_COLORS[idx]
+
+
+func _unit_display_name(e: Dictionary) -> String:
+	var key := str(e.get("name_key", ""))
+	if key.begins_with("WESTRING_"):
+		var loc := EditorI18n.t(key)
+		if not loc.is_empty() and loc != key and not loc.begins_with("WESTRING_"):
+			return loc
+	var n := str(e.get("name", ""))
+	if not n.is_empty():
+		return n
+	return str(e.get("id", ""))
+
+
+func _unit_race_label(race_id: String) -> String:
+	var key := "WESTRING_RACE_OTHER"
+	if _id_catalog != null and _id_catalog.has_method("unit_palette_race_name_key"):
+		key = _id_catalog.unit_palette_race_name_key(race_id)
+	var loc := EditorI18n.t(key)
+	if loc.is_empty() or loc == key or loc.begins_with("WESTRING_") or loc.begins_with("EDITOR_"):
+		return race_id.capitalize()
+	return loc
+
+
+func _unit_owner_label(owner_id: int) -> String:
+	if owner_id == 12:
+		return EditorI18n.t("WESTRING_NEUTRAL_PASSIVE")
+	if owner_id == 15:
+		return EditorI18n.t("WESTRING_NEUTRAL_HOSTILE")
+	var color_key := "WESTRING_UNITCOLOR_%02d" % owner_id
+	var cname := EditorI18n.t(color_key)
+	if cname == color_key or cname.begins_with("WESTRING_"):
+		cname = str(owner_id + 1)
+	return EditorI18n.t("EDITOR_UNIT_OWNER_PLAYER_FMT", [owner_id + 1, cname])
+
+
+func _selected_unit_race() -> String:
+	if _unit_race_option == null or _unit_race_option.item_count <= 0:
+		return "human"
+	return str(_unit_race_option.get_item_metadata(_unit_race_option.selected))
+
+
+func _selected_unit_group() -> String:
+	if _unit_group_option == null or _unit_group_option.item_count <= 0:
+		return "melee"
+	return str(_unit_group_option.get_item_metadata(_unit_group_option.selected))
+
+
+func _rebuild_unit_neutral_filters() -> void:
+	var is_neutral := _selected_unit_race() == "neutral"
+	if _unit_neutral_filter_row != null:
+		_unit_neutral_filter_row.visible = is_neutral
+	if not is_neutral:
+		return
+	_rebuild_unit_tileset_option()
+	_rebuild_unit_level_option()
+
+
+func _rebuild_unit_tileset_option() -> void:
+	if _unit_tileset_option == null:
+		return
+	var prev := _selected_unit_tileset_id()
+	_unit_tileset_option.clear()
+	var select_i := 0
+	# 与装饰物一致：用 WorldEditData 地形集列表；默认当前地图主地形
+	if _we_data != null:
+		for i in range(_we_data.tilesets.size()):
+			var ts: Dictionary = _we_data.tilesets[i]
+			var tid := str(ts.get("id", "")).to_upper()
+			var label := EditorI18n.t(str(ts.get("name_key", tid)))
+			if label.is_empty() or label == str(ts.get("name_key", "")) or label.begins_with("WESTRING_"):
+				label = tid
+			var idx: int = _unit_tileset_option.item_count
+			_unit_tileset_option.add_item(label, idx)
+			_unit_tileset_option.set_item_metadata(idx, tid)
+			if tid == prev or (prev.is_empty() and tid == _map_tileset):
+				select_i = idx
+	if _unit_tileset_option.item_count <= 0:
+		_unit_tileset_option.add_item(_map_tileset, 0)
+		_unit_tileset_option.set_item_metadata(0, _map_tileset)
+	else:
+		# 无 prev 时优先地图主地形
+		if prev.is_empty() or prev == "*":
+			for i2 in range(_unit_tileset_option.item_count):
+				if str(_unit_tileset_option.get_item_metadata(i2)) == _map_tileset:
+					select_i = i2
+					break
+	_unit_tileset_option.select(clampi(select_i, 0, maxi(_unit_tileset_option.item_count - 1, 0)))
+
+
+func _rebuild_unit_level_option() -> void:
+	if _unit_level_option == null:
+		return
+	var prev := _selected_unit_level()
+	_unit_level_option.clear()
+	# WE：任何等级 + 1..10（偶见更高，列到 15）
+	_unit_level_option.add_item(EditorI18n.t("EDITOR_UNIT_ANY_LEVEL"), 0)
+	_unit_level_option.set_item_metadata(0, -1)
+	var select_i := 0
+	for lv in range(1, 16):
+		var idx: int = _unit_level_option.item_count
+		_unit_level_option.add_item(EditorI18n.t("EDITOR_UNIT_LEVEL_FMT", [lv]), idx)
+		_unit_level_option.set_item_metadata(idx, lv)
+		if lv == prev:
+			select_i = idx
+	if prev < 0:
+		select_i = 0
+	_unit_level_option.select(clampi(select_i, 0, maxi(_unit_level_option.item_count - 1, 0)))
+
+
+func _selected_unit_tileset_id() -> String:
+	if _unit_tileset_option == null or _unit_tileset_option.item_count <= 0:
+		return _map_tileset if not _map_tileset.is_empty() else "L"
+	return str(_unit_tileset_option.get_item_metadata(_unit_tileset_option.selected))
+
+
+func _selected_unit_level() -> int:
+	if _unit_level_option == null or _unit_level_option.item_count <= 0:
+		return -1
+	return int(_unit_level_option.get_item_metadata(_unit_level_option.selected))
+
+
+func _on_unit_race(_index: int) -> void:
+	_rebuild_unit_neutral_filters()
+	_rebuild_unit_icon_grids()
+
+
+func _on_unit_group(_index: int) -> void:
+	_rebuild_unit_icon_grids()
+
+
+func _on_unit_tileset_or_level(_index: int) -> void:
+	_rebuild_unit_icon_grids()
+
+
+func _on_unit_owner(_index: int) -> void:
+	if _unit_owner_option == null:
+		return
+	_unit_owner_id = int(_unit_owner_option.get_item_metadata(_unit_owner_option.selected))
+	_refresh_unit_owner_swatch()
+	unit_owner_changed.emit(_unit_owner_id)
+	if not _selected_unit_id.is_empty():
+		for e in _unit_entries:
+			if str(e.get("id", "")) == _selected_unit_id:
+				unit_selected.emit(_selected_unit_id, e, _unit_owner_id)
+				break
+
+
+func clear_unit_selection() -> void:
+	_selected_unit_id = ""
+	for b in _unit_icon_buttons:
+		if b is TextureButton:
+			_set_button_selected(b as TextureButton, false)
+	_refresh_unit_current_label()
 
 
 func _wire_doodad_place_rand_buttons() -> void:

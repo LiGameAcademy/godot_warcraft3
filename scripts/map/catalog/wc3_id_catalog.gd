@@ -10,6 +10,10 @@ var _doodads: Dictionary = {}
 
 func load_default() -> void:
 	_load_unit_ui(RuntimeAssets.slk_path("Units/unitUI.json"))
+	_merge_unit_data(RuntimeAssets.slk_path("Units/UnitData.json"))
+	_load_unit_display_names()
+	_inject_start_location()
+	_inject_patch_critters()
 	_load_destructables(RuntimeAssets.slk_path("Units/DestructableData.json"))
 	_load_doodads(RuntimeAssets.slk_path("Doodads/Doodads.json"))
 
@@ -56,6 +60,117 @@ func list_placeables_filtered(
 		return str(a.get("name", "")).nocasecmp_to(str(b.get("name", ""))) < 0
 	)
 	return out
+
+
+## WE 单位面板种族下拉（固定桶；勿直接展开 UnitData.race，否则 critters/commoner 会重复成两个「中立无敌意」）。
+## 对齐经典 WE：人族 / 兽族 / 不死 / 暗夜 / 中立 / 中立-娜迦。
+const UNIT_PALETTE_RACE_BUCKETS: Array = [
+	{"id": "human", "name_key": "WESTRING_RACE_HUMAN", "races": ["human"]},
+	{"id": "orc", "name_key": "WESTRING_RACE_ORC", "races": ["orc"]},
+	{"id": "undead", "name_key": "WESTRING_RACE_UNDEAD", "races": ["undead"]},
+	{"id": "nightelf", "name_key": "WESTRING_RACE_NIGHTELF", "races": ["nightelf"]},
+	{
+		"id": "neutral",
+		"name_key": "WESTRING_RACE_NEUTRAL",
+		"races": ["creeps", "critters", "commoner", "demon", "other"],
+	},
+	{"id": "naga", "name_key": "WESTRING_RACE_NEUTRAL_NAGA", "races": ["naga"]},
+]
+
+
+## 单位列表筛选（对齐 WE 单位面板）。
+## race 空/"*" = 不限；可为面板桶 id（human/neutral/…）或原始 UnitData.race。
+## group: ""|"*"|"standard"|"melee"|"campaign"|"special"。
+## 仅 in_editor 且非 hidden。
+func list_units_filtered(race: String = "", group: String = "standard") -> Array:
+	var out: Array = []
+	var want_races := _expand_palette_race(race)
+	var want_group := group.strip_edges().to_lower()
+	if want_group.is_empty():
+		want_group = "*"
+	for id in _units.keys():
+		var e: Dictionary = _units[id]
+		if not bool(e.get("in_editor", true)):
+			continue
+		if bool(e.get("hidden_in_editor", false)):
+			continue
+		if not want_races.is_empty():
+			var ur := str(e.get("race", "")).to_lower()
+			if not want_races.has(ur):
+				continue
+		var is_campaign: bool = bool(e.get("campaign", false))
+		var is_special: bool = bool(e.get("special", false))
+		match want_group:
+			"campaign":
+				if not is_campaign:
+					continue
+			"special":
+				if not is_special:
+					continue
+			"standard", "melee":
+				if is_campaign:
+					continue
+			"*":
+				pass
+			_:
+				pass
+		out.append(e)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("name", "")).nocasecmp_to(str(b.get("name", ""))) < 0
+	)
+	return out
+
+
+## 面板种族桶 id 列表（仅含当前有可编辑单位的项）。
+func list_unit_races() -> PackedStringArray:
+	var present: Dictionary = {}
+	for id in _units.keys():
+		var e: Dictionary = _units[id]
+		if not bool(e.get("in_editor", true)) or bool(e.get("hidden_in_editor", false)):
+			continue
+		var r := str(e.get("race", "other")).to_lower()
+		if r.is_empty():
+			r = "other"
+		present[r] = true
+	var out := PackedStringArray()
+	for bucket in UNIT_PALETTE_RACE_BUCKETS:
+		var has_any := false
+		for raw in bucket.get("races", []):
+			if present.has(str(raw)):
+				has_any = true
+				break
+		if has_any:
+			out.append(str(bucket.get("id", "")))
+	return out
+
+
+## 面板种族桶 → 显示名 WESTRING key。
+func unit_palette_race_name_key(palette_race_id: String) -> String:
+	var pid := palette_race_id.strip_edges().to_lower()
+	for bucket in UNIT_PALETTE_RACE_BUCKETS:
+		if str(bucket.get("id", "")) == pid:
+			return str(bucket.get("name_key", ""))
+	return "WESTRING_RACE_OTHER"
+
+
+## 面板种族桶 → UnitData.race 集合；空/"*" → 空 Dictionary（表示不限）。
+func _expand_palette_race(race: String) -> Dictionary:
+	var want := race.strip_edges().to_lower()
+	var out: Dictionary = {}
+	if want.is_empty() or want == "*":
+		return out
+	for bucket in UNIT_PALETTE_RACE_BUCKETS:
+		if str(bucket.get("id", "")) == want:
+			for raw in bucket.get("races", []):
+				out[str(raw)] = true
+			return out
+	# 兼容直接传 UnitData.race
+	out[want] = true
+	return out
+
+
+func unit_count() -> int:
+	return _units.size()
 
 
 func doodad_count() -> int:
@@ -116,6 +231,361 @@ static func _tilesets_allow(tilesets_field: String, letter: String) -> bool:
 	return false
 
 
+## 合并 UnitData：race / moveHeight / pathTex 等。
+func _merge_unit_data(path: String) -> void:
+	var data := _read_json(path)
+	if data.is_empty():
+		return
+	for rec in data.get("records", []):
+		var id := str(rec.get("unitID", ""))
+		if id.is_empty() or not _units.has(id):
+			continue
+		var e: Dictionary = _units[id]
+		e["race"] = str(rec.get("race", "other")).to_lower()
+		e["move_height"] = float(rec.get("moveHeight", 0.0))
+		e["path_tex"] = str(rec.get("pathTex", "_"))
+		var comment := str(rec.get("comment(s)", ""))
+		if not comment.is_empty() and str(e.get("name", "")).is_empty():
+			e["name"] = comment
+		_units[id] = e
+	_merge_unit_balance(RuntimeAssets.slk_path("Units/UnitBalance.json"))
+
+
+func _merge_unit_balance(path: String) -> void:
+	var data := _read_json(path)
+	if data.is_empty():
+		return
+	for rec in data.get("records", []):
+		var id := str(rec.get("unitBalanceID", ""))
+		if id.is_empty() or not _units.has(id):
+			continue
+		var e: Dictionary = _units[id]
+		e["is_building"] = int(rec.get("isbldg", 0)) != 0
+		# UnitBalance.level：中立野怪等级；"-" / 空 → -1（任意/无等级）
+		var lv_raw := str(rec.get("level", "")).strip_edges()
+		var lv := -1
+		if not lv_raw.is_empty() and lv_raw != "-" and lv_raw != "_":
+			if lv_raw.is_valid_int():
+				lv = int(lv_raw)
+		e["level"] = lv
+		# 中立单位按地形集筛选（如 "L,F,W" / "*"）
+		var ts := str(rec.get("tilesets", "*")).strip_edges()
+		if ts.is_empty() or ts == "-" or ts == "_":
+			ts = "*"
+		e["tilesets"] = ts
+		# UnitBalance.collision：碰撞半径（WC3）；选框/放置共用
+		var col_raw: Variant = rec.get("collision", 0)
+		var col := 0.0
+		if typeof(col_raw) == TYPE_FLOAT or typeof(col_raw) == TYPE_INT:
+			col = float(col_raw)
+		elif typeof(col_raw) == TYPE_STRING:
+			var cs := str(col_raw).strip_edges()
+			if cs.is_valid_float():
+				col = float(cs)
+		e["collision"] = col
+		_units[id] = e
+
+
+## WE 编辑器专用「开始点」(sloc)：不在 UnitUI.slk，由 WorldEditData 注入。
+## 参考 HiveWE / WorldEditData：模型 Objects\StartLocation、脚印 16x16、图标 StartingLocation。
+func _inject_start_location() -> void:
+	if _units.has("sloc"):
+		return
+	_units["sloc"] = {
+		"id": "sloc",
+		"name": "Start Location",
+		"name_key": "WESTRING_STARTLOCATION",
+		"file": "Objects\\StartLocation\\StartLocation",
+		"kind": "unit",
+		"num_var": 1,
+		"unit_class": "0StartLoc",
+		"sort_ui": "0",
+		"campaign": false,
+		"special": false,
+		"in_editor": true,
+		"hidden_in_editor": false,
+		"hostile_pal": "",
+		"tileset_specific": false,
+		"use_click_helper": false,
+		"model_scale": 1.0,
+		"def_scale": 5.0,
+		"race": "*",
+		"move_height": 0.0,
+		"path_tex": "PathTextures\\16x16Simple.tga",
+		"is_building": true,
+		"level": -1,
+		"tilesets": "*",
+		"art": "ReplaceableTextures\\WorldEditUI\\StartingLocation",
+		"button_pos": Vector2i.ZERO,
+		"collision": 50.0,
+		"is_start_location": true,
+	}
+
+
+## 补丁单位（1.17+）：主 unitUI.slk / 解包 listfile 常缺，Echo Isles 等图仍会用到。
+## 浣熊 nrac：模型在 War3Patch.mpq（listfile 无条目，需按路径强制解包）。
+func _inject_patch_critters() -> void:
+	if not _units.has("nrac"):
+		_units["nrac"] = {
+			"id": "nrac",
+			"name": "浣熊",
+			"name_key": "",
+			"file": "units\\critters\\Raccoon\\Raccoon",
+			"kind": "unit",
+			"num_var": 1,
+			"unit_class": "animal",
+			"sort_ui": "o2",
+			"campaign": false,
+			"special": false,
+			"in_editor": true,
+			"hidden_in_editor": false,
+			"hostile_pal": "",
+			"tileset_specific": false,
+			"use_click_helper": false,
+			"model_scale": 1.0,
+			"def_scale": 1.0,
+			"race": "critters",
+			"move_height": 0.0,
+			"path_tex": "_",
+			"is_building": false,
+			"level": 1,
+			"tilesets": "*",
+			"art": "ReplaceableTextures\\CommandButtons\\BTNRacoon",
+			"button_pos": Vector2i.ZERO,
+			"collision": 16.0,
+		}
+
+
+## 从 *UnitStrings.txt 读 Name=；从 *UnitFunc.txt 读 Art= / Buttonpos=。
+func _load_unit_display_names() -> void:
+	const STRING_FILES := [
+		"Units/HumanUnitStrings.txt",
+		"Units/OrcUnitStrings.txt",
+		"Units/UndeadUnitStrings.txt",
+		"Units/NightElfUnitStrings.txt",
+		"Units/NeutralUnitStrings.txt",
+		"Units/CampaignUnitStrings.txt",
+	]
+	const FUNC_FILES := [
+		"Units/HumanUnitFunc.txt",
+		"Units/OrcUnitFunc.txt",
+		"Units/UndeadUnitFunc.txt",
+		"Units/NightElfUnitFunc.txt",
+		"Units/NeutralUnitFunc.txt",
+		"Units/CampaignUnitFunc.txt",
+	]
+	const ROOTS := ["", "Melee_V0/", "Melee_V1/", "Custom_V0/", "Custom_V1/"]
+	var names: Dictionary = {}
+	var arts: Dictionary = {}
+	var buttonpos: Dictionary = {}
+	for rel in STRING_FILES:
+		for root in ROOTS:
+			_parse_unit_ini_file(root + rel, names, "Name")
+	for rel2 in FUNC_FILES:
+		for root2 in ROOTS:
+			_parse_unit_func_file(root2 + rel2, arts, buttonpos)
+	for id in _units.keys():
+		var e: Dictionary = _units[id]
+		if names.has(id):
+			e["name"] = str(names[id])
+			e["name_key"] = id
+		if arts.has(id):
+			e["art"] = str(arts[id])
+		if buttonpos.has(id):
+			e["button_pos"] = buttonpos[id]
+		_units[id] = e
+
+
+func _parse_unit_ini_file(logical: String, out_names: Dictionary, field: String) -> void:
+	var abs_path := RuntimeAssets.resolve(logical)
+	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
+		return
+	var f := FileAccess.open(abs_path, FileAccess.READ)
+	if f == null:
+		return
+	var section := ""
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		if line.is_empty() or line.begins_with("//"):
+			continue
+		if line.begins_with("[") and line.ends_with("]"):
+			section = line.substr(1, line.length() - 2).strip_edges()
+			continue
+		if section.is_empty():
+			continue
+		var eq := line.find("=")
+		if eq <= 0:
+			continue
+		var key := line.substr(0, eq).strip_edges()
+		if key != field:
+			continue
+		var val := line.substr(eq + 1).strip_edges().trim_prefix("\"").trim_suffix("\"")
+		if not val.is_empty():
+			out_names[section] = val
+
+
+func _parse_unit_func_file(logical: String, out_art: Dictionary, out_pos: Dictionary) -> void:
+	var abs_path := RuntimeAssets.resolve(logical)
+	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
+		return
+	var f := FileAccess.open(abs_path, FileAccess.READ)
+	if f == null:
+		return
+	var section := ""
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		if line.is_empty() or line.begins_with("//"):
+			continue
+		if line.begins_with("[") and line.ends_with("]"):
+			section = line.substr(1, line.length() - 2).strip_edges()
+			continue
+		if section.is_empty():
+			continue
+		var eq := line.find("=")
+		if eq <= 0:
+			continue
+		var key := line.substr(0, eq).strip_edges()
+		var val := line.substr(eq + 1).strip_edges()
+		if key == "Art" and not val.is_empty():
+			out_art[section] = val.replace("\\", "/")
+		elif key == "Buttonpos":
+			var parts := val.split(",")
+			var bx := int(parts[0]) if parts.size() > 0 else 0
+			var by := int(parts[1]) if parts.size() > 1 else 0
+			out_pos[section] = Vector2i(bx, by)
+
+
+## 单位面板分区：units / heroes / buildings / special（对齐 WE）。
+static func unit_palette_section(e: Dictionary) -> String:
+	if bool(e.get("special", false)):
+		return "special"
+	var uc := str(e.get("unit_class", "")).to_lower()
+	if uc.find("hero") >= 0:
+		return "heroes"
+	if bool(e.get("is_building", false)) or uc.find("building") >= 0:
+		return "buildings"
+	return "units"
+
+
+## 命令按钮图标（Art → converted png）。
+func unit_art_texture(type_id: String) -> Texture2D:
+	var info: Dictionary = lookup(type_id)
+	var art := str(info.get("art", "")).replace("\\", "/")
+	if art.is_empty():
+		return null
+	var lower := art.to_lower()
+	if lower.ends_with(".tga") or lower.ends_with(".blp"):
+		art = art.substr(0, art.length() - 4) + ".png"
+	elif not lower.ends_with(".png"):
+		art = art + ".png"
+	return RuntimeAssets.load_converted_texture(art)
+
+
+## 按种族 + 对战/战役筛选，再按面板分区归类。
+## tileset_letter：中立时按 UnitBalance.tilesets 过滤（空/"*"=不限）。
+## level：中立时按 UnitBalance.level 过滤（<0 = 任何等级）。
+## 返回 { "units": [], "heroes": [], "buildings": [], "special": [] }
+func list_units_palette_sections(
+	race: String,
+	set_id: String = "melee",
+	tileset_letter: String = "*",
+	level: int = -1,
+) -> Dictionary:
+	var out := {
+		"units": [],
+		"heroes": [],
+		"buildings": [],
+		"special": [],
+	}
+	var want_races := _expand_palette_race(race)
+	var want_set := set_id.strip_edges().to_lower()
+	if want_set.is_empty():
+		want_set = "melee"
+	var ts := tileset_letter.strip_edges().to_upper()
+	var filter_ts := not ts.is_empty() and ts != "*"
+	var filter_lv := level >= 0
+	var is_neutral_bucket := str(race).strip_edges().to_lower() == "neutral"
+	for id in _units.keys():
+		var e: Dictionary = _units[id]
+		if not bool(e.get("in_editor", true)):
+			continue
+		if bool(e.get("hidden_in_editor", false)):
+			continue
+		var is_sloc: bool = bool(e.get("is_start_location", false)) or str(e.get("id", "")) == "sloc"
+		if not want_races.is_empty() and not is_sloc:
+			var ur := str(e.get("race", "")).to_lower()
+			if not want_races.has(ur):
+				continue
+		var is_campaign: bool = bool(e.get("campaign", false))
+		if want_set == "melee" or want_set == "standard":
+			if is_campaign:
+				continue
+		elif want_set == "campaign":
+			if not is_campaign:
+				continue
+		# 中立桶：地图集 + 等级（对齐 WE LocaleMenu / LevelMenu）；开始点始终可见
+		if is_neutral_bucket and not is_sloc:
+			if filter_ts and not _tilesets_allow(str(e.get("tilesets", "*")), ts):
+				continue
+			if filter_lv and int(e.get("level", -1)) != level:
+				continue
+		var sec := unit_palette_section(e)
+		(out[sec] as Array).append(e)
+	for k in out.keys():
+		var arr: Array = out[k]
+		arr.sort_custom(_cmp_unit_palette_entries)
+		out[k] = arr
+	# 开始点置顶「建筑」分类（对齐 WE）
+	_move_start_location_first(out["buildings"] as Array)
+	return out
+
+
+func _move_start_location_first(buildings: Array) -> void:
+	for i in range(buildings.size()):
+		var e: Dictionary = buildings[i]
+		if str(e.get("id", "")) == "sloc" or bool(e.get("is_start_location", false)):
+			buildings.remove_at(i)
+			buildings.insert(0, e)
+			return
+
+
+## WE 面板序：unitClass 尾号（HUnit01 < HUnit02）；同号再 sortUI / button_pos / id。
+## Buttonpos 是建造/训练按钮位，多单位撞车，不能当主序。
+func _cmp_unit_palette_entries(a: Dictionary, b: Dictionary) -> bool:
+	var ca := _unit_class_sort_key(str(a.get("unit_class", "")))
+	var cb := _unit_class_sort_key(str(b.get("unit_class", "")))
+	if ca[0] != cb[0]:
+		return str(ca[0]).nocasecmp_to(str(cb[0])) < 0
+	if int(ca[1]) != int(cb[1]):
+		return int(ca[1]) < int(cb[1])
+	var sa := str(a.get("sort_ui", ""))
+	var sb := str(b.get("sort_ui", ""))
+	if sa != sb:
+		return sa.nocasecmp_to(sb) < 0
+	var pa: Vector2i = a.get("button_pos", Vector2i.ZERO) as Vector2i
+	var pb: Vector2i = b.get("button_pos", Vector2i.ZERO) as Vector2i
+	if pa.y != pb.y:
+		return pa.y < pb.y
+	if pa.x != pb.x:
+		return pa.x < pb.x
+	return str(a.get("id", "")).nocasecmp_to(str(b.get("id", ""))) < 0
+
+
+## "HUnit12" → ["HUnit", 12]；无尾号 → [全文, 0]
+static func _unit_class_sort_key(unit_class: String) -> Array:
+	var uc := unit_class.strip_edges()
+	if uc.is_empty():
+		return ["", 0]
+	var i := uc.length() - 1
+	while i >= 0 and uc[i] >= "0" and uc[i] <= "9":
+		i -= 1
+	if i >= uc.length() - 1:
+		return [uc, 0]
+	var prefix := uc.substr(0, i + 1)
+	var num_s := uc.substr(i + 1)
+	return [prefix, int(num_s) if num_s.is_valid_int() else 0]
+
+
 func _load_unit_ui(path: String) -> void:
 	var data := _read_json(path)
 	if data.is_empty():
@@ -130,6 +600,25 @@ func _load_unit_ui(path: String) -> void:
 			"file": str(rec.get("file", "")),
 			"kind": "unit",
 			"num_var": 1,
+			"unit_class": str(rec.get("unitClass", "")),
+			"sort_ui": str(rec.get("sortUI", "")),
+			"campaign": int(rec.get("campaign", 0)) != 0,
+			"special": int(rec.get("special", 0)) != 0,
+			"in_editor": int(rec.get("inEditor", 1)) != 0,
+			"hidden_in_editor": int(rec.get("hiddenInEditor", 0)) != 0,
+			"hostile_pal": str(rec.get("hostilePal", "")),
+			"tileset_specific": int(rec.get("tilesetSpecific", 0)) != 0,
+			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
+			"model_scale": float(rec.get("modelScale", 1.0)),
+			"def_scale": float(rec.get("scale", 1.0)),
+			"race": "other",
+			"move_height": 0.0,
+			"path_tex": "_",
+			"is_building": false,
+			"level": -1,
+			"tilesets": "*",
+			"art": "",
+			"button_pos": Vector2i.ZERO,
 		}
 
 
@@ -230,7 +719,12 @@ static func parse_path_tex_cells(path_tex: String) -> Vector2i:
 	return Vector2i(w, h)
 
 
-## 选中环直径（WC3 单位）：selSize > 0 → 用之；否则 pathTex NxN → max*PATHING_CELL；再否则默认 1 格。
+## 选中环直径（WC3 单位）。
+## 优先级：doodad selSize → pathTex 脚印 → UnitBalance.collision×2 → UnitUI.scale(Selection Scale)×基线 → 1 格。
+## UnitUI 无 selSize；单位尺寸主要看 collision / Selection Scale。HiveWE 选框另用模型 bounds_radius。
+const UNIT_SELECTION_SCALE_BASE := 72.0
+
+
 static func selection_diameter_wc3(info: Dictionary) -> float:
 	var sel: float = float(info.get("sel_size", 0.0))
 	if sel > 1.0:
@@ -238,9 +732,15 @@ static func selection_diameter_wc3(info: Dictionary) -> float:
 	var cells: Vector2i = parse_path_tex_cells(str(info.get("path_tex", "")))
 	if cells != Vector2i.ZERO:
 		return float(maxi(cells.x, cells.y)) * Wc3Coords.PATHING_CELL
-	# pathTex=none 的细杆/火炬等：1 寻路格
+	var collision: float = float(info.get("collision", 0.0))
+	var from_col: float = collision * 2.0 if collision > 0.0 else 0.0
+	# UnitUI.scale = Art - Selection Scale
+	var sel_scale: float = float(info.get("def_scale", 0.0))
+	var from_scale: float = sel_scale * UNIT_SELECTION_SCALE_BASE if sel_scale > 0.0 else 0.0
+	var diam: float = maxf(from_col, from_scale)
+	if diam > 1.0:
+		return diam
 	return Wc3Coords.PATHING_CELL
-
 
 ## 放置默认朝向：fixedRot≥0 用固定角；-1（自由旋转）用 WE 默认 270°。
 static func default_facing_deg(info: Dictionary) -> float:

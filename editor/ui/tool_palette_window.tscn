@@ -577,3 +577,73 @@ toggle_mode = true
 texture_normal = ExtResource("shape_square")
 ignore_texture_size = true
 stretch_mode = 5
+
+[node name="UnitPage" type="VBoxContainer" parent="Margin/Root/Pages/PlaceholderPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="UnitOwnerRow" type="HBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/UnitPage"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="UnitOwnerOption" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitOwnerRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UnitOwnerColor" type="ColorRect" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitOwnerRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+color = Color(1, 0, 0, 1)
+
+[node name="UnitFilterRow" type="HBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/UnitPage"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="UnitRaceOption" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitFilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UnitGroupOption" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitFilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UnitNeutralFilterRow" type="HBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/UnitPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="UnitTilesetOption" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitNeutralFilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UnitLevelOption" type="OptionButton" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitNeutralFilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UnitCurrentLabel" type="Label" parent="Margin/Root/Pages/PlaceholderPage/UnitPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "单位: 没有"
+
+[node name="UnitScroll" type="ScrollContainer" parent="Margin/Root/Pages/PlaceholderPage/UnitPage"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="UnitSections" type="VBoxContainer" parent="Margin/Root/Pages/PlaceholderPage/UnitPage/UnitScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6

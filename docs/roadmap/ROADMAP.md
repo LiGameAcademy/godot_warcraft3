@@ -11,7 +11,7 @@
 
 | 层 | 现状 |
 | ---- | ------ |
-| Data | ✅ `Wc3Heightfield` / `Wc3TileVertex` / `Wc3ParsedMap` 已落地；`MapDocument` 仍用 `Dictionary` |
+| Data | ✅ Heightfield / DoodadList / UnitList / ParsedMap 已落地；`MapDocument` 已持 SoA List；Present 仍经 AoS entries 过渡 |
 | Catalog | ⚠️ `Wc3CliffTransCatalog`、`Wc3IdCatalog` 有雏形；直崖/地面纹理 Catalog 未独立 |
 | Logic | ⚠️ 规则散落 `Wc3CliffTiles` / Autotile / `MapDocument`；与 Dictionary 耦合 |
 | Presentation | ⚠️ Layer 可用，但与逻辑/资产解析纠缠 |

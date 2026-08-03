@@ -1,12 +1,12 @@
 extends Node3D
-## 装饰物笔刷：放置幽灵 + LMB 放置；点已有实例选中 / 拖动 / Delete / [ ] 旋转。
+## 装饰物笔刷：放置幽灵 + LMB 放置；点选 / 框选多选 / 拖动 / Delete / [ ] 旋转。
 ## 朝向来自 Inspect「放置朝向」，与预览环视分离。
 
 
 signal rebuild_requested
 signal brush_settings_changed(size: int, shape: int)
 signal placed(count: int)
-signal selection_changed(creation_number: int) ## -1 = 无选中
+signal selection_changed(creation_number: int) ## primary cn；-1 = 无选中
 signal deleted(count: int)
 signal facing_changed(angle_deg: float) ## 笔刷朝向变化（无选中时 [ ] / R）
 signal palette_cleared ## Esc 取消放置预览 / 清空笔刷类型
@@ -36,6 +36,7 @@ var enabled: bool:
 	set(v):
 		_enabled = v
 		if not _enabled:
+			_cancel_marquee()
 			clear_selection()
 			_hide_ghost()
 		set_process(_enabled)
@@ -60,11 +61,16 @@ var _stroke_entries: Array = []
 var _last_place_wc3: Vector2 = INVALID_POS
 var _last_rebuild_ms: int = 0
 
-## 选中 / 拖动
+## 框选（由 Editor 注入；仅 type_id 为空的选择态使用）
+var _marquee: MarqueeSelection = null
+
+## 选中 / 拖动（_selected_cn = primary，供 Inspect / selection_changed）
 var _selected_cn: int = -1
+var _selected_cns: PackedInt32Array = PackedInt32Array()
 var _dragging: bool = false
-var _drag_before: Dictionary = {}
-var _sel_marker: MeshInstance3D = null
+var _drag_befores: Array = [] ## 多选拖动：各条目 before 快照
+var _drag_anchor_cn: int = -1 ## 拖动锚点（按下时点中的实例）
+var _sel_markers: Array[MeshInstance3D] = []
 
 ## 放置幽灵
 var _ghost: Node3D = null
@@ -79,8 +85,12 @@ func setup(doc, cam: Camera3D, world: World3D, p_history: EditorCommandHistory =
 	space = world
 	history = p_history
 	map_loader = loader
-	_ensure_sel_marker()
+	_update_sel_markers()
 	set_process(_enabled)
+
+
+func set_marquee(m: MarqueeSelection) -> void:
+	_marquee = m
 
 
 func _process(_delta: float) -> void:
@@ -151,7 +161,7 @@ func set_place_random(
 ## —— 输入由 EditorInputRouter 调用 ——
 
 func hover(screen_pos: Vector2) -> void:
-	if not enabled or _painting or _dragging:
+	if not enabled or _painting or _dragging or _is_marquee_active():
 		return
 	if type_id.is_empty():
 		_hide_ghost()
@@ -169,21 +179,30 @@ func hover(screen_pos: Vector2) -> void:
 func stroke_press(screen_pos: Vector2) -> void:
 	if not enabled or document == null:
 		return
-	# 无放置预览：点选 / 空白处取消选中（对齐 WE 选择态）
+	# 无放置预览：点选 / 框选（对齐 WE 选择态）
 	if type_id.is_empty():
 		_painting = false
 		_stroke_entries.clear()
 		var picked: int = _pick_creation_number(screen_pos)
 		if picked >= 0:
-			if picked == _selected_cn:
+			if _cn_in_selection(picked):
+				# 已在选区 → 整组多选拖动；primary 切到点中项
+				if _selected_cn != picked:
+					_selected_cn = picked
+					selection_changed.emit(_selected_cn)
 				_begin_drag(picked)
 			else:
 				select_creation_number(picked)
 				_begin_drag(picked)
 		else:
-			clear_selection()
+			# 空白：开始框选（单击未达阈值则释放时清空）
+			if _marquee != null:
+				_marquee.begin(screen_pos)
+			else:
+				clear_selection()
 		return
 	# 有预览：只放置
+	_cancel_marquee()
 	_painting = true
 	_stroke_entries.clear()
 	_last_place_wc3 = INVALID_POS
@@ -194,6 +213,9 @@ func stroke_press(screen_pos: Vector2) -> void:
 func stroke_drag(screen_pos: Vector2) -> void:
 	if not enabled:
 		return
+	if _is_marquee_active():
+		_marquee.update(screen_pos)
+		return
 	if _dragging:
 		_drag_to(screen_pos)
 		return
@@ -203,6 +225,13 @@ func stroke_drag(screen_pos: Vector2) -> void:
 
 
 func stroke_release() -> void:
+	if _is_marquee_active():
+		var rect: Rect2 = _marquee.finish()
+		if rect.size.x >= 0.5 and rect.size.y >= 0.5:
+			_select_in_screen_rect(rect)
+		else:
+			clear_selection()
+		return
 	if _dragging:
 		_end_drag()
 		return
@@ -230,8 +259,11 @@ func handle_key(k: InputEventKey) -> bool:
 		KEY_DELETE, KEY_BACKSPACE:
 			return delete_selection()
 		KEY_ESCAPE:
-			# 对齐 WE：先取消地图选中，再取消放置预览
-			if _selected_cn >= 0 or _dragging:
+			# 对齐 WE：框选中 → 选中 → 放置预览
+			if _is_marquee_active():
+				_cancel_marquee()
+				return true
+			if _selected_cn >= 0 or _selected_cns.size() > 0 or _dragging:
 				clear_selection()
 				return true
 			if not type_id.is_empty():
@@ -253,19 +285,24 @@ func handle_key(k: InputEventKey) -> bool:
 
 
 func select_creation_number(cn: int) -> void:
+	_selected_cns = PackedInt32Array()
+	if cn >= 0:
+		_selected_cns.append(cn)
 	_selected_cn = cn
-	_update_sel_marker()
+	_update_sel_markers()
 	selection_changed.emit(_selected_cn)
 
 
 func clear_selection() -> void:
-	if _selected_cn < 0 and not _dragging:
-		_update_sel_marker()
+	if _selected_cn < 0 and _selected_cns.is_empty() and not _dragging:
+		_update_sel_markers()
 		return
 	_dragging = false
-	_drag_before = {}
+	_drag_befores.clear()
+	_drag_anchor_cn = -1
 	_selected_cn = -1
-	_update_sel_marker()
+	_selected_cns = PackedInt32Array()
+	_update_sel_markers()
 	selection_changed.emit(-1)
 
 
@@ -279,27 +316,30 @@ func clear_palette() -> void:
 
 
 func delete_selection() -> bool:
-	if document == null or _selected_cn < 0:
+	if document == null or _selected_cns.is_empty():
 		return false
-	var entry: Dictionary = _entry_by_cn(_selected_cn)
-	if entry.is_empty():
+	var to_remove: PackedInt32Array = _selected_cns.duplicate()
+	var removed_list: Array = []
+	for cn in to_remove:
+		var removed: Dictionary = document.remove_doodad_by_creation_number(cn)
+		if removed.is_empty():
+			continue
+		removed_list.append(removed)
+		_sync_present_remove(cn)
+	if removed_list.is_empty():
 		clear_selection()
 		return false
-	var removed: Dictionary = document.remove_doodad_by_creation_number(_selected_cn)
-	if removed.is_empty():
-		return false
 	if history != null:
-		history.record(DoodadEditCommandScript.make_remove([removed], "Delete Doodad"))
-	_sync_present_remove(_selected_cn)
+		history.record(DoodadEditCommandScript.make_remove(removed_list, "Delete Doodad"))
 	clear_selection()
-	deleted.emit(1)
+	deleted.emit(removed_list.size())
 	_request_rebuild()
 	return true
 
 
 ## 有选中则旋选中项；否则改笔刷朝向并发 facing_changed（Editor 同步 Inspect）。
 func nudge_facing(delta_deg: float) -> void:
-	if _selected_cn >= 0:
+	if _selected_cns.size() > 0:
 		if _rotate_selected(delta_deg):
 			return
 		# 选中已失效：清掉后改笔刷朝向
@@ -311,23 +351,30 @@ func nudge_facing(delta_deg: float) -> void:
 
 ## 将选中实例设为指定朝向（Inspect 朝向控件联动）。无选中则 no-op。
 func apply_facing_to_selection(deg: float) -> void:
-	if document == null or _selected_cn < 0:
+	if document == null or _selected_cns.is_empty():
 		return
-	var before: Dictionary = _entry_by_cn(_selected_cn)
-	if before.is_empty():
-		return
-	var cur_deg: float = float(before.get("angleDegrees", rad_to_deg(float(before.get("angle", 0.0)))))
 	var target: float = fposmod(deg, 360.0)
-	if absf(fposmod(cur_deg - target + 180.0, 360.0) - 180.0) < 0.5:
+	var befores: Array = []
+	var afters: Array = []
+	for cn in _selected_cns:
+		var before: Dictionary = _entry_by_cn(cn)
+		if before.is_empty():
+			continue
+		var cur_deg: float = float(before.get("angleDegrees", rad_to_deg(float(before.get("angle", 0.0)))))
+		if absf(fposmod(cur_deg - target + 180.0, 360.0) - 180.0) < 0.5:
+			continue
+		var after: Dictionary = before.duplicate(true)
+		after["angleDegrees"] = target
+		after["angle"] = deg_to_rad(target)
+		document.update_doodad_by_creation_number(cn, after)
+		_sync_present_entry(after)
+		befores.append(before)
+		afters.append(after)
+	if befores.is_empty():
 		return
-	var after: Dictionary = before.duplicate(true)
-	after["angleDegrees"] = target
-	after["angle"] = deg_to_rad(target)
-	document.update_doodad_by_creation_number(_selected_cn, after)
 	if history != null:
-		history.record(DoodadEditCommandScript.make_modify([before], [after], "Rotate Doodad"))
-	_sync_present_entry(after)
-	_update_sel_marker()
+		history.record(DoodadEditCommandScript.make_modify(befores, afters, "Rotate Doodad"))
+	_update_sel_markers()
 	angle_deg = target
 	_request_rebuild()
 
@@ -373,7 +420,7 @@ func _place_one(wc3_x: float, wc3_y: float) -> void:
 		type_id, wc3_x, wc3_y, var_i, ang, sc
 	)
 	document.add_doodad(entry)
-	var stored: Dictionary = document.get_doodad(document.doodads.size() - 1)
+	var stored: Dictionary = document.get_doodad(document.doodads.count() - 1)
 	if stored.is_empty():
 		return
 	_stroke_entries.append(stored.duplicate(true))
@@ -431,84 +478,127 @@ func _roll_place_scale_xyz() -> Vector3:
 # ---------------------------------------------------------------------------
 
 func _begin_drag(cn: int) -> void:
-	var entry: Dictionary = _entry_by_cn(cn)
-	if entry.is_empty():
+	if _selected_cns.is_empty():
 		return
 	_dragging = true
-	_drag_before = entry.duplicate(true)
+	_drag_anchor_cn = cn if cn >= 0 else _selected_cn
+	_drag_befores.clear()
+	for sel_cn in _selected_cns:
+		var entry: Dictionary = _entry_by_cn(sel_cn)
+		if entry.is_empty():
+			continue
+		_drag_befores.append(entry.duplicate(true))
+	if _drag_befores.is_empty():
+		_dragging = false
+		_drag_anchor_cn = -1
 
 
 func _drag_to(screen_pos: Vector2) -> void:
-	if document == null or _selected_cn < 0:
+	if document == null or _drag_befores.is_empty() or _drag_anchor_cn < 0:
 		return
 	var hit: Vector3 = _ground_at(screen_pos)
 	if hit == Vector3.INF:
 		return
 	var ws: float = Wc3Coords.WORLD_SCALE
 	var snapped := _snap_wc3_xy(Vector2(hit.x / ws, -hit.z / ws))
-	var wc3_x: float = snapped.x
-	var wc3_y: float = snapped.y
-	var idx: int = document.find_doodad_index_by_creation_number(_selected_cn)
-	if idx < 0:
+	var anchor_before: Dictionary = {}
+	for b in _drag_befores:
+		if int(b.get("creationNumber", -1)) == _drag_anchor_cn:
+			anchor_before = b
+			break
+	if anchor_before.is_empty():
 		return
-	var cur: Dictionary = document.get_doodad(idx).duplicate(true)
-	var pos: Dictionary = cur.get("position", {})
-	# 未移动到新吸附格则跳过（避免每帧脏写）
+	var ap: Dictionary = anchor_before.get("position", {})
+	var delta := Vector2(
+		snapped.x - float(ap.get("x", 0.0)),
+		snapped.y - float(ap.get("y", 0.0)),
+	)
+	# 锚点已在目标吸附格则跳过（避免每帧脏写）
+	var cur_anchor: Dictionary = _entry_by_cn(_drag_anchor_cn)
+	var cap: Dictionary = cur_anchor.get("position", {})
 	if (
-		absf(float(pos.get("x", 0.0)) - wc3_x) < 0.01
-		and absf(float(pos.get("y", 0.0)) - wc3_y) < 0.01
+		absf(float(cap.get("x", 0.0)) - snapped.x) < 0.01
+		and absf(float(cap.get("y", 0.0)) - snapped.y) < 0.01
 	):
 		return
-	pos["x"] = wc3_x
-	pos["y"] = wc3_y
-	if document.heightfield != null and document.heightfield.is_valid():
-		pos["z"] = document.heightfield.interpolated_height(wc3_x, wc3_y)
-	cur["position"] = pos
-	document.update_doodad_by_creation_number(_selected_cn, cur)
-	_sync_present_entry(cur)
-	_update_sel_marker()
+	for before in _drag_befores:
+		var cn: int = int(before.get("creationNumber", -1))
+		if cn < 0:
+			continue
+		var bp: Dictionary = before.get("position", {})
+		var wc3_x: float = float(bp.get("x", 0.0)) + delta.x
+		var wc3_y: float = float(bp.get("y", 0.0)) + delta.y
+		var cur: Dictionary = before.duplicate(true)
+		var pos: Dictionary = cur.get("position", {}).duplicate(true)
+		pos["x"] = wc3_x
+		pos["y"] = wc3_y
+		if document.heightfield != null and document.heightfield.is_valid():
+			pos["z"] = document.heightfield.interpolated_height(wc3_x, wc3_y)
+		cur["position"] = pos
+		document.update_doodad_by_creation_number(cn, cur)
+		_sync_present_entry(cur)
+	_update_sel_markers()
 
 
 func _end_drag() -> void:
 	_dragging = false
-	if document == null or _selected_cn < 0 or _drag_before.is_empty():
-		_drag_before = {}
+	if document == null or _drag_befores.is_empty():
+		_drag_befores.clear()
+		_drag_anchor_cn = -1
 		return
-	var after: Dictionary = _entry_by_cn(_selected_cn)
-	if after.is_empty():
-		_drag_before = {}
-		return
-	var bp: Dictionary = _drag_before.get("position", {})
-	var ap: Dictionary = after.get("position", {})
-	var moved: bool = (
-		absf(float(bp.get("x", 0.0)) - float(ap.get("x", 0.0))) > 0.01
-		or absf(float(bp.get("y", 0.0)) - float(ap.get("y", 0.0))) > 0.01
-	)
-	if moved and history != null:
-		history.record(
-			DoodadEditCommandScript.make_modify([_drag_before], [after], "Move Doodad")
+	var befores: Array = []
+	var afters: Array = []
+	for before in _drag_befores:
+		var cn: int = int(before.get("creationNumber", -1))
+		var after: Dictionary = _entry_by_cn(cn)
+		if after.is_empty():
+			continue
+		var bp: Dictionary = before.get("position", {})
+		var ap: Dictionary = after.get("position", {})
+		var moved: bool = (
+			absf(float(bp.get("x", 0.0)) - float(ap.get("x", 0.0))) > 0.01
+			or absf(float(bp.get("y", 0.0)) - float(ap.get("y", 0.0))) > 0.01
 		)
-	_drag_before = {}
+		if not moved:
+			continue
+		befores.append(before)
+		afters.append(after)
+	if not befores.is_empty() and history != null:
+		history.record(
+			DoodadEditCommandScript.make_modify(befores, afters, "Move Doodad")
+		)
+	_drag_befores.clear()
+	_drag_anchor_cn = -1
 	_request_rebuild()
 
 
 func _rotate_selected(delta_deg: float) -> bool:
-	if document == null or _selected_cn < 0:
+	if document == null or _selected_cns.is_empty():
 		return false
-	var before: Dictionary = _entry_by_cn(_selected_cn)
-	if before.is_empty():
+	var befores: Array = []
+	var afters: Array = []
+	var last_deg: float = angle_deg
+	for cn in _selected_cns:
+		var before: Dictionary = _entry_by_cn(cn)
+		if before.is_empty():
+			continue
+		var after: Dictionary = before.duplicate(true)
+		var deg: float = float(after.get("angleDegrees", rad_to_deg(float(after.get("angle", 0.0)))))
+		deg = fposmod(deg + delta_deg, 360.0)
+		after["angleDegrees"] = deg
+		after["angle"] = deg_to_rad(deg)
+		document.update_doodad_by_creation_number(cn, after)
+		_sync_present_entry(after)
+		befores.append(before)
+		afters.append(after)
+		if cn == _selected_cn:
+			last_deg = deg
+	if befores.is_empty():
 		return false
-	var after: Dictionary = before.duplicate(true)
-	var deg: float = float(after.get("angleDegrees", rad_to_deg(float(after.get("angle", 0.0)))))
-	deg = fposmod(deg + delta_deg, 360.0)
-	after["angleDegrees"] = deg
-	after["angle"] = deg_to_rad(deg)
-	document.update_doodad_by_creation_number(_selected_cn, after)
 	if history != null:
-		history.record(DoodadEditCommandScript.make_modify([before], [after], "Rotate Doodad"))
-	_sync_present_entry(after)
-	_update_sel_marker()
-	angle_deg = deg
+		history.record(DoodadEditCommandScript.make_modify(befores, afters, "Rotate Doodad"))
+	_update_sel_markers()
+	angle_deg = last_deg
 	facing_changed.emit(angle_deg)
 	_refresh_ghost_facing()
 	_request_rebuild()
@@ -516,14 +606,14 @@ func _rotate_selected(delta_deg: float) -> bool:
 
 
 func _pick_creation_number(screen_pos: Vector2) -> int:
-	if document == null or camera == null or document.doodads.is_empty():
+	if document == null or camera == null or document.doodads == null or document.doodads.count() == 0:
 		return -1
 	var best_cn: int = -1
 	var best_d2: float = PICK_RADIUS_PX * PICK_RADIUS_PX
-	for d_var in document.doodads:
-		if typeof(d_var) != TYPE_DICTIONARY:
+	for i in range(document.doodads.count()):
+		var d: Dictionary = document.get_doodad(i)
+		if d.is_empty():
 			continue
-		var d: Dictionary = d_var
 		var pos: Dictionary = d.get("position", {})
 		var gpos: Vector3 = _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
 		if camera.is_position_behind(gpos):
@@ -545,6 +635,47 @@ func _entry_by_cn(cn: int) -> Dictionary:
 	return document.get_doodad(idx)
 
 
+func _cn_in_selection(cn: int) -> bool:
+	for c in _selected_cns:
+		if c == cn:
+			return true
+	return false
+
+
+func _set_selection(cns: PackedInt32Array) -> void:
+	_selected_cns = cns
+	_selected_cn = int(_selected_cns[0]) if _selected_cns.size() > 0 else -1
+	_update_sel_markers()
+	selection_changed.emit(_selected_cn)
+
+
+func _select_in_screen_rect(rect: Rect2) -> void:
+	var cns := PackedInt32Array()
+	if document == null or camera == null or document.doodads == null:
+		_set_selection(cns)
+		return
+	for i in range(document.doodads.count()):
+		var d: Dictionary = document.get_doodad(i)
+		if d.is_empty():
+			continue
+		var pos: Dictionary = d.get("position", {})
+		var gpos: Vector3 = _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
+		if MarqueeSelection.world_in_rect(camera, gpos, rect):
+			var cn: int = int(d.get("creationNumber", -1))
+			if cn >= 0:
+				cns.append(cn)
+	_set_selection(cns)
+
+
+func _is_marquee_active() -> bool:
+	return _marquee != null and _marquee.active
+
+
+func _cancel_marquee() -> void:
+	if _marquee != null and _marquee.active:
+		_marquee.cancel()
+
+
 # ---------------------------------------------------------------------------
 # Present 同步
 # ---------------------------------------------------------------------------
@@ -558,7 +689,7 @@ func _sync_present_entry(entry: Dictionary) -> void:
 			return
 	# MultiMesh 组无法精确更新 → 全量
 	if map_loader.has_method("rebuild_doodads_from_list"):
-		map_loader.rebuild_doodads_from_list(document.as_build_dict(), document.doodads)
+		map_loader.rebuild_doodads_from_list(document.as_build_dict(), document.doodad_entries())
 
 
 func _sync_present_remove(cn: int) -> void:
@@ -568,7 +699,7 @@ func _sync_present_remove(cn: int) -> void:
 		if map_loader.remove_doodad_instance(cn):
 			return
 	if map_loader.has_method("rebuild_doodads_from_list"):
-		map_loader.rebuild_doodads_from_list(document.as_build_dict(), document.doodads)
+		map_loader.rebuild_doodads_from_list(document.as_build_dict(), document.doodad_entries())
 
 
 # ---------------------------------------------------------------------------
@@ -732,22 +863,16 @@ const SEL_RING_Y_BIAS := 0.04
 const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 
 
-func _ensure_sel_marker() -> void:
-	if _sel_marker != null and is_instance_valid(_sel_marker):
-		# 热重载后可能仍是旧 Torus；强制换成贴地 Plane
-		if _sel_marker.mesh is PlaneMesh and _sel_marker.top_level:
-			return
-		_sel_marker.queue_free()
-		_sel_marker = null
-	_sel_marker = MeshInstance3D.new()
-	_sel_marker.name = "DoodadSelMarker"
-	_sel_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+func _make_sel_marker() -> MeshInstance3D:
+	var marker := MeshInstance3D.new()
+	marker.name = "DoodadSelMarker"
+	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# 脱离父节点旋转，保证永远贴 XZ 地面（PlaneMesh 默认法线 +Y）
-	_sel_marker.top_level = true
+	marker.top_level = true
 	var plane := PlaneMesh.new()
 	plane.size = Vector2.ONE
 	plane.orientation = PlaneMesh.FACE_Y
-	_sel_marker.mesh = plane
+	marker.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -760,9 +885,26 @@ func _ensure_sel_marker() -> void:
 	if tex != null:
 		mat.albedo_texture = tex
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	_sel_marker.material_override = mat
-	_sel_marker.visible = false
-	add_child(_sel_marker)
+	marker.material_override = mat
+	marker.visible = false
+	add_child(marker)
+	return marker
+
+
+func _ensure_sel_markers(count: int) -> void:
+	while _sel_markers.size() < count:
+		_sel_markers.append(_make_sel_marker())
+	for i in range(_sel_markers.size()):
+		var m: MeshInstance3D = _sel_markers[i]
+		if m == null or not is_instance_valid(m):
+			_sel_markers[i] = _make_sel_marker()
+			m = _sel_markers[i]
+		# 热重载后可能仍是旧 Torus；强制换成贴地 Plane
+		if not (m.mesh is PlaneMesh and m.top_level):
+			m.queue_free()
+			_sel_markers[i] = _make_sel_marker()
+		if i >= count:
+			_sel_markers[i].visible = false
 
 
 ## 直径来自配置：selSize → pathTex(NxN×32) → 默认 1 寻路格；再乘实例水平 scale。
@@ -783,28 +925,30 @@ func _sel_ring_diameter_world(entry: Dictionary) -> float:
 	return diam_wc3 * Wc3Coords.WORLD_SCALE
 
 
-func _update_sel_marker() -> void:
-	_ensure_sel_marker()
-	if _selected_cn < 0:
-		_sel_marker.visible = false
-		return
-	var entry: Dictionary = _entry_by_cn(_selected_cn)
-	if entry.is_empty():
-		_sel_marker.visible = false
-		return
-	var pos: Dictionary = entry.get("position", {})
-	var world := _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
-	world.y += SEL_RING_Y_BIAS
-	# top_level：用全局变换钉死贴地，不受 DoodadBrush 父节点影响
-	_sel_marker.global_transform = Transform3D(Basis.IDENTITY, world)
-	var diam: float = _sel_ring_diameter_world(entry)
-	var plane := _sel_marker.mesh as PlaneMesh
-	if plane == null:
-		plane = PlaneMesh.new()
-		plane.orientation = PlaneMesh.FACE_Y
-		_sel_marker.mesh = plane
-	plane.size = Vector2(diam, diam)
-	_sel_marker.visible = true
+func _update_sel_markers() -> void:
+	var n: int = _selected_cns.size()
+	_ensure_sel_markers(n)
+	for i in range(n):
+		var marker: MeshInstance3D = _sel_markers[i]
+		var entry: Dictionary = _entry_by_cn(_selected_cns[i])
+		if entry.is_empty():
+			marker.visible = false
+			continue
+		var pos: Dictionary = entry.get("position", {})
+		var world := _wc3_to_world(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))))
+		world.y += SEL_RING_Y_BIAS
+		# top_level：用全局变换钉死贴地，不受 DoodadBrush 父节点影响
+		marker.global_transform = Transform3D(Basis.IDENTITY, world)
+		var diam: float = _sel_ring_diameter_world(entry)
+		var plane := marker.mesh as PlaneMesh
+		if plane == null:
+			plane = PlaneMesh.new()
+			plane.orientation = PlaneMesh.FACE_Y
+			marker.mesh = plane
+		plane.size = Vector2(diam, diam)
+		marker.visible = true
+	for i in range(n, _sel_markers.size()):
+		_sel_markers[i].visible = false
 
 
 # ---------------------------------------------------------------------------

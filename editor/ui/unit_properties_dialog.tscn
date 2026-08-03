@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://editor/ui/unit_properties_dialog.gd" id="1_props"]
+
+[node name="UnitPropertiesDialog" type="Window"]
+oversampling_override = 1.0
+title = "EDITOR_UNIT_PROPS_TITLE"
+initial_position = 2
+size = Vector2i(420, 380)
+exclusive = true
+script = ExtResource("1_props")

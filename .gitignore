@@ -7,10 +7,14 @@
 *.mpq
 *.MPQ
 
-# Converted Godot-ready assets (PNG/GLB + synced editor UI txt) — regenerate via tools
+# Converted Godot-ready assets (PNG/GLB/SCN + synced editor UI txt) — regenerate via tools
 # Do NOT commit Blizzard content (see docs/data/LEGAL.md)
 assets/asset-converted/**
 !assets/asset-converted/.gitkeep
+
+# Legacy model-scenes/ (deprecated: .scn now sits next to GLB under asset-converted/)
+assets/model-scenes/**
+!assets/model-scenes/.gitkeep
 
 # PE2 particle prefabs (*.pe2.tscn) — mirrored paths under pe2-prefabs/; OK to commit
 # (textures still reference asset-converted at runtime after local convert)

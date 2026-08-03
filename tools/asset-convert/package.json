@@ -11,6 +11,7 @@
     "convert": "node src/cli.js",
     "convert:textures": "node src/cli.js --textures-only",
     "convert:models": "node src/cli.js --models-only",
+    "bake:scn": "node scripts/bake-model-scenes.mjs",
     "convert:lost-temple": "node scripts/convert-lost-temple.mjs",
     "reconvert:additive": "node scripts/reconvert-additive-geosets.mjs"
   },

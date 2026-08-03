@@ -10,11 +10,13 @@ const DataScript := preload("res://editor/ui/world_edit_data.gd")
 const ToolPaletteScene := preload("res://editor/ui/tool_palette_window.tscn")
 const ToolPaletteWindowScript := preload("res://editor/ui/tool_palette_window.gd")
 const InspectWindowScene := preload("res://editor/ui/editor_inspect_window.tscn")
+const UnitPropertiesScene := preload("res://editor/ui/unit_properties_dialog.tscn")
 
 @export var map_root: MapLoader
 @export var camera_rig: Node3D
 @export var brush: Node3D
 @export var doodad_brush: Node3D
+@export var unit_brush: Node3D
 @export var input_router: Node
 @export var new_map_dialog: Window
 @export var open_map_dialog: Window
@@ -46,6 +48,9 @@ var _cliff_tool_id: String = "2"
 var _cliff_type_index: int = 0
 var _special_texture: int = 0 ## ToolPaletteWindow.SpecialTexture
 var _inspect_window: Window
+var _unit_props_dialog: Window
+var _marquee: MarqueeSelection = null
+var _marquee_overlay: MarqueeOverlay = null
 var _brush_mode: String = "terrain" ## terrain | doodad | unit
 var _brush_doodad_id: String = ""
 var _brush_doodad_name: String = ""
@@ -61,7 +66,12 @@ var _brush_doodad_rand_scale_xy: bool = false
 var _brush_unit_id: String = ""
 var _brush_unit_name: String = ""
 var _brush_unit_owner: int = 0
+var _brush_unit_angle: float = 270.0
+var _brush_unit_random_rotation: bool = true
 var _doodads_present_built: bool = false
+var _units_present_built: bool = false
+var _units_loading: bool = false
+var _units_batch_wired: bool = false
 
 
 func _ready() -> void:
@@ -111,6 +121,21 @@ func _ready() -> void:
 			doodad_brush.deleted.connect(_on_doodads_deleted)
 		if doodad_brush.has_signal("palette_cleared"):
 			doodad_brush.palette_cleared.connect(_on_doodad_palette_cleared)
+	if unit_brush != null:
+		if unit_brush.has_signal("rebuild_requested"):
+			unit_brush.rebuild_requested.connect(_on_unit_brush_rebuild)
+		if unit_brush.has_signal("placed"):
+			unit_brush.placed.connect(_on_units_placed)
+		if unit_brush.has_signal("facing_changed"):
+			unit_brush.facing_changed.connect(_on_unit_facing_changed)
+		if unit_brush.has_signal("selection_changed"):
+			unit_brush.selection_changed.connect(_on_unit_map_selection_changed)
+		if unit_brush.has_signal("deleted"):
+			unit_brush.deleted.connect(_on_units_deleted)
+		if unit_brush.has_signal("palette_cleared"):
+			unit_brush.palette_cleared.connect(_on_unit_palette_cleared)
+		if unit_brush.has_signal("properties_requested"):
+			unit_brush.properties_requested.connect(_on_unit_properties_requested)
 	EditorI18n.locale_changed.connect(_on_locale_changed)
 	_apply_chrome_locale()
 
@@ -154,6 +179,8 @@ func _resolve_exports() -> void:
 		brush = get_node_or_null("../TerrainBrush") as Node3D
 	if doodad_brush == null:
 		doodad_brush = get_node_or_null("../DoodadBrush") as Node3D
+	if unit_brush == null:
+		unit_brush = get_node_or_null("../UnitBrush") as Node3D
 	if input_router == null:
 		input_router = get_node_or_null("../EditorInputRouter")
 	if new_map_dialog == null:
@@ -288,6 +315,8 @@ func _on_menu_action(action_id: StringName) -> void:
 				if menu != null and menu.has_method("set_ramp_debug_checked"):
 					menu.set_ramp_debug_checked(on)
 				_set_status("斜坡标记：开" if on else "斜坡标记：关")
+		"view_pathing":
+			_toggle_pathing_ground()
 		"view_grid", "window_new_palette":
 			pass
 		"window_new_palette_terrain":
@@ -303,7 +332,7 @@ func _on_menu_action(action_id: StringName) -> void:
 		"window_show_palettes":
 			_toggle_tool_palettes_visible()
 		"window_minimap", "window_previewer":
-			_ensure_inspect_window(true)
+			_ensure_inspect_window(true, true)
 		"lang_zh_CN":
 			EditorI18n.set_locale("zh_CN")
 			_set_status_key("EDITOR_STATUS_IDLE")
@@ -319,14 +348,16 @@ func _on_menu_action(action_id: StringName) -> void:
 			_brush_mode = "doodad"
 			_sync_active_brush()
 			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.DOODADS)
-			_ensure_inspect_window(true)
+			_ensure_inspect_window(true, false)
+			_restore_inspect_preview_for_brush()
 			_refresh_hud_brush()
 			_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
 		"layer_units", "module_units":
 			_brush_mode = "unit"
 			_sync_active_brush()
 			_spawn_tool_palette(ToolPaletteWindowScript.PaletteKind.UNITS)
-			_ensure_inspect_window(true)
+			_ensure_inspect_window(true, false)
+			_restore_inspect_preview_for_brush()
 			_refresh_hud_brush()
 			_set_status_key("EDITOR_STATUS_UNIT_BRUSH")
 		"help_about":
@@ -358,12 +389,13 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 	MapLog.info(
 		MapLog.Layer.EDITOR,
 		"History",
-		"%s rebuild=%s cliff=%s doodad=%s — %s"
+		"%s rebuild=%s cliff=%s doodad=%s unit=%s — %s"
 		% [
 			"undo" if is_undo else "apply",
 			should_rebuild,
 			cmd.affects_cliffs_water() if cmd else false,
 			cmd.affects_doodads() if cmd else false,
+			cmd.affects_units() if cmd else false,
 			cmd.get_label() if cmd else "?",
 		]
 	)
@@ -373,6 +405,13 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 			if doodad_brush != null and doodad_brush.has_method("clear_selection"):
 				doodad_brush.clear_selection()
 			_rebuild_doodads_present()
+		_refresh_hud_props()
+		return
+	if cmd != null and cmd.affects_units():
+		if should_rebuild:
+			if unit_brush != null and unit_brush.has_method("clear_selection"):
+				unit_brush.clear_selection()
+			_rebuild_units_present()
 		_refresh_hud_props()
 		return
 	if not should_rebuild or map_root == null or _doc == null:
@@ -425,6 +464,8 @@ func _spawn_tool_palette(kind: int) -> void:
 		win.unit_selected.connect(_on_unit_selected)
 	if win.has_signal("unit_owner_changed"):
 		win.unit_owner_changed.connect(_on_unit_owner_changed)
+	if win.has_signal("unit_icons_ready"):
+		win.unit_icons_ready.connect(_on_unit_icons_ready)
 	if win.has_signal("doodad_place_random_changed"):
 		win.doodad_place_random_changed.connect(_on_doodad_place_random_changed)
 		if win.has_method("set_doodad_place_random"):
@@ -434,6 +475,8 @@ func _spawn_tool_palette(kind: int) -> void:
 				_brush_doodad_rand_scale_z,
 				_brush_doodad_rand_scale_xy,
 			)
+	if win.has_signal("palette_kind_changed"):
+		win.palette_kind_changed.connect(_on_palette_kind_changed)
 	win.closed_by_user.connect(_on_tool_palette_closed.bind(win))
 	win.tree_exiting.connect(_on_tool_palette_exiting.bind(win))
 	if win.has_signal("edit_undo_requested"):
@@ -468,13 +511,38 @@ func _spawn_tool_palette(kind: int) -> void:
 	if kind == ToolPaletteWindowScript.PaletteKind.DOODADS:
 		_brush_mode = "doodad"
 		_sync_active_brush()
-		_ensure_inspect_window(true)
+		_ensure_inspect_window(true, false)
+		_restore_inspect_preview_for_brush()
 		_refresh_hud_brush()
 	elif kind == ToolPaletteWindowScript.PaletteKind.UNITS:
 		_brush_mode = "unit"
 		_sync_active_brush()
-		_ensure_inspect_window(true)
+		_ensure_inspect_window(true, false)
+		_restore_inspect_preview_for_brush()
 		_refresh_hud_brush()
+
+
+func _on_palette_kind_changed(kind: int) -> void:
+	# 工具面板顶部下拉切换类型 → 同步笔刷层（否则仍显示地形绿格）
+	match kind:
+		ToolPaletteWindowScript.PaletteKind.DOODADS:
+			_brush_mode = "doodad"
+		ToolPaletteWindowScript.PaletteKind.UNITS:
+			_brush_mode = "unit"
+		_:
+			_brush_mode = "terrain"
+	_sync_active_brush()
+	_ensure_inspect_window(true, false)
+	_restore_inspect_preview_for_brush()
+	_refresh_hud_brush()
+	_refresh_hud_props()
+	match _brush_mode:
+		"doodad":
+			_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
+		"unit":
+			_set_status_key("EDITOR_STATUS_UNIT_BRUSH")
+		_:
+			_set_status_key("EDITOR_STATUS_TERRAIN_BRUSH")
 
 
 func _on_brush_settings_changed(size: int, shape: int) -> void:
@@ -675,7 +743,7 @@ func _on_doodad_selected(type_id: String, info: Dictionary) -> void:
 	_brush_doodad_angle = Wc3IdCatalog.default_facing_deg(info)
 	_brush_doodad_scale = maxf(float(info.get("def_scale", 1.0)), 0.01)
 	_sync_active_brush()
-	_ensure_inspect_window(true)
+	_ensure_inspect_window(true, false)
 	if _inspect_window != null and _inspect_window.has_method("show_doodad"):
 		_inspect_window.show_doodad(type_id, _brush_doodad_variation, true)
 	_push_doodad_palette_to_brush()
@@ -689,13 +757,15 @@ func _on_unit_selected(type_id: String, info: Dictionary, owner_id: int) -> void
 	_brush_unit_id = type_id
 	_brush_unit_name = str(info.get("name", type_id))
 	_brush_unit_owner = clampi(owner_id, 0, 15)
+	_brush_unit_angle = Wc3IdCatalog.default_facing_deg(info)
 	_sync_active_brush()
-	_ensure_inspect_window(true)
+	_ensure_inspect_window(true, false)
 	if _inspect_window != null:
 		if _inspect_window.has_method("show_unit"):
 			_inspect_window.show_unit(type_id, _brush_unit_owner, true)
 		elif _inspect_window.has_method("show_doodad"):
 			_inspect_window.show_doodad(type_id, 0, true)
+	_push_unit_palette_to_brush()
 	_refresh_hud_brush()
 	_refresh_hud_props()
 	_set_status_key(
@@ -709,6 +779,7 @@ func _on_unit_owner_changed(owner_id: int) -> void:
 	if _brush_mode == "unit" and not _brush_unit_id.is_empty():
 		if _inspect_window != null and _inspect_window.has_method("set_preview_team_color"):
 			_inspect_window.set_preview_team_color(_brush_unit_owner)
+		_push_unit_palette_to_brush()
 		_refresh_hud_brush()
 		_refresh_hud_props()
 		_set_status_key(
@@ -717,17 +788,30 @@ func _on_unit_owner_changed(owner_id: int) -> void:
 		)
 
 
+## 单位图标网格就绪：后台预读 GLB 字节（不解析），减轻首次点选 IO。
+func _on_unit_icons_ready(type_ids: PackedStringArray) -> void:
+	_ensure_inspect_window(false, false)
+	if _inspect_window != null and _inspect_window.has_method("prewarm_unit_type_ids"):
+		_inspect_window.prewarm_unit_type_ids(type_ids)
+
+
 func _on_preview_params_changed(variation: int, angle_deg: float, scale: float, random_var: bool) -> void:
 	_brush_doodad_variation = variation
 	_brush_doodad_angle = angle_deg
 	_brush_doodad_scale = scale
 	_brush_doodad_random = random_var
+	_brush_unit_angle = angle_deg
 	_push_doodad_palette_to_brush()
+	_push_unit_palette_to_brush()
 	# Inspect 朝向变更时：若地图上有选中，一并旋转该实例（与快捷键一致）
-	if doodad_brush != null and doodad_brush.has_method("get_selected_creation_number"):
+	if _brush_mode == "doodad" and doodad_brush != null and doodad_brush.has_method("get_selected_creation_number"):
 		var cn: int = int(doodad_brush.get_selected_creation_number())
 		if cn >= 0 and doodad_brush.has_method("apply_facing_to_selection"):
 			doodad_brush.apply_facing_to_selection(angle_deg)
+	elif _brush_mode == "unit" and unit_brush != null and unit_brush.has_method("get_selected_creation_number"):
+		var ucn: int = int(unit_brush.get_selected_creation_number())
+		if ucn >= 0 and unit_brush.has_method("apply_facing_to_selection"):
+			unit_brush.apply_facing_to_selection(angle_deg)
 	_refresh_hud_props()
 
 
@@ -780,8 +864,9 @@ func _on_dirty_changed(dirty: bool) -> void:
 		toolbar.set_dirty(dirty)
 
 
-func _ensure_inspect_window(focus: bool = false) -> void:
-	if _inspect_window == null or not is_instance_valid(_inspect_window):
+func _ensure_inspect_window(focus: bool = false, refresh_minimap: bool = false) -> void:
+	var created := _inspect_window == null or not is_instance_valid(_inspect_window)
+	if created:
 		_inspect_window = InspectWindowScene.instantiate()
 		add_child(_inspect_window)
 		_inspect_window.setup(map_root.get_id_catalog(), map_root.get_model_cache())
@@ -798,13 +883,31 @@ func _ensure_inspect_window(focus: bool = false) -> void:
 			_inspect_window.position = main_win.position + Vector2i(maxi(main_win.size.x - 320, 40), 72)
 		else:
 			_inspect_window.position = Vector2i(960, 72)
-	_refresh_inspect_minimap()
-	if not _brush_doodad_id.is_empty() and _inspect_window.has_method("show_doodad"):
-		_inspect_window.show_doodad(_brush_doodad_id, _brush_doodad_variation)
+	# 点选预览不刷小地图；仅首次创建或显式要求时刷新
+	if refresh_minimap or created:
+		_refresh_inspect_minimap()
 	_inspect_window.visible = true
 	_inspect_window.show()
 	if focus:
 		_inspect_window.move_to_foreground()
+
+
+## 按当前笔刷模式恢复 Inspect 预览（切层 / 开面板用；不在 ensure 里自动 show_doodad）。
+func _restore_inspect_preview_for_brush() -> void:
+	if _inspect_window == null or not is_instance_valid(_inspect_window):
+		return
+	if _brush_mode == "unit":
+		if _brush_unit_id.is_empty():
+			if _inspect_window.has_method("clear_preview"):
+				_inspect_window.clear_preview()
+		elif _inspect_window.has_method("show_unit"):
+			_inspect_window.show_unit(_brush_unit_id, _brush_unit_owner, true)
+	elif _brush_mode == "doodad":
+		if _brush_doodad_id.is_empty():
+			if _inspect_window.has_method("clear_preview"):
+				_inspect_window.clear_preview()
+		elif _inspect_window.has_method("show_doodad"):
+			_inspect_window.show_doodad(_brush_doodad_id, _brush_doodad_variation, true)
 
 
 func _refresh_inspect_minimap() -> void:
@@ -983,15 +1086,28 @@ func _apply_document(full_reload: bool) -> void:
 		doodad_brush.setup(_doc, cam, map_root.get_world_3d(), _history, map_root)
 		doodad_brush.set_brush_settings(_brush_size, _brush_shape)
 		_push_doodad_palette_to_brush()
+	if unit_brush != null and unit_brush.has_method("setup"):
+		unit_brush.setup(_doc, cam, map_root.get_world_3d(), _history, map_root)
+		_ensure_marquee()
+		if unit_brush.has_method("set_marquee"):
+			unit_brush.set_marquee(_marquee)
+		_push_unit_palette_to_brush()
+	if doodad_brush != null and doodad_brush.has_method("set_marquee"):
+		_ensure_marquee()
+		doodad_brush.set_marquee(_marquee)
 	_doodads_present_built = false
+	_units_present_built = false
 	_sync_active_brush()
 	if full_reload:
 		var dir: String = _doc.map_dir if not _doc.map_dir.is_empty() else "res://"
 		await map_root.reload_from_hf(_doc.as_build_dict(), _doc.info, dir)
 	else:
 		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
-	# Document 已读 doodads.json；Present 始终按列表重建（打开地图即可看到装饰物）
+	# Document 已读 doodads/units.json；装饰物随开图呈现，单位分帧加载
 	_rebuild_doodads_present()
+	_units_present_built = false
+	_start_units_present_batched()
+	_sync_pathing_to_map_root()
 	if camera_rig != null and camera_rig.has_method("focus_map_extent"):
 		camera_rig.focus_map_extent(_doc.map_size())
 	_refresh_inspect_minimap()
@@ -1009,8 +1125,18 @@ func _sync_active_brush() -> void:
 		if use_doodad:
 			_push_doodad_palette_to_brush()
 			_ensure_doodads_present()
+	if unit_brush != null:
+		unit_brush.set("enabled", use_unit)
+		if use_unit:
+			_push_unit_palette_to_brush()
+			_ensure_units_present()
 	if input_router != null:
-		input_router.set("brush", doodad_brush if use_doodad else brush)
+		if use_doodad:
+			input_router.set("brush", doodad_brush)
+		elif use_unit:
+			input_router.set("brush", unit_brush)
+		else:
+			input_router.set("brush", brush)
 
 
 func _push_doodad_palette_to_brush() -> void:
@@ -1030,6 +1156,14 @@ func _push_doodad_palette_to_brush() -> void:
 	)
 
 
+func _push_unit_palette_to_brush() -> void:
+	if unit_brush == null or not unit_brush.has_method("set_palette"):
+		return
+	unit_brush.set_palette(_brush_unit_id, _brush_unit_owner, _brush_unit_angle)
+	if unit_brush.has_method("set_random_rotation"):
+		unit_brush.set_random_rotation(_brush_unit_random_rotation)
+
+
 func _ensure_doodads_present() -> void:
 	if _doodads_present_built or map_root == null or _doc == null:
 		return
@@ -1040,12 +1174,75 @@ func _ensure_doodads_present() -> void:
 func _rebuild_doodads_present() -> void:
 	if map_root == null or _doc == null:
 		return
-	map_root.rebuild_doodads_from_list(_doc.as_build_dict(), _doc.doodads)
+	map_root.rebuild_doodads_from_list(_doc.as_build_dict(), _doc.doodad_entries())
 	_doodads_present_built = true
+
+
+func _ensure_units_present() -> void:
+	if _units_present_built or map_root == null or _doc == null:
+		return
+	if _units_loading:
+		return
+	_start_units_present_batched()
+
+
+func _start_units_present_batched() -> void:
+	if map_root == null or _doc == null:
+		return
+	if _units_present_built:
+		return
+	_wire_units_batch_signals()
+	_units_loading = true
+	_units_present_built = false
+	_set_status_key("EDITOR_STATUS_LOADING_UNITS_PROGRESS", [0, _doc.unit_entries().size()])
+	if map_root.has_method("rebuild_units_from_list"):
+		map_root.rebuild_units_from_list(_doc.as_build_dict(), _doc.unit_entries(), true)
+	else:
+		_rebuild_units_present()
+
+
+func _wire_units_batch_signals() -> void:
+	if _units_batch_wired or map_root == null:
+		return
+	var layer: MapUnitLayer = null
+	if map_root.has_method("get_unit_layer"):
+		layer = map_root.get_unit_layer()
+	if layer == null:
+		return
+	if layer.has_signal("batch_progress") and not layer.batch_progress.is_connected(_on_units_batch_progress):
+		layer.batch_progress.connect(_on_units_batch_progress)
+	if layer.has_signal("batch_finished") and not layer.batch_finished.is_connected(_on_units_batch_finished):
+		layer.batch_finished.connect(_on_units_batch_finished)
+	_units_batch_wired = true
+
+
+func _on_units_batch_progress(done: int, total: int) -> void:
+	_set_status_key("EDITOR_STATUS_LOADING_UNITS_PROGRESS", [done, total])
+
+
+func _on_units_batch_finished(_placed: int, _placeholders: int) -> void:
+	_units_loading = false
+	_units_present_built = true
+	_set_status_key("EDITOR_STATUS_IDLE")
+	_refresh_hud_props()
+
+
+func _rebuild_units_present() -> void:
+	if map_root == null or _doc == null:
+		return
+	# 同步路径（撤销等需要立刻一致时仍可用）；开图走 batched
+	map_root.rebuild_units_from_list(_doc.as_build_dict(), _doc.unit_entries(), false)
+	_units_present_built = true
+	_units_loading = false
 
 
 func _on_doodad_brush_rebuild() -> void:
 	# 增量 Present 已在笔刷内完成；仅刷新脏标记 HUD
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_unit_brush_rebuild() -> void:
 	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
 		toolbar.set_dirty(_doc.is_dirty())
 
@@ -1080,7 +1277,7 @@ func _on_doodad_map_selection_changed(creation_number: int) -> void:
 	if entry.is_empty():
 		return
 	# 预览面板显示该实例（距离按类型配置，朝向/样式按实例）
-	_ensure_inspect_window(true)
+	_ensure_inspect_window(true, false)
 	if _inspect_window != null and _inspect_window.has_method("show_map_doodad"):
 		_inspect_window.show_map_doodad(entry)
 	elif _inspect_window != null and _inspect_window.has_method("show_doodad"):
@@ -1121,6 +1318,129 @@ func _on_doodad_palette_cleared() -> void:
 	_set_status_key("EDITOR_STATUS_DOODAD_BRUSH")
 
 
+func _on_units_placed(count: int) -> void:
+	if count <= 0:
+		return
+	_set_status_key("EDITOR_STATUS_UNIT_PLACED", [count, _brush_unit_name])
+	_refresh_hud_props()
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_unit_facing_changed(angle_deg: float) -> void:
+	_brush_unit_angle = angle_deg
+	if _inspect_window != null and is_instance_valid(_inspect_window):
+		if _inspect_window.has_method("set_place_facing"):
+			_inspect_window.set_place_facing(angle_deg, true, false)
+	_push_unit_palette_to_brush()
+	_refresh_hud_props()
+
+
+func _on_unit_map_selection_changed(creation_number: int) -> void:
+	if creation_number < 0:
+		return
+	_set_status_key("EDITOR_STATUS_UNIT_PICKED", [creation_number])
+	if unit_brush == null or _doc == null:
+		return
+	var idx: int = _doc.find_unit_index_by_creation_number(creation_number)
+	var entry: Dictionary = _doc.get_unit(idx) if idx >= 0 else {}
+	if entry.is_empty():
+		return
+	_ensure_inspect_window(true, false)
+	if _inspect_window != null and _inspect_window.has_method("show_map_unit"):
+		_inspect_window.show_map_unit(entry)
+	elif _inspect_window != null and _inspect_window.has_method("show_unit"):
+		_inspect_window.show_unit(
+			str(entry.get("typeId", "")), int(entry.get("owner", 0)), true
+		)
+	var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+	_brush_unit_angle = deg
+	_brush_unit_owner = clampi(int(entry.get("owner", _brush_unit_owner)), 0, 15)
+	# 地图点选 ≠ 放置：勿写入 _brush_unit_id，否则会进幽灵模式（对齐装饰物选中）
+	_brush_unit_id = ""
+	_brush_unit_name = ""
+	if unit_brush.has_method("set_palette"):
+		unit_brush.set_palette("", _brush_unit_owner, deg)
+	for win in _tool_palettes:
+		if win != null and is_instance_valid(win) and win.has_method("clear_unit_selection"):
+			win.clear_unit_selection()
+	# 只同步 Inspect 朝向，不走 _on_unit_facing_changed（会 push 放置笔刷）
+	if _inspect_window != null and is_instance_valid(_inspect_window):
+		if _inspect_window.has_method("set_place_facing"):
+			_inspect_window.set_place_facing(deg, true, false)
+	_refresh_hud_brush()
+	_refresh_hud_props()
+
+
+func _on_units_deleted(count: int) -> void:
+	if count <= 0:
+		return
+	_set_status_key("EDITOR_STATUS_UNIT_DELETED", [count])
+	_refresh_hud_props()
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
+func _on_unit_palette_cleared() -> void:
+	_brush_unit_id = ""
+	_brush_unit_name = ""
+	if _inspect_window != null and is_instance_valid(_inspect_window):
+		if _inspect_window.has_method("clear_preview"):
+			_inspect_window.clear_preview()
+	for win in _tool_palettes:
+		if win != null and is_instance_valid(win) and win.has_method("clear_unit_selection"):
+			win.clear_unit_selection()
+	_push_unit_palette_to_brush()
+	_refresh_hud_brush()
+	_refresh_hud_props()
+	_set_status_key("EDITOR_STATUS_UNIT_BRUSH")
+
+
+func _on_unit_properties_requested(creation_number: int) -> void:
+	if _doc == null or creation_number < 0:
+		return
+	var idx: int = _doc.find_unit_index_by_creation_number(creation_number)
+	var entry: Dictionary = _doc.get_unit(idx) if idx >= 0 else {}
+	if entry.is_empty():
+		return
+	_ensure_unit_props_dialog()
+	if _unit_props_dialog != null and _unit_props_dialog.has_method("open_for_entry"):
+		_unit_props_dialog.open_for_entry(entry)
+
+
+func _ensure_unit_props_dialog() -> void:
+	if _unit_props_dialog != null and is_instance_valid(_unit_props_dialog):
+		return
+	_unit_props_dialog = UnitPropertiesScene.instantiate() as Window
+	add_child(_unit_props_dialog)
+	if _unit_props_dialog.has_method("setup"):
+		var catalog: Wc3IdCatalog = map_root.get_id_catalog() if map_root != null else null
+		_unit_props_dialog.setup(catalog, _doc, _history)
+	if _unit_props_dialog.has_signal("confirmed"):
+		_unit_props_dialog.confirmed.connect(_on_unit_props_confirmed)
+
+
+func _on_unit_props_confirmed(entry: Dictionary) -> void:
+	if entry.is_empty():
+		return
+	# Document 已在对话框 OK 时写入；刷新 Present + 预览
+	var cn := int(entry.get("creationNumber", -1))
+	if map_root != null and map_root.has_method("update_unit_instance"):
+		if not map_root.update_unit_instance(entry, _doc.as_build_dict()):
+			_rebuild_units_present()
+	else:
+		_rebuild_units_present()
+	if unit_brush != null and unit_brush.has_method("select_creation_number") and cn >= 0:
+		unit_brush.select_creation_number(cn)
+	_brush_unit_owner = clampi(int(entry.get("owner", _brush_unit_owner)), 0, 15)
+	_brush_unit_angle = float(entry.get("angleDegrees", _brush_unit_angle))
+	if _inspect_window != null and _inspect_window.has_method("show_map_unit"):
+		_inspect_window.show_map_unit(entry)
+	_refresh_hud_props()
+	if toolbar != null and toolbar.has_method("set_dirty") and _doc != null:
+		toolbar.set_dirty(_doc.is_dirty())
+
+
 ## 浮窗 Esc：与主视口笔刷 Esc 同序（先地图选中，再放置预览）。
 func _cancel_doodad_preview_like_we() -> void:
 	if doodad_brush == null:
@@ -1134,12 +1454,71 @@ func _cancel_doodad_preview_like_we() -> void:
 		doodad_brush.clear_palette()
 
 
+func _cancel_unit_preview_like_we() -> void:
+	if unit_brush == null:
+		return
+	if unit_brush.has_method("get_selected_creation_number"):
+		if int(unit_brush.get_selected_creation_number()) >= 0:
+			if unit_brush.has_method("clear_selection"):
+				unit_brush.clear_selection()
+			return
+	if not _brush_unit_id.is_empty() and unit_brush.has_method("clear_palette"):
+		unit_brush.clear_palette()
+
+
+func _toggle_pathing_ground() -> void:
+	if map_root == null:
+		return
+	_sync_pathing_to_map_root()
+	var on := not map_root.get_show_pathing_ground()
+	map_root.set_show_pathing_ground(on)
+	if menu != null and menu.has_method("set_pathing_checked"):
+		menu.set_pathing_checked(on)
+	var n := 0
+	if map_root.has_method("get_pathing_overlay_cell_count"):
+		n = int(map_root.get_pathing_overlay_cell_count())
+	if on:
+		_set_status_key("EDITOR_STATUS_PATHING_GROUND_ON", [n])
+	else:
+		_set_status_key("EDITOR_STATUS_PATHING_GROUND", ["关"])
+
+
+func _sync_pathing_to_map_root() -> void:
+	if map_root == null or _doc == null:
+		return
+	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root.has_method("get_tiles") else null
+	if _doc.has_method("ensure_pathing"):
+		_doc.ensure_pathing(tiles)
+	if map_root.has_method("set_pathing_map"):
+		map_root.set_pathing_map(_doc.pathing)
+
+
+func _ensure_marquee() -> void:
+	if _marquee != null and is_instance_valid(_marquee_overlay):
+		return
+	_marquee = MarqueeSelection.new()
+	_marquee_overlay = MarqueeOverlay.new()
+	_marquee_overlay.name = "MarqueeOverlay"
+	var ui := get_node_or_null("../UI") as CanvasLayer
+	if ui != null:
+		ui.add_child(_marquee_overlay)
+	else:
+		add_child(_marquee_overlay)
+	_marquee_overlay.bind(_marquee)
+
+
 func _on_palette_escape() -> void:
-	_cancel_doodad_preview_like_we()
+	if _brush_mode == "unit":
+		_cancel_unit_preview_like_we()
+	else:
+		_cancel_doodad_preview_like_we()
 
 
 func _on_inspect_preview_clear_requested() -> void:
-	_cancel_doodad_preview_like_we()
+	if _brush_mode == "unit":
+		_cancel_unit_preview_like_we()
+	else:
+		_cancel_doodad_preview_like_we()
 
 
 func _refresh_brush_label() -> void:

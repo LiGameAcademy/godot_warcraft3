@@ -12,6 +12,7 @@
 [ext_resource type="Material" path="res://assets/materials/wc3_ground_material.tres" id="10_gmat"]
 [ext_resource type="Script" uid="uid://c0178kg74vwwt" path="res://scripts/map/presentation/layers/map_ramp_layer.gd" id="11_ramp"]
 [ext_resource type="Script" path="res://scripts/map/presentation/layers/map_boundary_layer.gd" id="12_boundary"]
+[ext_resource type="Script" path="res://scripts/map/presentation/layers/map_pathing_layer.gd" id="13_pathing"]
 
 [node name="MapRoot" type="Node3D" unique_id=1421899306]
 script = ExtResource("1_loader")
@@ -45,6 +46,13 @@ script = ExtResource("5_doodad")
 
 [node name="Units" type="Node3D" parent="." unique_id=1151454913]
 script = ExtResource("6_unit")
+
+[node name="Pathing" type="Node3D" parent="."]
+script = ExtResource("13_pathing")
+enabled = false
+terrain_layer = NodePath("../Terrain")
+cliffs_layer = NodePath("../Cliffs")
+ramps_layer = NodePath("../Ramps")
 
 [node name="DebugGrid" type="Node3D" parent="." unique_id=1887812046]
 script = ExtResource("8_dbggrid")

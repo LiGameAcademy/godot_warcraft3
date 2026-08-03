@@ -11,8 +11,8 @@
 | ------ | ------ |
 | **一文件一类型（地图级）** | `info.json` / `terrain.json` / `terrain-heightfield.json` / `doodads.json` … 各对应一个 RefCounted（或薄包装） |
 | **顶点是一等公民** | 对 heightfield 的改动一律通过「瓦片顶点」视图读写，避免满屏 `hf["heights"][i]` |
-| **存盘保持 SoA** | JSON 里是平行数组（Structure of Arrays）；内存主存储也是 SoA，与 `terrain-heightfield.json` 同形，便于 load/save |
-| **顶点是视图，不是拷贝** | `Wc3TileVertex` 持有 `heightfield + index`，改属性即改底层数组；**不要**默认 new 出 2.5 万个常驻对象 |
+| **内存主存储用 SoA** | heightfield JSON 本身是平行数组；doodads/units JSON 磁盘仍是 AoS 对象数组，**内存**拆成平行数组，`to_dict()` 再拼回 AoS |
+| **条目是视图，不是拷贝** | `Wc3TileVertex` / `Wc3Doodad` / `Wc3UnitPlacement` 持有 `容器 + index`，改属性即改底层数组；**不要**默认 new 出大量常驻对象 |
 
 术语：
 
@@ -39,7 +39,7 @@
 | `summary.json` | 解析摘要（只读） | 可不建类，或 `Wc3MapSummary` | 工具用 |
 | 目录整体 | 一次打开一张图 | `Wc3ParsedMap` | 包一层 `load_dir` |
 
-**第一阶段只落地**：`Wc3Heightfield` + `Wc3TileVertex` + `Wc3ParsedMap`（至少能挂上 heightfield）。其余 JSON 按需加，避免一次造完空壳。
+**已落地**：`Wc3Heightfield` + `Wc3TileVertex`、`Wc3DoodadList` + `Wc3Doodad`、`Wc3UnitList` + `Wc3UnitPlacement`、`Wc3ParsedMap.load_dir`（heightfield 必载；doodads/units 有文件则加载）。`info` / `terrain` 头仍为 Dictionary，按需再拆类。
 
 ---
 
@@ -77,25 +77,56 @@
 
 ```text
 Wc3ParsedMap                          ← 打开 map-parsed/<slug>/
-├── info: Wc3MapInfo?                 ← info.json（可后补）
-├── terrain_header: Wc3TerrainHeader? ← terrain.json（可后补）
+├── info: Dictionary                  ← info.json（可后补专用类）
+├── terrain_header: Dictionary        ← terrain.json（可后补专用类）
 ├── heightfield: Wc3Heightfield       ← terrain-heightfield.json  ★
-├── doodads: Wc3DoodadList?           ← doodads.json（可后补）
+├── doodads: Wc3DoodadList?           ← doodads.json
+├── units: Wc3UnitList?               ← units.json
+├── doodad_at(i) / unit_at(i) / vertex_at(ix,iy)
 └── …
 
 Wc3Heightfield                        ← SoA，可 to_dict / from_dict
 └── vertex_at(ix, iy) -> Wc3TileVertex
 
-Wc3TileVertex                         ← RefCounted 视图
-├── ix, iy, index
-├── height / layer / flags / …
-└── 写回时改 Heightfield 对应数组元素
+Wc3DoodadList / Wc3UnitList           ← 内存 SoA；to_dict() → AoS JSON
+└── at(i) -> Wc3Doodad / Wc3UnitPlacement
+
+Wc3TileVertex / Wc3Doodad / Wc3UnitPlacement  ← RefCounted 视图
+├── 容器引用 + index
+└── 写回时改平行数组对应元素
 ```
 
-### 为何不用「每个顶点一个常驻 Resource」？
+### 为何不用「每条一个常驻 Resource」？
 
-161×161 ≈ 2.6 万顶点。若全部 `new` 成独立对象：内存与 GC 压力大，且与 JSON SoA 往返要拆装。  
-**视图模式**：按需 `vertex_at`，刷子只拿当前点；批量重建 mesh 仍直接扫 SoA。
+161×161 ≈ 2.6 万顶点；大图 doodad/unit 也可上千。若全部 `new` 成独立对象：内存与 GC 压力大，且与 JSON 往返要拆装。  
+**视图模式**：按需 `at` / `vertex_at`；批量重建仍直接扫 SoA。
+
+### 4.1 doodads / units 字段（摘要）
+
+**List 根级（文件头 / 旁路段，非单条 SoA）：**
+
+| JSON | List 属性 | 说明 |
+|------|-----------|------|
+| `formatVersion` / `subversion` | `format_version` / `subversion` | doo 文件头 |
+| `count` | `count()` | = 主表长度，不另存 |
+| `byId`（doodad）/ `byTypeId`·`byOwner`（unit） | `rebuild_by_*()` | 派生统计，`to_dict` 现算 |
+| `specialDoodads` | `special_doodads` | doo 尾段；权威 Array[{id,x,y,z,…}] |
+| `_bytesRemaining` | `bytes_remaining` | 解析诊断；≥0 才写回 |
+
+**单条主表：**
+
+| JSON（AoS 单条） | List SoA | 视图属性 |
+| ---------------- | -------- | -------- |
+| `id` / `typeId` | `ids` / `type_ids` | `id` / `type_id` |
+| `variation` | `variations` | `variation` |
+| `position.{x,y,z}` | `pos_x/y/z` | `position` / `pos_*` |
+| `angle`（弧度） | `angles` | `angle`；`angle_degrees` 派生 |
+| `scale.{x,y,z}` | `scale_x/y/z` | `scale` |
+| `flags` / `life`（doodad） | `flags` / `lives` | 同名 |
+| `owner` / `hitPoints`…（unit） | `owners` / `hit_points`… | 同名 snake_case |
+| `droppedItemSets` 等嵌套 | `Array` 平行槽 | 同名 |
+
+嵌套结构（掉落表、背包、技能、random）不拆 Packed*，每槽一个 `Array`/`Dictionary`。
 
 ---
 
@@ -103,11 +134,11 @@ Wc3TileVertex                         ← RefCounted 视图
 
 | 现状 | 目标 |
 | ------ | ------ |
-| `MapDocument.hf: Dictionary` 与 JSON 同形 | 内部改为持有 `Wc3Heightfield`；对外可暂时 `to_dict()` 兼容 Domain |
+| `MapDocument` 持 `Wc3Heightfield` + `Wc3DoodadList` + `Wc3UnitList` | Present 经 `doodad_entries()` / `unit_entries()` 或 List.`to_dict()` 过渡；CRUD 仍对外 Dictionary |
 | Domain（`Wc3CliffTiles` 等）吃 `Array` / `meta` | 逐步改为吃 `Wc3Heightfield` 或仍传 `to_dict()`，避免一次改爆 |
-| 编辑器笔刷 | 改为 `doc.heightfield.vertex_at(ix,iy).has_ramp = true` 这类 API |
+| 编辑器笔刷 | `doc.heightfield.vertex_at(ix,iy).has_ramp = true` 这类 API |
 
-迁移顺序建议：先建数据类 + 自测读写 Lost Temple → 笔刷/斜坡改用 `TileVertex` → 最后 Domains 去 Dictionary。
+迁移顺序建议：数据类已齐 → 笔刷/斜坡用 `TileVertex` → Layer/Document 改用 List → Domains 去 Dictionary。
 
 ---
 
@@ -118,6 +149,8 @@ scripts/map/data/             # 地图态 JSON ↔ 类型（本文）
   wc3_coords.gd               # FLAG / TILE / 坐标（含 FLAG_RAMP）
   wc3_tile_vertex.gd          # has_ramp 读写旗位
   wc3_heightfield.gd
+  wc3_doodad_list.gd / wc3_doodad.gd
+  wc3_unit_list.gd / wc3_unit_placement.gd
   wc3_parsed_map.gd
   wc3_cliff_placement.gd
   wc3_cliff_topology_result.gd
@@ -156,3 +189,5 @@ docs/architecture/LAYERED_ARCHITECTURE.md  # 分层总纲
 2. `vertex_at(0,0).height` 与 JSON `heights[0]` 一致  
 3. 修改 `vertex_at` 的 `layer` / `flags` 后，`to_dict()["layerHeights"]` 同步变化  
 4. 不默认分配 width×height 个 `Wc3TileVertex` 常驻实例  
+5. `doodads.count()` / `units.count()` 与 JSON `count` 一致；`doodad_at(0).id` / `unit_at(0).type_id` 与首条一致  
+6. `list.to_dict()` 输出 AoS，含根字段：`byId`/`byTypeId`/`byOwner`（现算）、`specialDoodads`（doodad）；有诊断时带 `_bytesRemaining`  

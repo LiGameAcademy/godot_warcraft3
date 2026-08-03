@@ -14,6 +14,7 @@ import { parseUnitsDoo } from "./parsers/doo-units.js";
 import { parseW3r } from "./parsers/w3r.js";
 import { parseW3c } from "./parsers/w3c.js";
 import { parseMmp } from "./parsers/mmp.js";
+import { parseWpm } from "./parsers/wpm.js";
 import { blpBufferToPng } from "../../asset-convert/src/convert-blp.js";
 
 /**
@@ -209,6 +210,16 @@ export function parseMap(mapPath, opts) {
       errors.minimap = String(e);
     }
 
+    let pathing = null;
+    try {
+      if (findArchiveName("war3map.wpm", archiveNames)) {
+        pathing = parseWpm(readFile(archive, "war3map.wpm", archiveNames));
+        writeJson(path.join(outDir, "pathing.json"), pathing);
+      }
+    } catch (e) {
+      errors.pathing = String(e);
+    }
+
     try {
       // 官方预烘焙小地图：优先 BLP，其次 TGA
       const mapBlp = findArchiveName("war3mapMap.blp", archiveNames);
@@ -290,6 +301,9 @@ export function parseMap(mapPath, opts) {
         : null,
       regions: regions ? { count: regions.count } : null,
       cameras: cameras ? { count: cameras.count } : null,
+      pathing: pathing
+        ? { width: pathing.width, height: pathing.height, cellSize: pathing.cellSize }
+        : null,
       minimap: minimap ? { count: minimap.count } : null,
       war3mapMap: fs.existsSync(path.join(outDir, "war3mapMap.png"))
         ? "war3mapMap.png"

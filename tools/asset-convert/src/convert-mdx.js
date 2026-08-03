@@ -114,17 +114,24 @@ function parseModel(data, logicalPath) {
 
 /** Classic WC3 replaceable texture IDs → default BLP (used when Image is empty). */
 const REPLACEABLE_DEFAULTS = {
-  1: null, // team color → placeholder
-  2: null, // team glow → placeholder
-  11: "ReplaceableTextures/Cliff/Cliff0.blp",
-  31: "ReplaceableTextures/LordaeronTree/LordaeronSnowTree.blp",
-  // Icecrown / Lost Temple uses Ice_Tree on AshenTree models (ITtw).
-  32: "ReplaceableTextures/AshenvaleTree/Ice_Tree.blp",
-  33: "ReplaceableTextures/BarrensTree/BarrensTree.blp",
-  34: "ReplaceableTextures/NorthrendTree/NorthTree.blp",
-  35: "ReplaceableTextures/Mushroom/MushroomTree.blp",
-  36: "ReplaceableTextures/RuinsTree/RuinsTree.blp",
-  37: "ReplaceableTextures/UndergroundTree/UnderTree.blp",
+	1: null, // team color → _placeholders/team_color.png
+	2: null, // team glow → _placeholders/team_glow.png（编辑器常跳过纯 glow geoset）
+	11: "ReplaceableTextures/Cliff/Cliff0.blp",
+	31: "ReplaceableTextures/LordaeronTree/LordaeronSnowTree.blp",
+	// Icecrown / Lost Temple uses Ice_Tree on AshenTree models (ITtw).
+	32: "ReplaceableTextures/AshenvaleTree/Ice_Tree.blp",
+	33: "ReplaceableTextures/BarrensTree/BarrensTree.blp",
+	34: "ReplaceableTextures/NorthrendTree/NorthTree.blp",
+	35: "ReplaceableTextures/Mushroom/MushroomTree.blp",
+	36: "ReplaceableTextures/RuinsTree/RuinsTree.blp",
+	37: "ReplaceableTextures/UndergroundTree/UnderTree.blp",
+};
+
+/** ReplaceableId → 占位 PNG 逻辑路径与默认 RGBA */
+const REPLACEABLE_PLACEHOLDERS = {
+	1: { pngLogical: "_placeholders/team_color.png", rgba: [30, 70, 180, 255] },
+	// 半透明白：加法混合时才像光晕；误当成不透明时也不至于整块实心蓝
+	2: { pngLogical: "_placeholders/team_glow.png", rgba: [255, 255, 255, 96] },
 };
 
 /**
@@ -145,48 +152,70 @@ function findBlpOnDisk(logical, inDir) {
 }
 
 function resolveTexturePng(
-  imagePath,
-  inDir,
-  outDir,
-  { isReplaceable = false, replaceableId = 0 } = {},
+	imagePath,
+	inDir,
+	outDir,
+	{ isReplaceable = false, replaceableId = 0 } = {},
 ) {
-  let raw = normalizeLogicalPath(imagePath || "");
-  if (!raw && replaceableId) {
-    const def = REPLACEABLE_DEFAULTS[replaceableId];
-    if (def) raw = def;
-  }
-  if (!raw) {
-    // Default human-ish team blue instead of magenta debug color.
-    const pngLogical = "_placeholders/team_color.png";
-    const dest = path.join(outDir, ...pngLogical.split("/"));
-    if (!fs.existsSync(dest)) writePlaceholderPng(dest, [30, 70, 180, 255]);
-    return { pngLogical, pngBytes: fs.readFileSync(dest), isReplaceable: true };
-  }
+	let raw = normalizeLogicalPath(imagePath || "");
+	if (!raw && replaceableId) {
+		const def = REPLACEABLE_DEFAULTS[replaceableId];
+		if (def) raw = def;
+	}
+	if (!raw) {
+		const ph =
+			REPLACEABLE_PLACEHOLDERS[replaceableId] ||
+			REPLACEABLE_PLACEHOLDERS[1];
+		const pngLogical = ph.pngLogical;
+		const dest = path.join(outDir, ...pngLogical.split("/"));
+		if (!fs.existsSync(dest)) writePlaceholderPng(dest, ph.rgba);
+		return {
+			pngLogical,
+			pngBytes: fs.readFileSync(dest),
+			isReplaceable: true,
+			replaceableId: replaceableId || 1,
+		};
+	}
 
-  const pngLogical = blpLogicalToPng(raw);
-  const pngDest = path.join(outDir, ...pngLogical.split("/"));
-  if (fs.existsSync(pngDest)) {
-    return { pngLogical, pngBytes: fs.readFileSync(pngDest), isReplaceable };
-  }
+	const pngLogical = blpLogicalToPng(raw);
+	const pngDest = path.join(outDir, ...pngLogical.split("/"));
+	if (fs.existsSync(pngDest)) {
+		return {
+			pngLogical,
+			pngBytes: fs.readFileSync(pngDest),
+			isReplaceable,
+			replaceableId: replaceableId || 0,
+		};
+	}
 
-  const blpSrc = findBlpOnDisk(raw, inDir);
-  if (!blpSrc) {
-    console.warn(`  缺少贴图: ${raw} → 占位`);
-    const pngLogicalPh = "_placeholders/missing.png";
-    const dest = path.join(outDir, ...pngLogicalPh.split("/"));
-    if (!fs.existsSync(dest)) writePlaceholderPng(dest, [255, 0, 0, 255]);
-    return { pngLogical: pngLogicalPh, pngBytes: fs.readFileSync(dest), isReplaceable };
-  }
+	const blpSrc = findBlpOnDisk(raw, inDir);
+	if (!blpSrc) {
+		console.warn(`  缺少贴图: ${raw} → 占位`);
+		const pngLogicalPh = "_placeholders/missing.png";
+		const dest = path.join(outDir, ...pngLogicalPh.split("/"));
+		if (!fs.existsSync(dest)) writePlaceholderPng(dest, [255, 0, 0, 255]);
+		return {
+			pngLogical: pngLogicalPh,
+			pngBytes: fs.readFileSync(dest),
+			isReplaceable,
+			replaceableId: replaceableId || 0,
+		};
+	}
 
-  const pngBytes = blpBufferToPng(fs.readFileSync(blpSrc));
-  fs.mkdirSync(path.dirname(pngDest), { recursive: true });
-  fs.writeFileSync(pngDest, pngBytes);
-  return { pngLogical, pngBytes, isReplaceable };
+	const pngBytes = blpBufferToPng(fs.readFileSync(blpSrc));
+	fs.mkdirSync(path.dirname(pngDest), { recursive: true });
+	fs.writeFileSync(pngDest, pngBytes);
+	return {
+		pngLogical,
+		pngBytes,
+		isReplaceable,
+		replaceableId: replaceableId || 0,
+	};
 }
 
 function textureIdOfLayer(layer) {
-  const tid = layer?.TextureID;
-  return typeof tid === "number" ? tid : 0;
+	const tid = layer?.TextureID;
+	return typeof tid === "number" ? tid : 0;
 }
 
 /**
@@ -194,25 +223,46 @@ function textureIdOfLayer(layer) {
  * Fixes team-color-first materials (Layer0=Replaceable, Layer1=Footman.blp).
  */
 function pickDiffuseLayer(matDef, textures) {
-  const layers = matDef?.Layers ?? [];
-  for (const layer of layers) {
-    const tid = textureIdOfLayer(layer);
-    const tex = textures?.[tid];
-    if (tex?.Image) {
-      return { layer, textureId: tid, replaceableId: tex.ReplaceableId || 0 };
-    }
-  }
-  const layer = layers[0] ?? {};
-  const tid = textureIdOfLayer(layer);
-  const tex = textures?.[tid];
-  return { layer, textureId: tid, replaceableId: tex?.ReplaceableId || 0 };
+	const layers = matDef?.Layers ?? [];
+	for (const layer of layers) {
+		const tid = textureIdOfLayer(layer);
+		const tex = textures?.[tid];
+		if (tex?.Image) {
+			return { layer, textureId: tid, replaceableId: tex.ReplaceableId || 0 };
+		}
+	}
+	const layer = layers[0] ?? {};
+	const tid = textureIdOfLayer(layer);
+	const tex = textures?.[tid];
+	return { layer, textureId: tid, replaceableId: tex?.ReplaceableId || 0 };
+}
+
+/**
+ * 材质是否「仅」某 ReplaceableId（所有层都无 Image，且 RepId 一致）。
+ * RepId=2 → Team Glow（英雄光环/武器光晕面片）；Stand 下 WE 通常不可见。
+ */
+function materialExclusiveReplaceableId(matDef, textures) {
+	const layers = matDef?.Layers ?? [];
+	if (layers.length === 0) return 0;
+	let only = 0;
+	for (const layer of layers) {
+		const tex = textures?.[textureIdOfLayer(layer)];
+		if (!tex) return 0;
+		if (tex.Image) return 0;
+		const rid = tex.ReplaceableId || 0;
+		if (!rid) return 0;
+		if (only === 0) only = rid;
+		else if (only !== rid) return 0;
+	}
+	return only;
 }
 
 function alphaModeForFilter(filterMode) {
   // WC3: 0 None, 1 Transparent, 2 Blend, 3 Additive, 4 AddAlpha, 5 Modulate, 6 Modulate2x
+  // Godot 里 BLEND 会进透明队列导致建筑透视；仍导出 BLEND，由 MapModelCache 改 DEPTH_PRE_PASS。
+  // Additive 无 glTF 对应：BLEND + 材质名 _fm3/_fm4，Godot 再改 ADD。
   if (filterMode === 0) return "OPAQUE";
   if (filterMode === 1) return "MASK";
-  // Additive 在 glTF 无对应；用 BLEND + 材质名 _fm3/_fm4，Godot 加载后再改 ADD
   return "BLEND";
 }
 
@@ -272,31 +322,38 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     return texture;
   }
 
-  function getMaterial(materialId) {
-    if (materialCache.has(materialId)) return materialCache.get(materialId);
-    const matDef = model.Materials?.[materialId];
-    const picked = pickDiffuseLayer(matDef, model.Textures);
-    const filterMode = picked.layer?.FilterMode ?? 0;
-    // 名称带 _fmN，供 Godot 把 Additive(3/4) 改成 BLEND_MODE_ADD（否则黑底 Glow 成实心黑牌）
-    const material = document
-      .createMaterial(`Material_${materialId}_fm${filterMode}`)
-      .setDoubleSided(true)
-      .setAlphaMode(alphaModeForFilter(filterMode))
-      .setAlphaCutoff(alphaCutoffForFilter(filterMode))
-      .setMetallicFactor(0)
-      .setRoughnessFactor(1);
-    material.setExtras({
-      wc3FilterMode: filterMode,
-      wc3Additive: isAdditiveFilter(filterMode),
-    });
-    material.setBaseColorTexture(getTexture(picked.textureId));
-    if (isAdditiveFilter(filterMode)) {
-      // 略提亮，逼近 WC3 Additive 光晕
-      material.setEmissiveFactor([0.15, 0.15, 0.1]);
-    }
-    materialCache.set(materialId, material);
-    return material;
-  }
+	function getMaterial(materialId) {
+		if (materialCache.has(materialId)) return materialCache.get(materialId);
+		const matDef = model.Materials?.[materialId];
+		const picked = pickDiffuseLayer(matDef, model.Textures);
+		let filterMode = picked.layer?.FilterMode ?? 0;
+		const replaceableId = picked.replaceableId || 0;
+		// Team Glow 在 MDX 里几乎总是 Additive；若数据异常也强制按光晕处理
+		if (replaceableId === 2 && !isAdditiveFilter(filterMode)) {
+			filterMode = 3;
+		}
+		// 名称带 _fmN / _repN，供 Godot 识别 Additive 与队伍色/光晕
+		const material = document
+			.createMaterial(`Material_${materialId}_fm${filterMode}_rep${replaceableId}`)
+			.setDoubleSided(true)
+			.setAlphaMode(alphaModeForFilter(filterMode))
+			.setAlphaCutoff(alphaCutoffForFilter(filterMode))
+			.setMetallicFactor(0)
+			.setRoughnessFactor(1);
+		material.setExtras({
+			wc3FilterMode: filterMode,
+			wc3Additive: isAdditiveFilter(filterMode),
+			wc3ReplaceableId: replaceableId,
+			wc3TeamGlow: replaceableId === 2,
+		});
+		material.setBaseColorTexture(getTexture(picked.textureId));
+		if (isAdditiveFilter(filterMode)) {
+			// 略提亮，逼近 WC3 Additive 光晕
+			material.setEmissiveFactor([0.15, 0.15, 0.1]);
+		}
+		materialCache.set(materialId, material);
+		return material;
+	}
 
   // --- Skeleton (flat under Armature; IBM = I to match WC3 model-space skinning) ---
   const boneNodes = model.Bones ?? [];
@@ -345,12 +402,23 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   const geosetMeshNodes = new Map();
   const restFrame = model.Sequences?.[0]?.Interval?.[0] ?? 0;
 
-  for (let gi = 0; gi < geosets.length; gi += 1) {
-    const g = geosets[gi];
-    const vertCount = (g.Vertices?.length ?? 0) / 3;
-    if (!vertCount || !g.Faces?.length) continue;
+	for (let gi = 0; gi < geosets.length; gi += 1) {
+		const g = geosets[gi];
+		const vertCount = (g.Vertices?.length ?? 0) / 3;
+		if (!vertCount || !g.Faces?.length) continue;
 
-    const positions = new Float32Array(vertCount * 3);
+		// 纯 Team Glow geoset（英雄光环/武器光晕大面片）：Stand 下 WE 不可见，
+		// 导出成实心色块会污染编辑器预览 → 跳过。
+		const matId = g.MaterialID ?? 0;
+		const exclusiveRep = materialExclusiveReplaceableId(
+			model.Materials?.[matId],
+			model.Textures,
+		);
+		if (exclusiveRep === 2) {
+			continue;
+		}
+
+		const positions = new Float32Array(vertCount * 3);
     const normals = new Float32Array(vertCount * 3);
     const uvs = new Float32Array(vertCount * 2);
     const joints = new Uint16Array(vertCount * 4);

@@ -18,6 +18,11 @@ func affects_doodads() -> bool:
 	return false
 
 
+## 是否影响单位层（撤销/重做时刷新 units Present）。
+func affects_units() -> bool:
+	return false
+
+
 func execute(_document) -> void:
 	pass
 

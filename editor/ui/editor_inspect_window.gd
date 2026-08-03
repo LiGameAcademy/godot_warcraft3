@@ -47,6 +47,7 @@ const ICON_PATHS := {
 @onready var _preview_cam: Camera3D = %PreviewCamera
 @onready var _preview_viewport: SubViewport = %PreviewViewport
 @onready var _preview_input: Control = %PreviewInput
+@onready var _preview_loading: Label = %PreviewLoadingLabel
 @onready var _chk_random: CheckBox = %ChkRandom
 @onready var _var_label: Label = %VarLabel
 @onready var _var_prev: Button = %VarPrev
@@ -98,6 +99,10 @@ var _last_map_dir: String = ""
 var _last_tiles: Wc3TerrainTileCatalog
 var _last_cliff_catalog: Wc3CliffCatalog
 var _last_romp: PackedByteArray = PackedByteArray()
+## 空闲预读 GLB 字节（最多排队数量）；解析仍在点选时做。
+const PREWARM_BYTES_MAX := 16
+var _bytes_prewarm_queue: PackedStringArray = PackedStringArray()
+var _bytes_prewarm_active: bool = false
 
 
 func _ready() -> void:
@@ -352,6 +357,8 @@ func _apply_locale() -> void:
 		_facing_cw.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_FACING_CW")
 	if _preview_input != null:
 		_preview_input.tooltip_text = EditorI18n.t("EDITOR_PREVIEW_ORBIT_HINT")
+	if _preview_loading != null:
+		_preview_loading.text = EditorI18n.t("EDITOR_PREVIEW_LOADING")
 	if _anim_label != null:
 		_anim_label.text = EditorI18n.t("EDITOR_PREVIEW_ANIM")
 	if _anim_prev != null:
@@ -622,13 +629,27 @@ func set_random_variation(on: bool) -> void:
 func show_doodad(type_id: String, variation: int = 0, apply_type_defaults: bool = true) -> void:
 	var new_id := type_id.strip_edges()
 	var type_changed := _type_id != new_id
-	_type_id = new_id
-	_preview_kind = "doodad"
 	var info: Dictionary = {}
 	if _catalog != null:
 		info = _catalog.lookup(new_id)
-	_num_var = maxi(int(info.get("num_var", 1)), 1)
-	_variation = clampi(variation, 0, _num_var - 1)
+	var num_var: int = maxi(int(info.get("num_var", 1)), 1)
+	var new_var: int = clampi(variation, 0, num_var - 1)
+	var var_changed := new_var != _variation
+	# 同类型同样式且已有实例：跳过重载（避免面板连点卡顿）
+	if (
+		not type_changed
+		and not var_changed
+		and _preview_kind == "doodad"
+		and _preview_instance != null
+	):
+		if apply_type_defaults:
+			_apply_type_preview_defaults(info, false)
+		_refresh_preview_title()
+		return
+	_type_id = new_id
+	_preview_kind = "doodad"
+	_num_var = num_var
+	_variation = new_var
 	if apply_type_defaults:
 		_apply_type_preview_defaults(info, type_changed)
 	_refresh_preview_title()
@@ -641,12 +662,19 @@ func show_doodad(type_id: String, variation: int = 0, apply_type_defaults: bool 
 func show_unit(type_id: String, owner_id: int = 0, apply_type_defaults: bool = true) -> void:
 	var new_id := type_id.strip_edges()
 	var type_changed := _type_id != new_id
-	_type_id = new_id
-	_preview_kind = "unit"
 	_team_color_owner = clampi(owner_id, 0, 15)
 	var info: Dictionary = {}
 	if _catalog != null:
 		info = _catalog.lookup(new_id)
+	# 同单位已预览：只刷新队伍色 / 标题，不重载 GLB
+	if not type_changed and _preview_kind == "unit" and _preview_instance != null:
+		if apply_type_defaults:
+			_apply_type_preview_defaults(info, false)
+		_refresh_preview_title()
+		set_preview_team_color(_team_color_owner)
+		return
+	_type_id = new_id
+	_preview_kind = "unit"
 	_num_var = 1
 	_variation = 0
 	if apply_type_defaults:
@@ -662,10 +690,23 @@ func set_preview_team_color(owner_id: int) -> void:
 	_team_color_owner = clampi(owner_id, 0, 15)
 	if _preview_kind != "unit" or _preview_instance == null or _cache == null:
 		return
-	_cache.apply_team_color(_preview_instance, _team_color_owner)
+	_cache.apply_team_color(_preview_instance, _team_color_owner, _type_id != "sloc")
 
 
-## 地图点选：预览该实例（类型默认距离 + 实例朝向/样式/缩放）。
+## 地图点选：预览该单位实例（朝向 + 队伍色）。
+func show_map_unit(entry: Dictionary) -> void:
+	if entry.is_empty():
+		return
+	var tid := str(entry.get("typeId", "")).strip_edges()
+	if tid.is_empty():
+		return
+	var owner := clampi(int(entry.get("owner", 0)), 0, 15)
+	show_unit(tid, owner, true)
+	var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+	set_place_facing(deg, true, false)
+
+
+## 地图点选：预览该装饰物实例（类型默认距离 + 实例朝向/样式/缩放）。
 func show_map_doodad(entry: Dictionary) -> void:
 	if entry.is_empty():
 		return
@@ -673,10 +714,9 @@ func show_map_doodad(entry: Dictionary) -> void:
 	if tid.is_empty():
 		return
 	var var_i: int = int(entry.get("variation", 0))
-	# 换类型时重置距离；朝向/缩放随后用实例值覆盖
 	show_doodad(tid, var_i, true)
-	var deg: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
-	set_place_facing(deg, true, false)
+	var deg2: float = float(entry.get("angleDegrees", rad_to_deg(float(entry.get("angle", 0.0)))))
+	set_place_facing(deg2, true, false)
 	var scale_data: Dictionary = entry.get("scale", {})
 	var sx: float = float(scale_data.get("x", 1.0))
 	var sy: float = float(scale_data.get("y", 1.0))
@@ -702,10 +742,12 @@ func _apply_type_preview_defaults(info: Dictionary, reset_orbit: bool = true) ->
 
 
 func clear_preview() -> void:
+	_preview_gen += 1
 	_type_id = ""
 	_preview_kind = ""
 	_num_var = 1
 	_variation = 0
+	_set_loading_overlay(false)
 	_preview_title.text = EditorI18n.t("EDITOR_PREVIEW_EMPTY")
 	_clear_model()
 	_reset_anim_ui()
@@ -776,41 +818,221 @@ func _clear_model() -> void:
 		c.free()
 
 
+func _set_loading_overlay(on: bool) -> void:
+	if _preview_loading == null:
+		return
+	_preview_loading.text = EditorI18n.t("EDITOR_PREVIEW_LOADING")
+	_preview_loading.visible = on
+
+
+## 启动预览加载：.scn / 内存缓存优先；否则异步 IO +（必要时）GLTF。
 func _reload_model() -> void:
 	_preview_gen += 1
 	var gen := _preview_gen
 	_clear_model()
 	_reset_anim_ui()
 	if _type_id.is_empty() or _catalog == null:
+		_set_loading_overlay(false)
 		return
 	var info: Dictionary = _catalog.lookup(_type_id)
 	var path: String = _catalog.converted_glb_path(_type_id, _variation) if _cache != null else ""
-	var node: Node3D = null
-	if not path.is_empty() and _cache != null:
-		node = _cache.instance_glb(path)
-	if node == null:
-		# 缺模但仍可能是 Click Helper 特效物
-		if bool(info.get("use_click_helper", false)):
-			node = Node3D.new()
-			node.add_child(MapPlaceholders.make_click_helper(float(info.get("sel_size", 0.0))))
-			node.add_child(MapPlaceholders.make_effect_particles())
-			_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_ANIM_NONE"))
-		else:
-			_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_MISSING_MODEL"))
+	if path.is_empty() or _cache == null:
+		_set_loading_overlay(false)
+		_finish_preview_missing_or_helper(gen, info, path)
+		return
+	if _cache.has_cached(path):
+		_set_loading_overlay(false)
+		_mount_preview_instance(_cache.instance_glb_preview(path), gen, path, info)
+		return
+	_set_loading_overlay(true)
+	_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_LOADING"))
+	_reload_model_async(gen, path, info)
+
+
+func _reload_model_async(gen: int, path: String, info: Dictionary) -> void:
+	await get_tree().process_frame
+	if gen != _preview_gen:
+		return
+	# 1) 旁路 .scn：ResourceLoader 线程加载（无 GLTF 解析）
+	var scn_path := RuntimeAssets.resolve_model_scene(path)
+	if not scn_path.is_empty():
+		var packed_scn: PackedScene = await _load_scn_threaded(scn_path, gen)
+		if gen != _preview_gen:
 			return
+		if packed_scn != null:
+			if _cache != null:
+				_cache.register_external_packed(path, packed_scn)
+			var node_scn := packed_scn.instantiate()
+			if node_scn is Node3D:
+				_mount_preview_instance(node_scn as Node3D, gen, path, info)
+				return
+			if node_scn != null:
+				node_scn.free()
+	# 2) 字节缓存 / worker 读盘 → 预览实例（可能触发 GLTF）
+	var bytes := PackedByteArray()
+	if _cache != null and _cache.has_bytes_cached(path):
+		bytes = _cache.take_cached_bytes(path)
+	else:
+		var disk_path := RuntimeAssets.project_abs(path)
+		var holder := {"bytes": PackedByteArray(), "ok": false}
+		var task_id: int = WorkerThreadPool.add_task(
+			func() -> void:
+				if FileAccess.file_exists(disk_path):
+					var b := FileAccess.get_file_as_bytes(disk_path)
+					holder["bytes"] = b
+					holder["ok"] = not b.is_empty()
+		)
+		await WorkerThreadPool.wait_for_task_completion(task_id)
+		if gen != _preview_gen:
+			return
+		if bool(holder.get("ok", false)):
+			bytes = holder["bytes"] as PackedByteArray
+			if _cache != null:
+				_cache.store_bytes(path, bytes)
+	await get_tree().process_frame
+	if gen != _preview_gen:
+		return
+	var node: Node3D = null
+	if not bytes.is_empty() and _cache != null:
+		node = _cache.instance_glb_from_bytes_preview(path, bytes)
+	elif _cache != null:
+		node = _cache.instance_glb_preview(path)
+	if node == null:
+		_finish_preview_missing_or_helper(gen, info, path)
+		return
+	_mount_preview_instance(node, gen, path, info)
+	# 空闲懒烘焙 .scn，下次走线程加载
+	if _cache != null:
+		_cache.process_lazy_bake_one()
+
+
+func _load_scn_threaded(scn_path: String, gen: int) -> PackedScene:
+	var err := ResourceLoader.load_threaded_request(scn_path, "PackedScene", true)
+	if err != OK:
+		return RuntimeAssets.load_packed_scene(scn_path)
+	while true:
+		if gen != _preview_gen:
+			return null
+		var status := ResourceLoader.load_threaded_get_status(scn_path)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
+			var res: Resource = ResourceLoader.load_threaded_get(scn_path)
+			return res as PackedScene if res is PackedScene else null
+		if status == ResourceLoader.THREAD_LOAD_FAILED or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			return null
+		await get_tree().process_frame
+	return null
+
+
+func _finish_preview_missing_or_helper(gen: int, info: Dictionary, path: String) -> void:
+	if gen != _preview_gen:
+		return
+	_set_loading_overlay(false)
+	_clear_model()
+	if bool(info.get("use_click_helper", false)):
+		var node := Node3D.new()
+		node.add_child(MapPlaceholders.make_click_helper(float(info.get("sel_size", 0.0))))
+		node.add_child(MapPlaceholders.make_effect_particles())
+		_mount_preview_instance(node, gen, path, info)
+		_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_ANIM_NONE"))
+		return
+	_set_anim_status(EditorI18n.t("EDITOR_PREVIEW_MISSING_MODEL"))
+
+
+func _mount_preview_instance(node: Node3D, gen: int, path: String, info: Dictionary) -> void:
+	if gen != _preview_gen:
+		if node != null and not node.is_inside_tree():
+			node.free()
+		return
+	_set_loading_overlay(false)
+	if node == null:
+		_finish_preview_missing_or_helper(gen, info, path)
+		return
+	_clear_model()
 	_model_root.add_child(node)
 	_preview_instance = node
+	_apply_model_xform()
+	call_deferred("_polish_preview_deferred", gen, path, info)
+	if _cache != null:
+		call_deferred("_idle_lazy_bake")
+
+
+func _idle_lazy_bake() -> void:
+	if _cache != null:
+		_cache.process_lazy_bake_one()
+
+
+func _polish_preview_deferred(gen: int, path: String, info: Dictionary) -> void:
+	if gen != _preview_gen or _preview_instance == null:
+		return
+	var node := _preview_instance
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
 	if not path.is_empty():
 		_Pe2.attach_to(node, path)
-	# 单位预览不挂 Click Helper（避免大红框）；装饰物仍按 SLK
 	if _preview_kind != "unit":
 		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	if _preview_kind == "unit" and _cache != null:
-		_cache.apply_team_color(node, _team_color_owner)
-	_apply_model_xform()
+		_cache.apply_team_color(node, _team_color_owner, _type_id != "sloc")
 	_setup_animations(node)
 	call_deferred("_frame_model_deferred", gen)
+
+
+## 单位面板图标就绪：排队预读 GLB 文件字节（不解析场景）。
+func prewarm_unit_type_ids(type_ids: PackedStringArray) -> void:
+	if _catalog == null or _cache == null:
+		return
+	_bytes_prewarm_queue.clear()
+	var n := 0
+	for tid_v in type_ids:
+		if n >= PREWARM_BYTES_MAX:
+			break
+		var tid := str(tid_v)
+		if tid.is_empty():
+			continue
+		var path: String = _catalog.converted_glb_path(tid, 0)
+		if path.is_empty():
+			continue
+		if _cache.has_cached(path) or _cache.has_bytes_cached(path) or _cache.has_model_scene(path):
+			continue
+		_bytes_prewarm_queue.append(path)
+		n += 1
+	if not _bytes_prewarm_active and not _bytes_prewarm_queue.is_empty():
+		_tick_bytes_prewarm()
+
+
+func _tick_bytes_prewarm() -> void:
+	if _bytes_prewarm_active or _cache == null:
+		return
+	while not _bytes_prewarm_queue.is_empty():
+		var path: String = _bytes_prewarm_queue[0]
+		_bytes_prewarm_queue.remove_at(0)
+		if (
+			_cache.has_cached(path)
+			or _cache.has_bytes_cached(path)
+			or _cache.has_model_scene(path)
+		):
+			continue
+		_bytes_prewarm_active = true
+		_run_bytes_prewarm(path)
+		return
+
+
+func _run_bytes_prewarm(path: String) -> void:
+	var disk_path := RuntimeAssets.project_abs(path)
+	var holder := {"bytes": PackedByteArray(), "ok": false}
+	var task_id: int = WorkerThreadPool.add_task(
+		func() -> void:
+			if FileAccess.file_exists(disk_path):
+				var b := FileAccess.get_file_as_bytes(disk_path)
+				holder["bytes"] = b
+				holder["ok"] = not b.is_empty()
+	)
+	await WorkerThreadPool.wait_for_task_completion(task_id)
+	if bool(holder.get("ok", false)) and _cache != null:
+		_cache.store_bytes(path, holder["bytes"] as PackedByteArray)
+	_bytes_prewarm_active = false
+	# 间隔一帧再预读下一个，避免打满磁盘
+	await get_tree().process_frame
+	_tick_bytes_prewarm()
 
 
 func _setup_animations(node: Node3D) -> void:
@@ -818,7 +1040,7 @@ func _setup_animations(node: Node3D) -> void:
 	if _cache == null or node == null:
 		_reset_anim_ui()
 		return
-	_anim_names = _cache.list_animations(node, true)
+	_anim_names = _cache.list_animations(node)
 	_suppress_anim_signal = true
 	if _anim_option != null:
 		_anim_option.clear()

@@ -50,6 +50,12 @@ func is_buildable(tile_id: String) -> bool:
 	var d := _terrain_def(tile_id)
 	return true if d == null else d.buildable
 
+
+## Terrain.slk `walkable`；缺省视为可行走。
+func is_walkable(tile_id: String) -> bool:
+	var d := _terrain_def(tile_id)
+	return true if d == null else d.walkable
+
 ## 地形ID → 贴图路径
 ## [param tile_id] 地形ID
 ## [return String] 贴图路径

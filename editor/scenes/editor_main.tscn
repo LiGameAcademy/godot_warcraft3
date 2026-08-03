@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://dphccp4bf1ij5" path="res://editor/ui/new_map_dialog.tscn" id="8_newmap"]
 [ext_resource type="Script" uid="uid://8oswoni0b7wf" path="res://editor/scripts/tools/terrain_brush.gd" id="9_brush"]
 [ext_resource type="Script" path="res://editor/scripts/tools/doodad_brush.gd" id="9b_doodad_brush"]
+[ext_resource type="Script" path="res://editor/scripts/tools/unit_brush.gd" id="9c_unit_brush"]
 [ext_resource type="Script" uid="uid://chx7so6rggsnj" path="res://editor/ui/editor_status_bar.gd" id="10_statusbar"]
 [ext_resource type="Script" path="res://editor/scripts/input/editor_input_router.gd" id="11_input"]
 
@@ -45,6 +46,9 @@ script = ExtResource("9_brush")
 
 [node name="DoodadBrush" type="Node3D" parent="." unique_id=1905798660]
 script = ExtResource("9b_doodad_brush")
+
+[node name="UnitBrush" type="Node3D" parent="."]
+script = ExtResource("9c_unit_brush")
 
 [node name="EditorInputRouter" type="Node" parent="."]
 script = ExtResource("11_input")
@@ -211,6 +215,7 @@ map_root = NodePath("../MapRoot")
 camera_rig = NodePath("../EditorCamera")
 brush = NodePath("../TerrainBrush")
 doodad_brush = NodePath("../DoodadBrush")
+unit_brush = NodePath("../UnitBrush")
 input_router = NodePath("../EditorInputRouter")
 new_map_dialog = NodePath("../NewMapDialog")
 open_map_dialog = NodePath("../OpenMapDialog")

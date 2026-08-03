@@ -39,5 +39,5 @@ void vertex() {
 
 void fragment() {
 	vec3 albedo = texture(cliff_albedo, UV).rgb * albedo_scale;
-	ALBEDO = dbg_apply_grid(albedo);
+	ALBEDO = dbg_apply_pathing(dbg_apply_grid(albedo));
 }

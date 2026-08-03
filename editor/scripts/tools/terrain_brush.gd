@@ -35,7 +35,15 @@ var _last_vert: Vector2i = INVALID_VERT
 var _hover_vert: Vector2i = INVALID_VERT
 var _dirty_paint: bool = false
 var _last_rebuild_ms: int = 0
-var enabled: bool = true
+var _enabled: bool = true
+var enabled: bool:
+	get:
+		return _enabled
+	set(v):
+		_enabled = v
+		if not _enabled:
+			_painting = false
+			_set_hover_vert(INVALID_VERT)
 ## 笔刷半径档：1=单点，5=半径 4；形状 0 圆 / 1 方
 var brush_size: int = 1
 var brush_shape: int = 0 ## 0 circle, 1 square
@@ -262,6 +270,8 @@ func _finish_paint_gesture() -> void:
 ## 鼠标在主编辑窗口地图区时更新预览（不依赖窗口焦点 / 右键激活）。
 func _poll_hover_from_global_mouse() -> void:
 	if not enabled or document == null or camera == null:
+		if _hover_vert != INVALID_VERT:
+			_set_hover_vert(INVALID_VERT)
 		return
 	if not _is_mouse_over_main_window():
 		if _hover_vert != INVALID_VERT:

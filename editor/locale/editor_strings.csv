@@ -29,6 +29,7 @@ EDITOR_PREVIEW_ANIM_NEXT,下一个动画,Next animation
 EDITOR_PREVIEW_ANIM_STAND,动画: stand,Anim: stand
 EDITOR_PREVIEW_ANIM_NONE,（无动画）,No animation
 EDITOR_PREVIEW_MISSING_MODEL,缺少模型 GLB,Missing model GLB
+EDITOR_PREVIEW_LOADING,正在加载…,Loading…
 EDITOR_DOODAD_LIST_EMPTY,无可用条目（检查 slk-exported）,No entries (check slk-exported)
 EDITOR_DOODAD_RANDOM_VAR,放置时使用随机样式,Use random variation when placing
 EDITOR_DOODAD_VAR_PREV,上一个样式,Previous variation
@@ -140,7 +141,7 @@ WESTRING_MENU_DOODADS,地形装饰物(&D),Doodads(&D)
 WESTRING_MENU_UNITS,单位(&U),Units(&U)
 WESTRING_MENU_WATER,水面,Water
 WESTRING_MENU_BLIGHT,荒芜之地,Blight
-WESTRING_MENU_PATHING,路径图,Pathing Map
+WESTRING_MENU_PATHING,路径-地面(&P),Pathing - Ground(&P)
 WESTRING_MENU_SHADOWS,阴影,Shadows
 WESTRING_MENU_LIGHTING,光照,Lighting
 WESTRING_MENU_WEATHER,天气,Weather
@@ -260,9 +261,37 @@ EDITOR_UNIT_RACE_CRITTERS,中立被动,Neutral Passive
 EDITOR_UNIT_RACE_COMMONER,平民,Commoner
 EDITOR_UNIT_RACE_DEMON,恶魔,Demon
 EDITOR_UNIT_OWNER_NEUTRAL_PASSIVE,中立被动,Neutral Passive
+WESTRING_STARTLOCATION,开始点,Start Location
 EDITOR_UNIT_OWNER_NEUTRAL_HOSTILE,中立敌对,Neutral Hostile
 EDITOR_UNIT_OWNER_PLAYER_FMT,玩家 %d（%s）,Player %d (%s)
 EDITOR_STATUS_UNIT_SELECTED,已选单位：%s [%s] 玩家 %d,Selected unit: %s [%s] player %d
-EDITOR_STATUS_UNIT_BRUSH,单位面板（放置笔刷下期）,Unit palette (placement brush next)
+EDITOR_STATUS_UNIT_BRUSH,当前：单位笔刷（半格吸附；Esc 取消预览；R/[ ] 旋转；Delete 删除）,Current: Unit brush (half-tile snap; Esc clears preview; R/[ ] rotate; Delete)
+EDITOR_STATUS_UNIT_PLACED,已放置 %d 个：%s,Placed %d: %s
+EDITOR_STATUS_UNIT_PICKED,已选中地图单位 #%d,Selected map unit #%d
+EDITOR_STATUS_UNIT_DELETED,已删除 %d 个单位,Deleted %d unit(s)
 EDITOR_HUD_BRUSH_UNIT,%s [%s] P%d,%s [%s] P%d
 EDITOR_HUD_PROPS_UNIT,玩家 %d,Player %d
+EDITOR_DIALOG_OK,确定,OK
+EDITOR_DIALOG_CANCEL,取消,Cancel
+EDITOR_UNIT_PROPS_TITLE,单位属性,Unit Properties
+EDITOR_UNIT_PROPS_TAB_GENERAL,普通,General
+EDITOR_UNIT_PROPS_TAB_SKILLS,技能,Abilities
+EDITOR_UNIT_PROPS_TAB_DROPS,掉落物品,Item Drops
+EDITOR_UNIT_PROPS_LEVEL,等级: %d,Level: %d
+EDITOR_UNIT_PROPS_OWNER,玩家,Player
+EDITOR_UNIT_PROPS_FACING,面向角度,Facing Angle
+EDITOR_UNIT_PROPS_HP_PCT,生命值%%,Hit Points %%
+EDITOR_UNIT_PROPS_MP,魔法值,Mana Points
+EDITOR_UNIT_PROPS_ACQ,单位警戒范围,Unit Acquisition Range
+EDITOR_UNIT_PROPS_ACQ_NORMAL,普通(N): (%d),Normal(N): (%d)
+EDITOR_UNIT_PROPS_ACQ_CAMP,营地(C): (%d),Camp(C): (%d)
+EDITOR_UNIT_PROPS_SKILLS_HINT,技能系统接入后可在此编辑激活状态。当前只读列出单位技能。,Ability editing comes after the skill system. Listed read-only for now.
+EDITOR_UNIT_PROPS_DROPS_TITLE,死亡掉落物品,Items Dropped on Death
+EDITOR_UNIT_PROPS_DROPS_NOTE,有掉落配置的单位在地图上会显示头顶白色提示环。编辑掉落表将在后续版本完善。,Units with drop sets show a white ring above their head. Full drop-table editing comes later.
+EDITOR_UNIT_PROPS_DROPS_EMPTY,（未配置死亡掉落）, (No death drops)
+EDITOR_UNIT_PROPS_DROPS_ROW,组 %d · %s · %d%%,Set %d · %s · %d%%
+EDITOR_UNIT_OWNER_PLAYER_N,玩家 %d,Player %d
+EDITOR_STATUS_PATHING_GROUND,路径-地面：%s,Pathing-Ground: %s
+EDITOR_STATUS_LOADING_UNITS,正在加载单位…,Loading units…
+EDITOR_STATUS_LOADING_UNITS_PROGRESS,后台加载单位… %d/%d,Loading units (bg)… %d/%d
+EDITOR_STATUS_PATHING_GROUND_ON,路径-地面：开（%d 格）,Pathing-Ground: On (%d cells)

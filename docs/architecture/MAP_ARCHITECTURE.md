@@ -123,7 +123,7 @@ Infrastructure
 | ------ | ------ | ------ |
 | 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](docs/architecture/MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
 | 表数据 | `assets/slk-exported/` | Terrain / Water / Unit / Doodad 等 |
-| 转换资产 | `assets/asset-converted/` | PNG / GLB（运行时按需加载） |
+| 转换资产 | `assets/asset-converted/` | PNG / GLB / 同目录 `.scn`（gitignore；Inspect 优先 `.scn`） |
 | 原始缓存 | `.cache/wc3-assets/` | MPQ 解包，gitignore |
 | 编辑器内存 | `MapDocument.hf` → `MapLoader._external_hf` | 与 JSON 同形，优先于磁盘 |
 
@@ -155,7 +155,7 @@ Infrastructure
 assets/
   map-parsed/<slug>/                  ← 地图 JSON（主输入）
   slk-exported/                       ← 表
-  asset-converted/                    ← PNG/GLB
+  asset-converted/                    ← PNG/GLB + 同目录 .scn（convert → bake）
     │
     ▼ 运行时
 MapLoader._ready()
