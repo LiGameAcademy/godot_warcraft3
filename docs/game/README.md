@@ -11,6 +11,8 @@
 |------|------|
 | [ROADMAP.md](ROADMAP.md) | **先读**：对战地图开发节奏（阶段 A→E）；现阶段**不**急着实现完整触发器 VM |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 游戏层架构、与 Editor/Map 分层关系、触发器远期设计 |
+| [ENVIRONMENT.md](ENVIRONMENT.md) | 天空 / 天气 / 光照 / 阴影复刻方案（WC3→Godot） |
+| [HUD.md](HUD.md) | 人族游戏 HUD（Console 素材 + API） |
 
 ## 与编辑器的关系
 
@@ -28,6 +30,6 @@ game/            玩地图（GameDirector + Session + 将来 Trigger）
 
 | 场景 | 用途 |
 |------|------|
-| `game/scenes/game_main.tscn` | 游戏壳（待建）；F5 可切到此场景做玩法开发 |
+| `game/scenes/game_main.tscn` | 游戏壳（阶段 A）；**F6 运行当前场景**做玩法开发（勿改工程主场景，编辑器仍 F5） |
 | `editor/scenes/editor_main.tscn` | 地图编辑器（现主场景） |
 | `scenes/main.tscn` | 旧 Lost Temple 静态预览（可保留） |

@@ -27,7 +27,9 @@ function printHelp() {
 示例:
   npm run parse --
   npm run parse -- --map "C:/war3/Maps/FrozenThrone/(4)LostTemple.w3x"
-  npm run parse -- "C:/war3/Maps/FrozenThrone/(2)EchoIsles.w3x" --force
+  # 注意：npm 会吞掉尾部的 --force，请把 --force 放在 -- 之后、路径之前
+  npm run parse -- --force "C:/war3/Maps/FrozenThrone/(2)EchoIsles.w3x"
+  node src/cli.js "C:/war3/Maps/FrozenThrone/(2)EchoIsles.w3x" --force
 `);
 }
 
@@ -122,6 +124,13 @@ function main() {
     );
     console.log(`单位/物品: ${s.units?.count ?? 0}`);
     console.log(`装饰物: ${s.doodads?.count ?? 0}`);
+    if (s.pathing) {
+      console.log(
+        `寻路面: ${s.pathing.width}×${s.pathing.height} (cell ${s.pathing.cellSize})`,
+      );
+    } else {
+      console.log("寻路面: (无 war3map.wpm / 解析失败)");
+    }
     console.log(`字符串: ${s.strings?.count ?? 0}`);
     if (result.warnings?.length) {
       console.log(`警告: 解析后仍有剩余字节 → ${result.warnings.join(", ")}`);

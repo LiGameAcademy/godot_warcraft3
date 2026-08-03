@@ -96,7 +96,7 @@ npm run convert:models --
 - 队伍色：优先选用带真实路径的材质层
 - GeosetAnim alpha=0 网格（如死亡内脏）默认 scale=0
 - `FilterMode=1` 用 MASK + cutoff 0.75
-- `FilterMode=2` Blend：glTF 仍标 BLEND；Godot `MapModelCache` 改为 `ALPHA_DEPTH_PRE_PASS`（避免酒馆/市场等建筑透视）
+- `FilterMode=2` Blend：glTF 仍标 BLEND；Godot `MapModelCache` 改为 `ALPHA_SCISSOR`（阈值 0.08），且 **每次 instance 都再修**（避免旧 .scn 跳过修正）
 - `FilterMode=3/4` Additive：材质名 `_fm3/_fm4`，Godot 改为 ADD
 
 ### 阶段 3：SLK 表导出

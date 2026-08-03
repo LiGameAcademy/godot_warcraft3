@@ -30,13 +30,28 @@ func _ready() -> void:
 		ensure_table(table_name)
 
 
-## TerrainArt 内置表注册（Units/Doodads 等后续按同样方式挂）。
+## TerrainArt 内置表注册（Units 定义表一并挂上，懒加载）。
 func _register_builtin_tables() -> void:
 	CliffTypeDef.register_to(self)
 	TerrainTileDef.register_to(self)
 	WaterTypeDef.register_to(self)
 	WeatherEffectDef.register_to(self)
+	# Units/
 	ItemDef.register_to(self)
+	UnitDataDef.register_to(self)
+	UnitBalanceDef.register_to(self)
+	UnitUiDef.register_to(self)
+	UnitAbilitiesDef.register_to(self)
+	UnitWeaponsDef.register_to(self)
+	AbilityDataDef.register_to(self)
+	AbilityMetaDataDef.register_to(self)
+	DestructableDataDef.register_to(self)
+	DestructableMetaDataDef.register_to(self)
+	MiscMetaDataDef.register_to(self)
+	UnitMetaDataDef.register_to(self)
+	UpgradeDataDef.register_to(self)
+	UpgradeMetaDataDef.register_to(self)
+	UpgradeEffectMetaDataDef.register_to(self)
 
 
 ## 注册一张 SLK 表。

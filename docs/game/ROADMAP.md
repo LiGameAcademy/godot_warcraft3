@@ -49,15 +49,16 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 
 ### A. 游戏场景壳（本分支首要交付）
 
-- [ ] 目录：`game/scenes/game_main.tscn` + `game/scripts/game_director.gd`
-- [ ] 实例化共用 `scenes/map/map_root.tscn`
-- [ ] 默认 `map_dir = res://assets/map-parsed/echoisles`
-- [ ] `place_doodads / place_units / auto_load_on_ready = true`
-- [ ] 开发期：`set_view_grid_level(3)`（32 最小栅格）+ `set_show_pathing_ground(true)`
-- [ ] 无 MapDocument；路径图：有 `pathing.json` 则读，否则 `Wc3PathingMap.synthesize_from_heightfield`
-- [ ] 简单 Orbit / RTS 相机（可先复用预览相机，再换）
+- [x] 目录：`game/scenes/game_main.tscn` + `game/scripts/game_director.gd`
+- [x] 实例化共用 `scenes/map/map_root.tscn`
+- [x] 默认 `map_dir = res://assets/map-parsed/echoisles`
+- [x] `place_doodads / place_units / auto_load_on_ready = true`
+- [x] 开发期：`set_view_grid_level(3)`（32 最小栅格）+ `set_show_pathing_ground(true)`
+- [x] 无 MapDocument；路径图：有 `pathing.json` 则读，否则 `Wc3PathingMap.synthesize_from_heightfield`
+- [x] 简单 Orbit / RTS 相机（`game/scenes/rts_camera.tscn`；WASD/边缘滚/中键旋转；阶段 B 用 `focus_on_position`）
 
-**验收**：F6/指定主场景打开即见 Echo Isles；栅格与路径色块可见；单位/装饰与编辑器开图观感一致（允许分帧加载）。
+**验收**：F6 跑 `game/scenes/game_main.tscn` 即见 Echo Isles；栅格与路径色块可见；单位/装饰与编辑器开图观感一致（允许分帧加载）。  
+**说明**：工程 `run/main_scene` 仍为编辑器；玩法开发用 F6 /「运行当前场景」。
 
 ### B. 会话与玩家
 
@@ -138,4 +139,5 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 | 开始点 | `typeId=sloc` · Catalog 注入 |
 | 单位层 | `map_unit_layer.gd`（分帧/线程预载） |
 | 框选 | `scripts/shared/selection/` |
+| 游戏相机 | `game/scenes/rts_camera.tscn` · `game/scripts/presentation/rts_camera.gd` |
 | 解析图目录 | `assets/map-parsed/echoisles/` |

@@ -11,6 +11,9 @@ const ToolPaletteScene := preload("res://editor/ui/tool_palette_window.tscn")
 const ToolPaletteWindowScript := preload("res://editor/ui/tool_palette_window.gd")
 const InspectWindowScene := preload("res://editor/ui/editor_inspect_window.tscn")
 const UnitPropertiesScene := preload("res://editor/ui/unit_properties_dialog.tscn")
+## 显式 preload，避免热重载时 class_name 尚未注册导致 Marquee* 解析失败
+const _MarqueeSelectionScript := preload("res://scripts/shared/selection/marquee_selection.gd")
+const _MarqueeOverlayScript := preload("res://scripts/shared/selection/marquee_overlay.gd")
 
 @export var map_root: MapLoader
 @export var camera_rig: Node3D
@@ -49,8 +52,8 @@ var _cliff_type_index: int = 0
 var _special_texture: int = 0 ## ToolPaletteWindow.SpecialTexture
 var _inspect_window: Window
 var _unit_props_dialog: Window
-var _marquee: MarqueeSelection = null
-var _marquee_overlay: MarqueeOverlay = null
+var _marquee = null
+var _marquee_overlay = null
 var _brush_mode: String = "terrain" ## terrain | doodad | unit
 var _brush_doodad_id: String = ""
 var _brush_doodad_name: String = ""
@@ -310,7 +313,7 @@ func _on_menu_action(action_id: StringName) -> void:
 			_set_view_grid(MapLoader.ViewGridLevel.SMALL)
 		"view_ramp_debug":
 			if map_root != null:
-				var on := not map_root.get_show_ramp_debug()
+				var on: bool = not map_root.get_show_ramp_debug()
 				map_root.set_show_ramp_debug(on)
 				if menu != null and menu.has_method("set_ramp_debug_checked"):
 					menu.set_ramp_debug_checked(on)
@@ -1470,7 +1473,7 @@ func _toggle_pathing_ground() -> void:
 	if map_root == null:
 		return
 	_sync_pathing_to_map_root()
-	var on := not map_root.get_show_pathing_ground()
+	var on: bool = not map_root.get_show_pathing_ground()
 	map_root.set_show_pathing_ground(on)
 	if menu != null and menu.has_method("set_pathing_checked"):
 		menu.set_pathing_checked(on)
@@ -1496,8 +1499,8 @@ func _sync_pathing_to_map_root() -> void:
 func _ensure_marquee() -> void:
 	if _marquee != null and is_instance_valid(_marquee_overlay):
 		return
-	_marquee = MarqueeSelection.new()
-	_marquee_overlay = MarqueeOverlay.new()
+	_marquee = _MarqueeSelectionScript.new()
+	_marquee_overlay = _MarqueeOverlayScript.new()
 	_marquee_overlay.name = "MarqueeOverlay"
 	var ui := get_node_or_null("../UI") as CanvasLayer
 	if ui != null:

@@ -214,7 +214,16 @@ export function parseMap(mapPath, opts) {
     try {
       if (findArchiveName("war3map.wpm", archiveNames)) {
         pathing = parseWpm(readFile(archive, "war3map.wpm", archiveNames));
-        writeJson(path.join(outDir, "pathing.json"), pathing);
+        // origin 与 W3E centerOffset 对齐（寻路格左下 = 地形左下 tilepoint）
+        if (terrain?.centerOffset) {
+          pathing.origin = {
+            x: terrain.centerOffset.x,
+            y: terrain.centerOffset.y,
+          };
+        }
+        const { _bytesRemaining, ...pathingOut } = pathing;
+        writeJson(path.join(outDir, "pathing.json"), pathingOut);
+        pathing._bytesRemaining = _bytesRemaining;
       }
     } catch (e) {
       errors.pathing = String(e);

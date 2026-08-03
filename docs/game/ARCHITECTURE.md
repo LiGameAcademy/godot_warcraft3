@@ -62,12 +62,26 @@ game/
 目标场景树：
 
 ```text
-GameMain (Node3D)                         # 薄壳：环境光
-├── GameDirector (Node)                   # @export map_root
-├── MapRoot (instance map_root.tscn)      # 共用 Present
-├── RtsCamera
-└── HUD (CanvasLayer)
+GameMain (Node3D)                         # 薄壳：环境光 / 灯光（无玩法脚本）
+├── MapRoot (instance map_root.tscn)      # 共用 Present（MapLoader）
+├── GameDirector (Node)                   # @export map_root / rts_camera / game_hud
+├── RtsCamera (instance rts_camera.tscn)
+├── GameHud (instance game_hud.tscn)      # 人族 Console UI
+├── HumanCursor
+└── (可选) WorldEnvironment / Sun
 ```
+
+**相机取舍（相对 godot_simple_rts / editor）：**
+
+| 采用 | 不采用 |
+|------|--------|
+| 边缘滚动、WASD/方向键、中键旋转、滚轮缩放、`focus_on_position` | `CharacterBody3D` + `move_and_slide`（地图相机无需物理） |
+| 编辑器同款 `Node3D → Pivot → Camera3D` 距离缩放 | `SpringArm3D`（无碰撞拉近需求；距离直接改 camera.z） |
+| 右键留给命令（不抢相机） | simple_rts 里过重的全局 Autoload 输入网 |
+| 可选地图边界夹紧 | 每单位一个完整 tscn Prefab 作为唯一真相（本项目走 Catalog + Factory） |
+
+**为何不把脚本挂在 GameMain 根上？**  
+可以，效果上等价于「根节点 = Director」。拆成子节点是为了与 `MapEditor` 一致：根只负责场景构图（WorldEnvironment / 灯光 / 子场景），**总管**用 `@export` 注入依赖，后续 Session、Melee、输入路由可挂在 Director 下而不污染 Node3D 根。`game_main.gd` 当根脚本也可以，只要 `class_name` 仍是应用控制器、别把逻辑写进 MapLoader。
 
 **与 `scenes/main.tscn`：** 旧预览可保留；新玩法一律走 `game_main`，避免再往 preview 堆业务。
 

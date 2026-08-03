@@ -1,0 +1,154 @@
+[gd_scene format=3 uid="uid://gucvrdgtaaal"]
+
+[ext_resource type="PackedScene" path="res://editor/ui/menu_bar.tscn" id="1_v1tgk"]
+[ext_resource type="PackedScene" path="res://editor/ui/toolbar.tscn" id="2_tch6a"]
+[ext_resource type="PackedScene" path="res://editor/ui/tile_palette.tscn" id="3_31m51"]
+[ext_resource type="Script" uid="uid://chx7so6rggsnj" path="res://editor/ui/editor_status_bar.gd" id="4_fudic"]
+
+[node name="UI" type="CanvasLayer" unique_id=1999418285]
+
+[node name="MenuBarPanel" type="PanelContainer" parent="." unique_id=1730183872]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 28.0
+grow_horizontal = 2
+
+[node name="MenuBar" parent="MenuBarPanel" unique_id=1952017509 instance=ExtResource("1_v1tgk")]
+layout_mode = 2
+
+[node name="ToolStrip" type="PanelContainer" parent="." unique_id=752132784]
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 28.0
+offset_bottom = 56.0
+grow_horizontal = 2
+
+[node name="Toolbar" parent="ToolStrip" unique_id=1113583058 instance=ExtResource("2_tch6a")]
+layout_mode = 2
+
+[node name="SideBar" type="PanelContainer" parent="." unique_id=908288414]
+visible = false
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_top = 60.0
+offset_right = 177.0
+offset_bottom = -48.0
+grow_vertical = 2
+
+[node name="TilePalette" parent="SideBar" unique_id=496611973 instance=ExtResource("3_31m51")]
+layout_mode = 2
+
+[node name="StatusBar" type="PanelContainer" parent="." unique_id=1697228146]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -44.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("4_fudic")
+
+[node name="Margin" type="MarginContainer" parent="StatusBar" unique_id=1109491824]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 2
+
+[node name="Row" type="HBoxContainer" parent="StatusBar/Margin" unique_id=1976073865]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Accent" type="ColorRect" parent="StatusBar/Margin/Row" unique_id=1924707159]
+custom_minimum_size = Vector2(3, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(0.95, 0.72, 0.28, 0.9)
+
+[node name="StatusChip" type="VBoxContainer" parent="StatusBar/Margin/Row" unique_id=1017494001]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="StatusCaption" type="Label" parent="StatusBar/Margin/Row/StatusChip" unique_id=1129913848]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_STATUS"
+
+[node name="StatusValue" type="Label" parent="StatusBar/Margin/Row/StatusChip" unique_id=1429675379]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.94, 0.96, 1)
+text = "EDITOR_STATUS_IDLE"
+text_overrun_behavior = 3
+
+[node name="Sep1" type="ColorRect" parent="StatusBar/Margin/Row" unique_id=833075531]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="CoordsChip" type="VBoxContainer" parent="StatusBar/Margin/Row" unique_id=1324926243]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="CoordsCaption" type="Label" parent="StatusBar/Margin/Row/CoordsChip" unique_id=442438115]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_COORDS"
+
+[node name="CoordsValue" type="Label" parent="StatusBar/Margin/Row/CoordsChip" unique_id=1974779171]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.9, 1, 1)
+text = "—"
+
+[node name="Sep2" type="ColorRect" parent="StatusBar/Margin/Row" unique_id=88893169]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="BrushChip" type="VBoxContainer" parent="StatusBar/Margin/Row" unique_id=1931392667]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="BrushCaption" type="Label" parent="StatusBar/Margin/Row/BrushChip" unique_id=708856560]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_BRUSH"
+
+[node name="BrushValue" type="Label" parent="StatusBar/Margin/Row/BrushChip" unique_id=1057687023]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.86, 0.55, 1)
+text = "—"
+
+[node name="Sep3" type="ColorRect" parent="StatusBar/Margin/Row" unique_id=409000772]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+size_flags_vertical = 3
+color = Color(1, 1, 1, 0.12)
+
+[node name="PropsChip" type="VBoxContainer" parent="StatusBar/Margin/Row" unique_id=268301527]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="PropsCaption" type="Label" parent="StatusBar/Margin/Row/PropsChip" unique_id=1664434049]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.72, 1)
+theme_override_font_sizes/font_size = 10
+text = "EDITOR_HUD_PROPS"
+
+[node name="PropsValue" type="Label" parent="StatusBar/Margin/Row/PropsChip" unique_id=1618819639]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.95, 0.78, 1)
+text = "—"

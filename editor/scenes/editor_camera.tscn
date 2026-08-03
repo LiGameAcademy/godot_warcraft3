@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://bu5ueg1e2g7ad"]
+
+[ext_resource type="Script" uid="uid://dxgdjm83uo0l2" path="res://editor/scripts/editor_camera.gd" id="1_y1sck"]
+
+[node name="EditorCamera" type="Node3D" unique_id=240492891]
+script = ExtResource("1_y1sck")
+
+[node name="Pivot" type="Node3D" parent="." unique_id=119540889]
+
+[node name="Camera3D" type="Camera3D" parent="Pivot" unique_id=1214478746]
+current = true

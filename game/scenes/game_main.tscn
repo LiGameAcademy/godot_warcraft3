@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://b20kj6oms7qoi"]
+
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://scenes/map/map_root.tscn" id="1_map"]
+[ext_resource type="PackedScene" uid="uid://ss6bd7p6xnoa" path="res://game/scenes/rts_camera.tscn" id="2_cam"]
+[ext_resource type="Script" uid="uid://cdwscnq1co36x" path="res://game/scripts/game_director.gd" id="3_director"]
+[ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://game/scripts/presentation/wc3_human_cursor.gd" id="4_cursor"]
+[ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://game/scenes/game_hud.tscn" id="5_hud"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.08, 0.1, 0.14, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.6, 0.7, 1)
+ambient_light_energy = 0.85
+
+[node name="GameMain" type="Node3D" unique_id=1991182570]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=601131783]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=764742783]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
+light_energy = 1.1
+
+[node name="MapRoot" parent="." unique_id=1052640455 instance=ExtResource("1_map")]
+map_dir = "res://assets/map-parsed/echoisles"
+place_units = true
+status_path = NodePath("")
+show_ramp_debug = false
+show_pathing_ground = true
+
+[node name="RtsCamera" parent="." unique_id=1187867648 instance=ExtResource("2_cam")]
+pan_speed = 45.0
+
+[node name="GameHud" parent="." unique_id=553656308 instance=ExtResource("5_hud")]
+
+[node name="GameDirector" type="Node" parent="." unique_id=528822564]
+script = ExtResource("3_director")
+map_root = NodePath("../MapRoot")
+rts_camera = NodePath("../RtsCamera")
+game_hud = NodePath("../GameHud")
+
+[node name="HumanCursor" type="Node" parent="." unique_id=1503412235]
+script = ExtResource("4_cursor")

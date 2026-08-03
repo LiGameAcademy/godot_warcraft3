@@ -57,6 +57,8 @@ var _external_hf: Dictionary = {}
 var _external_info: Dictionary = {}
 var _tiles_ready: bool = false
 var _pathing_map: Wc3PathingMap = null
+## 动态 pathTex blit 用的实例列表（单位/建筑；装饰物脚印多已在 WPM）
+var _pathing_unit_entries: Array = []
 
 
 func get_tiles() -> Wc3TerrainTileCatalog:
@@ -249,6 +251,22 @@ func _ensure_pathing_map(hf: Wc3Heightfield) -> void:
 	_pathing_map = Wc3PathingMap.synthesize_from_heightfield(hf, _tiles)
 
 
+## 按 Catalog.path_tex 把建筑/中立建筑脚印 OR 进动态寻路面。
+func _apply_dynamic_pathing() -> void:
+	if _pathing_map == null or not _pathing_map.is_valid():
+		return
+	if _pathing_unit_entries.is_empty() and place_units and not map_dir.is_empty():
+		var unit_path := map_dir.path_join("units.json")
+		if FileAccess.file_exists(unit_path):
+			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
+			if unit_list != null:
+				_pathing_unit_entries = unit_list.to_entries_array()
+	var n: int = _pathing_map.apply_entity_pathing(_pathing_unit_entries, get_id_catalog())
+	if n > 0:
+		print("Pathing: blit pathTex ×%d (buildings/neutrals)" % n)
+		MapLog.info(MapLog.Layer.PRESENT, "Pathing", "blit pathTex ×%d (buildings)" % n)
+
+
 func _rebuild_pathing_overlay() -> void:
 	if _pathing_layer == null:
 		_pathing_layer = get_node_or_null("Pathing") as MapPathingLayer
@@ -263,6 +281,7 @@ func _rebuild_pathing_overlay() -> void:
 	if not _external_hf.is_empty():
 		hf = Wc3Heightfield.from_dict(_external_hf, true)
 	_ensure_pathing_map(hf)
+	_apply_dynamic_pathing()
 	_pathing_layer.rebuild(_pathing_map, hf)
 
 
@@ -289,6 +308,7 @@ func rebuild_units_from_list(hf: Dictionary, units_src: Variant, batched: bool =
 	_units.setup(get_id_catalog(), _cache)
 	_units.try_load_glb = try_load_glb
 	var entries: Array = _coerce_unit_entries(units_src)
+	_pathing_unit_entries = entries
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
@@ -296,6 +316,8 @@ func rebuild_units_from_list(hf: Dictionary, units_src: Variant, batched: bool =
 		_units.rebuild_from_list_batched(heightfield, entries)
 	else:
 		_units.rebuild_from_list(heightfield, entries)
+	if show_pathing_ground:
+		_rebuild_pathing_overlay()
 
 
 func get_unit_layer() -> MapUnitLayer:
@@ -314,7 +336,12 @@ func add_unit_instance(entry: Dictionary, hf: Dictionary) -> bool:
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
-	return _units.add_one(entry, heightfield)
+	var ok: bool = _units.add_one(entry, heightfield)
+	if ok:
+		_pathing_unit_entries.append(entry)
+		if show_pathing_ground:
+			_rebuild_pathing_overlay()
+	return ok
 
 
 func remove_unit_instance(creation_number: int) -> bool:
@@ -501,8 +528,11 @@ func _load_all() -> void:
 		if FileAccess.file_exists(unit_path):
 			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
 			ctx.units = unit_list.to_dict() if unit_list != null else {}
+		_pathing_unit_entries = ctx.units.get("units", []) as Array if typeof(ctx.units) == TYPE_DICTIONARY else []
 		_units.build(ctx)
 		await get_tree().process_frame
+	else:
+		_pathing_unit_entries = []
 	if place_doodads:
 		var dood_path: String = map_dir.path_join("doodads.json")
 		if FileAccess.file_exists(dood_path):

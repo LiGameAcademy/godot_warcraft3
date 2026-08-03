@@ -5,7 +5,7 @@ render_mode cull_back, unshaded, fog_disabled;
 /// CUSTOM0 = 四层 tileset 索引（0-based，-1=无）；CUSTOM1 = 对应图集编号（fill 或 bitmask 0..31）。
 /// 图集为统一 512×256（8×4 格）；256×256 素材垫在左半。
 
-#include "wc3_debug_grid.gdshaderinc"
+#include "res://assets/shaders/wc3_debug_grid.gdshaderinc"
 
 uniform sampler2DArray tilesets : source_color, filter_linear, repeat_disable;
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.92;

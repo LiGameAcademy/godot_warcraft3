@@ -5,7 +5,7 @@ render_mode cull_disabled, unshaded, fog_disabled;
 /// 避免顶缘法线朝上被照得比地面雪更亮。
 /// 调试栅格与地面共用 wc3_debug_grid（世界 XZ 投影，立面也会出现竖向栅格线）。
 
-#include "wc3_debug_grid.gdshaderinc"
+#include "res://assets/shaders/wc3_debug_grid.gdshaderinc"
 
 uniform sampler2D cliff_albedo : source_color, filter_linear_mipmap;
 uniform sampler2D height_map : filter_nearest, hint_default_black;

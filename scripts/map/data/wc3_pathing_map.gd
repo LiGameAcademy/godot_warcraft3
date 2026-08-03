@@ -17,7 +17,9 @@ var format_version: int = 0
 var width: int = 0 ## pathing cells
 var height: int = 0
 var cell_size: float = Wc3Coords.PATHING_CELL
-var cells: PackedByteArray = PackedByteArray()
+var cells: PackedByteArray = PackedByteArray() ## 静态（WPM / 地形合成）
+## 动态：建筑/装饰 pathTex blit（OR 进查询与 overlay）
+var cells_dynamic: PackedByteArray = PackedByteArray()
 ## 与 heightfield 对齐的世界原点（左下角 tilepoint）
 var origin_wc3: Vector2 = Vector2.ZERO
 
@@ -31,7 +33,23 @@ func clear() -> void:
 	width = 0
 	height = 0
 	cells = PackedByteArray()
+	cells_dynamic = PackedByteArray()
 	origin_wc3 = Vector2.ZERO
+
+
+func _ensure_dynamic() -> void:
+	var n: int = width * height
+	if n <= 0:
+		return
+	if cells_dynamic.size() != n:
+		cells_dynamic.resize(n)
+		cells_dynamic.fill(0)
+
+
+func clear_dynamic() -> void:
+	_ensure_dynamic()
+	if cells_dynamic.size() > 0:
+		cells_dynamic.fill(0)
 
 
 static func from_dict(d: Dictionary) -> Wc3PathingMap:
@@ -87,7 +105,10 @@ func flag_at(px: int, py: int) -> int:
 	var i: int = py * width + px
 	if i < 0 or i >= cells.size():
 		return FLAG_NO_WALK | FLAG_NO_BUILD
-	return int(cells[i])
+	var f: int = int(cells[i])
+	if i < cells_dynamic.size():
+		f |= int(cells_dynamic[i])
+	return f
 
 
 func can_walk_cell(px: int, py: int) -> bool:
@@ -219,3 +240,100 @@ func sync_origin_from_heightfield(hf: Wc3Heightfield) -> void:
 	if width <= 0 and hf.map_width > 0:
 		width = hf.map_width * CELLS_PER_TILE
 		height = hf.map_height * CELLS_PER_TILE
+
+
+## 将 PathTextures 图居中 blit 到动态层（对齐 HiveWE：地形格坐标 ×4，90° 步进）。
+## tile_x/y = (wc3 - origin) / 128；rotation_deg 取最近 90°。
+func blit_pathing_image(tile_x: float, tile_y: float, rotation_deg: int, img: Image) -> void:
+	if img == null or not is_valid():
+		return
+	_ensure_dynamic()
+	var tw: int = img.get_width()
+	var th: int = img.get_height()
+	if tw <= 0 or th <= 0:
+		return
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	var rot: int = ((rotation_deg % 360) + 360) % 360
+	rot = int(round(float(rot) / 90.0)) * 90 % 360
+	var div_w: int = th if (rot % 180) != 0 else tw
+	var div_h: int = tw if (rot % 180) != 0 else th
+	var thresh := 250.0 / 255.0
+	for j in range(th):
+		for i in range(tw):
+			var x: int = i
+			var y: int = j
+			match rot:
+				90:
+					x = th - 1 - j
+					y = i
+				180:
+					x = tw - 1 - i
+					y = th - 1 - j
+				270:
+					x = j
+					y = tw - 1 - i
+			# 与 HiveWE 一致：底行优先采样（其 TGA 数据经 SOIL 后按 (h-1-j) 读）
+			var c: Color = img.get_pixel(i, th - 1 - j)
+			var bytes: int = 0
+			if c.r > thresh:
+				bytes |= FLAG_NO_WALK
+			if c.g > thresh:
+				bytes |= FLAG_NO_FLY
+			if c.b > thresh:
+				bytes |= FLAG_NO_BUILD
+			if bytes == 0:
+				continue
+			var xx: int = int(floor(tile_x * float(CELLS_PER_TILE))) + x - (div_w >> 1)
+			var yy: int = int(floor(tile_y * float(CELLS_PER_TILE))) + y - (div_h >> 1)
+			if xx < 0 or yy < 0 or xx >= width or yy >= height:
+				continue
+			var di: int = yy * width + xx
+			cells_dynamic[di] = int(cells_dynamic[di]) | bytes
+
+
+func blit_pathing_at_world(wc3_x: float, wc3_y: float, angle_deg: float, img: Image) -> void:
+	var tile_x: float = (wc3_x - origin_wc3.x) / Wc3Coords.TILE_SIZE
+	var tile_y: float = (wc3_y - origin_wc3.y) / Wc3Coords.TILE_SIZE
+	# 对齐 HiveWE doodad：degrees(angle)+90
+	var rot: int = int(round(angle_deg)) + 90
+	blit_pathing_image(tile_x, tile_y, rot, img)
+
+
+## 扫单位/装饰列表，按 Catalog.path_tex blit 动态脚印（建筑、中立建筑、阻挡物等）。
+## 返回成功 blit 条数。
+func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
+	clear_dynamic()
+	if not is_valid() or catalog == null:
+		return 0
+	var n := 0
+	for e in entries:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = e
+		var type_id := str(d.get("typeId", d.get("id", "")))
+		if type_id.is_empty():
+			continue
+		var info: Dictionary = catalog.lookup(type_id)
+		var path_tex := str(info.get("path_tex", ""))
+		if not Wc3PathingTextures.is_valid_path_tex(path_tex):
+			continue
+		var img := Wc3PathingTextures.load_image(path_tex)
+		if img == null:
+			continue
+		var pos: Variant = d.get("position", {})
+		var wx := 0.0
+		var wy := 0.0
+		if typeof(pos) == TYPE_DICTIONARY:
+			wx = float(pos.get("x", 0.0))
+			wy = float(pos.get("y", 0.0))
+		elif pos is Vector3:
+			wx = (pos as Vector3).x
+			wy = (pos as Vector3).y
+		elif pos is Vector2:
+			wx = (pos as Vector2).x
+			wy = (pos as Vector2).y
+		var ang := float(d.get("angle", d.get("facing", 270.0)))
+		blit_pathing_at_world(wx, wy, ang, img)
+		n += 1
+	return n

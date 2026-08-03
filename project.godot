@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="godot_warcraft3"
-run/main_scene="uid://bgpdr7ovrx422"
+run/main_scene="uid://b20kj6oms7qoi"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 

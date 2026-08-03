@@ -6,6 +6,8 @@ extends RefCounted
 signal changed
 signal dirty_changed(is_dirty: bool)
 
+const _PathingMapScript := preload("res://scripts/map/data/wc3_pathing_map.gd")
+
 const DEFAULT_MAP_DIR := "res://assets/map-parsed/losttemple"
 const PARSED_MAPS_ROOT := "res://assets/map-parsed"
 const BLANK_TILEPOINTS := 33 ## → 32×32 格
@@ -35,7 +37,7 @@ var brush_cliff_type: int = 0
 var doodads: Wc3DoodadList = Wc3DoodadList.new()
 var units: Wc3UnitList = Wc3UnitList.new()
 ## 寻路面（WPM / 合成）；放置校验与 View→路径-地面
-var pathing: Wc3PathingMap = null
+var pathing = null
 var _next_creation_number: int = 1
 var _next_unit_creation_number: int = 1
 var _dirty: bool = false
@@ -862,7 +864,7 @@ func _load_pathing_from_map_dir(path: String) -> void:
 	pathing = null
 	var p: String = path.path_join("pathing.json")
 	if FileAccess.file_exists(p):
-		pathing = Wc3PathingMap.load_json_path(p)
+		pathing = _PathingMapScript.load_json_path(p)
 	ensure_pathing(null)
 
 
@@ -875,7 +877,7 @@ func ensure_pathing(tiles: Wc3TerrainTileCatalog) -> void:
 		return
 	if tiles == null:
 		return
-	pathing = Wc3PathingMap.synthesize_from_heightfield(heightfield, tiles)
+	pathing = _PathingMapScript.synthesize_from_heightfield(heightfield, tiles)
 
 
 func _save_units_json(path: String) -> Error:

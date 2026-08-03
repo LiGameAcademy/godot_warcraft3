@@ -25,13 +25,18 @@ func instance_glb(path: String) -> Node3D:
 	if packed != null:
 		var inst := packed.instantiate()
 		if inst is Node3D:
+			# .scn 可能在材质修正前烘焙；每次实例化都再修一次
+			_fix_wc3_blend_materials(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
 	var proto := _ensure_scene(path)
 	if proto == null:
 		return null
-	return proto.duplicate() as Node3D
+	var dup := proto.duplicate() as Node3D
+	if dup != null:
+		_fix_wc3_blend_materials(dup)
+	return dup
 
 
 ## 是否已有可实例化的缓存（点选热路径可跳过磁盘/解析）。
@@ -227,13 +232,17 @@ func instance_glb_preview(path: String) -> Node3D:
 		var packed: PackedScene = _packed_cache[path] as PackedScene
 		var inst := packed.instantiate()
 		if inst is Node3D:
+			_fix_wc3_blend_materials(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
 	var proto := _ensure_scene(path)
 	if proto == null:
 		return null
-	return proto.duplicate() as Node3D
+	var dup := proto.duplicate() as Node3D
+	if dup != null:
+		_fix_wc3_blend_materials(dup)
+	return dup
 
 
 ## 用已读字节灌入场景缓存并 duplicate（预览用，不 pack）。
@@ -264,10 +273,14 @@ func instance_glb_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 		_packed_cache[path] = packed
 		var inst := packed.instantiate()
 		if inst is Node3D:
+			_fix_wc3_blend_materials(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
-	return proto.duplicate() as Node3D
+	var dup := proto.duplicate() as Node3D
+	if dup != null:
+		_fix_wc3_blend_materials(dup)
+	return dup
 
 
 func _ensure_packed(path: String) -> PackedScene:
@@ -652,7 +665,7 @@ func mesh_parts_from_glb(path: String) -> Array:
 
 ## WC3 材质在 glTF/Godot 中的修正：
 ## - FilterMode Additive/AddAlpha：glTF 只能标 BLEND，需改成 ADD（否则黑底 Glow 变实心牌）
-## - FilterMode Blend：Godot Alpha Blend 走透明队列、深度乱序 → 建筑「透视」；改 DEPTH_PRE_PASS
+## - FilterMode Blend：Godot Alpha Blend / 甚至 DEPTH_PRE_PASS 仍可能透视 → 改 ALPHA_SCISSOR
 func _fix_wc3_blend_materials(root: Node) -> void:
 	if root == null:
 		return
@@ -679,22 +692,39 @@ func _as_wc3_material_fix(mat: Material) -> Material:
 	var add := _as_wc3_additive_material(mat)
 	if add != mat:
 		return add
-	return _as_wc3_blend_depth_fix(mat)
+	return _as_wc3_blend_scissor_fix(mat)
 
 
-## FilterMode=2 Blend → 深度预通道，避免屋顶/墙面互相透视（酒馆、市场等）。
-func _as_wc3_blend_depth_fix(mat: Material) -> Material:
+## FilterMode=2 Blend → Alpha Scissor（写深度），避免酒馆/市场/雇佣兵营地等建筑透视。
+## DEPTH_PRE_PASS 对中段 alpha 偏多的 WC3 贴图仍不够稳，故统一 scissor。
+const WC3_BLEND_SCISSOR_THRESHOLD := 0.08
+
+
+func _as_wc3_blend_scissor_fix(mat: Material) -> Material:
 	if not (mat is StandardMaterial3D):
 		return mat
 	var sm := mat as StandardMaterial3D
-	if sm.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
-		return mat
-	# 已是 Additive 混合的跳过（由 additive 路径处理）
+	# Additive 由另一路径处理
 	if sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
 		return mat
+	var needs := (
+		sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA
+		or sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		or sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+	)
+	if not needs:
+		return mat
+	# 已是目标 scissor 且阈值合适 → 跳过
+	if (
+		sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		and absf(sm.alpha_scissor_threshold - WC3_BLEND_SCISSOR_THRESHOLD) < 0.001
+	):
+		return mat
 	var out := sm.duplicate() as StandardMaterial3D
-	out.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	out.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	out.alpha_scissor_threshold = WC3_BLEND_SCISSOR_THRESHOLD
 	out.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	out.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	return out
 
 

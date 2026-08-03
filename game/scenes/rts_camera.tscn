@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://ss6bd7p6xnoa"]
+
+[ext_resource type="Script" path="res://game/scripts/presentation/rts_camera.gd" id="1_cam"]
+
+[node name="RtsCamera" type="Node3D"]
+script = ExtResource("1_cam")
+
+[node name="Pivot" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="Pivot"]
+current = true
+far = 2000.0
+near = 0.2

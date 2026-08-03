@@ -8,10 +8,10 @@ extends Node3D
 @export var cliffs_layer: MapCliffLayer = null
 @export var ramps_layer: MapRampLayer = null
 
-## WE 风格：蓝=不可走，粉红=不可建，紫=两者
-const COLOR_NO_WALK := Color(0.18, 0.42, 1.0, 0.85)
-const COLOR_NO_BUILD := Color(1.0, 0.28, 0.42, 0.85)
-const COLOR_BOTH := Color(0.72, 0.22, 0.95, 0.9)
+## WE / war3mapPath.tga 通道：红=不可走，绿=不可飞，蓝=不可建；品红=不可走+不可建
+const COLOR_NO_WALK := Color(1.0, 0.22, 0.18, 0.85)
+const COLOR_NO_BUILD := Color(0.18, 0.42, 1.0, 0.85)
+const COLOR_BOTH := Color(1.0, 0.2, 1.0, 0.9)
 
 var last_cell_count: int = 0
 var _tex: ImageTexture = null

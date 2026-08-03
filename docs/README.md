@@ -11,7 +11,7 @@
 | 目录 | 内容 | 阅读时机 |
 |------|------|----------|
 | [architecture/](architecture/) | 分层总纲、MapRoot 节点树、`scripts/` 目录全景、数据契约、悬崖重构历史 | 入坑第一天；改任何代码前 |
-| [game/](game/) | **游戏场景**路线图 + 架构（Echo Isles / Melee / 触发器远期） | 玩法竖切、对战初始化、触发器设计时 |
+| [game/](game/) | **游戏场景**路线图 + 架构 + 环境复刻方案（Echo Isles / Melee / 天空天气光照） | 玩法竖切、对战初始化、环境表现时 |
 | [roadmap/](roadmap/) | 地图模块路线图 ROADMAP + 细粒度待办 TODO | 选下一个地图/编辑器 PR 时 |
 | [data/](data/) | 经典资产路径、合规、离线解包/转换管线 | 处理资产/解包/转换时 |
 | [terrain/](terrain/) | 地面 tile、Autotile、HEX_MAP 经验 | 改地面渲染/几何时 |
