@@ -146,7 +146,10 @@ export function collectSampleFrames(nodes, start, end, stepMs = 33, geosetAnims 
 }
 
 /**
- * WC3 GeosetAnim alpha at frame (DontInterp hold). Default visible (1) if no anim.
+ * WC3 GeosetAnim alpha at frame (DontInterp hold across entire timeline).
+ * Prefer {@link sampleGeosetAlphaInSequence} when baking a Sequence — WC3 only
+ * honors keys inside the playing interval; outside keys do not carry over, and
+ * missing keys default to visible (1). Global hold wrongly hides TownHall Stand.
  * @param {import('war3-model').GeosetAnim[] | undefined} geosetAnims
  * @param {number} geosetId
  * @param {number} frame
@@ -159,6 +162,39 @@ export function sampleGeosetAlpha(geosetAnims, geosetId, frame) {
   if (!keys.length) return 1;
   // Before first key: use first key value (WC3 geosets often start hidden with alpha 0).
   if (frame < keys[0].Frame) return keys[0].Vector[0];
+  let value = keys[0].Vector[0];
+  for (const key of keys) {
+    if (key.Frame <= frame) value = key.Vector[0];
+    else break;
+  }
+  return value;
+}
+
+/**
+ * Sequence-scoped GeosetAnim alpha (WC3 runtime semantics).
+ * Only Keys with Frame in [seqStart, seqEnd] apply; if none → visible (1).
+ * Before the first in-sequence key → visible (1).
+ * @param {import('war3-model').GeosetAnim[] | undefined} geosetAnims
+ * @param {number} geosetId
+ * @param {number} frame
+ * @param {number} seqStart
+ * @param {number} seqEnd
+ */
+export function sampleGeosetAlphaInSequence(
+  geosetAnims,
+  geosetId,
+  frame,
+  seqStart,
+  seqEnd,
+) {
+  const ga = (geosetAnims || []).find((g) => g.GeosetId === geosetId);
+  if (!ga || ga.Alpha === undefined || ga.Alpha === null) return 1;
+  if (typeof ga.Alpha === "number") return ga.Alpha;
+  const allKeys = ga.Alpha.Keys || [];
+  if (!allKeys.length) return 1;
+  const keys = allKeys.filter((k) => k.Frame >= seqStart && k.Frame <= seqEnd);
+  if (!keys.length) return 1;
+  if (frame < keys[0].Frame) return 1;
   let value = keys[0].Vector[0];
   for (const key of keys) {
     if (key.Frame <= frame) value = key.Vector[0];

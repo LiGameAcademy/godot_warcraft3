@@ -6,6 +6,8 @@
 2. **模型** `MDX`/`MDL` → `GLB`（`war3-model` 解析 + `@gltf-transform/core`）
 3. **场景** `GLB` → 同目录 `.scn`（Godot headless 烘焙；运行时优先，免 `GLTFDocument`）
 4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`（Godot 运行时挂 `GPUParticles3D`）
+   - **v2**：写入 `active_sequences`（Visibility∩EmissionRate 按 Sequence 作用域）；`null`=全程发射（火盆），数组=仅训练烟/建造尘等阶段性特效
+   - 批量导出可编辑预制：`godot --headless -s res://tools/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force`
 5. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
 
 默认顺序：`textures → models → scn`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 时会重新转换该模型。  
@@ -57,7 +59,7 @@ godot --headless --path ../.. -s res://tools/export_pe2_scenes.gd -- --include D
 
 - **UV**：MDX 的 `TVertices` 不要做 `1-V` 翻转。
 - **队伍色**：优先选用带真实路径的材质层。
-- **GeosetAnim**：站立时 alpha=0 的网格（如死亡内脏）默认 scale=0，并在动画中按帧显隐。
+- **GeosetAnim**：按 **Sequence 作用域** 采样 alpha（区间内无 key → 默认可见）。全局 hold 会错误隐藏 TownHall 的 `Stand` 等建筑档。
 - **Transparent**：FilterMode=1 使用 MASK + cutoff 0.75，避免半透明碎片。
 - **Additive / AddAlpha（FilterMode 3/4）**：glTF 无加法混合；材质名带 `_fm3`/`_fm4`，Godot `MapModelCache` 加载时改成 `BLEND_MODE_ADD`（否则 `Yellow_Glow*` 黑底会变成实心黑牌）。
 - **动画**：每个 Sequence → 一条 glTF Animation；扁平 Armature + 等权蒙皮。

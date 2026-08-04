@@ -5,7 +5,7 @@ import { parseMDL, parseMDX } from "war3-model";
 import {
   collectSampleFrames,
   evaluateNodeWorldMatrices,
-  sampleGeosetAlpha,
+  sampleGeosetAlphaInSequence,
 } from "./anim.js";
 import { blpBufferToPng, writePlaceholderPng } from "./convert-blp.js";
 import {
@@ -35,6 +35,106 @@ function asVec3(v) {
 }
 
 /**
+ * Animated track → [{frame,value}]；静态 number → null。
+ * @param {unknown} track
+ * @returns {Array<{ frame: number, value: number }> | null}
+ */
+function animTrackKeys(track) {
+  if (track == null || typeof track === "number") return null;
+  const keys = /** @type {{ Keys?: Array<{ Frame: number, Vector: ArrayLike<number> }> }} */ (
+    track
+  ).Keys;
+  if (!keys?.length) return null;
+  return keys.map((k) => ({
+    frame: Number(k.Frame) || 0,
+    value: Number(k.Vector?.[0]) || 0,
+  }));
+}
+
+/**
+ * @param {Array<{ frame: number, value: number }> | null} keys
+ * @param {number} frame
+ * @param {number} seqStart
+ * @param {number} seqEnd
+ * @param {number} defaultValue 区间内无 key 时的默认（Visibility=1，EmissionRate=0）
+ */
+function sampleTrackInSequence(keys, frame, seqStart, seqEnd, defaultValue) {
+  if (!keys?.length) return defaultValue;
+  const sk = keys.filter((k) => k.frame >= seqStart && k.frame <= seqEnd);
+  if (!sk.length) return defaultValue;
+  if (frame < sk[0].frame) return defaultValue;
+  let value = sk[0].value;
+  for (const k of sk) {
+    if (k.frame <= frame) value = k.value;
+    else break;
+  }
+  return value;
+}
+
+/** @param {unknown} track */
+function emissionRateForAmount(track) {
+  if (typeof track === "number") return track;
+  const keys = animTrackKeys(track);
+  if (!keys?.length) return 0;
+  return Math.max(0, ...keys.map((k) => k.value));
+}
+
+/**
+ * 该发射器在哪些 Sequence 中应发光（vis≥0.5 且 rate>0）。
+ * 返回 null = 全程开启（装饰物火盆等：无 Visibility 轨 + 静态 rate>0）。
+ * 死亡爆发等脉冲 rate：只要区间内任一关键帧 rate>0 且当时可见即计入（勿只采中点）。
+ * @param {object} pe
+ * @param {Array<{ Name?: string, Interval: ArrayLike<number> }>} sequences
+ * @returns {string[] | null}
+ */
+function activeSequencesForEmitter(pe, sequences) {
+  const visKeys = animTrackKeys(pe.Visibility);
+  const rateKeys = animTrackKeys(pe.EmissionRate);
+  const staticRate = typeof pe.EmissionRate === "number" ? pe.EmissionRate : null;
+  if (visKeys == null && staticRate != null && staticRate > 0) {
+    return null;
+  }
+  const out = [];
+  for (const s of sequences || []) {
+    const start = Number(s.Interval?.[0]) || 0;
+    const end = Number(s.Interval?.[1]) || start;
+    if (_emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end)) {
+      out.push(String(s.Name || "").trim());
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {Array<{ frame: number, value: number }> | null} visKeys
+ * @param {Array<{ frame: number, value: number }> | null} rateKeys
+ * @param {number | null} staticRate
+ * @param {number} start
+ * @param {number} end
+ */
+function _emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end) {
+  const mid = Math.floor((start + end) / 2);
+  if (staticRate != null) {
+    const vis = sampleTrackInSequence(visKeys, mid, start, end, 1);
+    return vis >= 0.5 && staticRate > 0.01;
+  }
+  // 动画 rate：检查区间内每个 rate>0 的关键帧（含脉冲爆发）
+  const sampleFrames = new Set([mid, start, end]);
+  for (const k of rateKeys || []) {
+    if (k.frame >= start && k.frame <= end) sampleFrames.add(k.frame);
+  }
+  for (const k of visKeys || []) {
+    if (k.frame >= start && k.frame <= end) sampleFrames.add(k.frame);
+  }
+  for (const frame of sampleFrames) {
+    const vis = sampleTrackInSequence(visKeys, frame, start, end, 1);
+    const rate = sampleTrackInSequence(rateKeys, frame, start, end, 0);
+    if (vis >= 0.5 && rate > 0.01) return true;
+  }
+  return false;
+}
+
+/**
  * Serialize ParticleEmitters2 (+ ensure textures on disk) next to the GLB.
  * @param {object} model
  * @param {string} logicalPath
@@ -44,6 +144,7 @@ function asVec3(v) {
 function writePe2Sidecar(model, logicalPath, inDir, outDir) {
   const emittersIn = model.ParticleEmitters2 ?? [];
   const textures = model.Textures ?? [];
+  const sequences = model.Sequences ?? [];
   const emitters = [];
 
   for (const pe of emittersIn) {
@@ -56,19 +157,22 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     const pivotWc3 = asVec3(pe.PivotPoint);
     const pivot = wc3ToGltfVec3(pivotWc3[0], pivotWc3[1], pivotWc3[2]);
     const seg = Array.isArray(pe.SegmentColor) ? pe.SegmentColor : [];
-    emitters.push({
+    const visKeys = animTrackKeys(pe.Visibility);
+    const rateKeys = animTrackKeys(pe.EmissionRate);
+    const active = activeSequencesForEmitter(pe, sequences);
+    const entry = {
       name: String(pe.Name || `PE2_${pe.ObjectId ?? emitters.length}`),
       object_id: pe.ObjectId ?? -1,
       parent: pe.Parent ?? null,
       flags: pe.Flags ?? 0,
-      speed: Number(pe.Speed) || 0,
-      variation: Number(pe.Variation) || 0,
-      latitude: Number(pe.Latitude) || 0,
-      gravity: Number(pe.Gravity) || 0,
-      life_span: Number(pe.LifeSpan) || 0.1,
-      emission_rate: Number(pe.EmissionRate) || 0,
-      width: Number(pe.Width) || 0,
-      length: Number(pe.Length) || 0,
+      speed: typeof pe.Speed === "number" ? pe.Speed : Number(pe.Speed) || 0,
+      variation: typeof pe.Variation === "number" ? pe.Variation : Number(pe.Variation) || 0,
+      latitude: typeof pe.Latitude === "number" ? pe.Latitude : Number(pe.Latitude) || 0,
+      gravity: typeof pe.Gravity === "number" ? pe.Gravity : Number(pe.Gravity) || 0,
+      life_span: typeof pe.LifeSpan === "number" ? pe.LifeSpan : Number(pe.LifeSpan) || 0.1,
+      emission_rate: emissionRateForAmount(pe.EmissionRate),
+      width: typeof pe.Width === "number" ? pe.Width : Number(pe.Width) || 0,
+      length: typeof pe.Length === "number" ? pe.Length : Number(pe.Length) || 0,
       filter_mode: Number(pe.FilterMode) || 0,
       rows: Math.max(1, Number(pe.Rows) || 1),
       columns: Math.max(1, Number(pe.Columns) || 1),
@@ -82,15 +186,24 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
       texture: resolved.pngLogical,
       priority_plane: Number(pe.PriorityPlane) || 0,
       pivot,
-    });
+      // null = 全程发射（火盆等）；数组 = 仅这些 Sequence 名下发射
+      active_sequences: active,
+    };
+    if (visKeys) entry.visibility_keys = visKeys;
+    if (rateKeys) entry.emission_rate_keys = rateKeys;
+    emitters.push(entry);
   }
 
   const pe2Logical = mdxLogicalToPe2(logicalPath);
   const dest = path.join(outDir, ...pe2Logical.split("/"));
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const payload = {
-    version: 1,
+    version: 2,
     source: normalizeLogicalPath(logicalPath),
+    sequences: sequences.map((s) => ({
+      name: String(s.Name || ""),
+      interval: [Number(s.Interval?.[0]) || 0, Number(s.Interval?.[1]) || 0],
+    })),
     emitters,
   };
   fs.writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
@@ -400,7 +513,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   const geosets = model.Geosets ?? [];
   /** @type {Map<number, import('@gltf-transform/core').Node>} */
   const geosetMeshNodes = new Map();
-  const restFrame = model.Sequences?.[0]?.Interval?.[0] ?? 0;
+  const restSeq = model.Sequences?.[0];
+  const restStart = restSeq?.Interval?.[0] ?? 0;
+  const restEnd = restSeq?.Interval?.[1] ?? restStart;
+  const restFrame = restStart;
 
 	for (let gi = 0; gi < geosets.length; gi += 1) {
 		const g = geosets[gi];
@@ -500,8 +616,14 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     const meshNode = document.createNode(`Geoset_${gi}`).setMesh(mesh);
     if (skin) meshNode.setSkin(skin);
 
-    // Hide geosets that WC3 keeps invisible at rest (death guts, temporary props).
-    const restAlpha = sampleGeosetAlpha(model.GeosetAnims, gi, restFrame);
+    // Hide geosets that WC3 keeps invisible at rest (sequence-scoped).
+    const restAlpha = sampleGeosetAlphaInSequence(
+      model.GeosetAnims,
+      gi,
+      restFrame,
+      restStart,
+      restEnd,
+    );
     if (restAlpha < 0.5) {
       meshNode.setScale([0, 0, 0]);
     }
@@ -552,7 +674,13 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
         }
 
         for (const gi of geosetMeshNodes.keys()) {
-          const alpha = sampleGeosetAlpha(model.GeosetAnims, gi, frame);
+          const alpha = sampleGeosetAlphaInSequence(
+            model.GeosetAnims,
+            gi,
+            frame,
+            start,
+            end,
+          );
           const visible = alpha >= 0.5 ? 1 : 0;
           const gTrack = geosetScaleTracks.get(gi);
           gTrack.times.push(timeSec);

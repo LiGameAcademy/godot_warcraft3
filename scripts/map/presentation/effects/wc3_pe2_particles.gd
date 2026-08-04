@@ -4,9 +4,12 @@ extends RefCounted
 ## MDX ParticleEmitter2 旁路：读 `*.pe2.json`（与 GLB 同 stem），挂 GPUParticles3D。
 ## 坐标与网格一致（glTF/Y-up，落在 convert 的 MODEL_SCALE=0.01 节点下）。
 ## 可编辑预制在 `res://assets/pe2-prefabs/`（路径镜像 asset-converted，可提交 git）。
+## v2：`active_sequences` — null/缺省=全程发射；数组=仅这些 WC3 Sequence 名下 emitting。
 
 const PE2_ROOT_NAME := "Pe2Root"
 const MODEL_SCALE := 0.01
+const META_ACTIVE_SEQS := "pe2_active_sequences"
+const META_ALWAYS_ON := "pe2_always_on"
 
 
 static func pe2_path_from_glb(glb_path: String) -> String:
@@ -89,7 +92,47 @@ static func attach_to(root: Node3D, glb_path: String) -> int:
 	if not _is_model_scale(parent.scale) and not _is_model_scale(pe2_root.scale):
 		pe2_root.scale = Vector3.ONE * MODEL_SCALE
 	parent.add_child(pe2_root)
+	# 默认按「空闲 Stand」关闸；装饰物 always_on 不受影响
+	apply_sequence(root, "Stand")
 	return _count_particle_nodes(pe2_root)
+
+
+## 按当前 WC3 Sequence 名开关发射器（建筑 Birth / Stand Work / Death 等）。
+## sequence_name 可用空格或下划线；叶子名匹配即可。
+static func apply_sequence(root: Node, sequence_name: String) -> void:
+	if root == null:
+		return
+	var pe2 := root.find_child(PE2_ROOT_NAME, true, false)
+	if pe2 == null:
+		return
+	var want := _normalize_seq_key(sequence_name)
+	_apply_sequence_to_node(pe2, want)
+
+
+static func _apply_sequence_to_node(n: Node, want_key: String) -> void:
+	if n is GPUParticles3D:
+		var p := n as GPUParticles3D
+		var always: bool = bool(p.get_meta(META_ALWAYS_ON, true))
+		if always:
+			p.emitting = true
+		else:
+			var seqs: PackedStringArray = p.get_meta(META_ACTIVE_SEQS, PackedStringArray()) as PackedStringArray
+			p.emitting = _seqs_match(seqs, want_key)
+	for c in n.get_children():
+		_apply_sequence_to_node(c, want_key)
+
+
+static func _normalize_seq_key(s: String) -> String:
+	return s.strip_edges().replace("_", " ").to_lower()
+
+
+static func _seqs_match(seqs: PackedStringArray, want_key: String) -> bool:
+	if want_key.is_empty():
+		return false
+	for s in seqs:
+		if _normalize_seq_key(str(s)) == want_key:
+			return true
+	return false
 
 
 static func _prefab_exists(glb_path: String) -> bool:
@@ -160,7 +203,8 @@ static func _is_model_scale(s: Vector3) -> bool:
 static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
 	var life: float = maxf(0.05, float(em.get("life_span", 0.5)))
 	var rate: float = maxf(0.0, float(em.get("emission_rate", 1.0)))
-	var amount: int = clampi(ceili(rate * life * 1.35), 1, 256)
+	# rate=0 的死亡爆发轨仍可能有 animated keys；amount 至少给一点，靠 emitting 开关
+	var amount: int = clampi(ceili(maxf(rate, 8.0) * life * 1.35), 1, 256)
 	var p := GPUParticles3D.new()
 	p.name = str(em.get("name", "PE2_%d" % index))
 	p.amount = amount
@@ -255,8 +299,33 @@ static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
 		proc.anim_offset_max = start_f / total_frames
 
 	p.process_material = proc
-	p.emitting = true
+	_bind_sequence_meta(p, em)
 	return p
+
+
+## active_sequences=null → 全程；数组 → 仅列出的 Sequence；缺省且 rate>0 → 全程（兼容 v1）。
+static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
+	var raw: Variant = em.get("active_sequences", null)
+	if raw == null and not em.has("active_sequences"):
+		# v1：无字段 → 始终开（火盆）
+		p.set_meta(META_ALWAYS_ON, true)
+		p.emitting = true
+		return
+	if raw == null:
+		# 显式 null = 全程
+		p.set_meta(META_ALWAYS_ON, true)
+		p.emitting = true
+		return
+	var packed := PackedStringArray()
+	if raw is Array:
+		for s in raw as Array:
+			var t := str(s).strip_edges()
+			if not t.is_empty():
+				packed.append(t)
+	p.set_meta(META_ALWAYS_ON, false)
+	p.set_meta(META_ACTIVE_SEQS, packed)
+	# 默认关，等 apply_sequence / attach 末尾 Stand
+	p.emitting = false
 
 
 ## 优先 res:// 已导入贴图（便于 .pe2.tscn 保存 ExtResource）；否则磁盘 ImageTexture。

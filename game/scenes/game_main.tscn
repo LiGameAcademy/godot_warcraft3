@@ -30,15 +30,11 @@ show_ramp_debug = false
 show_pathing_ground = true
 
 [node name="RtsCamera" parent="." unique_id=1187867648 instance=ExtResource("2_cam")]
-pan_speed = 45.0
 
 [node name="GameHud" parent="." unique_id=553656308 instance=ExtResource("5_hud")]
 
 [node name="GameDirector" type="Node" parent="." unique_id=528822564]
 script = ExtResource("3_director")
-map_root = NodePath("../MapRoot")
-rts_camera = NodePath("../RtsCamera")
-game_hud = NodePath("../GameHud")
 
 [node name="HumanCursor" type="Node" parent="." unique_id=1503412235]
 script = ExtResource("4_cursor")

@@ -1,7 +1,7 @@
 # 待办
 
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-08-01
+> 最后更新：2026-08-04
 
 ## 当前焦点：单位面板（对齐装饰物）+ 装饰物缺口补齐
 
@@ -184,3 +184,25 @@
 - [x] GDScript 可见性：禁止跨边界调 `_` 私有 API（`.cursor/rules/gdscript-visibility.mdc`）
 - [ ] Doodad/Unit `build(ctx)` 契约统一
 - [ ] 删除对第二份 meta Dictionary 手写逻辑的残余调用方（逐步只读 `ctx.heightfield`）
+
+---
+
+## 资产管线（asset-convert）
+
+### GLB 共享贴图外链（减体积）
+
+- [ ] **GLB 外链共享 PNG，避免内嵌重复**  
+  现状：多建筑 MDX 共用 `Textures/HumanBase`、`Doodads0`、`DeathSmug`、team_color 等；convert 把 PNG **嵌进每个 GLB**，Godot 导入后再解压成旁路 `建筑名_xxx.png`，磁盘上出现大量同内容副本。  
+  目标：运行时只用共享路径（`Textures/...`、`_placeholders/...`）；GLB 改为 URI 外链（或 Godot 可识别的外部依赖），不再 per-model 内嵌。  
+  涉及：`tools/asset-convert`（`convert-mdx` / 贴图解析）、导入与 `.scn` 烘焙验证。
+
+### 建筑 Geoset 显隐进 AnimationPlayer（主城升本）
+
+- [ ] **修复 Godot 丢弃 Geoset scale 动画轨**  
+  事实（TownHall）：`gltf-transform` 读 GLB 时 `Stand` 含 ~35 条 `Geoset_*` scale 通道（序列作用域采样后主城外壳可见）；但 **Godot `GLTFDocument` 导入后 `Stand` 仅 ~38 条骨骼轨，`Geoset` 轨 = 0**，`.scn` 同。  
+  原因：蒙皮 Mesh 节点上的 TRS 动画被导入器丢掉，只保留 `Skeleton3D` 骨骼轨 → 运行时/编辑器播 `Stand` **不会**隐藏无关 Geoset。  
+  方向（择一或组合）：  
+  1. convert 时给每个 Geoset 加**无蒙皮父节点** `GeosetVis_*`，scale/visible 打在父节点上；或  
+  2. 旁路 `*.geosetvis.json`（按 Sequence），`BuildingVisual` / bake 时注入 Animation 轨 / 运行时设 `visible`；或  
+  3. `export_model_scenes.gd` 烘焙前补轨。  
+  验收：`Stand` 仅主城档 geoset 可见；`Stand_Upgrade_First/Second` 切换 Keep/Castle；`Birth*` 建造过程显隐正确。

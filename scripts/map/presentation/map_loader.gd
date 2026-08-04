@@ -3,6 +3,8 @@ extends Node3D
 
 ## 地图装配入口：构建 MapBuildContext，按序驱动各 Layer。
 
+signal map_loaded
+
 @export var map_dir: String = "res://assets/map-parsed/losttemple"
 @export var build_water: bool = true
 @export var build_cliffs: bool = true
@@ -59,6 +61,9 @@ var _tiles_ready: bool = false
 var _pathing_map: Wc3PathingMap = null
 ## 动态 pathTex blit 用的实例列表（单位/建筑；装饰物脚印多已在 WPM）
 var _pathing_unit_entries: Array = []
+## 最近一次加载的 heightfield JSON（供运行时加单位插值高度）
+var _last_hf_dict: Dictionary = {}
+var _map_ready: bool = false
 
 
 func get_tiles() -> Wc3TerrainTileCatalog:
@@ -212,6 +217,20 @@ func set_show_ramp_debug(on: bool) -> void:
 
 func get_pathing_map() -> Wc3PathingMap:
 	return _pathing_map
+
+
+func is_map_ready() -> bool:
+	return _map_ready
+
+
+func get_heightfield_dict() -> Dictionary:
+	if not _last_hf_dict.is_empty():
+		return _last_hf_dict
+	if not _external_hf.is_empty():
+		return _external_hf
+	if map_dir.is_empty():
+		return {}
+	return _read_json(map_dir.path_join("terrain-heightfield.json"))
 
 
 func get_show_pathing_ground() -> bool:
@@ -485,6 +504,7 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_units.refresh_heights(ctx.heightfield)
 
 func _load_all() -> void:
+	_map_ready = false
 	var t0 := Time.get_ticks_msec()
 	var hf: Dictionary = _external_hf
 	if hf.is_empty():
@@ -492,6 +512,7 @@ func _load_all() -> void:
 	if hf.is_empty():
 		_set_status("地图加载失败：缺少 terrain-heightfield.json")
 		return
+	_last_hf_dict = hf
 
 	var info: Dictionary = _external_info
 	if info.is_empty() and _external_hf.is_empty():
@@ -562,6 +583,8 @@ func _load_all() -> void:
 		"Terrain load in %d ms from %s (gaps=%d cliffs=%d ramps=%d water=%d shore=%d doodads=%d)"
 		% [ms, map_dir, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
 	)
+	_map_ready = true
+	map_loaded.emit()
 
 
 func _ensure_terrain_collision() -> void:

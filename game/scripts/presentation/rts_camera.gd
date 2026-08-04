@@ -2,11 +2,16 @@ class_name RtsCamera
 extends Node3D
 
 ## 游戏用 RTS 相机：地面观察点 + Pivot 俯仰/偏航 + 相机距离。
-## 场景结构对齐 editor_camera；操作语义对齐 classic RTS / godot_simple_rts。
+## 滚轮缩放复刻 WC3 MiscData.txt：[Camera] 六档 Distance/AOA 联动。
 ## 不占用右键（留给选单位/下命令）。
 
+## WC3 MiscData Distance（游戏单位）→ Godot（× WORLD_SCALE）。
+## AOA 304→339：拉近时从俯视逐渐抬到近似平视（pitch = AOA − 360）。
+const WC3_ZOOM_DISTANCES_WC3: Array[float] = [1650.0, 1600.0, 1500.0, 1400.0, 1275.0, 1100.0]
+const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0]
+
 @export_group("平移")
-@export var pan_speed: float = 55.0
+@export var pan_speed: float = 30.0
 @export var pan_sprint_mult: float = 2.5
 @export var edge_pan_margin: int = 28
 @export var edge_pan_enabled: bool = true
@@ -15,14 +20,20 @@ extends Node3D
 @export_group("旋转")
 @export var look_sensitivity: float = 0.003
 @export var min_pitch_deg: float = -75.0
-@export var max_pitch_deg: float = -20.0
-@export var initial_pitch_deg: float = -50.0
+@export var max_pitch_deg: float = -18.0
+@export var initial_pitch_deg: float = -56.0
+## 中键拖拽可临时改俯仰；下一次滚轮会回到当前缩放档的 AOA。
+@export var allow_manual_orbit: bool = true
 
 @export_group("缩放")
-@export var zoom_step: float = 4.0
-@export var min_distance: float = 12.0
-@export var max_distance: float = 220.0
-@export var initial_distance: float = 48.0
+## true：滚轮走 WC3 六档，距离与俯仰联动；false：自由距离 + 固定俯仰。
+@export var use_wc3_zoom_curve: bool = true
+@export var zoom_step: float = 1.0
+@export var min_distance: float = 11.0
+@export var max_distance: float = 16.5
+@export var initial_distance: float = 16.5
+## WC3 FOV=70
+@export var camera_fov: float = 70.0
 
 @export_group("边界")
 ## 世界 XZ（Godot）；未设置时不夹紧。可由 GameDirector 按地图 extent 注入。
@@ -37,17 +48,30 @@ extends Node3D
 @onready var _camera: Camera3D = $Pivot/Camera3D
 
 var _yaw: float = 0.0
-var _pitch: float = deg_to_rad(-50.0)
-var _distance: float = 48.0
+var _pitch: float = deg_to_rad(-56.0)
+var _distance: float = 16.5
+var _zoom_index: int = 0
 var _orbit_dragging: bool = false
 var _pan_velocity: Vector3 = Vector3.ZERO
 var _focus_tween: Tween
 
 
 func _ready() -> void:
-	_pitch = deg_to_rad(initial_pitch_deg)
-	_distance = initial_distance
-	_apply()
+	apply_export_tuning()
+
+
+## 把 @export 缩放/俯仰同步到运行时内部状态（Director 可在 _ready 后再调）。
+func apply_export_tuning() -> void:
+	if _camera:
+		_camera.fov = camera_fov
+	if use_wc3_zoom_curve:
+		_rebuild_wc3_distance_limits()
+		_zoom_index = _nearest_zoom_index(initial_distance)
+		_apply_zoom_level(_zoom_index, false)
+	else:
+		_pitch = deg_to_rad(initial_pitch_deg)
+		_distance = clampf(initial_distance, min_distance, max_distance)
+		_apply()
 
 
 func get_camera() -> Camera3D:
@@ -60,6 +84,10 @@ func get_look_at() -> Vector3:
 
 func get_orbit_distance() -> float:
 	return _distance
+
+
+func get_zoom_index() -> int:
+	return _zoom_index
 
 
 ## 瞬间落到观察点（XZ）；Y 保持当前高度（默认贴地平面）。
@@ -98,16 +126,18 @@ func clear_boundaries() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+		if mb.button_index == MOUSE_BUTTON_MIDDLE and allow_manual_orbit:
 			_orbit_dragging = mb.pressed
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_adjust_zoom(-1)
-			get_viewport().set_input_as_handled()
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			# 滚轮上 = 拉近（更高 AOA / 更平视）
 			_adjust_zoom(1)
 			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _orbit_dragging:
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			# 滚轮下 = 拉远（更俯视）
+			_adjust_zoom(-1)
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _orbit_dragging and allow_manual_orbit:
 		var mm := event as InputEventMouseMotion
 		_yaw -= mm.relative.x * look_sensitivity
 		_pitch -= mm.relative.y * look_sensitivity
@@ -137,7 +167,6 @@ func _process(delta: float) -> void:
 
 
 func _get_pan_input() -> Vector2:
-	# 优先键盘（WASD + 方向键）
 	var kb := Vector2.ZERO
 	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
 		kb.x -= 1.0
@@ -156,7 +185,6 @@ func _get_pan_input() -> Vector2:
 	var vp := get_viewport().get_visible_rect().size
 	if vp.x < 1.0 or vp.y < 1.0:
 		return Vector2.ZERO
-	# 窗口失焦时不边缘滚
 	if not get_window().has_focus():
 		return Vector2.ZERO
 	var edge := Vector2.ZERO
@@ -173,8 +201,49 @@ func _get_pan_input() -> Vector2:
 
 
 func _adjust_zoom(direction: int) -> void:
-	_distance = clampf(_distance + float(direction) * zoom_step, min_distance, max_distance)
+	if use_wc3_zoom_curve:
+		# direction>0 = 拉近（index↑）；direction<0 = 拉远（index↓）
+		var next := clampi(_zoom_index + direction, 0, WC3_ZOOM_DISTANCES_WC3.size() - 1)
+		if next == _zoom_index:
+			return
+		_apply_zoom_level(next, true)
+	else:
+		_distance = clampf(_distance - float(direction) * zoom_step, min_distance, max_distance)
+		_apply()
+
+
+func _apply_zoom_level(index: int, _animate: bool) -> void:
+	_zoom_index = clampi(index, 0, WC3_ZOOM_DISTANCES_WC3.size() - 1)
+	_distance = _wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[_zoom_index])
+	_pitch = deg_to_rad(_aoa_to_pitch_deg(WC3_ZOOM_AOA_DEG[_zoom_index]))
 	_apply()
+
+
+func _rebuild_wc3_distance_limits() -> void:
+	var d0 := _wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[WC3_ZOOM_DISTANCES_WC3.size() - 1])
+	var d1 := _wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[0])
+	min_distance = minf(d0, d1)
+	max_distance = maxf(d0, d1)
+
+
+func _nearest_zoom_index(godot_distance: float) -> int:
+	var best := 0
+	var best_d := INF
+	for i in range(WC3_ZOOM_DISTANCES_WC3.size()):
+		var d: float = absf(_wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[i]) - godot_distance)
+		if d < best_d:
+			best_d = d
+			best = i
+	return best
+
+
+static func _wc3_distance_to_godot(wc3_dist: float) -> float:
+	return wc3_dist * Wc3Coords.WORLD_SCALE
+
+
+static func _aoa_to_pitch_deg(aoa_deg: float) -> float:
+	## WC3 AOA：270=竖直俯视，360=水平。Godot pitch 负值朝下 → AOA−360。
+	return aoa_deg - 360.0
 
 
 func _clamp_to_bounds() -> void:

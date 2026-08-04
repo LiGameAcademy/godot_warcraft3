@@ -17,6 +17,8 @@ signal batch_finished(placed: int, placeholders: int)
 const DROP_RING_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const DROP_RING_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const DROP_RING_Y_BIAS := 0.15
+const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
+const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
@@ -264,7 +266,16 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 	node.set_meta("unit_data", u.duplicate(true))
 	add_child(node)
 	if not node.get_meta("is_placeholder", false) and _cache != null:
-		_cache.autoplay_stand(node)
+		var glb := _unit_glb_path(u)
+		if not glb.is_empty() and _Pe2.has_emitters(glb):
+			_Pe2.attach_to(node, glb)
+		# 建筑（含主城升本档）按 typeId 选 Stand / Stand Upgrade*；单位仍走普通 Stand
+		if BuildingVisualScr.is_building(type_id):
+			BuildingVisualScr.apply_idle(_cache, node, type_id)
+		else:
+			_cache.autoplay_stand(node)
+			if not glb.is_empty():
+				_Pe2.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
 
 
