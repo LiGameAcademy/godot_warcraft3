@@ -10,6 +10,10 @@ signal map_loaded
 @export var build_cliffs: bool = true
 @export var place_doodads: bool = true
 @export var place_units: bool = false
+## 游戏内应关闭：开始点（sloc）仅编辑器可见
+@export var show_start_locations: bool = true
+## 游戏内应关闭：单位死亡掉落提示环仅编辑器可见
+@export var show_drop_rings: bool = true
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
@@ -59,8 +63,9 @@ var _external_hf: Dictionary = {}
 var _external_info: Dictionary = {}
 var _tiles_ready: bool = false
 var _pathing_map: Wc3PathingMap = null
-## 动态 pathTex blit 用的实例列表（单位/建筑；装饰物脚印多已在 WPM）
+## 动态 pathTex blit 用的实例列表（单位/建筑；树木等装饰需一并 blit — Echo Isles 的 WPM 未含树脚印）
 var _pathing_unit_entries: Array = []
+var _pathing_doodad_entries: Array = []
 ## 最近一次加载的 heightfield JSON（供运行时加单位插值高度）
 var _last_hf_dict: Dictionary = {}
 var _map_ready: bool = false
@@ -118,6 +123,8 @@ func _ready() -> void:
 	_doodads.try_load_glb = try_load_glb
 	_doodads.multimesh_threshold = multimesh_threshold
 	_units.try_load_glb = try_load_glb
+	_units.show_start_locations = show_start_locations
+	_units.show_drop_rings = show_drop_rings
 	_doodads.setup(_catalog, _cache)
 	_units.setup(_catalog, _cache)
 
@@ -270,7 +277,8 @@ func _ensure_pathing_map(hf: Wc3Heightfield) -> void:
 	_pathing_map = Wc3PathingMap.synthesize_from_heightfield(hf, _tiles)
 
 
-## 按 Catalog.path_tex 把建筑/中立建筑脚印 OR 进动态寻路面。
+## 按 Catalog.path_tex 把单位/建筑/装饰（含树木）脚印 OR 进动态寻路面。
+## 注：部分地图 pathing.json（WPM）未烘焙树木脚印，必须以 doodads 动态 blit。
 func _apply_dynamic_pathing() -> void:
 	if _pathing_map == null or not _pathing_map.is_valid():
 		return
@@ -280,15 +288,34 @@ func _apply_dynamic_pathing() -> void:
 			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
 			if unit_list != null:
 				_pathing_unit_entries = unit_list.to_entries_array()
-	var n: int = _pathing_map.apply_entity_pathing(_pathing_unit_entries, get_id_catalog())
+	if _pathing_doodad_entries.is_empty() and place_doodads and not map_dir.is_empty():
+		var dood_path := map_dir.path_join("doodads.json")
+		if FileAccess.file_exists(dood_path):
+			var dood_list: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
+			if dood_list != null:
+				_pathing_doodad_entries = dood_list.to_entries_array()
+	var merged: Array = []
+	merged.append_array(_pathing_unit_entries)
+	merged.append_array(_pathing_doodad_entries)
+	var n: int = _pathing_map.apply_entity_pathing(merged, get_id_catalog())
 	if n > 0:
-		print("Pathing: blit pathTex ×%d (buildings/neutrals)" % n)
-		MapLog.info(MapLog.Layer.PRESENT, "Pathing", "blit pathTex ×%d (buildings)" % n)
+		print("Pathing: blit pathTex ×%d (units=%d doodads=%d)" % [n, _pathing_unit_entries.size(), _pathing_doodad_entries.size()])
+		MapLog.info(
+			MapLog.Layer.PRESENT,
+			"Pathing",
+			"blit pathTex ×%d (units=%d doodads=%d)" % [n, _pathing_unit_entries.size(), _pathing_doodad_entries.size()]
+		)
 
 
 func _rebuild_pathing_overlay() -> void:
 	if _pathing_layer == null:
 		_pathing_layer = get_node_or_null("Pathing") as MapPathingLayer
+	var hf: Wc3Heightfield = null
+	if not _external_hf.is_empty():
+		hf = Wc3Heightfield.from_dict(_external_hf, true)
+	_ensure_pathing_map(hf)
+	# 无论是否显示 overlay，都要 blit 动态脚印（树木不可走依赖此步）
+	_apply_dynamic_pathing()
 	if _pathing_layer == null:
 		push_warning("MapLoader: 缺少 Pathing 层，无法显示路径-地面")
 		return
@@ -296,11 +323,6 @@ func _rebuild_pathing_overlay() -> void:
 	if not show_pathing_ground:
 		_pathing_layer.clear()
 		return
-	var hf: Wc3Heightfield = null
-	if not _external_hf.is_empty():
-		hf = Wc3Heightfield.from_dict(_external_hf, true)
-	_ensure_pathing_map(hf)
-	_apply_dynamic_pathing()
 	_pathing_layer.rebuild(_pathing_map, hf)
 
 
@@ -313,10 +335,13 @@ func rebuild_doodads_from_list(hf: Dictionary, doodads_src: Variant) -> void:
 	_doodads.try_load_glb = try_load_glb
 	_doodads.multimesh_threshold = multimesh_threshold
 	var entries: Array = _coerce_doodad_entries(doodads_src)
+	_pathing_doodad_entries = entries
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
 	_doodads.rebuild_from_list(heightfield, entries)
+	if show_pathing_ground or (_pathing_map != null and _pathing_map.is_valid()):
+		_rebuild_pathing_overlay()
 
 
 ## 编辑器：用 Document 的 units 重建单位层（不读盘）。
@@ -326,6 +351,8 @@ func rebuild_units_from_list(hf: Dictionary, units_src: Variant, batched: bool =
 		return
 	_units.setup(get_id_catalog(), _cache)
 	_units.try_load_glb = try_load_glb
+	_units.show_start_locations = show_start_locations
+	_units.show_drop_rings = show_drop_rings
 	var entries: Array = _coerce_unit_entries(units_src)
 	_pathing_unit_entries = entries
 	var heightfield: Wc3Heightfield = null
@@ -394,14 +421,27 @@ func add_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
-	return _doodads.add_one(entry, heightfield)
+	var ok: bool = _doodads.add_one(entry, heightfield)
+	if ok:
+		_pathing_doodad_entries.append(entry)
+		_rebuild_pathing_overlay()
+	return ok
 
 
 ## 按 creationNumber 移除 Present；MultiMesh 组内失败时返回 false。
 func remove_doodad_instance(creation_number: int) -> bool:
 	if _doodads == null:
 		return false
-	return _doodads.remove_by_creation_number(creation_number)
+	var ok: bool = _doodads.remove_by_creation_number(creation_number)
+	if ok:
+		var cn: int = creation_number
+		for i in range(_pathing_doodad_entries.size() - 1, -1, -1):
+			var e: Variant = _pathing_doodad_entries[i]
+			if typeof(e) == TYPE_DICTIONARY and int((e as Dictionary).get("creationNumber", -1)) == cn:
+				_pathing_doodad_entries.remove_at(i)
+				break
+		_rebuild_pathing_overlay()
+	return ok
 
 
 ## 查找装饰物 Present 节点（编辑器选中环等）。
@@ -559,13 +599,19 @@ func _load_all() -> void:
 		if FileAccess.file_exists(dood_path):
 			var dood_list: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
 			ctx.doodads = dood_list.to_dict() if dood_list != null else {}
+		_pathing_doodad_entries = (
+			ctx.doodads.get("doodads", []) as Array if typeof(ctx.doodads) == TYPE_DICTIONARY else []
+		)
 		_doodads.build(ctx)
 		await get_tree().process_frame
+	else:
+		_pathing_doodad_entries = []
 	if show_pathing_debug_grid and _debug_grid:
 		_set_status("开启调试栅格（GPU）…")
 		_debug_grid.build(ctx)
 		await get_tree().process_frame
 	_ensure_pathing_map(ctx.heightfield as Wc3Heightfield)
+	_apply_dynamic_pathing()
 	if show_pathing_ground:
 		_rebuild_pathing_overlay()
 

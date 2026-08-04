@@ -77,6 +77,8 @@ func _configure_map_root() -> void:
 		map_root.map_dir = map_dir
 	map_root.place_doodads = true
 	map_root.place_units = true
+	map_root.show_start_locations = false
+	map_root.show_drop_rings = false
 	map_root.show_pathing_debug_grid = true
 	map_root.show_ramp_debug = show_ramp_debug
 	map_root.show_pathing_ground = show_pathing_ground
@@ -159,7 +161,21 @@ func _on_map_loaded() -> void:
 	if _bootstrapped:
 		return
 	_bootstrapped = true
+	_hide_start_locations()
 	_bootstrap_melee()
+
+
+## 游戏内移除已放置的 sloc（防 MapRoot 早于 Director 配置时漏网）。
+func _hide_start_locations() -> void:
+	if map_root == null:
+		return
+	var layer := map_root.get_unit_layer()
+	if layer == null:
+		return
+	for c in layer.get_children():
+		var d: Dictionary = c.get_meta("unit_data", {})
+		if str(d.get("typeId", "")) == "sloc" or str(c.name).begins_with("sloc_"):
+			c.queue_free()
 
 
 func _bootstrap_melee() -> void:

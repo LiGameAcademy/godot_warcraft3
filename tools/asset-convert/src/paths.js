@@ -57,3 +57,12 @@ export function mdxLogicalToPe2(logicalPath) {
   }
   return `${glb}.pe2.json`;
 }
+
+/** Map WC3 model path to Geoset visibility sidecar (Godot bake injects AnimationPlayer tracks). */
+export function mdxLogicalToGeosetVis(logicalPath) {
+  const glb = mdxLogicalToGlb(logicalPath);
+  if (glb.toLowerCase().endsWith(".glb")) {
+    return `${glb.slice(0, -4)}.geosetvis.json`;
+  }
+  return `${glb}.geosetvis.json`;
+}

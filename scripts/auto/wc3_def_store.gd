@@ -52,6 +52,8 @@ func _register_builtin_tables() -> void:
 	UpgradeDataDef.register_to(self)
 	UpgradeMetaDataDef.register_to(self)
 	UpgradeEffectMetaDataDef.register_to(self)
+	# Splats/
+	UberSplatDef.register_to(self)
 
 
 ## 注册一张 SLK 表。

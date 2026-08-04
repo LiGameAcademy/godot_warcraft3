@@ -13,12 +13,17 @@ signal batch_finished(placed: int, placeholders: int)
 @export var batch_max_per_frame: int = 24
 ## 每帧最多在主线程解析几个尚无 .scn 的 GLB（GLTFDocument 非线程安全）。
 @export var gltf_parse_per_frame: int = 1
+## false：不放置 sloc（游戏内隐藏开始点；编辑器保持 true）
+@export var show_start_locations: bool = true
+## false：不显示死亡掉落提示环（游戏内隐藏；编辑器对齐 WE 可开）
+@export var show_drop_rings: bool = true
 
 const DROP_RING_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const DROP_RING_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const DROP_RING_Y_BIAS := 0.15
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
 const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
+const _UberSplat := preload("res://scripts/map/presentation/effects/wc3_uber_splat.gd")
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
@@ -235,6 +240,8 @@ func _unit_glb_path(u: Dictionary) -> String:
 
 func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: bool = true) -> void:
 	var type_id := str(u.get("typeId", ""))
+	if not show_start_locations and type_id == "sloc":
+		return
 	var variation := int(u.get("variation", 0))
 	var pos: Dictionary = u.get("position", {})
 	var owner_id := int(u.get("owner", 12))
@@ -272,11 +279,26 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 		# 建筑（含主城升本档）按 typeId 选 Stand / Stand Upgrade*；单位仍走普通 Stand
 		if BuildingVisualScr.is_building(type_id):
 			BuildingVisualScr.apply_idle(_cache, node, type_id)
+			_apply_building_ground(node, type_id, hf)
 		else:
 			_cache.autoplay_stand(node)
 			if not glb.is_empty():
 				_Pe2.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
+
+
+## 建筑：地面 UberSplat 贴花 + 按模型脚底环下沉，减轻「悬空」。
+func _apply_building_ground(node: Node3D, type_id: String, hf: Wc3Heightfield) -> void:
+	if node == null:
+		return
+	var tileset := ""
+	if hf != null:
+		tileset = str(hf.main_tileset)
+	_UberSplat.attach_to(node, type_id, tileset)
+	var sink := _UberSplat.foot_sink_y(node)
+	node.set_meta("building_foot_sink", sink)
+	if sink > 0.02:
+		node.position.y -= sink
 
 
 func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
@@ -289,12 +311,30 @@ func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
 	var wx: float = float(pos.get("x", 0.0))
 	var wy: float = float(pos.get("y", 0.0))
 	var new_z_wc3: float = hf.interpolated_height(wx, wy)
-	(node as Node3D).position = Wc3Coords.wc3_xy_to_godot(wx, wy, new_z_wc3)
+	var n3 := node as Node3D
+	n3.position = Wc3Coords.wc3_xy_to_godot(wx, wy, new_z_wc3)
+	var sink := float(n3.get_meta("building_foot_sink", 0.0))
+	if sink > 0.02:
+		n3.position.y -= sink
 	pos = pos.duplicate()
 	pos["z"] = new_z_wc3
 	d = d.duplicate(true)
 	d["position"] = pos
 	node.set_meta("unit_data", d)
+
+
+## unitUI.teamColor：≥0 时强制该队色（雇佣兵营/酒馆等中立建筑固定红=0）；
+## <0（常见 -1）时跟地图 owner。
+static func resolve_team_color_index(type_id: String, owner_id: int) -> int:
+	if type_id.is_empty():
+		return clampi(owner_id, 0, 15)
+	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
+	var row: Resource = Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, type_id)
+	if row is UnitUiDef:
+		var tc: int = (row as UnitUiDef).team_color
+		if tc >= 0:
+			return clampi(tc, 0, 15)
+	return clampi(owner_id, 0, 15)
 
 
 func _make_unit_node(
@@ -308,19 +348,20 @@ func _make_unit_node(
 				if inst:
 					inst.set_meta("is_placeholder", false)
 					# 开始点本体即队伍色环，不可按 TeamGlow 隐藏
-					_cache.apply_team_color(inst, owner_id, type_id != "sloc")
+					var color_i := resolve_team_color_index(type_id, owner_id)
+					_cache.apply_team_color(inst, color_i, type_id != "sloc")
 					return inst
 	var ph := MapPlaceholders.make_entity(type_id, owner_id, true)
 	ph.set_meta("is_placeholder", true)
 	return ph
 
 
-## 有死亡掉落时在头顶挂白色提示环（对齐 WE）。
+## 有死亡掉落时在头顶挂白色提示环（对齐 WE；游戏内可关）。
 func _sync_drop_ring(node: Node3D, u: Dictionary) -> void:
 	if node == null:
 		return
 	var existing := node.get_node_or_null("DeathDropRing")
-	var want := Wc3DroppedItemEntry.has_any_drops(u.get("droppedItemSets", []))
+	var want := show_drop_rings and Wc3DroppedItemEntry.has_any_drops(u.get("droppedItemSets", []))
 	if not want:
 		if existing != null:
 			existing.queue_free()

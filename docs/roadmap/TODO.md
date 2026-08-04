@@ -198,11 +198,27 @@
 
 ### 建筑 Geoset 显隐进 AnimationPlayer（主城升本）
 
-- [ ] **修复 Godot 丢弃 Geoset scale 动画轨**  
-  事实（TownHall）：`gltf-transform` 读 GLB 时 `Stand` 含 ~35 条 `Geoset_*` scale 通道（序列作用域采样后主城外壳可见）；但 **Godot `GLTFDocument` 导入后 `Stand` 仅 ~38 条骨骼轨，`Geoset` 轨 = 0**，`.scn` 同。  
-  原因：蒙皮 Mesh 节点上的 TRS 动画被导入器丢掉，只保留 `Skeleton3D` 骨骼轨 → 运行时/编辑器播 `Stand` **不会**隐藏无关 Geoset。  
-  方向（择一或组合）：  
-  1. convert 时给每个 Geoset 加**无蒙皮父节点** `GeosetVis_*`，scale/visible 打在父节点上；或  
-  2. 旁路 `*.geosetvis.json`（按 Sequence），`BuildingVisual` / bake 时注入 Animation 轨 / 运行时设 `visible`；或  
-  3. `export_model_scenes.gd` 烘焙前补轨。  
-  验收：`Stand` 仅主城档 geoset 可见；`Stand_Upgrade_First/Second` 切换 Keep/Castle；`Birth*` 建造过程显隐正确。
+- [x] **修复 Godot 丢弃 Geoset scale 动画轨**（2026-08-04）  
+  根因：蒙皮 `Geoset_*` 上的 TRS 轨被 `GLTFDocument` 丢掉；空父节点 `GeosetVis_*` 也会在导入时被拆掉。  
+  已做：convert 写旁路 `*.geosetvis.json`（Sequence 作用域 alpha 关键）；`MapModelCache` 加载/bake 时注入 `Geoset_*:visible`；`export_model_scenes --force` 可删旧 `.scn` 重烤。  
+  验收：重转 TownHall 后 `Stand` 含 Geoset visible 轨；仅主城外壳可见；`Stand_Upgrade_*` / `Birth*` 显隐正确。
+
+### 模型视觉封装 `assets/visuals/`（继承 .scn + PE2）
+
+- [x] **薄封装层**（2026-08-04）  
+  可提交 `assets/visuals/**/*.tscn`：继承 bake `.scn`，挂 `Pe2Root`，根脚本 `ModelVisualSync`（`animation_started` → PE2）。  
+  导出：`godot --headless -s res://tools/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force`  
+  运行时 `MapModelCache` 优先 visuals → `.scn` → GLB；`attach_to` 遇已有 Pe2Root 跳过。
+
+### 建筑队伍色（双层垫底）
+
+- [x] **TownHall 旗帜等 Rep1+漫反射 Blend**（2026-08-04）  
+  convert 标 `_rep1`；`apply_team_color` 用 `wc3_team_color_underlay.gdshader` 做 `mix(team, diffuse, a)`。  
+  放置路径原本就会 `apply_team_color(owner)`；需重转含双层材质的建筑 GLB。
+
+### 单位 Geoset 显隐（与建筑同一管线）
+
+- [x] **Stand 隐藏尸体 / 农民金袋木材**（2026-08-04）  
+  同 `*.geosetvis.json` + AnimationPlayer `:visible`；加载后先 snap 到 Stand 姿态。  
+  旧转换物无 geosetvis 时需 `node src/cli.js --models-only --force --include "Units/**"` 后 bake。  
+  验收 Peasant：`Stand` 仅身体；`Stand_Gold`/`Stand_Lumber` 出袋/木；`Death` 出尸体。

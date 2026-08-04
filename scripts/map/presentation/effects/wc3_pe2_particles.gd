@@ -80,8 +80,11 @@ static func build_root_from_payload(data: Dictionary) -> Node3D:
 static func attach_to(root: Node3D, glb_path: String) -> int:
 	if root == null or glb_path.is_empty():
 		return 0
-	if root.find_child(PE2_ROOT_NAME, true, false) != null:
-		return 0
+	# visuals 场景已内嵌 Pe2Root：只关闸到 Stand，勿重复挂
+	var existing := root.find_child(PE2_ROOT_NAME, true, false)
+	if existing != null:
+		apply_sequence(root, "Stand")
+		return _count_particle_nodes(existing)
 	var parent := _resolve_model_root(root)
 	var pe2_root := _instantiate_prefab(glb_path)
 	if pe2_root == null:
@@ -112,7 +115,8 @@ static func apply_sequence(root: Node, sequence_name: String) -> void:
 static func _apply_sequence_to_node(n: Node, want_key: String) -> void:
 	if n is GPUParticles3D:
 		var p := n as GPUParticles3D
-		var always: bool = bool(p.get_meta(META_ALWAYS_ON, true))
+		# 缺 meta 默认关：避免旧 prefab / 半成品节点被当成火盆全程喷
+		var always: bool = bool(p.get_meta(META_ALWAYS_ON, false))
 		if always:
 			p.emitting = true
 		else:
@@ -123,7 +127,11 @@ static func _apply_sequence_to_node(n: Node, want_key: String) -> void:
 
 
 static func _normalize_seq_key(s: String) -> String:
-	return s.strip_edges().replace("_", " ").to_lower()
+	var leaf := s.strip_edges()
+	var slash := leaf.rfind("/")
+	if slash >= 0:
+		leaf = leaf.substr(slash + 1)
+	return leaf.replace("_", " ").to_lower()
 
 
 static func _seqs_match(seqs: PackedStringArray, want_key: String) -> bool:
@@ -175,6 +183,11 @@ static func _count_particle_nodes(root: Node) -> int:
 	for c in root.get_children():
 		n += _count_particle_nodes(c)
 	return n
+
+
+## GLTF 常外包一层：InstanceRoot(scale≈1) → brazierOmni(scale=0.01)。PE2 必须挂后者。
+static func resolve_model_root(instance_root: Node3D) -> Node3D:
+	return _resolve_model_root(instance_root)
 
 
 ## GLTF 常外包一层：InstanceRoot(scale≈1) → brazierOmni(scale=0.01)。PE2 必须挂后者。
@@ -303,11 +316,19 @@ static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
 	return p
 
 
-## active_sequences=null → 全程；数组 → 仅列出的 Sequence；缺省且 rate>0 → 全程（兼容 v1）。
+## active_sequences=null → 全程；数组 → 仅列出的 Sequence。
+## v1 无字段：有轨痕迹则先关（等重转）；纯静态 rate>0 才当火盆。
 static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
 	var raw: Variant = em.get("active_sequences", null)
 	if raw == null and not em.has("active_sequences"):
-		# v1：无字段 → 始终开（火盆）
+		var has_tracks: bool = em.has("visibility_keys") or em.has("emission_rate_keys")
+		var rate := float(em.get("emission_rate", 0.0))
+		if has_tracks or rate <= 0.01:
+			p.set_meta(META_ALWAYS_ON, false)
+			p.set_meta(META_ACTIVE_SEQS, PackedStringArray())
+			p.emitting = false
+			return
+		# 旧旁路且像火盆：仍全程（重转后会有显式 null / 数组）
 		p.set_meta(META_ALWAYS_ON, true)
 		p.emitting = true
 		return

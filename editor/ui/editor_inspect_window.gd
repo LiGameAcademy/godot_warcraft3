@@ -690,7 +690,8 @@ func set_preview_team_color(owner_id: int) -> void:
 	_team_color_owner = clampi(owner_id, 0, 15)
 	if _preview_kind != "unit" or _preview_instance == null or _cache == null:
 		return
-	_cache.apply_team_color(_preview_instance, _team_color_owner, _type_id != "sloc")
+	var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)
+	_cache.apply_team_color(_preview_instance, color_i, _type_id != "sloc")
 
 
 ## 地图点选：预览该单位实例（朝向 + 队伍色）。
@@ -971,7 +972,8 @@ func _polish_preview_deferred(gen: int, path: String, info: Dictionary) -> void:
 	if _preview_kind != "unit":
 		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	if _preview_kind == "unit" and _cache != null:
-		_cache.apply_team_color(node, _team_color_owner, _type_id != "sloc")
+		var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)
+		_cache.apply_team_color(node, color_i, _type_id != "sloc")
 	_setup_animations(node)
 	call_deferred("_frame_model_deferred", gen)
 

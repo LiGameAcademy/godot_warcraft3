@@ -63,20 +63,23 @@ func _run() -> void:
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
 		var disk_scn := RuntimeAssets.project_abs(scn_res)
-		if not force and FileAccess.file_exists(disk_scn):
+		if force and FileAccess.file_exists(disk_scn):
+			DirAccess.remove_absolute(disk_scn)
+			cache.evict(glb_res)
+		elif not force and FileAccess.file_exists(disk_scn):
 			var gstat := FileAccess.get_modified_time(disk_glb)
 			var sstat := FileAccess.get_modified_time(disk_scn)
 			if sstat >= gstat:
 				skipped += 1
 				continue
-		# 经 Cache：应用 Additive 材质修正等；duplicate 仅用于触发加载
-		var root: Node3D = cache.instance_glb_preview(glb_res)
+		# 烤基座时跳过 visuals（避免套娃 / 基座已删时 ExtResource 失败）
+		var root: Node3D = cache.instance_glb_preview(glb_res, false)
 		if root == null:
 			push_warning("export_model_scenes: load failed %s" % logical_glb)
 			failed += 1
 			continue
 		root.free()
-		if not cache.bake_model_scene(glb_res):
+		if not cache.bake_model_scene(glb_res, force):
 			push_warning("export_model_scenes: bake failed %s" % logical_glb)
 			failed += 1
 			continue

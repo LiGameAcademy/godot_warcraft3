@@ -333,7 +333,9 @@ func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 		elif pos is Vector2:
 			wx = (pos as Vector2).x
 			wy = (pos as Vector2).y
-		var ang := float(d.get("angle", d.get("facing", 270.0)))
-		blit_pathing_at_world(wx, wy, ang, img)
+		var ang := float(d.get("angle", d.get("facing", 4.71238898)))
+		# JSON 存弧度（≈±2π）；若已是度数（如编辑器笔刷）则原样
+		var ang_deg := rad_to_deg(ang) if absf(ang) <= TAU + 0.5 else ang
+		blit_pathing_at_world(wx, wy, ang_deg, img)
 		n += 1
 	return n

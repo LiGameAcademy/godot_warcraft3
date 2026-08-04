@@ -95,6 +95,26 @@ static func resolve_animation(root: Node, logical_name: String) -> String:
 			var leaf := _anim_leaf(str(n))
 			if leaf == cand or leaf.to_lower() == cand_l:
 				return str(n)
+	# 无精确 Stand：回退 Stand - 1 / Stand_1（地精商店、酒馆等）
+	var want_l := logical_name.to_lower().strip_edges()
+	if want_l == "stand":
+		for n in names:
+			var leaf2 := _anim_leaf(str(n)).to_lower()
+			if leaf2 == "stand":
+				return str(n)
+			if not leaf2.begins_with("stand"):
+				continue
+			# 排除 Stand Work / Ready / Upgrade / Channel 等业务态
+			if (
+				leaf2.begins_with("stand_work")
+				or leaf2.begins_with("standwork")
+				or leaf2.contains("upgrade")
+				or leaf2.contains("ready")
+				or leaf2.contains("channel")
+				or leaf2.contains("hit")
+			):
+				continue
+			return str(n)
 	return ""
 
 

@@ -10,6 +10,8 @@ const CONVERTED_RES_ROOT := "res://assets/asset-converted"
 const SLK_RES_ROOT := "res://assets/slk-exported"
 ## 可提交的 PE2 粒子预制（路径镜像 asset-converted 逻辑子树，不含 Blizzard 贴图/网格）
 const PE2_PREFABS_RES_ROOT := "res://assets/pe2-prefabs"
+## 可提交的模型视觉封装（继承 bake .scn + Pe2Root；无游戏逻辑）
+const VISUALS_RES_ROOT := "res://assets/visuals"
 ## 旧版独立目录（已弃用：.scn 现与 GLB 同目录）；resolve 仍作回退
 const LEGACY_MODEL_SCENES_RES_ROOT := "res://assets/model-scenes"
 ## 懒烘焙回退（无法写入 asset-converted 时）
@@ -65,6 +67,31 @@ static func pe2_prefab_path(relative_or_glb: String) -> String:
 	return PE2_PREFABS_RES_ROOT.path_join(p)
 
 
+## 逻辑 / GLB 路径 → res://assets/visuals/.../Foo.tscn（继承 bake .scn 的视觉封装）。
+static func visual_scene_path(relative_or_glb: String) -> String:
+	var p := relative_or_res_to_logical(relative_or_glb)
+	var lower := p.to_lower()
+	if lower.ends_with(".glb") or lower.ends_with(".scn"):
+		p = p.substr(0, p.length() - 4) + ".tscn"
+	elif lower.ends_with(".tscn"):
+		pass
+	elif lower.ends_with(".pe2.tscn"):
+		p = p.substr(0, p.length() - ".pe2.tscn".length()) + ".tscn"
+	elif lower.ends_with(".pe2.json"):
+		p = p.substr(0, p.length() - ".pe2.json".length()) + ".tscn"
+	else:
+		p = p + ".tscn"
+	return VISUALS_RES_ROOT.path_join(p)
+
+
+## 有 visuals 封装则返回其 res 路径，否则空。
+static func resolve_visual_scene(relative_or_glb: String) -> String:
+	var res_p := visual_scene_path(relative_or_glb)
+	if file_exists(res_p):
+		return res_p
+	return ""
+
+
 ## 去掉 res://assets/asset-converted/ 等前缀，得到逻辑相对路径。
 static func relative_or_res_to_logical(relative_or_res: String) -> String:
 	var p := relative_or_res.replace("\\", "/")
@@ -75,6 +102,8 @@ static func relative_or_res_to_logical(relative_or_res: String) -> String:
 	const PREFIXES: Array[String] = [
 		"assets/asset-converted/",
 		"asset-converted/",
+		"assets/visuals/",
+		"visuals/",
 		"assets/pe2-prefabs/",
 		"pe2-prefabs/",
 		"assets/model-scenes/",

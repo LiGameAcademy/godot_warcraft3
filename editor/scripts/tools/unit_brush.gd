@@ -696,7 +696,11 @@ func _ensure_ghost() -> void:
 		if node != null:
 			if cache.has_method("autoplay_stand"):
 				cache.autoplay_stand(node, true)
-			cache.apply_team_color(node, owner_id, type_id != "sloc")
+			cache.apply_team_color(
+				node,
+				MapUnitLayer.resolve_team_color_index(type_id, owner_id),
+				type_id != "sloc"
+			)
 	if node == null:
 		node = MapPlaceholders.make_entity(type_id, owner_id, true)
 	node.name = "UnitGhost"

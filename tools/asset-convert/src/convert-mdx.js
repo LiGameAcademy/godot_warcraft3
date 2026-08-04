@@ -16,6 +16,7 @@ import {
 } from "./mat4.js";
 import {
   blpLogicalToPng,
+  mdxLogicalToGeosetVis,
   mdxLogicalToGlb,
   mdxLogicalToPe2,
   normalizeLogicalPath,
@@ -211,6 +212,72 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
 }
 
 /**
+ * Sidecar for Godot: GLTFDocument drops scale tracks on skinned Geoset / empty
+ * GeosetVis parents. Bake injects `:visible` onto Skeleton3D/Geoset_* meshes.
+ *
+ * @param {ReturnType<typeof parseMDX>} model
+ * @param {string} logicalPath
+ * @param {string} outDir
+ * @param {Iterable<number>} geosetIds
+ */
+function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
+  const ids = [...geosetIds];
+  const sequencesOut = [];
+  for (const seq of model.Sequences ?? []) {
+    const start = Number(seq.Interval?.[0]) || 0;
+    const end = Number(seq.Interval?.[1]) || 0;
+    if (end <= start) continue;
+    const animName = String(seq.Name || "Anim").replace(/\s+/g, "_");
+    const frames = collectSampleFrames(
+      model.Nodes || [],
+      start,
+      end,
+      33,
+      model.GeosetAnims || [],
+    );
+    /** @type {Record<string, Array<{ t: number, v: number }>>} */
+    const geosets = {};
+    for (const gi of ids) {
+      /** @type {Array<{ t: number, v: number }>} */
+      const keys = [];
+      let last = /** @type {number | null} */ (null);
+      for (const frame of frames) {
+        const timeSec = (frame - start) / 1000;
+        const alpha = sampleGeosetAlphaInSequence(
+          model.GeosetAnims,
+          gi,
+          frame,
+          start,
+          end,
+        );
+        const v = alpha >= 0.5 ? 1 : 0;
+        if (last === null || last !== v) {
+          keys.push({ t: Math.round(timeSec * 1000) / 1000, v });
+          last = v;
+        }
+      }
+      geosets[String(gi)] = keys;
+    }
+    sequencesOut.push({
+      name: animName,
+      duration: Math.round(((end - start) / 1000) * 1000) / 1000,
+      geosets,
+    });
+  }
+
+  const visLogical = mdxLogicalToGeosetVis(logicalPath);
+  const dest = path.join(outDir, ...visLogical.split("/"));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const payload = {
+    version: 1,
+    source: normalizeLogicalPath(logicalPath),
+    sequences: sequencesOut,
+  };
+  fs.writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return dest;
+}
+
+/**
  * @param {ArrayBuffer | Buffer} data
  * @param {string} logicalPath
  */
@@ -351,6 +418,24 @@ function pickDiffuseLayer(matDef, textures) {
 }
 
 /**
+ * WC3 常见：Layer0=ReplaceableId1（队色）+ Layer1=漫反射 Blend。
+ * 队色从透明处透出；convert 取漫反射层时仍须标 rep1，供 Godot 垫底混合。
+ */
+function materialHasTeamColorUnderlay(matDef, textures) {
+	const layers = matDef?.Layers ?? [];
+	let hasRep1 = false;
+	let hasImage = false;
+	for (const layer of layers) {
+		const tex = textures?.[textureIdOfLayer(layer)];
+		if (!tex) continue;
+		const rid = tex.ReplaceableId || 0;
+		if (rid === 1 && !tex.Image) hasRep1 = true;
+		if (tex.Image) hasImage = true;
+	}
+	return hasRep1 && hasImage;
+}
+
+/**
  * 材质是否「仅」某 ReplaceableId（所有层都无 Image，且 RepId 一致）。
  * RepId=2 → Team Glow（英雄光环/武器光晕面片）；Stand 下 WE 通常不可见。
  */
@@ -387,6 +472,12 @@ function alphaCutoffForFilter(filterMode) {
 /** @param {number} filterMode */
 function isAdditiveFilter(filterMode) {
   return filterMode === 3 || filterMode === 4;
+}
+
+/** MDX Layer.Shading bit 4 (16) = TwoSided；勿默认双面，否则屋顶背面透出来发黑。 */
+function isTwoSidedLayer(layer) {
+  const shading = Number(layer?.Shading ?? layer?.Flags ?? 0) || 0;
+  return (shading & 16) !== 0;
 }
 
 function transformMat4Wc3ToGltf(m) {
@@ -440,7 +531,12 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 		const matDef = model.Materials?.[materialId];
 		const picked = pickDiffuseLayer(matDef, model.Textures);
 		let filterMode = picked.layer?.FilterMode ?? 0;
-		const replaceableId = picked.replaceableId || 0;
+		const teamUnderlay = materialHasTeamColorUnderlay(matDef, model.Textures);
+		// 双层队色垫底：漫反射层本身 Rep=0，仍标 rep1 供运行时混合
+		let replaceableId = picked.replaceableId || 0;
+		if (teamUnderlay) {
+			replaceableId = 1;
+		}
 		// Team Glow 在 MDX 里几乎总是 Additive；若数据异常也强制按光晕处理
 		if (replaceableId === 2 && !isAdditiveFilter(filterMode)) {
 			filterMode = 3;
@@ -448,7 +544,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 		// 名称带 _fmN / _repN，供 Godot 识别 Additive 与队伍色/光晕
 		const material = document
 			.createMaterial(`Material_${materialId}_fm${filterMode}_rep${replaceableId}`)
-			.setDoubleSided(true)
+			.setDoubleSided(isTwoSidedLayer(picked.layer))
 			.setAlphaMode(alphaModeForFilter(filterMode))
 			.setAlphaCutoff(alphaCutoffForFilter(filterMode))
 			.setMetallicFactor(0)
@@ -458,6 +554,8 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 			wc3Additive: isAdditiveFilter(filterMode),
 			wc3ReplaceableId: replaceableId,
 			wc3TeamGlow: replaceableId === 2,
+			wc3TeamColorUnderlay: teamUnderlay,
+			wc3TwoSided: isTwoSidedLayer(picked.layer),
 		});
 		material.setBaseColorTexture(getTexture(picked.textureId));
 		if (isAdditiveFilter(filterMode)) {
@@ -510,6 +608,9 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   boneNodes.forEach((b, i) => objectIdToJointIndex.set(b.ObjectId, i));
 
   // --- Geosets ---
+  // Godot GLTFDocument drops TRS on skinned mesh nodes; visibility for Godot is
+  // written to *.geosetvis.json and injected as :visible during load/bake.
+  // GLB still carries Geoset_* scale channels for non-Godot glTF consumers.
   const geosets = model.Geosets ?? [];
   /** @type {Map<number, import('@gltf-transform/core').Node>} */
   const geosetMeshNodes = new Map();
@@ -760,6 +861,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       }
 
       // Drive geoset visibility (WC3 GeosetAnim alpha) via node scale.
+      // Godot drops these on skinned meshes — see writeGeosetVisSidecar.
       for (const [gi, meshNode] of geosetMeshNodes) {
         const gTrack = geosetScaleTracks.get(gi);
         if (!gTrack?.times.length) continue;
@@ -797,6 +899,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   await new NodeIO().write(dest, document);
   writePe2Sidecar(model, logicalPath, inDir, outDir);
+  writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
   return dest;
 }
 
@@ -814,15 +917,26 @@ export async function convertMdxBatch(options) {
     const glbLogical = mdxLogicalToGlb(file.logicalPath);
     const dest = path.join(outDir, ...glbLogical.split("/"));
     const pe2Dest = path.join(outDir, ...mdxLogicalToPe2(file.logicalPath).split("/"));
+    const geosetVisDest = path.join(
+      outDir,
+      ...mdxLogicalToGeosetVis(file.logicalPath).split("/"),
+    );
 
-    if (!force && fs.existsSync(dest) && fs.existsSync(pe2Dest)) {
+    if (
+      !force &&
+      fs.existsSync(dest) &&
+      fs.existsSync(pe2Dest) &&
+      fs.existsSync(geosetVisDest)
+    ) {
       const srcStat = fs.statSync(file.absPath);
       const dstStat = fs.statSync(dest);
       const pe2Stat = fs.statSync(pe2Dest);
+      const visStat = fs.statSync(geosetVisDest);
       if (
         dstStat.mtimeMs >= srcStat.mtimeMs &&
         dstStat.size > 0 &&
-        pe2Stat.mtimeMs >= srcStat.mtimeMs
+        pe2Stat.mtimeMs >= srcStat.mtimeMs &&
+        visStat.mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
         continue;
