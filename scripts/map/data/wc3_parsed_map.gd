@@ -38,10 +38,10 @@ static func _load_json_dict(res_path: String) -> Dictionary:
 	var disk_path := RuntimeAssets.project_abs(res_path)
 	if not FileAccess.file_exists(disk_path):
 		return {}
-	var f := FileAccess.open(disk_path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(disk_path)
+	if text.is_empty():
 		return {}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	return parsed as Dictionary

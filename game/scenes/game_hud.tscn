@@ -79,6 +79,7 @@ anchor_bottom = 1.0
 offset_top = -168.0
 grow_horizontal = 2
 grow_vertical = 0
+mouse_filter = 0
 
 [node name="Columns" type="HBoxContainer" parent="Root/BottomConsole"]
 layout_mode = 2
@@ -233,4 +234,5 @@ offset_top = -196.0
 offset_right = 720.0
 offset_bottom = -176.0
 grow_vertical = 0
+mouse_filter = 2
 text = "LMB 点选/框选 · RMB 移动 · WASD/边缘滚 · 中键旋转 · 滚轮缩放"

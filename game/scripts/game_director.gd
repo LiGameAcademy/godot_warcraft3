@@ -11,6 +11,8 @@ const GameSessionScr = preload("res://game/scripts/session/game_session.gd")
 const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
 const PathQueryScr = preload("res://game/scripts/logic/pathing/path_query.gd")
 const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator.gd")
+const UnitVisualScr = preload("res://game/scripts/presentation/unit_visual.gd")
+const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -81,14 +83,30 @@ func get_session() -> RefCounted:
 
 
 func _resolve_exports() -> void:
+	var parent_n := get_parent()
 	if map_root == null:
 		map_root = get_node_or_null("../MapRoot") as MapLoader
+		if map_root == null and parent_n != null:
+			map_root = parent_n.get_node_or_null("MapRoot") as MapLoader
 	if rts_camera == null:
 		rts_camera = get_node_or_null("../RtsCamera") as RtsCamera
+		if rts_camera == null and parent_n != null:
+			rts_camera = parent_n.get_node_or_null("RtsCamera") as RtsCamera
 	if game_hud == null:
 		game_hud = get_node_or_null("../GameHud") as GameHud
+		if game_hud == null and parent_n != null:
+			game_hud = parent_n.get_node_or_null("GameHud") as GameHud
 	if unit_selector == null:
-		unit_selector = get_node_or_null("../UnitSelector")
+		if parent_n != null:
+			unit_selector = parent_n.get_node_or_null("UnitSelector")
+			if unit_selector == null:
+				unit_selector = parent_n.find_child("UnitSelector", true, false)
+		if unit_selector == null:
+			unit_selector = get_node_or_null("../UnitSelector")
+	print(
+		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s"
+		% [map_root != null, rts_camera != null, game_hud != null, unit_selector != null]
+	)
 
 
 func _configure_map_root() -> void:
@@ -148,16 +166,31 @@ func _wire_hud() -> void:
 
 func _setup_selector() -> void:
 	if unit_selector == null or rts_camera == null or map_root == null:
+		push_warning("GameDirector: UnitSelector 绑定失败（selector/camera/map 为空）")
 		return
 	var cam := rts_camera.get_camera()
 	var layer := map_root.get_unit_layer()
-	unit_selector.set("owner_filter", local_player)
+	if cam == null or layer == null:
+		push_warning("GameDirector: UnitSelector.setup 跳过（camera=%s layer=%s）" % [cam, layer])
+		return
+	unit_selector.set("owner_filter", -1)
 	if unit_selector.has_method("setup"):
-		unit_selector.call("setup", cam, layer)
+		unit_selector.call("setup", cam, layer, null)
 	if unit_selector.has_signal("selection_changed"):
 		var sel_sig: Signal = unit_selector.selection_changed
 		if not sel_sig.is_connected(_on_selection_changed):
 			sel_sig.connect(_on_selection_changed)
+	if game_hud:
+		game_hud.set_status("点选就绪 · LMB 点选/框选 · RMB 移动")
+
+
+func _input(event: InputEvent) -> void:
+	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
+	if unit_selector == null:
+		_resolve_exports()
+	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
+		if bool(unit_selector.call("handle_pointer_event", event)):
+			get_viewport().set_input_as_handled()
 
 
 func _map_display_name() -> String:
@@ -198,6 +231,9 @@ func _on_map_loaded() -> void:
 	_bootstrap_melee()
 	_setup_selector()
 	_setup_pathing()
+	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
+	if map_root != null:
+		map_root.set_view_grid_level(view_grid_level)
 
 
 ## 地图就绪后再绑 PathQuery：WPM/合成图此时才保证有效。
@@ -340,7 +376,8 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		if game_hud:
 			game_hud.set_status("移动：未点到地面")
 		return true
-	var goal := Wc3Coords.godot_to_wc3_xy(hit)
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal := Vector2(hit.x * inv, -hit.z * inv)
 	var moved := 0
 	var failed := 0
 	for n in selected:
@@ -358,6 +395,8 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 			moved += 1
 		else:
 			failed += 1
+	if moved > 0:
+		_spawn_move_confirm(goal)
 	if game_hud:
 		if moved > 0:
 			game_hud.set_status("移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved])
@@ -368,20 +407,80 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 	return moved > 0 or failed > 0
 
 
+func _spawn_move_confirm(goal_wc3: Vector2) -> void:
+	if map_root == null:
+		return
+	var fx := MoveConfirmFxScene.instantiate() as MoveConfirmFx
+	map_root.add_child(fx)
+	var cache: MapModelCache = null
+	if map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	fx.setup(cache)
+	# 当前只有移动命令；攻击移动接上后改传 MoveConfirmFx.Kind.ATTACK
+	fx.play_at_wc3(goal_wc3, _heightfield, MoveConfirmFx.Kind.MOVE)
+
+
 func _ensure_navigator(unit: Node3D) -> Node:
+	var visual := _ensure_unit_visual(unit)
 	var existing := unit.get_node_or_null("UnitNavigator")
 	if existing != null:
 		if existing.has_method("configure"):
 			existing.call("configure", _path_query, _heightfield)
+		if existing.has_method("set_visual"):
+			existing.call("set_visual", visual)
+		_apply_move_stats(unit, existing)
 		return existing
 	var nav: Node = UnitNavigatorScr.new()
 	nav.name = "UnitNavigator"
-	unit.add_child(nav)
+	# 先 configure 再进树：即使 _ready 延后，query 也已就绪。
 	if nav.has_method("configure"):
 		nav.call("configure", _path_query, _heightfield)
+	if nav.has_method("set_visual"):
+		nav.call("set_visual", visual)
+	_apply_move_stats(unit, nav)
+	unit.add_child(nav)
 	return nav
 
 
+func _ensure_unit_visual(unit: Node3D) -> Node:
+	var existing := unit.get_node_or_null("UnitVisual")
+	if existing != null:
+		return existing
+	# 用 preload 脚本实例化，避免 class_name 全局注册时序导致 Parser Error
+	var vis: Node = UnitVisualScr.new()
+	vis.name = "UnitVisual"
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	if vis.has_method("bind_cache"):
+		vis.call("bind_cache", cache)
+	unit.add_child(vis)
+	return vis
+
+
+## 从 UnitUI.walk / UnitData.turnRate 写入 Navigator（农民 walk=150、turnRate=0.6）。
+func _apply_move_stats(unit: Node3D, nav: Node) -> void:
+	if unit == null or nav == null or not nav.has_method("apply_unit_stats"):
+		return
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	if tid.is_empty():
+		return
+	var walk := 0.0
+	var turn := 0.0
+	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
+	Wc3DefStore.ensure_table(UnitDataDef.TABLE_NAME)
+	var ui := Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, tid) as UnitUiDef
+	if ui != null and ui.walk > 0.0:
+		walk = ui.walk
+	var data := Wc3DefStore.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
+	if data != null and data.turn_rate > 0.0:
+		turn = data.turn_rate
+	nav.call("apply_unit_stats", walk, turn)
+
+
+## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。
+## 为何不用物理射线：会先打到单位网格/选中环，目标变成「自己脚下」→ 表现为不移动。
 func _ground_at_screen(screen_pos: Vector2) -> Vector3:
 	if rts_camera == null:
 		return Vector3.INF
@@ -390,20 +489,67 @@ func _ground_at_screen(screen_pos: Vector2) -> Vector3:
 		return Vector3.INF
 	var from := cam.project_ray_origin(screen_pos)
 	var dir := cam.project_ray_normal(screen_pos)
+	if dir.length_squared() < 1e-8:
+		return Vector3.INF
+	dir = dir.normalized()
+	if _heightfield != null and _heightfield.is_valid():
+		var hit := _ray_heightfield(from, dir)
+		if hit != Vector3.INF:
+			return hit
+	# 回退：物理射线（排除无 heightfield 时）
 	var space := cam.get_world_3d().direct_space_state
 	if space != null:
 		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 20000.0)
 		q.collision_mask = 0xFFFFFFFF
-		var hit := space.intersect_ray(q)
-		if not hit.is_empty():
-			return hit.get("position", Vector3.INF)
-	# 无碰撞网格时退回 y=0 平面：保证竖切在缺 collider 时仍能点地。
+		var hit2 := space.intersect_ray(q)
+		if not hit2.is_empty():
+			return hit2.get("position", Vector3.INF)
 	if absf(dir.y) < 1e-5:
 		return Vector3.INF
 	var t := -from.y / dir.y
 	if t < 0.0:
 		return Vector3.INF
 	return from + dir * t
+
+
+## 沿射线步进，找「射线高度穿过地形高度」的交点（RTS 常用、不依赖碰撞层）。
+func _ray_heightfield(from: Vector3, dir: Vector3) -> Vector3:
+	var step := 0.35
+	var max_dist := 400.0
+	var prev_above := true
+	var d := step
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	while d <= max_dist:
+		var p: Vector3 = from + dir * d
+		var wx := p.x * inv
+		var wy := -p.z * inv
+		var gz := _heightfield.interpolated_height(wx, wy)
+		var ground := Wc3Coords.wc3_xy_to_godot(wx, wy, gz)
+		var above := p.y >= ground.y
+		if prev_above and not above:
+			# 二分细化交点，减少步进粒度带来的落点偏差。
+			var lo := d - step
+			var hi := d
+			for _i in range(6):
+				var mid := (lo + hi) * 0.5
+				var pm: Vector3 = from + dir * mid
+				var w2x := pm.x * inv
+				var w2y := -pm.z * inv
+				var gz2 := _heightfield.interpolated_height(w2x, w2y)
+				var g2 := Wc3Coords.wc3_xy_to_godot(w2x, w2y, gz2)
+				if pm.y >= g2.y:
+					lo = mid
+				else:
+					hi = mid
+			var final_d := (lo + hi) * 0.5
+			var pf: Vector3 = from + dir * final_d
+			var wfx := pf.x * inv
+			var wfy := -pf.z * inv
+			var gzf := _heightfield.interpolated_height(wfx, wfy)
+			return Wc3Coords.wc3_xy_to_godot(wfx, wfy, gzf)
+		prev_above = above
+		d += step
+	return Vector3.INF
 
 
 func _debug_apply_hall_phase(phase: int) -> bool:
@@ -455,10 +601,10 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var tid := str(d.get("typeId", "?"))
-	var name := tid
+	var label := tid
 	if selected.size() > 1:
-		name = "%s ×%d" % [tid, selected.size()]
-	game_hud.set_unit_info(name, 0, 0)
+		label = "%s ×%d" % [tid, selected.size()]
+	game_hud.set_unit_info(label, 0, 0)
 	if BuildingVisualScr.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		game_hud.set_command_labels(
 			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])

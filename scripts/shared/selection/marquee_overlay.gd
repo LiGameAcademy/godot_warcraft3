@@ -28,7 +28,9 @@ func bind(marquee: MarqueeSelection) -> void:
 
 func _on_changed(rect: Rect2, active: bool) -> void:
 	_rect = rect
-	_drawing = active and rect.size.x >= 1.0 and rect.size.y >= 1.0
+	# 拖超过 1px 即显示，避免阈值过大「拖了没框」
+	_drawing = active and (rect.size.x >= 1.0 or rect.size.y >= 1.0)
+	visible = _drawing
 	queue_redraw()
 
 

@@ -516,10 +516,7 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 	if json_res.is_empty() or not RuntimeAssets.file_exists(json_res):
 		return false
 	var disk := RuntimeAssets.project_abs(json_res)
-	var f := FileAccess.open(disk, FileAccess.READ)
-	if f == null:
-		return false
-	var text := f.get_as_text()
+	var text := RuntimeAssets.read_utf8_text(disk)
 	if text.is_empty():
 		return false
 	var data: Variant = JSON.parse_string(text)
@@ -848,7 +845,21 @@ func _team_color_texture(owner_id: int) -> Texture2D:
 func glb_has_animation(path: String) -> bool:
 	if path.is_empty():
 		return false
+	# 已知坏文件：跳过，避免引擎刷 Buffer 0 ERROR
+	if _anim_flags.has(path):
+		return bool(_anim_flags[path])
+	var disk := RuntimeAssets.project_abs(path)
+	if disk.is_empty() or not FileAccess.file_exists(disk):
+		_anim_flags[path] = false
+		return false
+	var bytes := FileAccess.get_file_as_bytes(disk)
+	if not RuntimeAssets.is_plausible_gltf_bytes(bytes):
+		_anim_flags[path] = false
+		return false
 	_ensure_scene(path)
+	# 解析失败时 _register_loaded_scene 不会写 flag，在此落盘避免反复打引擎 ERROR
+	if not _anim_flags.has(path):
+		_anim_flags[path] = false
 	return bool(_anim_flags.get(path, false))
 
 
@@ -860,8 +871,7 @@ func autoplay_stand(root: Node, random_phase: bool = true) -> bool:
 	var ap := _find_animation_player(root)
 	if ap == null:
 		return false
-	# 关掉 GLTF/烘焙场景自带的 autoplay（常为列表首条 Attack）
-	ap.autoplay = ""
+	# 节点已入树时写 autoplay 无效果且会警告；直接 stop + play 即可盖掉 GLTF 默认轨。
 	ap.stop()
 	var chosen := _pick_stand_name(ap)
 	if chosen.is_empty():
@@ -871,9 +881,9 @@ func autoplay_stand(root: Node, random_phase: bool = true) -> bool:
 	if not play_animation(root, chosen, true):
 		return false
 	if random_phase:
-		var len: float = ap.current_animation_length
-		if len > 0.05:
-			ap.seek(randf() * len, true)
+		var anim_len: float = ap.current_animation_length
+		if anim_len > 0.05:
+			ap.seek(randf() * anim_len, true)
 	return true
 
 

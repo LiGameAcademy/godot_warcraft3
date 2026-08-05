@@ -1,25 +1,39 @@
 class_name UnitSelector
 extends Node
 ## 单位点选 / 框选（编辑器与游戏共用骨架）。
-## 数据源：unit_host 下带 unit_data meta 的 Node3D（MapUnitLayer 子节点）。
-## 预留：Shift 加选、Ctrl 编队（本阶段只做替换选中）。
+##
+## 输入：专用全屏 Control（gui_input），挂在低于 HUD 的 CanvasLayer。
+## 为何不用 `_unhandled_input` 做主路径：
+## - HUD/Panel 等 Control 会先吃掉鼠标，框选矩形经常画不出来；
+## - 全屏 STOP 层在 HUD 之下时，空白处进本层，按钮/小地图仍归 HUD。
+##
+## 点选：相机射线 vs 竖直胶囊（单位碰撞半径），不是屏幕 AABB。
+## AABB 投影失误多（贴花/隐藏 geoset/透视变形），只作框选辅助。
 
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
 
 const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const SEL_RING_COLOR := Color(0.15, 1.0, 0.25, 1.0)
 const SEL_RING_Y_BIAS := 0.06
-## 点选：屏幕 AABB 外扩像素（建筑点选靠 AABB，单位靠中心半径兜底）
-const PICK_PAD_PX := 8.0
+## 无 SLK scale 时的默认拾取半径（Godot 单位 ≈ WC3 40）
+const DEFAULT_UNIT_RADIUS := 0.40
+const DEFAULT_BUILDING_RADIUS := 1.20
+const DEFAULT_UNIT_HEIGHT := 1.20
+const DEFAULT_BUILDING_HEIGHT := 3.50
+## 射线未中胶囊时，脚底屏幕像素兜底半径
+const FOOT_FALLBACK_PX := 36.0
+## 建筑相对单位的射线距离惩罚（同屏重叠时优先点到农民）
+const BUILDING_RAY_PENALTY := 1.75
 
 signal selection_changed(primary: Node3D, selected: Array)
 
 @export var enabled: bool = true
-@export var pick_radius_px: float = 28.0
 ## ≥0 时只可选该 owner；-1 不限
 @export var owner_filter: int = -1
 @export var allow_buildings: bool = true
 @export var allow_units: bool = true
+## 输入层 CanvasLayer.layer；须低于 GameHud（默认 10）
+@export var input_canvas_layer: int = 5
 
 var camera: Camera3D
 var unit_host: Node
@@ -27,14 +41,20 @@ var overlay_parent: Control
 
 var _marquee: MarqueeSelection = MarqueeSelection.new()
 var _overlay: MarqueeOverlay = null
+var _input_root: Control = null
 var _marqueeing: bool = false
 var _selected: Array[Node3D] = []
 var _primary: Node3D = null
 var _ring_nodes: Dictionary = {} ## Node3D → MeshInstance3D
+## typeId → 拾取半径缓存（Godot）
+var _radius_cache: Dictionary = {}
 
 
 func _ready() -> void:
+	_ensure_input_layer()
 	_ensure_overlay()
+	# Director 若因脚本解析失败未 setup，下一帧自救绑定相机/单位层。
+	call_deferred("_try_autobind")
 
 
 func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = null) -> void:
@@ -42,7 +62,74 @@ func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = nu
 	unit_host = p_unit_host
 	if p_overlay_parent != null:
 		overlay_parent = p_overlay_parent
+	set_process_input(true)
+	if camera != null and not camera.is_inside_tree():
+		pass
+	elif camera != null:
+		camera.make_current()
+	_ensure_input_layer()
+	# 允许 setup 时重建 overlay（_ready 可能已建在错误父节点下）
+	if _overlay != null and is_instance_valid(_overlay):
+		_overlay.queue_free()
+		_overlay = null
 	_ensure_overlay()
+	if camera == null or unit_host == null:
+		push_warning("UnitSelector.setup: camera 或 unit_host 为空，点选/框选不可用")
+	else:
+		print("[UnitSelector] setup ok cam=%s host=%s children=%d filter=%d" % [
+			camera.name, unit_host.name, unit_host.get_child_count(), owner_filter
+		])
+
+
+## Director 未调用 setup 时，从当前场景查找 RtsCamera / MapRoot.Units。
+func _try_autobind() -> void:
+	if camera != null and unit_host != null:
+		return
+	var scene: Node = get_tree().current_scene if get_tree() else null
+	if scene == null:
+		scene = get_parent()
+	if scene == null:
+		return
+	if camera == null:
+		var rts := scene.get_node_or_null("RtsCamera")
+		if rts != null and rts.has_method("get_camera"):
+			camera = rts.call("get_camera") as Camera3D
+		if camera == null:
+			camera = scene.find_child("Camera3D", true, false) as Camera3D
+	if unit_host == null:
+		var map_root := scene.get_node_or_null("MapRoot")
+		if map_root != null and map_root.has_method("get_unit_layer"):
+			unit_host = map_root.call("get_unit_layer")
+		if unit_host == null:
+			unit_host = scene.find_child("Units", true, false)
+	if camera != null and unit_host != null:
+		set_process_input(true)
+		_ensure_input_layer()
+		_ensure_overlay()
+		print("[UnitSelector] autobind ok cam=%s host=%s" % [camera.name, unit_host.name])
+
+
+## 供 GameDirector._input 转发。处理了左键点选/框选则返回 true。
+func handle_pointer_event(event: InputEvent) -> bool:
+	_try_autobind()
+	if not enabled or camera == null or unit_host == null:
+		return false
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return false
+		if _hud_blocks_screen(mb.position):
+			return false
+		if mb.pressed:
+			_on_press(mb.position)
+		else:
+			_on_release(mb.position)
+		return true
+	if event is InputEventMouseMotion and _marqueeing:
+		var mm := event as InputEventMouseMotion
+		_marquee.update(mm.position)
+		return true
+	return false
 
 
 func get_primary() -> Node3D:
@@ -64,7 +151,9 @@ func select_node(node: Node3D) -> void:
 	_set_selection([node])
 
 
-func _unhandled_input(event: InputEvent) -> void:
+## 主输入：全屏层 gui_input（可靠）。`_unhandled_input` 仅作无层时的兜底。
+func _on_world_gui_input(event: InputEvent) -> void:
+	_try_autobind()
 	if not enabled or camera == null or unit_host == null:
 		return
 	if event is InputEventMouseButton:
@@ -73,14 +162,46 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if mb.pressed:
 			_on_press(mb.position)
-			get_viewport().set_input_as_handled()
 		else:
 			_on_release(mb.position)
-			get_viewport().set_input_as_handled()
+		if _input_root != null:
+			_input_root.accept_event()
 	elif event is InputEventMouseMotion:
 		if _marqueeing:
 			_marquee.update((event as InputEventMouseMotion).position)
+			if _input_root != null:
+				_input_root.accept_event()
+
+
+func _input(event: InputEvent) -> void:
+	# 自身也会收；主路径由 GameDirector.handle 转发（更稳）。此处仅兜底。
+	if handle_pointer_event(event):
+		get_viewport().set_input_as_handled()
+
+
+func _hud_blocks_screen(screen_pos: Vector2) -> bool:
+	# 粗略避开底栏 / 右上资源条，避免抢走 HUD 按钮。
+	var vp := get_viewport().get_visible_rect().size
+	if vp.y <= 1.0:
+		return false
+	if screen_pos.y >= vp.y * 0.78:
+		return true
+	if screen_pos.y <= 52.0 and screen_pos.x >= vp.x - 340.0:
+		return true
+	return false
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# 仅当输入层未建好时兜底（编辑器嵌入等）。
+	if _input_root != null and is_instance_valid(_input_root):
+		return
+	_on_world_gui_input(event)
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _marqueeing:
+		get_viewport().set_input_as_handled()
 
 
 func _on_press(screen_pos: Vector2) -> void:
@@ -104,50 +225,135 @@ func _on_release(screen_pos: Vector2) -> void:
 			clear_selection()
 
 
-## 点选：优先「屏幕包围盒含鼠标」且面积最小（点农民不误点身后主城）；
-## 否则回退到脚底投影点 + 动态半径（建筑半径按脚印放大）。
+## 点选：相机射线打竖直胶囊；未命中再脚底像素兜底。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:
 		return null
-	var best_box: Node3D = null
-	var best_area := INF
-	var best_dist: Node3D = null
-	var best_d2 := INF
+	var origin := camera.project_ray_origin(screen_pos)
+	var dir := camera.project_ray_normal(screen_pos)
+	if dir.length_squared() < 1e-10:
+		return null
+	dir = dir.normalized()
+
+	var best_ray: Node3D = null
+	var best_t := INF
+	var best_foot: Node3D = null
+	var best_foot_d2 := INF
+
 	for n in _iter_unit_nodes():
-		var box := _screen_aabb(n)
-		if box.has_area():
-			var padded := box.grow(PICK_PAD_PX)
-			if padded.has_point(screen_pos):
-				var area := maxf(padded.get_area(), 1.0)
-				if area < best_area:
-					best_area = area
-					best_box = n
-		var world := n.global_position
-		if camera.is_position_behind(world):
+		var d: Dictionary = n.get_meta("unit_data", {})
+		var tid := str(d.get("typeId", ""))
+		var is_bldg := _looks_building(tid, d)
+		var radius := _pick_radius_world(n, tid, is_bldg)
+		var height := _pick_height_world(n, is_bldg)
+		var t := _ray_vertical_capsule(origin, dir, n.global_position, height, radius)
+		if t >= 0.0:
+			var score := t
+			if is_bldg:
+				score += BUILDING_RAY_PENALTY
+			if score < best_t:
+				best_t = score
+				best_ray = n
+
+		if camera.is_position_behind(n.global_position):
 			continue
-		var sp := camera.unproject_position(world)
-		var rad := _pick_radius_for(n, sp)
+		var sp := camera.unproject_position(n.global_position)
 		var d2 := sp.distance_squared_to(screen_pos)
-		if d2 <= rad * rad and d2 < best_d2:
-			best_d2 = d2
-			best_dist = n
-	if best_box != null:
-		return best_box
-	return best_dist
+		var foot_r := FOOT_FALLBACK_PX
+		if is_bldg:
+			foot_r *= 1.8
+		if d2 > foot_r * foot_r:
+			continue
+		var foot_score := d2
+		if is_bldg:
+			foot_score += 900.0
+		if foot_score < best_foot_d2:
+			best_foot_d2 = foot_score
+			best_foot = n
+
+	if best_ray != null:
+		return best_ray
+	return best_foot
 
 
-func _pick_radius_for(node: Node3D, screen_center: Vector2) -> float:
-	var diam_w := _mesh_xz_diameter(node)
-	if diam_w < 0.05:
-		return pick_radius_px
-	# 世界直径 → 屏幕近似半径：脚底点沿右轴偏移半直径再投影
-	var half := diam_w * 0.5
-	var edge_world := node.global_position + camera.global_transform.basis.x * half
-	if camera.is_position_behind(edge_world):
-		return maxf(pick_radius_px, 48.0)
-	var edge_sp := camera.unproject_position(edge_world)
-	var rad := screen_center.distance_to(edge_sp)
-	return maxf(pick_radius_px, rad + PICK_PAD_PX)
+## 竖直胶囊（轴线 = 单位脚底沿 +Y）与射线求交，返回 t；未中返回 -1。
+func _ray_vertical_capsule(
+	origin: Vector3, dir: Vector3, base: Vector3, height: float, radius: float
+) -> float:
+	var h := maxf(height, 0.05)
+	var r := maxf(radius, 0.05)
+	# 胶囊 = 圆柱 + 两端半球；先测圆柱（足够 RTS 点选）
+	var o := Vector2(origin.x, origin.z)
+	var d := Vector2(dir.x, dir.z)
+	var c := Vector2(base.x, base.z)
+	var a := d.dot(d)
+	var best_t := -1.0
+	if a > 1e-10:
+		var f := o - c
+		var b := 2.0 * f.dot(d)
+		var cc := f.dot(f) - r * r
+		var disc := b * b - 4.0 * a * cc
+		if disc >= 0.0:
+			var sdisc := sqrt(disc)
+			for ti in [( -b - sdisc) / (2.0 * a), ( -b + sdisc) / (2.0 * a)]:
+				if ti < 0.0:
+					continue
+				var y: float = origin.y + dir.y * ti
+				if y >= base.y - r and y <= base.y + h + r:
+					if best_t < 0.0 or ti < best_t:
+						best_t = ti
+	else:
+		# 射线近乎竖直：看 XZ 是否落在圆内
+		if o.distance_to(c) <= r:
+			var t_bottom := (base.y - origin.y) / dir.y if absf(dir.y) > 1e-6 else 0.0
+			var t_top := (base.y + h - origin.y) / dir.y if absf(dir.y) > 1e-6 else 0.0
+			var t0 := minf(t_bottom, t_top)
+			var t1 := maxf(t_bottom, t_top)
+			if t1 >= 0.0:
+				best_t = maxf(t0, 0.0)
+	return best_t
+
+
+func _pick_radius_world(node: Node3D, type_id: String, is_bldg: bool) -> float:
+	if _radius_cache.has(type_id):
+		return float(_radius_cache[type_id])
+	var r := DEFAULT_BUILDING_RADIUS if is_bldg else DEFAULT_UNIT_RADIUS
+	# unitUI.scale ≈ 选中圈直径（WC3）；有则优先
+	if not type_id.is_empty():
+		Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
+		var row: Resource = Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, type_id)
+		if row is UnitUiDef:
+			var sc := (row as UnitUiDef).scale
+			if sc > 1.0:
+				r = sc * Wc3Coords.WORLD_SCALE * 0.5
+	# 网格半宽兜底放大（避免 scale 偏小点不中）
+	var mesh_r := _mesh_xz_diameter(node) * 0.45
+	if mesh_r > r:
+		r = mesh_r
+	_radius_cache[type_id] = r
+	return r
+
+
+func _pick_height_world(node: Node3D, is_bldg: bool) -> float:
+	var aabb := _local_visual_aabb(node)
+	if aabb.size.y > 0.05:
+		return maxf(aabb.size.y, 0.4)
+	return DEFAULT_BUILDING_HEIGHT if is_bldg else DEFAULT_UNIT_HEIGHT
+
+
+func _select_in_rect(rect: Rect2) -> void:
+	var hits: Array[Node3D] = []
+	for n in _iter_unit_nodes():
+		if MarqueeSelection.world_in_rect(camera, n.global_position, rect):
+			hits.append(n)
+			continue
+		# 建筑脚底可能偏中心：屏幕盒相交作补充
+		var d: Dictionary = n.get_meta("unit_data", {})
+		if _looks_building(str(d.get("typeId", "")), d):
+			var box := _screen_aabb(n)
+			if box.has_area() and box.intersects(rect):
+				hits.append(n)
+	_set_selection(hits)
 
 
 func _screen_aabb(node: Node3D) -> Rect2:
@@ -174,19 +380,6 @@ func _screen_aabb(node: Node3D) -> Rect2:
 	if not any:
 		return Rect2()
 	return Rect2(min_s, max_s - min_s)
-
-
-func _select_in_rect(rect: Rect2) -> void:
-	var hits: Array[Node3D] = []
-	for n in _iter_unit_nodes():
-		# 建筑：脚底或屏幕盒与框相交即可
-		var box := _screen_aabb(n)
-		if box.has_area() and box.intersects(rect):
-			hits.append(n)
-			continue
-		if MarqueeSelection.world_in_rect(camera, n.global_position, rect):
-			hits.append(n)
-	_set_selection(hits)
 
 
 func _iter_unit_nodes() -> Array[Node3D]:
@@ -231,24 +424,46 @@ func _set_selection(nodes: Array) -> void:
 	selection_changed.emit(_primary, _selected.duplicate())
 
 
-func _ensure_overlay() -> void:
-	if _overlay != null:
+func _ensure_input_layer() -> void:
+	if _input_root != null and is_instance_valid(_input_root):
 		return
-	var parent: Node = overlay_parent
-	if parent == null:
-		var layer := CanvasLayer.new()
-		layer.name = "SelectorOverlayLayer"
-		layer.layer = 20
-		add_child(layer)
-		var root := Control.new()
-		root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		layer.add_child(root)
-		parent = root
+	var layer := CanvasLayer.new()
+	layer.name = "SelectorInputLayer"
+	layer.layer = input_canvas_layer
+	add_child(layer)
+	_input_root = Control.new()
+	_input_root.name = "WorldInput"
+	_input_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_input_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_input_root.gui_input.connect(_on_world_gui_input)
+	layer.add_child(_input_root)
+
+
+func _ensure_overlay() -> void:
+	if _overlay != null and is_instance_valid(_overlay):
+		return
+	# 始终用独立高图层，避免挂到 HUD Root 后被底栏盖住或坐标错位
+	var layer := CanvasLayer.new()
+	layer.name = "SelectorOverlayLayer"
+	layer.layer = 100
+	add_child(layer)
+	var root := Control.new()
+	root.name = "OverlayRoot"
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 0
+	root.offset_top = 0
+	root.offset_right = 0
+	root.offset_bottom = 0
+	layer.add_child(root)
 	_overlay = MarqueeOverlay.new()
 	_overlay.name = "MarqueeOverlay"
-	parent.add_child(_overlay)
+	root.add_child(_overlay)
 	_overlay.bind(_marquee)
+	# 下一帧强制铺满视口（部分环境下 anchor 首帧 size=0）
+	if is_inside_tree():
+		var vp_size := get_viewport().get_visible_rect().size
+		root.set_deferred("size", vp_size)
 
 
 func _refresh_rings() -> void:
@@ -327,7 +542,14 @@ func _local_visual_aabb(node: Node3D) -> AABB:
 		var vi := c as VisualInstance3D
 		if vi == null or not vi.visible:
 			continue
-		if str(vi.name) == "SelectionRing" or str(vi.name) == "DeathDropRing":
+		var vname := str(vi.name)
+		if (
+			vname == "SelectionRing"
+			or vname == "DeathDropRing"
+			or vname == "UberSplat"
+		):
+			continue
+		if _is_under_named(vi, "Pe2Root"):
 			continue
 		var local := vi.get_aabb()
 		if local.size.length() < 1e-5:
@@ -342,3 +564,12 @@ func _local_visual_aabb(node: Node3D) -> AABB:
 	if first:
 		return AABB()
 	return aabb
+
+
+func _is_under_named(n: Node, root_name: String) -> bool:
+	var p := n.get_parent()
+	while p != null:
+		if str(p.name) == root_name:
+			return true
+		p = p.get_parent()
+	return false

@@ -669,10 +669,10 @@ func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		push_warning("缺少 %s" % path)
 		return {}
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(path)
+	if text.is_empty():
 		return {}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	return parsed

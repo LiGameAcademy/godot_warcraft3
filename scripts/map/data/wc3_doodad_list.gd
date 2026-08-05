@@ -246,11 +246,11 @@ static func load_json_path(res_or_abs: String) -> Wc3DoodadList:
 	if not FileAccess.file_exists(disk_path):
 		push_error("Wc3DoodadList: 文件不存在 %s" % disk_path)
 		return null
-	var f := FileAccess.open(disk_path, FileAccess.READ)
-	if f == null:
-		push_error("Wc3DoodadList: 无法打开 %s" % disk_path)
+	var text := RuntimeAssets.read_utf8_text(disk_path)
+	if text.is_empty():
+		push_error("Wc3DoodadList: 无法读取或含非法字符 %s" % disk_path)
 		return null
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("Wc3DoodadList: JSON 根不是对象 %s" % disk_path)
 		return null

@@ -29,11 +29,9 @@ static func load_payload(glb_path: String) -> Dictionary:
 	if pe2_path.is_empty() or not RuntimeAssets.file_exists(pe2_path):
 		return {}
 	var disk := RuntimeAssets.project_abs(pe2_path)
-	var f := FileAccess.open(disk, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(disk)
+	if text.is_empty():
 		return {}
-	var text := f.get_as_text()
-	f.close()
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}

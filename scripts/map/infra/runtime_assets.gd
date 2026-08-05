@@ -17,12 +17,30 @@ const LEGACY_MODEL_SCENES_RES_ROOT := "res://assets/model-scenes"
 ## 懒烘焙回退（无法写入 asset-converted 时）
 const MODEL_SCENES_USER_ROOT := "user://model-scenes"
 
+## 解析失败的 GLB 绝对路径 → 跳过重试（避免装饰扫描刷引擎 ERROR）。
+static var _gltf_fail_cache: Dictionary = {}
+
 
 static func project_abs(res_or_abs: String) -> String:
 	var p := res_or_abs
 	if p.begins_with("res://"):
 		p = ProjectSettings.globalize_path(p)
 	return p.replace("\\", "/")
+
+
+## 读 UTF-8 文本；含 NUL 的二进制直接拒绝，避免引擎 Unicode parsing ERROR 刷屏。
+static func read_utf8_text(res_or_abs: String) -> String:
+	var disk := project_abs(res_or_abs)
+	if disk.is_empty() or not FileAccess.file_exists(disk):
+		return ""
+	var bytes := FileAccess.get_file_as_bytes(disk)
+	if bytes.is_empty():
+		return ""
+	# 全文件扫 NUL（JSON/配置不应含 0x00；误读 GLB/PNG 时在此拦下）
+	for i in range(bytes.size()):
+		if bytes[i] == 0:
+			return ""
+	return bytes.get_string_from_utf8()
 
 
 ## 相对路径 → res://assets/asset-converted/...
@@ -261,27 +279,34 @@ static func load_converted_texture(relative: String) -> Texture2D:
 
 static func load_gltf_scene(res_or_abs: String) -> Node3D:
 	var disk_path := project_abs(res_or_abs)
-	if not FileAccess.file_exists(disk_path):
+	if disk_path.is_empty() or not FileAccess.file_exists(disk_path):
+		return null
+	if _gltf_fail_cache.has(disk_path):
 		return null
 	var bytes := FileAccess.get_file_as_bytes(disk_path)
-	if bytes.is_empty():
+	if not _is_plausible_gltf_bytes(bytes):
+		_gltf_fail_cache[disk_path] = true
 		return null
 	return load_gltf_scene_from_bytes(bytes, disk_path)
 
 
 ## 已读入内存的 GLB 字节 → 场景（主线程调用；纹理相对 base_dir 解析）。
 static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: String) -> Node3D:
-	if bytes.is_empty():
-		return null
 	var disk_path := project_abs(glb_res_or_abs)
+	if _gltf_fail_cache.has(disk_path):
+		return null
+	if not _is_plausible_gltf_bytes(bytes):
+		if not disk_path.is_empty():
+			_gltf_fail_cache[disk_path] = true
+		return null
 	var base_dir := disk_path.get_base_dir()
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
+	# 坏文件在校验阶段拦掉；仍失败则记黑名单，避免装饰扫描反复打引擎 ERROR。
 	var err := doc.append_from_buffer(bytes, base_dir, state)
 	if err != OK:
-		push_warning(
-			"RuntimeAssets: 无法解析 GLB buffer %s (%s)" % [disk_path, error_string(err)]
-		)
+		if not disk_path.is_empty():
+			_gltf_fail_cache[disk_path] = true
 		return null
 	var scene := doc.generate_scene(state)
 	if scene is Node3D:
@@ -290,4 +315,71 @@ static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: S
 		var root3d := Node3D.new()
 		root3d.add_child(scene)
 		return root3d
+	if not disk_path.is_empty():
+		_gltf_fail_cache[disk_path] = true
 	return null
+
+
+## GLB 魔数 `glTF`；空 BIN / 坏 chunk 在校验阶段拦掉，避免引擎「Buffer 0」ERROR。
+static func is_plausible_gltf_bytes(bytes: PackedByteArray) -> bool:
+	return _is_plausible_gltf_bytes(bytes)
+
+
+static func _is_plausible_gltf_bytes(bytes: PackedByteArray) -> bool:
+	if bytes.size() < 20:
+		return false
+	# Binary GLB：magic = 'glTF'
+	if bytes[0] == 0x67 and bytes[1] == 0x6C and bytes[2] == 0x54 and bytes[3] == 0x46:
+		return _glb_chunks_look_ok(bytes)
+	# JSON .gltf（本管线基本不用；缺外部 bin 时引擎也会报 Buffer 0）
+	var c0 := bytes[0]
+	if c0 == 0x7B or c0 == 0x5B:
+		return false
+	return false
+
+
+## 校验 GLB chunk：必须有 JSON；若有 BIN 则长度 > 0（空 BIN → Godot「Buffer 0 has no data」）。
+static func _glb_chunks_look_ok(bytes: PackedByteArray) -> bool:
+	var declared: int = (
+		bytes[8] | (bytes[9] << 8) | (bytes[10] << 16) | (bytes[11] << 24)
+	)
+	if declared < 20 or declared > bytes.size() + 64:
+		return false
+	var limit: int = mini(declared, bytes.size())
+	var offset := 12
+	var has_json := false
+	var has_bin := false
+	var bin_len := 0
+	while offset + 8 <= limit:
+		var chunk_len: int = (
+			bytes[offset]
+			| (bytes[offset + 1] << 8)
+			| (bytes[offset + 2] << 16)
+			| (bytes[offset + 3] << 24)
+		)
+		var chunk_type: int = (
+			bytes[offset + 4]
+			| (bytes[offset + 5] << 8)
+			| (bytes[offset + 6] << 16)
+			| (bytes[offset + 7] << 24)
+		)
+		offset += 8
+		if chunk_len < 0 or offset + chunk_len > limit:
+			return false
+		# 0x4E4F534A = JSON；0x004E4942 = BIN
+		if chunk_type == 0x4E4F534A:
+			has_json = true
+			if chunk_len < 2:
+				return false
+		elif chunk_type == 0x004E4942:
+			has_bin = true
+			bin_len = chunk_len
+		offset += chunk_len
+		# 4 字节对齐
+		offset = (offset + 3) & ~3
+	if not has_json:
+		return false
+	# 有 BIN chunk 但长度为 0 → 引擎必报 Buffer 0；无 BIN 也可能是纯 JSON 嵌入，仍可能炸，一律要求 BIN>0
+	if not has_bin or bin_len <= 0:
+		return false
+	return true

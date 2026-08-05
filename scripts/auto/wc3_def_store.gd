@@ -118,12 +118,12 @@ func load_table(table_name: String) -> int:
 		_tables[table_name] = by_id
 		_orders[table_name] = order
 		return 0
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(path)
+	if text.is_empty():
 		_tables[table_name] = by_id
 		_orders[table_name] = order
 		return 0
-	var data: Variant = JSON.parse_string(f.get_as_text())
+	var data: Variant = JSON.parse_string(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		_tables[table_name] = by_id
 		_orders[table_name] = order

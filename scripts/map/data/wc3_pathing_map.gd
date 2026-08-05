@@ -89,10 +89,10 @@ static func load_json_path(res_or_abs: String) -> Wc3PathingMap:
 	var disk := RuntimeAssets.project_abs(res_or_abs) if res_or_abs.begins_with("res://") else res_or_abs
 	if not FileAccess.file_exists(disk):
 		return null
-	var f := FileAccess.open(disk, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(disk)
+	if text.is_empty():
 		return null
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return null
 	var m := from_dict(parsed as Dictionary)
@@ -175,8 +175,8 @@ static func synthesize_from_heightfield(
 	var ground: Array = hf.ground_tilesets
 	for cy in range(m.height):
 		for cx in range(m.width):
-			var tile_x: int = cx / CELLS_PER_TILE
-			var tile_y: int = cy / CELLS_PER_TILE
+			var tile_x: int = int(float(cx) / float(CELLS_PER_TILE))
+			var tile_y: int = int(float(cy) / float(CELLS_PER_TILE))
 			var flags: int = FLAG_NO_WATER
 			# 用地形格左下角顶点属性
 			var tpi: int = hf.index_at(tile_x, tile_y) if hf.in_bounds(tile_x, tile_y) else -1
@@ -226,9 +226,9 @@ static func _is_cliff_cell(hf: Wc3Heightfield, tile_x: int, tile_y: int) -> bool
 	var bl: int = int(hf.layer_heights[hf.index_at(tile_x, tile_y)])
 	var br: int = int(hf.layer_heights[hf.index_at(tile_x + 1, tile_y)])
 	var tl: int = int(hf.layer_heights[hf.index_at(tile_x, tile_y + 1)])
-	var tr: int = int(hf.layer_heights[hf.index_at(tile_x + 1, tile_y + 1)])
-	var mn: int = mini(mini(bl, br), mini(tl, tr))
-	var mx: int = maxi(maxi(bl, br), maxi(tl, tr))
+	var top_right: int = int(hf.layer_heights[hf.index_at(tile_x + 1, tile_y + 1)])
+	var mn: int = mini(mini(bl, br), mini(tl, top_right))
+	var mx: int = maxi(maxi(bl, br), maxi(tl, top_right))
 	return mx > mn
 
 

@@ -78,11 +78,13 @@ func _apply() -> void:
 	var f := _eff_fine() if _enabled else false
 	var mats := _collect_materials()
 	if mats.is_empty() and (t or p or f):
-		MapLog.warn(
+		# 地图尚未 build 时 active_material 为空属正常（Director 会在加载后再 apply）。
+		MapLog.debug(
 			MapLog.Layer.PRESENT,
 			"DebugGrid",
-			"无可用材质（Terrain.active_material 是否已生成？）"
+			"暂无材质（地形未生成），跳过本次 apply"
 		)
+		return
 	for mat in mats:
 		mat.set_shader_parameter("dbg_grid_tile", t)
 		mat.set_shader_parameter("dbg_grid_path", p)

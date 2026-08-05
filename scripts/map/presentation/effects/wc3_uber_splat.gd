@@ -7,6 +7,8 @@ extends RefCounted
 const SPLAT_ROOT_NAME := "UberSplat"
 ## 略抬离地，减轻与地形 z-fight
 const Y_BIAS := 0.04
+## 建筑贴地下沉上限（Godot）。过大（按完整 UberSplat geoset 高度）会把主城埋进地里。
+const FOOT_SINK_MAX := 0.06
 
 
 static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> MeshInstance3D:
@@ -77,11 +79,12 @@ static func foot_sink_y(root: Node3D) -> float:
 		if mi.visible:
 			visible_min = minf(visible_min, local_aabb.position.y)
 	# 优先模型脚底环；否则仅当可见底边明显高于原点时下沉（避免把地基抬出地面）
+	var raw := 0.0
 	if splat_min < INF and splat_min > 0.02:
-		return splat_min
-	if visible_min < INF and visible_min > 0.15 and visible_min < 2.5:
-		return visible_min
-	return 0.0
+		raw = splat_min
+	elif visible_min < INF and visible_min > 0.15 and visible_min < 2.5:
+		raw = visible_min
+	return minf(raw, FOOT_SINK_MAX)
 
 
 static func _uber_splat_code(type_id: String) -> String:

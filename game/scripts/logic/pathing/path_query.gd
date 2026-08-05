@@ -29,15 +29,16 @@ func can_walk_wc3(wc3_x: float, wc3_y: float) -> bool:
 	return pathing.can_walk_at(wc3_x, wc3_y)
 
 
-## 将任意点吸到附近可走格中心。失败返回原格（调用方应看 ok）。
+## 将任意点吸到附近可走位置。失败返回原格（调用方应看 ok）。
 ## 为何需要：玩家右键常点在装饰/脚印边缘，原作也会把终点「弹」到可走处。
+## 已可走时保留点击坐标（不强制格心），否则手感会「永远差半格」。
 func snap_to_walkable(wc3_x: float, wc3_y: float, max_radius_cells: int = 12) -> Dictionary:
 	var empty := {"ok": false, "wc3": Vector2(wc3_x, wc3_y), "cell": Vector2i.ZERO}
 	if not is_ready():
 		return empty
 	var c0 := pathing.world_to_cell(wc3_x, wc3_y)
 	if pathing.can_walk_cell(c0.x, c0.y):
-		return {"ok": true, "wc3": pathing.cell_center_wc3(c0.x, c0.y), "cell": c0}
+		return {"ok": true, "wc3": Vector2(wc3_x, wc3_y), "cell": c0}
 	for r in range(1, max_radius_cells + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
