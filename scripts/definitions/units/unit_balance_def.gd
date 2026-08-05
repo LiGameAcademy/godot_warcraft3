@@ -16,7 +16,7 @@ const PRIMARY_KEY := "unitBalanceID"
 @export var sort_balance: String = "" ## 编辑器分类排序键（种族/类型粗排）
 @export var sort2: String = "" ## 二级排序键
 @export var comment: String = "" ## 人类可读备注（单位名注释，非游戏内显示名）
-@export var level: int = 0 ## 单位等级（中立敌对、经验/赏金相关）
+@export var level: int = -1 ## 单位等级（中立敌对、经验/赏金；"-" / 空 → -1 表示无等级）
 @export var goldcost: int = 0 ## 训练/建造金币消耗
 @export var lumbercost: int = 0 ## 训练/建造木材消耗
 @export var gold_rep: int = 0 ## 修理回收金币（常与 goldcost 相同）
@@ -80,7 +80,7 @@ static func from_slk_record(rec: Dictionary) -> UnitBalanceDef:
 	d.sort_balance = str(rec.get("sortBalance", "")).strip_edges()
 	d.sort2 = str(rec.get("sort2", "")).strip_edges()
 	d.comment = str(rec.get("comment(s)", "")).strip_edges()
-	d.level = int(rec.get("level", 0))
+	d.level = _parse_level(rec.get("level", ""))
 	d.goldcost = int(rec.get("goldcost", 0))
 	d.lumbercost = int(rec.get("lumbercost", 0))
 	d.gold_rep = int(rec.get("goldRep", 0))
@@ -139,3 +139,17 @@ static func register_to(store: Node) -> void:
 		push_error("UnitBalanceDef: 无法注册到 DefStore")
 		return
 	store.register_table(TABLE_NAME, SLK_REL_PATH, PRIMARY_KEY, from_slk_record)
+
+
+## SLK 中 level 常为 "-" 表示无等级；与 Catalog 筛选语义对齐为 -1。
+static func _parse_level(v: Variant) -> int:
+	if typeof(v) == TYPE_INT:
+		return int(v)
+	if typeof(v) == TYPE_FLOAT:
+		return int(v)
+	var s := str(v).strip_edges()
+	if s.is_empty() or s == "-" or s == "_":
+		return -1
+	if s.is_valid_int():
+		return int(s)
+	return -1

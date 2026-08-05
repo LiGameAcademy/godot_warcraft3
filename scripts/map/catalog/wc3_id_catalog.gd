@@ -9,13 +9,13 @@ var _doodads: Dictionary = {}
 
 
 func load_default() -> void:
-	_load_unit_ui(RuntimeAssets.slk_path("Units/unitUI.json"))
-	_merge_unit_data(RuntimeAssets.slk_path("Units/UnitData.json"))
+	_load_unit_ui()
+	_merge_unit_data()
 	_load_unit_display_names()
 	_inject_start_location()
 	_inject_patch_critters()
-	_load_destructables(RuntimeAssets.slk_path("Units/DestructableData.json"))
-	_load_doodads(RuntimeAssets.slk_path("Doodads/Doodads.json"))
+	_load_destructables()
+	_load_doodads()
 
 
 func lookup(type_id: String) -> Dictionary:
@@ -232,57 +232,52 @@ static func _tilesets_allow(tilesets_field: String, letter: String) -> bool:
 
 
 ## 合并 UnitData：race / moveHeight / pathTex 等。
-func _merge_unit_data(path: String) -> void:
-	var data := _read_json(path)
-	if data.is_empty():
+func _merge_unit_data() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3IdCatalog: Wc3DefStore 不可用，跳过 UnitData")
 		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("unitID", ""))
-		if id.is_empty() or not _units.has(id):
+	store.ensure_table(UnitDataDef.TABLE_NAME)
+	for id in store.get_ids(UnitDataDef.TABLE_NAME):
+		if not _units.has(id):
+			continue
+		var d := store.get_row(UnitDataDef.TABLE_NAME, id) as UnitDataDef
+		if d == null:
 			continue
 		var e: Dictionary = _units[id]
-		e["race"] = str(rec.get("race", "other")).to_lower()
-		e["move_height"] = float(rec.get("moveHeight", 0.0))
-		e["path_tex"] = str(rec.get("pathTex", "_"))
-		var comment := str(rec.get("comment(s)", ""))
-		if not comment.is_empty() and str(e.get("name", "")).is_empty():
-			e["name"] = comment
+		var race := d.race.strip_edges().to_lower()
+		e["race"] = race if not race.is_empty() else "other"
+		e["move_height"] = d.move_height
+		var path_tex := d.path_tex.strip_edges()
+		e["path_tex"] = path_tex if not path_tex.is_empty() else "_"
+		if str(e.get("name", "")).is_empty():
+			var comment := d.comment.strip_edges()
+			if not comment.is_empty() and comment != "_":
+				e["name"] = comment
 		_units[id] = e
-	_merge_unit_balance(RuntimeAssets.slk_path("Units/UnitBalance.json"))
+	_merge_unit_balance()
 
 
-func _merge_unit_balance(path: String) -> void:
-	var data := _read_json(path)
-	if data.is_empty():
+func _merge_unit_balance() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3IdCatalog: Wc3DefStore 不可用，跳过 UnitBalance")
 		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("unitBalanceID", ""))
-		if id.is_empty() or not _units.has(id):
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	for id in store.get_ids(UnitBalanceDef.TABLE_NAME):
+		if not _units.has(id):
+			continue
+		var d := store.get_row(UnitBalanceDef.TABLE_NAME, id) as UnitBalanceDef
+		if d == null:
 			continue
 		var e: Dictionary = _units[id]
-		e["is_building"] = int(rec.get("isbldg", 0)) != 0
-		# UnitBalance.level：中立野怪等级；"-" / 空 → -1（任意/无等级）
-		var lv_raw := str(rec.get("level", "")).strip_edges()
-		var lv := -1
-		if not lv_raw.is_empty() and lv_raw != "-" and lv_raw != "_":
-			if lv_raw.is_valid_int():
-				lv = int(lv_raw)
-		e["level"] = lv
-		# 中立单位按地形集筛选（如 "L,F,W" / "*"）
-		var ts := str(rec.get("tilesets", "*")).strip_edges()
+		e["is_building"] = d.isbldg
+		e["level"] = d.level
+		var ts := d.tilesets.strip_edges()
 		if ts.is_empty() or ts == "-" or ts == "_":
 			ts = "*"
 		e["tilesets"] = ts
-		# UnitBalance.collision：碰撞半径（WC3）；选框/放置共用
-		var col_raw: Variant = rec.get("collision", 0)
-		var col := 0.0
-		if typeof(col_raw) == TYPE_FLOAT or typeof(col_raw) == TYPE_INT:
-			col = float(col_raw)
-		elif typeof(col_raw) == TYPE_STRING:
-			var cs := str(col_raw).strip_edges()
-			if cs.is_valid_float():
-				col = float(cs)
-		e["collision"] = col
+		e["collision"] = d.collision
 		_units[id] = e
 
 
@@ -586,31 +581,38 @@ static func _unit_class_sort_key(unit_class: String) -> Array:
 	return [prefix, int(num_s) if num_s.is_valid_int() else 0]
 
 
-func _load_unit_ui(path: String) -> void:
-	var data := _read_json(path)
-	if data.is_empty():
+func _load_unit_ui() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3IdCatalog: Wc3DefStore 不可用，跳过 UnitUI")
 		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("unitUIID", ""))
-		if id.is_empty():
+	store.ensure_table(UnitUiDef.TABLE_NAME)
+	for id in store.get_ids(UnitUiDef.TABLE_NAME):
+		var d := store.get_row(UnitUiDef.TABLE_NAME, id) as UnitUiDef
+		if d == null or d.unit_uiid.is_empty():
 			continue
+		# name 先用 SLK name 列（常为键/占位）；正式显示名由 *UnitStrings 覆盖
+		var name := d.name_key.strip_edges()
+		if name.is_empty() or name == "_":
+			name = id
 		_units[id] = {
 			"id": id,
-			"name": str(rec.get("name", id)),
-			"file": str(rec.get("file", "")),
+			"name": name,
+			"file": d.file,
 			"kind": "unit",
 			"num_var": 1,
-			"unit_class": str(rec.get("unitClass", "")),
-			"sort_ui": str(rec.get("sortUI", "")),
-			"campaign": int(rec.get("campaign", 0)) != 0,
-			"special": int(rec.get("special", 0)) != 0,
-			"in_editor": int(rec.get("inEditor", 1)) != 0,
-			"hidden_in_editor": int(rec.get("hiddenInEditor", 0)) != 0,
-			"hostile_pal": str(rec.get("hostilePal", "")),
-			"tileset_specific": int(rec.get("tilesetSpecific", 0)) != 0,
-			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
-			"model_scale": float(rec.get("modelScale", 1.0)),
-			"def_scale": float(rec.get("scale", 1.0)),
+			"unit_class": d.unit_class,
+			"sort_ui": d.sort_ui,
+			"campaign": d.campaign,
+			"special": d.special,
+			"in_editor": d.in_editor,
+			"hidden_in_editor": d.hidden_in_editor,
+			# 保留字符串形态以兼容注入条目；Def 已把 "-" / 0 / 1 规范为 bool
+			"hostile_pal": "1" if d.hostile_pal else "",
+			"tileset_specific": d.tileset_specific,
+			"use_click_helper": d.use_click_helper,
+			"model_scale": d.model_scale if d.model_scale > 0.0 else 1.0,
+			"def_scale": d.scale if d.scale > 0.0 else 1.0,
 			"race": "other",
 			"move_height": 0.0,
 			"path_tex": "_",
@@ -622,82 +624,84 @@ func _load_unit_ui(path: String) -> void:
 		}
 
 
-func _load_destructables(path: String) -> void:
-	var data := _read_json(path)
-	if data.is_empty():
+func _load_destructables() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3IdCatalog: Wc3DefStore 不可用，跳过 DestructableData")
 		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("DestructableID", ""))
-		if id.is_empty():
+	store.ensure_table(DestructableDataDef.TABLE_NAME)
+	for id in store.get_ids(DestructableDataDef.TABLE_NAME):
+		var d := store.get_row(DestructableDataDef.TABLE_NAME, id) as DestructableDataDef
+		if d == null or d.destructable_id.is_empty():
 			continue
-		var comment := str(rec.get("comment", ""))
+		var tilesets := d.tilesets.strip_edges()
+		if tilesets.is_empty():
+			tilesets = "*"
 		_destructables[id] = {
 			"id": id,
-			"name": comment if not comment.is_empty() else id,
-			"name_key": str(rec.get("Name", "")),
-			"file": str(rec.get("file", "")),
+			"name": d.display_name(),
+			"name_key": d.name_key,
+			"file": d.file,
 			"kind": "destructable",
-			"category": str(rec.get("category", "")).to_upper(),
-			"tilesets": str(rec.get("tilesets", "*")),
-			"num_var": int(rec.get("numVar", 1)),
-			"tex_file": str(rec.get("texFile", "")),
-			"def_scale": float(rec.get("minScale", 1.0)),
-			"min_scale": float(rec.get("minScale", 1.0)),
-			"max_scale": float(rec.get("maxScale", 1.0)),
-			"can_place_rand_scale": int(rec.get("canPlaceRandScale", 0)) != 0,
-			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
-			"sel_size": float(rec.get("selSize", 0.0)),
-			"path_tex": str(rec.get("pathTex", "")),
-			"fixed_rot": float(rec.get("fixedRot", -1.0)),
-			"vis_radius": float(rec.get("visRadius", 50.0)),
-			"ignore_model_click": int(rec.get("ignoreModelClick", 0)) != 0,
+			"category": d.category.to_upper(),
+			"tilesets": tilesets,
+			"num_var": d.num_var if d.num_var > 0 else 1,
+			"tex_file": d.tex_file,
+			# 可破坏物无独立 defScale；WE 放置默认用 minScale
+			"def_scale": d.min_scale if d.min_scale > 0.0 else 1.0,
+			"min_scale": d.min_scale if d.min_scale > 0.0 else 1.0,
+			"max_scale": d.max_scale if d.max_scale > 0.0 else 1.0,
+			"can_place_rand_scale": d.can_place_rand_scale,
+			"use_click_helper": d.use_click_helper,
+			"sel_size": d.sel_size,
+			"path_tex": d.path_tex,
+			"fixed_rot": d.fixed_rot,
+			# DestructableData 无 visRadius；Catalog 预览距离沿用旧默认 50
+			"vis_radius": 50.0,
+			"ignore_model_click": false,
 		}
 
 
-func _load_doodads(path: String) -> void:
-	var data := _read_json(path)
-	if data.is_empty():
+func _load_doodads() -> void:
+	var store := _def_store()
+	if store == null:
+		push_warning("Wc3IdCatalog: Wc3DefStore 不可用，跳过 Doodads")
 		return
-	for rec in data.get("records", []):
-		var id := str(rec.get("doodID", ""))
-		if id.is_empty():
+	store.ensure_table(DoodadDataDef.TABLE_NAME)
+	for id in store.get_ids(DoodadDataDef.TABLE_NAME):
+		var d := store.get_row(DoodadDataDef.TABLE_NAME, id) as DoodadDataDef
+		if d == null or d.dood_id.is_empty():
 			continue
-		var comment := str(rec.get("comment", ""))
+		var tilesets := d.tilesets.strip_edges()
+		if tilesets.is_empty():
+			tilesets = "*"
 		_doodads[id] = {
 			"id": id,
-			"name": comment if not comment.is_empty() else id,
-			"name_key": str(rec.get("Name", "")),
-			"file": str(rec.get("file", "")),
+			"name": d.display_name(),
+			"name_key": d.name_key,
+			"file": d.file,
 			"kind": "doodad",
-			"category": str(rec.get("category", "")).to_upper(),
-			"tilesets": str(rec.get("tilesets", "*")),
-			"num_var": int(rec.get("numVar", 1)),
-			"def_scale": float(rec.get("defScale", 1.0)),
-			"min_scale": float(rec.get("minScale", 1.0)),
-			"max_scale": float(rec.get("maxScale", 1.0)),
-			"can_place_rand_scale": int(rec.get("canPlaceRandScale", 0)) != 0,
-			"use_click_helper": int(rec.get("useClickHelper", 0)) != 0,
-			"sel_size": float(rec.get("selSize", 0.0)),
-			"path_tex": str(rec.get("pathTex", "")),
-			"fixed_rot": float(rec.get("fixedRot", -1.0)),
-			"vis_radius": float(rec.get("visRadius", 50.0)),
-			"ignore_model_click": int(rec.get("ignoreModelClick", 0)) != 0,
+			"category": d.category.to_upper(),
+			"tilesets": tilesets,
+			"num_var": d.num_var if d.num_var > 0 else 1,
+			"def_scale": d.def_scale if d.def_scale > 0.0 else 1.0,
+			"min_scale": d.min_scale if d.min_scale > 0.0 else 1.0,
+			"max_scale": d.max_scale if d.max_scale > 0.0 else 1.0,
+			"can_place_rand_scale": d.can_place_rand_scale,
+			"use_click_helper": d.use_click_helper,
+			"sel_size": d.sel_size,
+			"path_tex": d.path_tex,
+			"fixed_rot": d.fixed_rot,
+			"vis_radius": d.vis_radius if d.vis_radius > 0.0 else 50.0,
+			"ignore_model_click": d.ignore_model_click,
 		}
 
 
-func _read_json(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		push_warning("Wc3IdCatalog: 缺少 %s" % path)
-		return {}
-	var text := RuntimeAssets.read_utf8_text(path)
-	if text.is_empty():
-		push_warning("Wc3IdCatalog: 无法读取或含非法字符 %s" % path)
-		return {}
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("Wc3IdCatalog: JSON 无效 %s" % path)
-		return {}
-	return parsed
+func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 ## 从 pathTex 文件名解析寻路格尺寸，如 `PathTextures\4x4Default.tga` → (4,4)。
