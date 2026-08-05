@@ -52,6 +52,17 @@ static func wc3_xy_to_godot(x: float, y: float, z: float = 0.0) -> Vector3:
 	return wc3_to_godot(Vector3(x, y, z))
 
 
+## Godot 世界点 → WC3 (x,y 水平, z 高度)。与 wc3_to_godot 互逆。
+static func godot_to_wc3(g: Vector3) -> Vector3:
+	var inv := 1.0 / WORLD_SCALE
+	return Vector3(g.x * inv, -g.z * inv, g.y * inv)
+
+
+static func godot_to_wc3_xy(g: Vector3) -> Vector2:
+	var w := godot_to_wc3(g)
+	return Vector2(w.x, w.y)
+
+
 static func tilepoint_wc3(
 	ix: int,
 	iy: int,

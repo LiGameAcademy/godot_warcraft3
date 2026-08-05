@@ -91,10 +91,10 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 
 ### D. 最小 RTS 交互
 
-- [ ] 点选单位 / 框选（可复用 `scripts/shared/selection/`）
-- [ ] 右键移动：贴地 + `Wc3PathingMap` 可行走检测（先直线，后寻路）  
+- [x] 点选单位 / 框选（可复用 `scripts/shared/selection/`）
+- [x] 右键移动：贴地 + `Wc3PathingMap` 网格 A\*（`PathQuery` + `UnitNavigator`）  
   → 选型见 [PATHFINDING_CHOICE.md](PATHFINDING_CHOICE.md)（**主推网格 A\***，不用 NavMesh 作权威图）
-- [ ] 选中环尺寸继续走单位配置（已有 Catalog 逻辑）
+- [x] 选中环尺寸继续走单位配置（已有 Catalog 逻辑）
 
 **验收**：能选中农民并命令移动到可走格子；不可走区域有反馈。
 

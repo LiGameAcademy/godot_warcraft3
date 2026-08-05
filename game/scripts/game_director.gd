@@ -9,6 +9,8 @@ const MeleeBootstrapScr = preload("res://game/scripts/logic/melee_bootstrap.gd")
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
 const GameSessionScr = preload("res://game/scripts/session/game_session.gd")
 const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
+const PathQueryScr = preload("res://game/scripts/logic/pathing/path_query.gd")
+const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator.gd")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -31,6 +33,10 @@ const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
 ## 开发：F6 Birth / F7 Stand Work（训练烟）/ F8 Stand
 @export var debug_building_fx_hotkeys: bool = true
 
+@export_group("移动")
+## 右键对选中单位下发网格寻路移动
+@export var enable_move_command: bool = true
+
 @export_group("相机")
 ## 对齐 WC3 CameraRates Forward≈3000 → ×WORLD_SCALE
 @export var camera_pan_speed: float = 30.0
@@ -49,6 +55,9 @@ var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
 var _session: RefCounted = null
+## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
+var _path_query: RefCounted = null
+var _heightfield: Wc3Heightfield = null
 
 
 func _ready() -> void:
@@ -188,6 +197,20 @@ func _on_map_loaded() -> void:
 	_hide_start_locations()
 	_bootstrap_melee()
 	_setup_selector()
+	_setup_pathing()
+
+
+## 地图就绪后再绑 PathQuery：WPM/合成图此时才保证有效。
+func _setup_pathing() -> void:
+	if map_root == null:
+		return
+	_path_query = PathQueryScr.new()
+	_path_query.bind_pathing(map_root.get_pathing_map())
+	var hf_dict := map_root.get_heightfield_dict()
+	if not hf_dict.is_empty():
+		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
+	else:
+		_heightfield = null
 
 
 ## 游戏内移除已放置的 sloc（防 MapRoot 早于 Director 配置时漏网）。
@@ -273,6 +296,13 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 右键移动优先于调试热键：RTS 主操作不应被 F 键分支挡住。
+	if enable_move_command and event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
+			if _issue_move_command(mb.position):
+				get_viewport().set_input_as_handled()
+				return
 	if not debug_building_fx_hotkeys:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -294,6 +324,86 @@ func _unhandled_input(event: InputEvent) -> void:
 			if game_hud:
 				game_hud.set_status("主城 FX → %s" % label)
 			get_viewport().set_input_as_handled()
+
+
+## 对当前选中可移动单位下发 go_to。建筑跳过（主城不能走）。
+func _issue_move_command(screen_pos: Vector2) -> bool:
+	if unit_selector == null or _path_query == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return false
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		if game_hud:
+			game_hud.set_status("移动：未点到地面")
+		return true
+	var goal := Wc3Coords.godot_to_wc3_xy(hit)
+	var moved := 0
+	var failed := 0
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		var d: Dictionary = node.get_meta("unit_data", {})
+		var tid := str(d.get("typeId", ""))
+		if BuildingVisualScr.is_building(tid):
+			continue
+		var nav := _ensure_navigator(node)
+		if nav == null:
+			continue
+		if nav.go_to_wc3(goal):
+			moved += 1
+		else:
+			failed += 1
+	if game_hud:
+		if moved > 0:
+			game_hud.set_status("移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved])
+		elif failed > 0:
+			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal.x, goal.y])
+		else:
+			game_hud.set_status("选中无可用移动单位（建筑？）")
+	return moved > 0 or failed > 0
+
+
+func _ensure_navigator(unit: Node3D) -> Node:
+	var existing := unit.get_node_or_null("UnitNavigator")
+	if existing != null:
+		if existing.has_method("configure"):
+			existing.call("configure", _path_query, _heightfield)
+		return existing
+	var nav: Node = UnitNavigatorScr.new()
+	nav.name = "UnitNavigator"
+	unit.add_child(nav)
+	if nav.has_method("configure"):
+		nav.call("configure", _path_query, _heightfield)
+	return nav
+
+
+func _ground_at_screen(screen_pos: Vector2) -> Vector3:
+	if rts_camera == null:
+		return Vector3.INF
+	var cam := rts_camera.get_camera()
+	if cam == null:
+		return Vector3.INF
+	var from := cam.project_ray_origin(screen_pos)
+	var dir := cam.project_ray_normal(screen_pos)
+	var space := cam.get_world_3d().direct_space_state
+	if space != null:
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 20000.0)
+		q.collision_mask = 0xFFFFFFFF
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty():
+			return hit.get("position", Vector3.INF)
+	# 无碰撞网格时退回 y=0 平面：保证竖切在缺 collider 时仍能点地。
+	if absf(dir.y) < 1e-5:
+		return Vector3.INF
+	var t := -from.y / dir.y
+	if t < 0.0:
+		return Vector3.INF
+	return from + dir * t
 
 
 func _debug_apply_hall_phase(phase: int) -> bool:

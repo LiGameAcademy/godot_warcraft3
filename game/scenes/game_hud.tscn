@@ -233,4 +233,4 @@ offset_top = -196.0
 offset_right = 720.0
 offset_bottom = -176.0
 grow_vertical = 0
-text = "LMB 点选/框选 · WASD/边缘滚 · 中键旋转 · 滚轮缩放"
+text = "LMB 点选/框选 · RMB 移动 · WASD/边缘滚 · 中键旋转 · 滚轮缩放"
