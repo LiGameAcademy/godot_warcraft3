@@ -4,7 +4,8 @@
 >
 > 总纲：[architecture/LAYERED_ARCHITECTURE.md](architecture/LAYERED_ARCHITECTURE.md)
 > 路线图：[roadmap/ROADMAP.md](roadmap/ROADMAP.md)
-> 最后更新：2026-08-03
+> **新电脑资源准备**：[../README.md](../README.md) · [../tools/README.md](../tools/README.md)（`node tools/dev-setup.mjs`）
+> 最后更新：2026-08-05
 
 本文档按"代码模块对应"组织成子目录：
 

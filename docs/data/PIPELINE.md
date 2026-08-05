@@ -241,30 +241,42 @@ AssetProvider.clear_overlays()
 
 ## 4. 推荐运行顺序（首次设置）
 
+**优先用一键脚本**（解包 + SLK + 地图 + 转换 + Godot PE2/visuals）：
+
+```bash
+# 仓库根目录；详见 tools/README.md
+node tools/dev-setup.mjs --game-dir "C:/Path/To/Warcraft III"
+# Windows: .\tools\Dev-Setup.ps1 -GameDir "C:\Path\To\Warcraft III"
+```
+
+默认 `--profile game` ≈ Echo Isles + 人族 Melee 子集。全量用 `--profile full`。
+
+手工分步（等价于旧流程）：
+
 ```bash
 # 1. 解包原始
 cd tools/mpq-extract && npm install
 npm run extract -- --game-dir "C:/Path/To/Warcraft III"
 
-# 2. 转换贴图 + 模型
+# 2. 转换贴图 + 模型（开发推荐 echo-isles 子集）
 cd ../asset-convert && npm install
-npm run convert --
+npm run convert:echo-isles --
+# 或全量: npm run convert --
 
 # 3. 导出 SLK 表
 cd ../slk-export && npm install
 node src/cli.js
 
-# 4. 解析地图（默认 Lost Temple）
+# 4. 解析地图（Echo Isles / Lost Temple）
 cd ../map-parse && npm install
-npm run parse -- --force
+npm run parse -- --map "C:/war3/Maps/FrozenThrone/(2)EchoIsles.w3x" --force
 
-# 5. 同步编辑器 UI
+# 5. 同步编辑器 UI + Godot 特效预制
 cd ../..
 node tools/sync-editor-assets.mjs
+node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
-# 6. 打开 Godot → 运行 scenes/main.tscn
-godot --path . -e
-# WASD 平移，QE 升降，Shift 加速，右键旋转，滚轮缩放
+# 6. 打开 Godot → 运行 game/scenes/game_main.tscn
 ```
 
 ## 5. 何时查哪里

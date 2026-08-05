@@ -13,6 +13,7 @@
     "convert:models": "node src/cli.js --models-only",
     "bake:scn": "node scripts/bake-model-scenes.mjs",
     "convert:lost-temple": "node scripts/convert-lost-temple.mjs",
+    "convert:echo-isles": "node scripts/convert-echo-isles.mjs",
     "reconvert:additive": "node scripts/reconvert-additive-geosets.mjs"
   },
   "dependencies": {
