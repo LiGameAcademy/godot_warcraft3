@@ -12,6 +12,10 @@ const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
 const PathQueryScr = preload("res://game/scripts/logic/pathing/path_query.gd")
 const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator.gd")
 const UnitVisualScr = preload("res://game/scripts/presentation/unit_visual.gd")
+const UnitCrowdQueryScr = preload("res://game/scripts/logic/pathing/unit_crowd_query.gd")
+const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slots.gd")
+const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_cell_reservation.gd")
+const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 
 @export var map_root: MapLoader
@@ -38,6 +42,8 @@ const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 @export_group("移动")
 ## 右键对选中单位下发网格寻路移动
 @export var enable_move_command: bool = true
+## 开发：显示选中单位当前路径折线（F9 切换）
+@export var show_path_debug: bool = true
 
 @export_group("相机")
 ## 对齐 WC3 CameraRates Forward≈3000 → ×WORLD_SCALE
@@ -60,6 +66,10 @@ var _session: RefCounted = null
 ## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
 var _path_query: RefCounted = null
 var _heightfield: Wc3Heightfield = null
+## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
+var _crowd_query: RefCounted = null
+var _cell_reservation: RefCounted = null
+var _path_debug: Node3D = null
 
 
 func _ready() -> void:
@@ -242,11 +252,74 @@ func _setup_pathing() -> void:
 		return
 	_path_query = PathQueryScr.new()
 	_path_query.bind_pathing(map_root.get_pathing_map())
+	_cell_reservation = PathCellReservationScr.new()
+	if _path_query.has_method("bind_reservation"):
+		_path_query.call("bind_reservation", _cell_reservation)
 	var hf_dict := map_root.get_heightfield_dict()
 	if not hf_dict.is_empty():
 		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
 	else:
 		_heightfield = null
+	_crowd_query = UnitCrowdQueryScr.new()
+	_crowd_query.call(
+		"configure",
+		map_root.get_unit_layer(),
+		map_root.get_id_catalog()
+	)
+	_ensure_path_debug()
+
+
+func _ensure_path_debug() -> void:
+	if map_root == null:
+		return
+	if _path_debug != null and is_instance_valid(_path_debug):
+		if _path_debug.has_method("setup"):
+			_path_debug.call("setup", _heightfield)
+		if _path_debug.has_method("set_enabled"):
+			_path_debug.call("set_enabled", show_path_debug)
+		return
+	_path_debug = PathDebugDrawScr.new() as Node3D
+	_path_debug.name = "PathDebugDraw"
+	map_root.add_child(_path_debug)
+	if _path_debug.has_method("setup"):
+		_path_debug.call("setup", _heightfield)
+	if _path_debug.has_method("set_enabled"):
+		_path_debug.call("set_enabled", show_path_debug)
+
+
+func _process(_delta: float) -> void:
+	_refresh_path_debug()
+
+
+func _refresh_path_debug() -> void:
+	if _path_debug == null or not show_path_debug:
+		return
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	if not _path_debug.has_method("redraw"):
+		return
+	var paths: Array = []
+	var selected: Array = unit_selector.call("get_selected")
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var nav := (n as Node3D).get_node_or_null("UnitNavigator")
+		if nav == null or not nav.has_method("get_remaining_waypoints_wc3"):
+			continue
+		if not bool(nav.call("is_moving")):
+			continue
+		var pts: Array = nav.call("get_remaining_waypoints_wc3")
+		if pts.is_empty():
+			continue
+		# 加上当前位置，线从脚下出发
+		var inv := 1.0 / Wc3Coords.WORLD_SCALE
+		var body := n as Node3D
+		var cur := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
+		var full: Array = [cur]
+		for p in pts:
+			full.append(p)
+		paths.append({"points": full})
+	_path_debug.call("redraw", paths)
 
 
 ## 游戏内移除已放置的 sloc（防 MapRoot 早于 Director 配置时漏网）。
@@ -339,12 +412,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _issue_move_command(mb.position):
 				get_viewport().set_input_as_handled()
 				return
-	if not debug_building_fx_hotkeys:
-		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		var key := (event as InputEventKey).keycode
+		# S = Stop：对齐原作停止命令（寻路分支导航指令，不是采集）
+		if key == KEY_S and enable_move_command:
+			if _issue_stop_command():
+				get_viewport().set_input_as_handled()
+				return
+		if key == KEY_F9:
+			show_path_debug = not show_path_debug
+			_ensure_path_debug()
+			if _path_debug != null and _path_debug.has_method("set_enabled"):
+				_path_debug.call("set_enabled", show_path_debug)
+			if game_hud:
+				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
+			get_viewport().set_input_as_handled()
+			return
+		if not debug_building_fx_hotkeys:
+			return
 		var phase := -1
 		var label := ""
-		match (event as InputEventKey).keycode:
+		match key:
 			KEY_F6:
 				phase = BuildingVisualScr.Phase.BIRTH
 				label = "Birth（建造尘）"
@@ -362,7 +450,32 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
+## 选中单位立即停步并回 Stand（不推动静止单位）。
+func _issue_stop_command() -> bool:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return false
+	var n_stop := 0
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		var d: Dictionary = node.get_meta("unit_data", {})
+		if BuildingVisualScr.is_building(str(d.get("typeId", ""))):
+			continue
+		var nav := node.get_node_or_null("UnitNavigator")
+		if nav != null and nav.has_method("stop"):
+			nav.call("stop")
+			n_stop += 1
+	if n_stop > 0 and game_hud:
+		game_hud.set_status("停止 · %d 单位" % n_stop)
+	return n_stop > 0
+
+
 ## 对当前选中可移动单位下发 go_to。建筑跳过（主城不能走）。
+## 多单位：黄金角螺旋分配错开终点（对齐原作群体落点），再各自 A*；途中 soft push 防途中叠模。
 func _issue_move_command(screen_pos: Vector2) -> bool:
 	if unit_selector == null or _path_query == null:
 		return false
@@ -377,9 +490,9 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 			game_hud.set_status("移动：未点到地面")
 		return true
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal := Vector2(hit.x * inv, -hit.z * inv)
-	var moved := 0
-	var failed := 0
+	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
+	var movers: Array = []
+	var radii := PackedFloat32Array()
 	for n in selected:
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
@@ -388,22 +501,39 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		var tid := str(d.get("typeId", ""))
 		if BuildingVisualScr.is_building(tid):
 			continue
+		movers.append(node)
+		var r := 16.0
+		if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
+			r = float(_crowd_query.call("radius_for_unit", node))
+		radii.append(r)
+	if movers.is_empty():
+		if game_hud:
+			game_hud.set_status("选中无可用移动单位（建筑？）")
+		return true
+	var goals: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
+		movers, radii, goal_center, _path_query
+	)
+	var moved := 0
+	var failed := 0
+	for i in range(movers.size()):
+		var node: Node3D = movers[i]
 		var nav := _ensure_navigator(node)
 		if nav == null:
 			continue
-		if nav.go_to_wc3(goal):
+		var slot: Vector2 = goals[i] if i < goals.size() else goal_center
+		if nav.go_to_wc3(slot):
 			moved += 1
 		else:
 			failed += 1
 	if moved > 0:
-		_spawn_move_confirm(goal)
+		_spawn_move_confirm(goal_center)
 	if game_hud:
 		if moved > 0:
-			game_hud.set_status("移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved])
+			game_hud.set_status(
+				"移动 → (%.0f, %.0f) · %d 单位（已散开落点）" % [goal_center.x, goal_center.y, moved]
+			)
 		elif failed > 0:
-			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal.x, goal.y])
-		else:
-			game_hud.set_status("选中无可用移动单位（建筑？）")
+			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
 	return moved > 0 or failed > 0
 
 
@@ -425,7 +555,7 @@ func _ensure_navigator(unit: Node3D) -> Node:
 	var existing := unit.get_node_or_null("UnitNavigator")
 	if existing != null:
 		if existing.has_method("configure"):
-			existing.call("configure", _path_query, _heightfield)
+			existing.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
 		if existing.has_method("set_visual"):
 			existing.call("set_visual", visual)
 		_apply_move_stats(unit, existing)
@@ -434,7 +564,7 @@ func _ensure_navigator(unit: Node3D) -> Node:
 	nav.name = "UnitNavigator"
 	# 先 configure 再进树：即使 _ready 延后，query 也已就绪。
 	if nav.has_method("configure"):
-		nav.call("configure", _path_query, _heightfield)
+		nav.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
 	if nav.has_method("set_visual"):
 		nav.call("set_visual", visual)
 	_apply_move_stats(unit, nav)
@@ -458,7 +588,8 @@ func _ensure_unit_visual(unit: Node3D) -> Node:
 	return vis
 
 
-## 从 UnitUI.walk / UnitData.turnRate 写入 Navigator（农民 walk=150、turnRate=0.6）。
+## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
+## 注意：UnitUI.walk 是动画侧速率，不是对象编辑器「移动速度」。
 func _apply_move_stats(unit: Node3D, nav: Node) -> void:
 	if unit == null or nav == null or not nav.has_method("apply_unit_stats"):
 		return
@@ -466,17 +597,20 @@ func _apply_move_stats(unit: Node3D, nav: Node) -> void:
 	var tid := str(d.get("typeId", "")).strip_edges()
 	if tid.is_empty():
 		return
-	var walk := 0.0
+	var spd := 0.0
 	var turn := 0.0
-	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
+	var radius := 0.0
+	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
 	Wc3DefStore.ensure_table(UnitDataDef.TABLE_NAME)
-	var ui := Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, tid) as UnitUiDef
-	if ui != null and ui.walk > 0.0:
-		walk = ui.walk
+	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	if bal != null and bal.spd > 0.0:
+		spd = bal.spd
 	var data := Wc3DefStore.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
 	if data != null and data.turn_rate > 0.0:
 		turn = data.turn_rate
-	nav.call("apply_unit_stats", walk, turn)
+	if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
+		radius = float(_crowd_query.call("radius_for_unit", unit))
+	nav.call("apply_unit_stats", spd, turn, radius)
 
 
 ## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。

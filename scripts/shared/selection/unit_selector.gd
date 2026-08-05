@@ -353,7 +353,23 @@ func _select_in_rect(rect: Rect2) -> void:
 			var box := _screen_aabb(n)
 			if box.has_area() and box.intersects(rect):
 				hits.append(n)
-	_set_selection(hits)
+	# WC3：框选同时命中单位+建筑 → 只留单位；纯建筑框仍可选中建筑。
+	_set_selection(_prefer_units_over_buildings(hits))
+
+
+## 混合命中时优先单位（对齐原作框选）；仅建筑则原样返回。
+func _prefer_units_over_buildings(nodes: Array[Node3D]) -> Array[Node3D]:
+	var units: Array[Node3D] = []
+	var buildings: Array[Node3D] = []
+	for n in nodes:
+		var d: Dictionary = n.get_meta("unit_data", {})
+		if _looks_building(str(d.get("typeId", "")), d):
+			buildings.append(n)
+		else:
+			units.append(n)
+	if not units.is_empty():
+		return units
+	return buildings
 
 
 func _screen_aabb(node: Node3D) -> Rect2:

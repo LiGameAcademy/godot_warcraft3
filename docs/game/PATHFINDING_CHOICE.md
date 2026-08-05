@@ -149,8 +149,8 @@ Heightfield / 碰撞体 → bake NavigationMesh
 |------|------|
 | D0 | 右键：直线可达？`can_walk` 采样；否 → 提示 |
 | D1 | 网格 A\*（Walk 层）+ 路点跟随 + 贴地 |
-| D2 | 路径拉直；建筑/单位 collision 半径占格 |
-| D3 | 简单分离（push）或 **局部** RVO，**不**改全局图 |
+| D2 | 路径拉直；**PathAgentProfile 净空**（collision→clearance） |
+| D3 | 简单分离（push）或 **局部** RVO，**不**改全局图；编队落点 + 凹角脱困 |
 | 远期 | 若要做飞行层 / 特殊导航，仍优先「第二套网格掩码」，而非整图 NavMesh |
 
 「网格全局路径 + 局部连续避障」是可接受的混合；**NavMesh 全局路径**不是。

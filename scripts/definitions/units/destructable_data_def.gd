@@ -2,68 +2,70 @@ class_name DestructableDataDef
 extends Resource
 
 ## Units/DestructableData.slk 一行定义。
+##
+## 职责：可破坏物静态数据（树/岩石/门/围栏等：模型、占位、生命、路径图、修理等）。
 
 const TABLE_NAME := "DestructableData"
 const SLK_REL_PATH := "Units/DestructableData.json"
 const PRIMARY_KEY := "DestructableID"
 
-@export var destructable_id: String = ""
-@export var category: String = ""
-@export var tilesets: String = ""
-@export var tileset_specific: bool = false
-@export var file: String = ""
-@export var lightweight: bool = false
-@export var fat_los: bool = false
-@export var tex_id: int = 0
-@export var tex_file: String = ""
-@export var comment: String = ""
-@export var name_key: String = ""
-@export var editor_suffix: String = ""
-@export var dood_class: String = ""
-@export var use_click_helper: bool = false
-@export var on_cliffs: bool = false
-@export var on_water: bool = false
-@export var can_place_dead: bool = false
-@export var walkable: bool = false
-@export var cliff_height: float = 0.0
-@export var targ_type: String = ""
-@export var armor: String = ""
-@export var num_var: int = 0
-@export var hp: int = 0
-@export var occ_h: float = 0.0
-@export var fly_h: float = 0.0
-@export var fixed_rot: float = 0.0
-@export var sel_size: float = 0.0
-@export var min_scale: float = 0.0
-@export var max_scale: float = 0.0
-@export var can_place_rand_scale: bool = false
-@export var max_pitch: float = 0.0
-@export var max_roll: float = 0.0
-@export var radius: float = 0.0
-@export var fog_radius: float = 0.0
-@export var fog_vis: bool = false
-@export var path_tex: String = ""
-@export var path_tex_death: String = ""
-@export var death_snd: String = ""
-@export var shadow: String = ""
-@export var color_r: int = 0
-@export var color_g: int = 0
-@export var color_b: int = 0
-@export var show_in_mm: bool = false
-@export var use_mm_color: bool = false
-@export var mm_red: int = 0
-@export var mm_green: int = 0
-@export var mm_blue: int = 0
-@export var build_time: int = 0
-@export var repair_time: int = 0
-@export var gold_rep: int = 0
-@export var lumber_rep: int = 0
-@export var user_list: bool = false
-@export var in_beta: bool = false
-@export var version: int = 0
-@export var selectable: bool = false
-@export var selcircsize: float = 0.0
-@export var portraitmodel: String = ""
+@export var destructable_id: String = "" ## 主键（四字符可破坏物 ID）
+@export var category: String = "" ## 编辑器分类（树木/岩石/大门…）
+@export var tilesets: String = "" ## 可用地形集（* = 全部）
+@export var tileset_specific: bool = false ## 是否仅特定地形集
+@export var file: String = "" ## 模型路径
+@export var lightweight: bool = false ## 轻量模型（简化碰撞/表现）
+@export var fat_los: bool = false ## 粗视野遮挡（Fat LOS）
+@export var tex_id: int = 0 ## 可替换纹理 ID（Replaceable ID）
+@export var tex_file: String = "" ## 可替换纹理文件
+@export var comment: String = "" ## 人类可读备注
+@export var name_key: String = "" ## 显示名字符串键
+@export var editor_suffix: String = "" ## 编辑器名称后缀
+@export var dood_class: String = "" ## 装饰物/可破坏物子类
+@export var use_click_helper: bool = false ## 是否使用点击辅助体
+@export var on_cliffs: bool = false ## 可否放在悬崖上
+@export var on_water: bool = false ## 可否放在水上
+@export var can_place_dead: bool = false ## 可否以死亡状态放置
+@export var walkable: bool = false ## 顶部是否可行走（桥面等）
+@export var cliff_height: float = 0.0 ## 关联悬崖高度档
+@export var targ_type: String = "" ## 作为攻击目标的分类（tree / debris / wall…）
+@export var armor: String = "" ## 护甲/受击音效类型
+@export var num_var: int = 0 ## 模型变体数量
+@export var hp: int = 0 ## 生命值
+@export var occ_h: float = 0.0 ## 遮挡高度（Occlusion Height）
+@export var fly_h: float = 0.0 ## 飞行单位通过高度参考
+@export var fixed_rot: float = 0.0 ## 固定朝向角（-1 常表示可自由旋转）
+@export var sel_size: float = 0.0 ## 选中尺寸
+@export var min_scale: float = 0.0 ## 最小缩放
+@export var max_scale: float = 0.0 ## 最大缩放
+@export var can_place_rand_scale: bool = false ## 放置时是否随机缩放
+@export var max_pitch: float = 0.0 ## 最大俯仰
+@export var max_roll: float = 0.0 ## 最大侧倾
+@export var radius: float = 0.0 ## 碰撞/选择半径
+@export var fog_radius: float = 0.0 ## 迷雾相关半径
+@export var fog_vis: bool = false ## 是否影响迷雾可见性
+@export var path_tex: String = "" ## 存活时路径占位图
+@export var path_tex_death: String = "" ## 死亡后路径占位图
+@export var death_snd: String = "" ## 死亡音效
+@export var shadow: String = "" ## 阴影贴图
+@export var color_r: int = 0 ## 染色 R
+@export var color_g: int = 0 ## 染色 G
+@export var color_b: int = 0 ## 染色 B
+@export var show_in_mm: bool = false ## 是否显示在小地图
+@export var use_mm_color: bool = false ## 是否使用自定义小地图色
+@export var mm_red: int = 0 ## 小地图色 R
+@export var mm_green: int = 0 ## 小地图色 G
+@export var mm_blue: int = 0 ## 小地图色 B
+@export var build_time: int = 0 ## 建造/修复基准时间（可修复物）
+@export var repair_time: int = 0 ## 修理时间
+@export var gold_rep: int = 0 ## 修理金币消耗
+@export var lumber_rep: int = 0 ## 修理木材消耗
+@export var user_list: bool = false ## 是否出现在用户自定义列表
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
+@export var version: int = 0 ## 数据版本标记
+@export var selectable: bool = false ## 是否可选中
+@export var selcircsize: float = 0.0 ## 选中圈大小
+@export var portraitmodel: String = "" ## 肖像模型路径
 
 ## 显示名：优先 comment/name，否则主键。
 func display_name() -> String:

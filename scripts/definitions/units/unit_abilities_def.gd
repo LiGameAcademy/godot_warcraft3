@@ -2,18 +2,20 @@ class_name UnitAbilitiesDef
 extends Resource
 
 ## Units/UnitAbilities.slk 一行定义。
+##
+## 职责：单位自带技能列表（普通技能 + 英雄技能），以及默认自动施法技能。
 
 const TABLE_NAME := "UnitAbilities"
 const SLK_REL_PATH := "Units/UnitAbilities.json"
 const PRIMARY_KEY := "unitAbilID"
 
-@export var unit_abil_id: String = ""
-@export var sort_abil: String = ""
-@export var comment: String = ""
-@export var auto: String = ""
-@export var abil_list: String = ""
-@export var hero_abil_list: String = ""
-@export var in_beta: bool = false
+@export var unit_abil_id: String = "" ## 主键，与 unitID 对齐
+@export var sort_abil: String = "" ## 编辑器排序键
+@export var comment: String = "" ## 人类可读备注
+@export var auto: String = "" ## 默认自动施法技能 ID（空则无）
+@export var abil_list: String = "" ## 普通技能 ID 列表（逗号分隔）
+@export var hero_abil_list: String = "" ## 英雄技能 ID 列表（逗号分隔）
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
 
 ## 显示名：优先 comment/name，否则主键。
 func display_name() -> String:

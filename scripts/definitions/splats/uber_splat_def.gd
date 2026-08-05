@@ -1,21 +1,23 @@
 class_name UberSplatDef
 extends Resource
 
-## Splats/UberSplatData.slk 一行（建筑 Ground Texture / 临时贴花）。
+## Splats/UberSplatData.slk 一行定义。
+##
+## 职责：建筑地面贴花 / 临时 UberSplat（目录、文件、混合、缩放与生命周期）。
 
 const TABLE_NAME := "UberSplatData"
 const SLK_REL_PATH := "Splats/UberSplatData.json"
 const PRIMARY_KEY := "Name"
 
-@export var name_id: String = ""
-@export var comment: String = ""
-@export var dir: String = ""
-@export var file: String = ""
-@export var blend_mode: int = 0
-@export var scale: float = 0.0
-@export var birth_time: float = 0.0
-@export var pause_time: float = 0.0
-@export var decay: float = 0.0
+@export var name_id: String = "" ## 主键（与 UnitUI.uberSplat 等引用对齐）
+@export var comment: String = "" ## 人类可读备注
+@export var dir: String = "" ## 贴图目录
+@export var file: String = "" ## 贴图文件名
+@export var blend_mode: int = 0 ## 混合模式
+@export var scale: float = 0.0 ## 贴花世界缩放
+@export var birth_time: float = 0.0 ## 出现淡入时间（秒）
+@export var pause_time: float = 0.0 ## 保持不透明时间（秒）
+@export var decay: float = 0.0 ## 消散时间（秒）
 
 
 static func from_slk_record(rec: Dictionary) -> UberSplatDef:

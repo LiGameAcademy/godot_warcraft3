@@ -2,29 +2,31 @@ class_name DestructableMetaDataDef
 extends Resource
 
 ## Units/DestructableMetaData.slk 一行定义。
+##
+## 职责：对象编辑器「可破坏物」字段元数据，非可破坏物实例数据。
 
 const TABLE_NAME := "DestructableMetaData"
 const SLK_REL_PATH := "Units/DestructableMetaData.json"
 const PRIMARY_KEY := "ID"
 
-@export var id: String = ""
-@export var field: String = ""
-@export var slk: String = ""
-@export var field_index: int = 0
-@export var category: String = ""
-@export var display_name_key: String = ""
-@export var sort_key: String = ""
-@export var type_name: String = ""
-@export var change_flags: String = ""
-@export var import_type: String = ""
-@export var string_ext: int = 0
-@export var case_sens: bool = false
-@export var can_be_empty: bool = false
-@export var min_val: float = 0.0
-@export var max_val: float = 0.0
-@export var force_non_neg: bool = false
-@export var version: int = 0
-@export var section_name: String = ""
+@export var id: String = "" ## 元数据行主键
+@export var field: String = "" ## 对应 SLK/对象编辑器字段名
+@export var slk: String = "" ## 所属 SLK 表名
+@export var field_index: int = 0 ## 字段索引
+@export var category: String = "" ## 编辑器分类页签
+@export var display_name_key: String = "" ## 显示名字符串键
+@export var sort_key: String = "" ## 编辑器内排序
+@export var type_name: String = "" ## 字段值类型
+@export var change_flags: String = "" ## 修改标志
+@export var import_type: String = "" ## 导入资源类型
+@export var string_ext: int = 0 ## 字符串扩展标志
+@export var case_sens: bool = false ## 字符串是否区分大小写
+@export var can_be_empty: bool = false ## 是否允许空值
+@export var min_val: float = 0.0 ## 数值下限
+@export var max_val: float = 0.0 ## 数值上限
+@export var force_non_neg: bool = false ## 是否强制非负
+@export var version: int = 0 ## 数据版本标记
+@export var section_name: String = "" ## 编辑器分区名
 
 ## 显示名：优先 comment/name，否则主键。
 func display_name() -> String:

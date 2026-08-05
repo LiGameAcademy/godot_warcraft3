@@ -1,5 +1,6 @@
 class_name PathQuery
 extends RefCounted
+
 ## 网格寻路查询（Logic）：只读 Wc3PathingMap，不碰场景树。
 ##
 ## 为何独立成 RefCounted 而不是挂在单位上：
@@ -13,10 +14,22 @@ const LINE_SAMPLE_FRAC := 0.35
 
 var pathing: Wc3PathingMap = null
 var max_nodes: int = DEFAULT_MAX_NODES
+## 当前寻路净空（find_path 时写入；A*/直线/吸附共用）
+var _clearance: int = 0
+## 可选：运行时格预约（他人占用视为不可走）
+var reservation: RefCounted = null
+var _agent_id: int = 0
+## 弦拉直后是否做 Catmull-Rom 细分（不可走采样会丢弃）
+var smooth_catmull: bool = true
+var catmull_subdiv: int = 3
 
 
 func bind_pathing(map: Wc3PathingMap) -> void:
 	pathing = map
+
+
+func bind_reservation(res: RefCounted) -> void:
+	reservation = res
 
 
 func is_ready() -> bool:
@@ -29,15 +42,50 @@ func can_walk_wc3(wc3_x: float, wc3_y: float) -> bool:
 	return pathing.can_walk_at(wc3_x, wc3_y)
 
 
+func world_to_cell(wc3_x: float, wc3_y: float) -> Vector2i:
+	if not is_ready():
+		return Vector2i.ZERO
+	return pathing.world_to_cell(wc3_x, wc3_y)
+
+
+## 格子是否满足智能体净空（Chebyshev 邻域全可走）+ 他人预约。
+func can_walk_cell_clear(cx: int, cy: int, clearance: int = -1) -> bool:
+	if not is_ready():
+		return false
+	var c := _clearance if clearance < 0 else maxi(clearance, 0)
+	if not pathing.can_walk_cell(cx, cy):
+		return false
+	if reservation != null and reservation.has_method("is_blocked_for"):
+		if bool(reservation.call("is_blocked_for", cx, cy, _agent_id)):
+			return false
+	if c <= 0:
+		return true
+	for dy in range(-c, c + 1):
+		for dx in range(-c, c + 1):
+			if dx == 0 and dy == 0:
+				continue
+			if not pathing.can_walk_cell(cx + dx, cy + dy):
+				return false
+			if reservation != null and reservation.has_method("is_blocked_for"):
+				if bool(reservation.call("is_blocked_for", cx + dx, cy + dy, _agent_id)):
+					return false
+	return true
+
+
 ## 将任意点吸到附近可走位置。失败返回原格（调用方应看 ok）。
 ## 为何需要：玩家右键常点在装饰/脚印边缘，原作也会把终点「弹」到可走处。
 ## 已可走时保留点击坐标（不强制格心），否则手感会「永远差半格」。
-func snap_to_walkable(wc3_x: float, wc3_y: float, max_radius_cells: int = 12) -> Dictionary:
+func snap_to_walkable(
+	wc3_x: float,
+	wc3_y: float,
+	max_radius_cells: int = 12,
+	clearance: int = -1
+) -> Dictionary:
 	var empty := {"ok": false, "wc3": Vector2(wc3_x, wc3_y), "cell": Vector2i.ZERO}
 	if not is_ready():
 		return empty
 	var c0 := pathing.world_to_cell(wc3_x, wc3_y)
-	if pathing.can_walk_cell(c0.x, c0.y):
+	if can_walk_cell_clear(c0.x, c0.y, clearance):
 		return {"ok": true, "wc3": Vector2(wc3_x, wc3_y), "cell": c0}
 	for r in range(1, max_radius_cells + 1):
 		for dy in range(-r, r + 1):
@@ -46,7 +94,7 @@ func snap_to_walkable(wc3_x: float, wc3_y: float, max_radius_cells: int = 12) ->
 					continue
 				var cx := c0.x + dx
 				var cy := c0.y + dy
-				if pathing.can_walk_cell(cx, cy):
+				if can_walk_cell_clear(cx, cy, clearance):
 					return {
 						"ok": true,
 						"wc3": pathing.cell_center_wc3(cx, cy),
@@ -55,14 +103,120 @@ func snap_to_walkable(wc3_x: float, wc3_y: float, max_radius_cells: int = 12) ->
 	return empty
 
 
+## 8 邻可走格数。建筑 pathTex 凹角口袋通常 ≤3，开阔地接近 8。
+func walkable_neighbor_count(cx: int, cy: int) -> int:
+	if not is_ready():
+		return 0
+	var n := 0
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			if pathing.can_walk_cell(cx + dx, cy + dy):
+				n += 1
+	return n
+
+
+## 把卡在凹角/窄缝的单位弹到更开阔的可走格（不改 WPM）。
+## 已够开阔则保留原坐标；否则在半径内选 openness 最高、再选距原点近的格心。
+func snap_to_open_walkable(
+	wc3_x: float,
+	wc3_y: float,
+	max_radius_cells: int = 10,
+	min_openness: int = 4
+) -> Dictionary:
+	var empty := {"ok": false, "wc3": Vector2(wc3_x, wc3_y), "cell": Vector2i.ZERO, "openness": 0}
+	if not is_ready():
+		return empty
+	var c0 := pathing.world_to_cell(wc3_x, wc3_y)
+	var open0 := 0
+	if pathing.can_walk_cell(c0.x, c0.y):
+		open0 = walkable_neighbor_count(c0.x, c0.y)
+		if open0 >= min_openness:
+			return {
+				"ok": true,
+				"wc3": Vector2(wc3_x, wc3_y),
+				"cell": c0,
+				"openness": open0,
+				"moved": false,
+			}
+	var best_c := Vector2i.ZERO
+	var best_open := -1
+	var best_d2 := INF
+	var found := false
+	for r in range(0, max_radius_cells + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var cx := c0.x + dx
+				var cy := c0.y + dy
+				if not pathing.can_walk_cell(cx, cy):
+					continue
+				var op := walkable_neighbor_count(cx, cy)
+				if op < min_openness and op <= open0:
+					continue
+				var center := pathing.cell_center_wc3(cx, cy)
+				var d2 := Vector2(wc3_x, wc3_y).distance_squared_to(center)
+				if op > best_open or (op == best_open and d2 < best_d2):
+					best_open = op
+					best_d2 = d2
+					best_c = Vector2i(cx, cy)
+					found = true
+	if not found:
+		return snap_to_walkable(wc3_x, wc3_y, max_radius_cells)
+	return {
+		"ok": true,
+		"wc3": pathing.cell_center_wc3(best_c.x, best_c.y),
+		"cell": best_c,
+		"openness": best_open,
+		"moved": true,
+	}
+
+
+## 远离邻近 NO_WALK 格（建筑脚印凹角），避免 soft 分离把人推进死角。
+## 返回 WC3 XY / 秒的推开速度。
+func compute_wall_push_velocity(pos_wc3: Vector2, sample_cells: int = 2) -> Vector2:
+	if not is_ready():
+		return Vector2.ZERO
+	var c0 := pathing.world_to_cell(pos_wc3.x, pos_wc3.y)
+	var push := Vector2.ZERO
+	var r := maxi(sample_cells, 1)
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if dx == 0 and dy == 0:
+				continue
+			var cx := c0.x + dx
+			var cy := c0.y + dy
+			if pathing.can_walk_cell(cx, cy):
+				continue
+			var center := pathing.cell_center_wc3(cx, cy)
+			var delta := pos_wc3 - center
+			var dist := delta.length()
+			if dist < 0.01:
+				delta = Vector2(float(-dx), float(-dy))
+				dist = 0.01
+			# 越近墙推力越大；对角格权重略低
+			var w := 1.0 / float(maxi(absi(dx), absi(dy)))
+			push += (delta / dist) * w * pathing.cell_size
+	if push == Vector2.ZERO:
+		return Vector2.ZERO
+	# 与单位分离同量级上限，避免贴墙时抖
+	const MAX_WALL_PUSH := 200.0
+	var spd := push.length()
+	if spd > MAX_WALL_PUSH:
+		push *= MAX_WALL_PUSH / spd
+	return push
+
+
 ## 直线是否全程可走（D0 快捷路径）。为何先做直线：
 ## 多数短距离移动无遮挡，可跳过 A*，手感更「点哪走哪」。
 func is_straight_walkable(from_wc3: Vector2, to_wc3: Vector2) -> bool:
 	if not is_ready():
 		return false
-	if not pathing.can_walk_at(from_wc3.x, from_wc3.y):
+	if not _wc3_clear_ok(from_wc3.x, from_wc3.y):
 		return false
-	if not pathing.can_walk_at(to_wc3.x, to_wc3.y):
+	if not _wc3_clear_ok(to_wc3.x, to_wc3.y):
 		return false
 	var delta := to_wc3 - from_wc3
 	var dist := delta.length()
@@ -73,18 +227,30 @@ func is_straight_walkable(from_wc3: Vector2, to_wc3: Vector2) -> bool:
 	for i in range(1, n):
 		var t := float(i) / float(n)
 		var p := from_wc3.lerp(to_wc3, t)
-		if not pathing.can_walk_at(p.x, p.y):
+		if not _wc3_clear_ok(p.x, p.y):
 			return false
 	return true
 
 
+func _wc3_clear_ok(wc3_x: float, wc3_y: float) -> bool:
+	var c := pathing.world_to_cell(wc3_x, wc3_y)
+	return can_walk_cell_clear(c.x, c.y)
+
+
 ## 主入口：返回 { ok, waypoints: Array[Vector2](WC3 XY), reason }。
-## waypoints 含起点附近第一跳到终点；跟随器从当前世界位置接到第一条即可。
-func find_path(from_wc3: Vector2, to_wc3: Vector2) -> Dictionary:
+## clearance_cells：PathAgentProfile 净空；agent_id：占格预约时排除自己。
+func find_path(
+	from_wc3: Vector2,
+	to_wc3: Vector2,
+	clearance_cells: int = 0,
+	agent_id: int = 0
+) -> Dictionary:
 	if not is_ready():
 		return {"ok": false, "waypoints": [], "reason": "no_pathing"}
-	var start_snap := snap_to_walkable(from_wc3.x, from_wc3.y, 6)
-	var goal_snap := snap_to_walkable(to_wc3.x, to_wc3.y, 12)
+	_clearance = maxi(clearance_cells, 0)
+	_agent_id = agent_id
+	var start_snap := snap_to_walkable(from_wc3.x, from_wc3.y, 6, _clearance)
+	var goal_snap := snap_to_walkable(to_wc3.x, to_wc3.y, 12, _clearance)
 	if not start_snap.get("ok", false):
 		return {"ok": false, "waypoints": [], "reason": "start_blocked"}
 	if not goal_snap.get("ok", false):
@@ -109,6 +275,8 @@ func find_path(from_wc3: Vector2, to_wc3: Vector2) -> Dictionary:
 		wps.append(goal_p)
 	# 轻量拉直：为何在 Logic 做而不是 Navigator——减少每帧几何，路径语义仍基于可走采样。
 	wps = _string_pull(start_p, wps)
+	if smooth_catmull:
+		wps = _catmull_smooth(wps)
 	return {"ok": true, "waypoints": wps, "reason": "astar"}
 
 
@@ -133,6 +301,7 @@ func _astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var goal_i := _idx(goal, w)
 	if start_i < 0 or goal_i < 0:
 		return []
+	# 起终点自身不满足净空时仍允许搜（已由 snap 保证）；邻接扩展必须净空。
 	g_score[start_i] = 0.0
 
 	# 简陋二元组堆：[{f, i}, ...]；GDScript 无现成优先队列时，小顶堆足够竖切。
@@ -154,11 +323,11 @@ func _astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 			var ni := _idx(n, w)
 			if ni < 0 or closed[ni] != 0:
 				continue
-			if not pathing.can_walk_cell(n.x, n.y):
+			if not can_walk_cell_clear(n.x, n.y):
 				continue
 			# 禁止斜穿「墙角」：否则单位视觉上会卡进建筑直角。
 			if n.x != cx and n.y != cy:
-				if not pathing.can_walk_cell(cx, n.y) or not pathing.can_walk_cell(n.x, cy):
+				if not can_walk_cell_clear(cx, n.y) or not can_walk_cell_clear(n.x, cy):
 					continue
 			var step: float = 1.0 if (n.x == cx or n.y == cy) else 1.4142135
 			var tentative: float = g_score[cur_i] + step
@@ -225,6 +394,46 @@ func _string_pull(start: Vector2, wps: Array[Vector2]) -> Array[Vector2]:
 		anchor = wps[farthest]
 		i = farthest + 1
 	return out
+
+
+## Catmull-Rom 细分；落在不可走采样点丢弃，保证仍可贴 WPM。
+func _catmull_smooth(wps: Array[Vector2]) -> Array[Vector2]:
+	if wps.size() < 2 or catmull_subdiv <= 1:
+		return wps
+	var ext: Array[Vector2] = []
+	ext.append(wps[0])
+	for p in wps:
+		ext.append(p)
+	ext.append(wps[wps.size() - 1])
+	var out: Array[Vector2] = []
+	var min_step := pathing.cell_size * 0.35
+	for i in range(1, ext.size() - 2):
+		var p0: Vector2 = ext[i - 1]
+		var p1: Vector2 = ext[i]
+		var p2: Vector2 = ext[i + 1]
+		var p3: Vector2 = ext[i + 2]
+		for s in range(catmull_subdiv):
+			var t := float(s) / float(catmull_subdiv)
+			var q := _catmull_point(p0, p1, p2, p3, t)
+			if not _wc3_clear_ok(q.x, q.y):
+				continue
+			if out.is_empty() or out[out.size() - 1].distance_to(q) >= min_step:
+				out.append(q)
+	var last: Vector2 = wps[wps.size() - 1]
+	if out.is_empty() or out[out.size() - 1].distance_to(last) > 1.0:
+		out.append(last)
+	return out if out.size() >= 2 else wps
+
+
+func _catmull_point(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
+	var t2 := t * t
+	var t3 := t2 * t
+	return 0.5 * (
+		(2.0 * p1)
+		+ (-p0 + p2) * t
+		+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+		+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+	)
 
 
 func _heap_push(heap: Array, f: float, node_i: int) -> void:

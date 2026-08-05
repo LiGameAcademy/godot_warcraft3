@@ -1,29 +1,30 @@
 class_name TerrainTileDef
 extends Resource
 
-## Terrain.slk 一行定义（静态表数据，不含贴图路径解析）。
+## TerrainArt/Terrain.slk 一行定义。
+##
+## 职责：地形瓦片（贴图路径、可否建造/行走/飞行、荒芜之地优先级等）。
 
 const TABLE_NAME := "Terrain"
 const SLK_REL_PATH := "TerrainArt/Terrain.json"
 const PRIMARY_KEY := "tileID"
 
-@export var tile_id: String = ""					## 地形ID
-@export var cliff_set: int = -1						## 悬崖集
-@export var dir: String = ""						## 目录
-@export var file: String = ""						## 文件
-@export var comment: String = ""					## 注释
-@export var name_key: String = ""					## 名称键
-@export var buildable: bool = true					## 可建造
-@export var footprints: bool = true					## 可行走
-@export var walkable: bool = true					## 可行走
-@export var flyable: bool = true					## 可飞行
-@export var blight_pri: int = 0						## 污染优先级
-@export var convert_to: String = ""					## 转换为
-@export var in_beta: bool = false					## 是否在Beta版
-@export var version: int = 0						## 版本
+@export var tile_id: String = "" ## 主键（如 Ldrt；首字符为地形集字母）
+@export var cliff_set: int = -1 ## 关联悬崖集索引（-1 表示无）
+@export var dir: String = "" ## 贴图所在目录
+@export var file: String = "" ## 贴图文件名（无扩展名）
+@export var comment: String = "" ## 人类可读备注
+@export var name_key: String = "" ## 显示名字符串键
+@export var buildable: bool = true ## 是否可建造
+@export var footprints: bool = true ## 是否留下脚印（Footprints）
+@export var walkable: bool = true ## 地面单位是否可行走
+@export var flyable: bool = true ## 飞行单位是否可飞越
+@export var blight_pri: int = 0 ## 荒芜之地蔓延优先级（越高越优先被转化）
+@export var convert_to: String = "" ## 荒芜化后转换成的瓦片 ID
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
+@export var version: int = 0 ## 数据版本标记
 
 ## 显示用名称键：优先 name，空则 comment。
-## [return String] 显示用名称键
 func display_name_key() -> String:
 	if not name_key.is_empty() and name_key != "_":
 		return name_key
@@ -37,9 +38,6 @@ func get_tileset_letter() -> String:
 		return ""
 	return tile_id.substr(0, 1).to_upper()
 
-## [static] 从SLK记录创建地形类型定义
-## [param rec Dictionary] SLK记录
-## [return TerrainTileDef] 地形类型定义
 static func from_slk_record(rec: Dictionary) -> TerrainTileDef:
 	var d := TerrainTileDef.new()
 	d.tile_id = str(rec.get("tileID", "")).strip_edges()
@@ -59,8 +57,6 @@ static func from_slk_record(rec: Dictionary) -> TerrainTileDef:
 	return d
 
 ## 向 DefStore 注册本表（由 Wc3DefStore._ready 调用）。
-## [param store] DefStore
-## [return void] 无返回值
 static func register_to(store: Node) -> void:
 	if store == null or not store.has_method("register_table"):
 		push_error("TerrainTileDef: 无法注册到 DefStore")

@@ -1,45 +1,47 @@
 class_name ItemDef
 extends Resource
 
-## 物品静态定义（ItemData.slk 一行）。
+## Units/ItemData.slk 一行定义。
+##
+## 职责：物品静态数据（分类、等级、技能、冷却、库存、造价、模型与染色等）。
 
 const TABLE_NAME := "Items"
 const SLK_REL_PATH := "Units/ItemData.json"
 const PRIMARY_KEY := "itemID"
 
-@export var item_id: String = ""				## 物品ID
-@export var comment: String = ""				## 注释
-@export var version: int = 0					## 版本
-@export var item_class: String = ""				## 物品类型
-@export var level: int = 0						## 等级	
-@export var old_level: int = 0					## 旧等级
-@export var abil_list: String = ""				## 技能列表
-@export var cooldown_id: String = ""			## 冷却ID
-@export var ignore_cd: bool = false				## 忽略冷却
-@export var uses: int = 0						## 使用次数
-@export var prio: int = 0						## 优先级	
-@export var usable: bool = false				## 可使用
-@export var perishable: bool = false			## 可消耗
-@export var droppable: bool = true				## 可掉落
-@export var pawnable: bool = true				## 可交换
-@export var sellable: bool = true				## 可出售
-@export var pick_random: bool = false			## 可随机
-@export var powerup: bool = false				## 可强化
-@export var drop: bool = false					## 可掉落
-@export var stock_max: int = 0					## 库存最大
-@export var stock_regen: int = 0				## 库存生成
-@export var stock_start: int = 0				## 库存起始
-@export var gold_cost: int = 0					## 金币消耗
-@export var lumber_cost: int = 0				## 木材消耗
-@export var hp: int = 0							## 生命值
-@export var morph: bool = false					## 变形
-@export var armor: String = ""					## 护甲
-@export var file: String = ""					## 文件
-@export var scale: float = 1.0					## 缩放
-@export var color_r: int = 255					## 颜色R
-@export var color_g: int = 255					## 颜色G
-@export var color_b: int = 255					## 颜色B
-@export var in_beta: bool = false				## 是否在Beta
+@export var item_id: String = "" ## 主键（四字符物品 ID）
+@export var comment: String = "" ## 人类可读备注（常作显示名回退）
+@export var version: int = 0 ## 数据版本标记
+@export var item_class: String = "" ## 物品分类：Permanent / Charged / PowerUp / Artifact…
+@export var level: int = 0 ## 物品等级（商店分层/掉落权重）
+@export var old_level: int = 0 ## 旧版等级字段（兼容）
+@export var abil_list: String = "" ## 物品携带的技能 ID 列表（逗号分隔）
+@export var cooldown_id: String = "" ## 共享冷却组 ID（同组物品共用 CD）
+@export var ignore_cd: bool = false ## 是否忽略冷却
+@export var uses: int = 0 ## 使用次数（0 常表示无限/非充能）
+@export var prio: int = 0 ## AI 拾取/使用优先级
+@export var usable: bool = false ## 是否为主动可使用物品
+@export var perishable: bool = false ## 用完是否消失（消耗品）
+@export var droppable: bool = true ## 是否可主动丢弃
+@export var pawnable: bool = true ## 是否可抵押给商店
+@export var sellable: bool = true ## 是否可出售
+@export var pick_random: bool = false ## 是否可出现在随机掉落池
+@export var powerup: bool = false ## 是否为拾取即生效类（Powerup）
+@export var drop: bool = false ## 持有者死亡时是否掉落
+@export var stock_max: int = 0 ## 商店最大库存
+@export var stock_regen: int = 0 ## 库存补充间隔（秒）
+@export var stock_start: int = 0 ## 开局库存
+@export var gold_cost: int = 0 ## 购买金币价格
+@export var lumber_cost: int = 0 ## 购买木材价格
+@export var hp: int = 0 ## 物品「生命」（可被攻击的物品/可破坏物）
+@export var morph: bool = false ## 是否会变形/切换形态
+@export var armor: String = "" ## 受击护甲音效类型
+@export var file: String = "" ## 地面模型路径
+@export var scale: float = 1.0 ## 模型缩放
+@export var color_r: int = 255 ## 染色 R（0–255）
+@export var color_g: int = 255 ## 染色 G
+@export var color_b: int = 255 ## 染色 B
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
 
 
 ## 显示名：优先 comment，否则 item_id。

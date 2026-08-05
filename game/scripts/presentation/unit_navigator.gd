@@ -1,5 +1,6 @@
 class_name UnitNavigator
 extends Node
+
 ## 单位移动执行器：作为单位 Node3D 的子节点挂载。
 ##
 ## 为何是子节点而不是把 A* 写进单位脚本：
@@ -11,38 +12,82 @@ signal arrived
 signal path_failed(reason: String)
 signal locomotion_changed(moving: bool)
 
-## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitUI.walk 覆盖。
+const SeparationScr = preload("res://game/scripts/logic/pathing/unit_separation.gd")
+const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_profile.gd")
+
+## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
 @export var arrive_eps_wc3: float = 8.0
+## 最终路点（常在不可走边缘）放宽阈值，避免贴墙永远差几单位到不了。
+@export var arrive_eps_last_wc3: float = 18.0
 @export var face_move_dir: bool = true
 ## WC3 UnitData.turnRate：圈/秒。0.6 ≈ 农民；角速度 = turn_rate * TAU。
 @export var turn_rate: float = 0.5
+## UnitBalance.collision（WC3）；用于 soft 分离。农民约 16。
+@export var collision_radius_wc3: float = 16.0
+## A* 净空格数（由 collision 推导）；0 = 单格通道即可。
+@export var clearance_cells: int = 0
+@export var enable_separation: bool = true
+## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
+@export var stall_abort_sec: float = 0.4
 
 var _query: RefCounted = null ## PathQuery
 var _heightfield: Wc3Heightfield = null
+var _crowd: RefCounted = null ## UnitCrowdQuery
+var _reservation: RefCounted = null ## PathCellReservation
 ## UnitVisual 实例；用 Node 避免 class_name 全局注册时序导致 Parser Error
 var _visual: Node = null
 var _waypoints: Array[Vector2] = [] ## WC3 XY
 var _wp_i: int = 0
 var _moving: bool = false
+var _goal_wc3: Vector2 = Vector2.INF
+var _stall_time: float = 0.0
 
 
-func configure(query: RefCounted, heightfield: Wc3Heightfield) -> void:
+func configure(
+	query: RefCounted,
+	heightfield: Wc3Heightfield,
+	crowd: RefCounted = null,
+	reservation: RefCounted = null
+) -> void:
 	_query = query
 	_heightfield = heightfield
+	_crowd = crowd
+	_reservation = reservation
 
 
 func set_visual(visual: Node) -> void:
 	_visual = visual
 
 
-## 从 SLK 写入速度/转向；≤0 的项保留现有值。
-func apply_unit_stats(walk_speed_wc3: float, turn_rate_rps: float) -> void:
-	if walk_speed_wc3 > 0.0:
-		speed_wc3 = walk_speed_wc3
+func get_waypoints_wc3() -> Array[Vector2]:
+	return _waypoints.duplicate()
+
+
+func get_remaining_waypoints_wc3() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if not _moving:
+		return out
+	for i in range(_wp_i, _waypoints.size()):
+		out.append(_waypoints[i])
+	return out
+
+
+## 从 SLK 写入速度/转向/碰撞；≤0 的项保留现有值。
+## move_speed_wc3 ← UnitBalance.spd（玩法）；非 UnitUI.walk（动画）。
+func apply_unit_stats(
+	move_speed_wc3: float,
+	turn_rate_rps: float,
+	radius_wc3: float = -1.0
+) -> void:
+	if move_speed_wc3 > 0.0:
+		speed_wc3 = move_speed_wc3
 	if turn_rate_rps > 0.0:
 		turn_rate = turn_rate_rps
+	if radius_wc3 > 0.0:
+		collision_radius_wc3 = radius_wc3
+		clearance_cells = AgentProfileScr.clearance_from_radius(radius_wc3)
 
 
 func is_moving() -> bool:
@@ -54,7 +99,10 @@ func stop() -> void:
 	_moving = false
 	_waypoints.clear()
 	_wp_i = 0
+	_goal_wc3 = Vector2.INF
+	_stall_time = 0.0
 	set_process(false)
+	_release_reservation()
 	if was:
 		_set_locomotion(false)
 
@@ -67,7 +115,14 @@ func go_to_wc3(goal_wc3: Vector2) -> bool:
 		return false
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var from := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
-	var result: Dictionary = _query.call("find_path", from, goal_wc3)
+	var agent_id := body.get_instance_id()
+	# 凹角口袋（建筑 pathTex 直角）先弹到开阔格，否则 A* 能走也会在墙缝里蹭。
+	from = _unstuck_if_pocket(body, from)
+	var result: Dictionary = _query.call("find_path", from, goal_wc3, clearance_cells, agent_id)
+	if not result.get("ok", false):
+		# 再试一次：强制弹开后再寻路
+		from = _unstuck_if_pocket(body, from, true)
+		result = _query.call("find_path", from, goal_wc3, clearance_cells, agent_id)
 	if not result.get("ok", false):
 		stop()
 		path_failed.emit(str(result.get("reason", "fail")))
@@ -78,18 +133,42 @@ func go_to_wc3(goal_wc3: Vector2) -> bool:
 		if p is Vector2:
 			_waypoints.append(p)
 	_wp_i = 0
+	_stall_time = 0.0
+	# 用路径实际终点（已 snap 到可走），不要用原始点击（可能在 NO_WALK 里）
+	if not _waypoints.is_empty():
+		_goal_wc3 = _waypoints[_waypoints.size() - 1]
+	else:
+		_goal_wc3 = goal_wc3
 	if _waypoints.is_empty():
 		_moving = false
 		set_process(false)
 		_set_locomotion(false)
+		_release_reservation()
 		arrived.emit()
 		return true
 	_moving = true
 	_set_locomotion(true)
+	_refresh_reservation(body)
 	# 用 _process 而非 _physics_process：本项目移动不依赖物理步进；
 	# 且避免「add_child 后本帧 go_to 开物理，下一帧 _ready 又关掉」的竞态（见 _ready 注释）。
 	set_process(true)
 	return true
+
+
+## 若当前格过于「夹」（可走邻居少），弹到附近开阔可走格。
+func _unstuck_if_pocket(body: Node3D, from_wc3: Vector2, force: bool = false) -> Vector2:
+	if _query == null or not _query.has_method("snap_to_open_walkable"):
+		return from_wc3
+	var min_open := 3 if force else 4
+	var snap: Dictionary = _query.call("snap_to_open_walkable", from_wc3.x, from_wc3.y, 12, min_open)
+	if not bool(snap.get("ok", false)):
+		return from_wc3
+	if not force and not bool(snap.get("moved", false)):
+		return from_wc3
+	var freed: Vector2 = snap.get("wc3", from_wc3)
+	if freed.distance_squared_to(from_wc3) > 0.25:
+		_apply_wc3_pos(body, freed)
+	return freed
 
 
 func _ready() -> void:
@@ -115,31 +194,94 @@ func _process(delta: float) -> void:
 	var cur_wc3 := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
 	var to := target_wc3 - cur_wc3
 	var dist := to.length()
-	if dist <= arrive_eps_wc3:
-		# 中间点可跳过；最后一点要落到精确目标，否则「点哪走哪」会差半个格。
-		if _wp_i >= _waypoints.size() - 1:
-			_apply_wc3_pos(body, target_wc3)
+	var is_last := _wp_i >= _waypoints.size() - 1
+	var arrive_eps := arrive_eps_last_wc3 if is_last else arrive_eps_wc3
+	if dist <= arrive_eps:
+		if is_last:
+			# 末点：不再叠加离墙推，避免刚踩进阈值又被推出去
+			_apply_wc3_pos(body, cur_wc3)
 			_finish()
 			return
 		_wp_i += 1
+		_stall_time = 0.0
 		return
 	var step := speed_wc3 * delta
+	var desired: Vector2
 	if step >= dist:
-		_apply_wc3_pos(body, target_wc3)
+		desired = target_wc3
+	else:
+		desired = cur_wc3 + to * (step / dist)
+	var next := _with_separation(body, cur_wc3, desired, delta, is_last, dist)
+	var moved := next.distance_to(cur_wc3)
+	_apply_wc3_pos(body, next)
+	_refresh_reservation(body)
+	# 面向合成速度方向（含轻微侧移），比纯路点更稳
+	var move_dir := next - cur_wc3
+	if face_move_dir and move_dir.length_squared() > 0.01:
+		_face_dir(body, move_dir, delta)
+	# 贴不可走边缘：离墙推与目标对冲 → 位移≈0 却永远到不了 → 停 Walk
+	if moved < 0.75:
+		_stall_time += delta
+		if _stall_time >= stall_abort_sec:
+			_finish()
+			return
+	else:
+		_stall_time = 0.0
+	if step >= dist and next.distance_to(target_wc3) <= arrive_eps:
 		_wp_i += 1
+		_stall_time = 0.0
 		if _wp_i >= _waypoints.size():
 			_finish()
-		return
-	var next := cur_wc3 + to * (step / dist)
-	_apply_wc3_pos(body, next)
-	if face_move_dir and dist > 0.01:
-		_face_dir(body, to, delta)
+
+
+## 路点步进 + soft 分离 + 离墙推开；不可走则回退。
+## 接近最终路点时关闭离墙推：终点常在 NO_WALK 旁，推开会导致永不 arrive。
+func _with_separation(
+	body: Node3D,
+	cur_wc3: Vector2,
+	desired_wc3: Vector2,
+	delta: float,
+	is_last: bool = false,
+	dist_to_target: float = INF
+) -> Vector2:
+	var next := desired_wc3
+	var near_last := is_last and dist_to_target <= arrive_eps_last_wc3 * 3.0
+	if not near_last and _query != null and _query.has_method("compute_wall_push_velocity"):
+		var wall_vel: Vector2 = _query.call("compute_wall_push_velocity", cur_wc3, 2)
+		next += wall_vel * delta
+	if enable_separation and _crowd != null and _crowd.has_method("neighbors_of"):
+		var query_r := maxf(collision_radius_wc3 * 5.0, 128.0)
+		var neighbors: Array = _crowd.call("neighbors_of", body, cur_wc3, query_r, false)
+		if not neighbors.is_empty():
+			var push_vel: Vector2 = SeparationScr.compute_push_velocity(
+				cur_wc3,
+				collision_radius_wc3,
+				neighbors,
+				body.get_instance_id()
+			)
+			next += push_vel * delta
+	return _clamp_walkable(next, desired_wc3, cur_wc3)
+
+
+## 优先 next；不可走则试 fallback；再不可走则 keep。
+func _clamp_walkable(
+	next: Vector2,
+	fallback: Vector2 = Vector2.INF,
+	keep: Vector2 = Vector2.INF
+) -> Vector2:
+	if _query != null and _query.has_method("can_walk_wc3"):
+		if bool(_query.call("can_walk_wc3", next.x, next.y)):
+			return next
+		if fallback != Vector2.INF and bool(_query.call("can_walk_wc3", fallback.x, fallback.y)):
+			return fallback
+		if keep != Vector2.INF:
+			return keep
+	return next
 
 
 func _face_dir(body: Node3D, dir_wc3: Vector2, delta: float) -> void:
 	# WC3 MDX→GLB 单位前进轴是本地 +X（不是 Godot look_at 的 -Z）。
 	# 位移 Godot(dx,0,-dy) 要对齐 +X：yaw = atan2(dy, dx)（= WC3 facing，不必再 -a+PI）。
-	# -Z 对准会偏 90°；yaw_wc3_to_godot 会偏 180°（反着走）。
 	var target_yaw := atan2(dir_wc3.y, dir_wc3.x)
 	var rate := maxf(turn_rate, 0.05) * TAU
 	body.rotation.y = rotate_toward(body.rotation.y, target_yaw, rate * delta)
@@ -162,9 +304,37 @@ func _finish() -> void:
 	_moving = false
 	_waypoints.clear()
 	_wp_i = 0
+	_goal_wc3 = Vector2.INF
+	_stall_time = 0.0
 	set_process(false)
+	_release_reservation()
 	_set_locomotion(false)
 	arrived.emit()
+
+
+func _refresh_reservation(body: Node3D) -> void:
+	if _reservation == null or not _reservation.has_method("set_owner_cells"):
+		return
+	if _query == null or body == null or not _query.has_method("world_to_cell"):
+		return
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var cur := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
+	var cells: Array = []
+	cells.append(_query.call("world_to_cell", cur.x, cur.y))
+	if _goal_wc3 != Vector2.INF:
+		cells.append(_query.call("world_to_cell", _goal_wc3.x, _goal_wc3.y))
+	if _wp_i < _waypoints.size():
+		var nxt: Vector2 = _waypoints[_wp_i]
+		cells.append(_query.call("world_to_cell", nxt.x, nxt.y))
+	_reservation.call("set_owner_cells", body.get_instance_id(), cells)
+
+
+func _release_reservation() -> void:
+	var body := _body()
+	if body == null or _reservation == null:
+		return
+	if _reservation.has_method("clear_owner"):
+		_reservation.call("clear_owner", body.get_instance_id())
 
 
 func _set_locomotion(moving: bool) -> void:

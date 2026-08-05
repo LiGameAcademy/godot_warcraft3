@@ -1,36 +1,33 @@
 class_name CliffTypeDef
 extends Resource
 
-## 悬崖类型定义
-## CliffTypes.slk 一行定义（静态游戏数据，非地图实例）。
+## TerrainArt/CliffTypes.slk 一行定义。
+##
+## 职责：悬崖类型（模型目录、纹理、关联地面/上层瓦片、悬崖分类）。
 
 const TABLE_NAME := "CliffTypes"
 const SLK_REL_PATH := "TerrainArt/CliffTypes.json"
 const PRIMARY_KEY := "cliffID"
 
-@export var cliff_id: String = ""						## 悬崖ID
-@export var cliff_model_dir: String = "Cliffs"			## 悬崖模型目录
-@export var ramp_model_dir: String = "CliffTrans"		## 斜坡模型目录
-@export var tex_dir: String = ""						## 纹理目录
-@export var tex_file: String = ""						## 纹理文件
-@export var name_key: String = ""						## 名称键
-@export var ground_tile: String = ""					## 地面地形
-@export var upper_tile: String = ""						## 上层地形
-@export var cliff_class: String = ""					## 悬崖类型
-@export var old_id: int = 0								## 旧ID
-@export var version: int = 0							## 版本
-@export var in_beta: bool = false						## 是否在Beta版
+@export var cliff_id: String = "" ## 主键（如 CLdi；第 2 字符为地形集字母）
+@export var cliff_model_dir: String = "Cliffs" ## 悬崖模型目录名
+@export var ramp_model_dir: String = "CliffTrans" ## 斜坡/过渡模型目录名
+@export var tex_dir: String = "" ## 悬崖纹理目录
+@export var tex_file: String = "" ## 悬崖纹理文件名
+@export var name_key: String = "" ## 显示名字符串键
+@export var ground_tile: String = "" ## 关联的底层地形瓦片 ID
+@export var upper_tile: String = "" ## 关联的上层地形瓦片 ID（可空）
+@export var cliff_class: String = "" ## 悬崖分类（Cliff / Ramp 等）
+@export var old_id: int = 0 ## 旧版数字 ID（兼容）
+@export var version: int = 0 ## 数据版本标记
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
 
 ## 悬崖所属地形集字母：cliffID 第 2 字符（CLdi → L，CIsn → I）。
-## [return String] 悬崖所属地形集字母
 func get_tileset_letter() -> String:
 	if cliff_id.length() < 2:
 		return ""
 	return cliff_id.substr(1, 1).to_upper()
 
-## [static] 从SLK记录创建悬崖类型定义
-## [param rec Dictionary] SLK记录
-## [return CliffTypeDef] 悬崖类型定义
 static func from_slk_record(rec: Dictionary) -> CliffTypeDef:
 	var d := CliffTypeDef.new()
 	d.cliff_id = str(rec.get("cliffID", "")).strip_edges()

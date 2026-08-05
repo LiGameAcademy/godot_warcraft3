@@ -2,44 +2,46 @@ class_name UpgradeDataDef
 extends Resource
 
 ## Units/UpgradeData.slk 一行定义。
+##
+## 职责：科技升级（造价/时间随等级、最多四级效果 effect/base/mod/code）。
 
 const TABLE_NAME := "UpgradeData"
 const SLK_REL_PATH := "Units/UpgradeData.json"
 const PRIMARY_KEY := "upgradeid"
 
-@export var upgradeid: String = ""
-@export var comment: String = ""
-@export var class_kind: String = ""
-@export var race: String = ""
-@export var sort_key: String = ""
-@export var used: bool = false
-@export var is_global: bool = false
-@export var maxlevel: int = 0
-@export var inherit: bool = false
-@export var goldbase: float = 0.0
-@export var goldmod: float = 0.0
-@export var lumberbase: float = 0.0
-@export var lumbermod: float = 0.0
-@export var timebase: float = 0.0
-@export var timemod: float = 0.0
-@export var effect1: String = ""
-@export var base1: float = 0.0
-@export var mod1: float = 0.0
-@export var code1: String = ""
-@export var effect2: String = ""
-@export var base2: float = 0.0
-@export var mod2: float = 0.0
-@export var code2: String = ""
-@export var effect3: String = ""
-@export var base3: float = 0.0
-@export var mod3: float = 0.0
-@export var code3: String = ""
-@export var effect4: String = ""
-@export var base4: float = 0.0
-@export var mod4: float = 0.0
-@export var code4: String = ""
-@export var version: int = 0
-@export var in_beta: bool = false
+@export var upgradeid: String = "" ## 主键（四字符升级 ID）
+@export var comment: String = "" ## 人类可读备注
+@export var class_kind: String = "" ## 升级分类（class；编辑器分组）
+@export var race: String = "" ## 所属种族
+@export var sort_key: String = "" ## 编辑器排序键
+@export var used: bool = false ## 是否在游戏中启用
+@export var is_global: bool = false ## 是否为全局升级（影响全图/全队规则）
+@export var maxlevel: int = 0 ## 最大可研究等级
+@export var inherit: bool = false ## 是否继承前一级效果
+@export var goldbase: float = 0.0 ## 1 级金币消耗
+@export var goldmod: float = 0.0 ## 每升一级追加的金币
+@export var lumberbase: float = 0.0 ## 1 级木材消耗
+@export var lumbermod: float = 0.0 ## 每升一级追加的木材
+@export var timebase: float = 0.0 ## 1 级研究时间（秒）
+@export var timemod: float = 0.0 ## 每升一级追加的研究时间
+@export var effect1: String = "" ## 效果 1 类型（如 rarm / ratd；见 UpgradeEffectMetaData）
+@export var base1: float = 0.0 ## 效果 1 基础值
+@export var mod1: float = 0.0 ## 效果 1 每级增量
+@export var code1: String = "" ## 效果 1 目标码（单位/技能等 ID）
+@export var effect2: String = "" ## 效果 2 类型
+@export var base2: float = 0.0 ## 效果 2 基础值
+@export var mod2: float = 0.0 ## 效果 2 每级增量
+@export var code2: String = "" ## 效果 2 目标码
+@export var effect3: String = "" ## 效果 3 类型
+@export var base3: float = 0.0 ## 效果 3 基础值
+@export var mod3: float = 0.0 ## 效果 3 每级增量
+@export var code3: String = "" ## 效果 3 目标码
+@export var effect4: String = "" ## 效果 4 类型
+@export var base4: float = 0.0 ## 效果 4 基础值
+@export var mod4: float = 0.0 ## 效果 4 每级增量
+@export var code4: String = "" ## 效果 4 目标码
+@export var version: int = 0 ## 数据版本标记
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
 
 ## 显示名：优先 comment/name，否则主键。
 func display_name() -> String:

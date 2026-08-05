@@ -1,59 +1,60 @@
 class_name WeatherEffectDef
 extends Resource
 
-## 天气效果定义
-## Weather.slk 一行定义（静态表数据；粒子贴图路径解析另做）。
+## TerrainArt/Weather.slk 一行定义。
+##
+## 职责：天气粒子效果（发射、寿命、颜色/缩放关键、贴图行列、环境音等）。
 
 const TABLE_NAME := "Weather"
 const SLK_REL_PATH := "TerrainArt/Weather.json"
 const PRIMARY_KEY := "effectID"
 
-@export var effect_id: String = ""						## 天气效果ID
-@export var name_key: String = ""						## 名称键
-@export var tex_dir: String = ""						## 纹理目录
-@export var tex_file: String = ""						## 纹理文件
-@export var alpha_mode: int = 0							## 透明度模式
-@export var use_fog: bool = false						## 使用雾
-@export var height: float = 0.0							## 高度
-@export var ang_x: float = 0.0
-@export var ang_y: float = 0.0
-@export var em_rate: float = 0.0
-@export var lifespan: float = 0.0
-@export var particles: int = 0
-@export var veloc: float = 0.0
-@export var accel: float = 0.0
-@export var variance: float = 0.0
-@export var tex_r: int = 1
-@export var tex_c: int = 1
-@export var head: bool = false
-@export var tail: bool = false
-@export var tail_len: float = 0.0
-@export var latitude: float = 0.0
-@export var longitude: float = 0.0
-@export var mid_time: float = 0.5
-@export var red_start: int = 255
-@export var green_start: int = 255
-@export var blue_start: int = 255
-@export var red_mid: int = 255
-@export var green_mid: int = 255
-@export var blue_mid: int = 255
-@export var red_end: int = 255
-@export var green_end: int = 255
-@export var blue_end: int = 255
-@export var alpha_start: int = 255
-@export var alpha_mid: int = 255
-@export var alpha_end: int = 255
-@export var scale_start: float = 1.0
-@export var scale_mid: float = 1.0
-@export var scale_end: float = 1.0
-@export var h_uv_start: float = 0.0
-@export var h_uv_mid: float = 0.0
-@export var h_uv_end: float = 0.0
-@export var t_uv_start: float = 0.0
-@export var t_uv_mid: float = 0.0
-@export var t_uv_end: float = 0.0
-@export var ambient_sound: String = ""
-@export var version: int = 0
+@export var effect_id: String = "" ## 主键（天气效果 ID）
+@export var name_key: String = "" ## 显示名字符串键
+@export var tex_dir: String = "" ## 粒子贴图目录
+@export var tex_file: String = "" ## 粒子贴图文件名
+@export var alpha_mode: int = 0 ## 混合/透明度模式
+@export var use_fog: bool = false ## 是否受迷雾影响
+@export var height: float = 0.0 ## 粒子生成高度
+@export var ang_x: float = 0.0 ## 发射角 X
+@export var ang_y: float = 0.0 ## 发射角 Y
+@export var em_rate: float = 0.0 ## 发射速率
+@export var lifespan: float = 0.0 ## 粒子寿命（秒）
+@export var particles: int = 0 ## 最大粒子数
+@export var veloc: float = 0.0 ## 初速度
+@export var accel: float = 0.0 ## 加速度
+@export var variance: float = 0.0 ## 速度/方向随机方差
+@export var tex_r: int = 1 ## 贴图图集行数
+@export var tex_c: int = 1 ## 贴图图集列数
+@export var head: bool = false ## 是否绘制粒子头部
+@export var tail: bool = false ## 是否绘制拖尾
+@export var tail_len: float = 0.0 ## 拖尾长度
+@export var latitude: float = 0.0 ## 纬度向散布
+@export var longitude: float = 0.0 ## 经度向散布
+@export var mid_time: float = 0.5 ## 颜色/缩放中间关键时间点（0–1）
+@export var red_start: int = 255 ## 起始色 R
+@export var green_start: int = 255 ## 起始色 G
+@export var blue_start: int = 255 ## 起始色 B
+@export var red_mid: int = 255 ## 中间色 R
+@export var green_mid: int = 255 ## 中间色 G
+@export var blue_mid: int = 255 ## 中间色 B
+@export var red_end: int = 255 ## 结束色 R
+@export var green_end: int = 255 ## 结束色 G
+@export var blue_end: int = 255 ## 结束色 B
+@export var alpha_start: int = 255 ## 起始透明度
+@export var alpha_mid: int = 255 ## 中间透明度
+@export var alpha_end: int = 255 ## 结束透明度
+@export var scale_start: float = 1.0 ## 起始缩放
+@export var scale_mid: float = 1.0 ## 中间缩放
+@export var scale_end: float = 1.0 ## 结束缩放
+@export var h_uv_start: float = 0.0 ## 头部 UV 起始
+@export var h_uv_mid: float = 0.0 ## 头部 UV 中间
+@export var h_uv_end: float = 0.0 ## 头部 UV 结束
+@export var t_uv_start: float = 0.0 ## 拖尾 UV 起始
+@export var t_uv_mid: float = 0.0 ## 拖尾 UV 中间
+@export var t_uv_end: float = 0.0 ## 拖尾 UV 结束
+@export var ambient_sound: String = "" ## 环境音效名
+@export var version: int = 0 ## 数据版本标记
 
 
 static func from_slk_record(rec: Dictionary) -> WeatherEffectDef:

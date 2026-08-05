@@ -2,79 +2,87 @@ class_name AbilityDataDef
 extends Resource
 
 ## Units/AbilityData.slk 一行定义。
+##
+## 职责：技能玩法数据（等级、目标、施法时间、持续时间、冷却、魔法消耗、
+## 作用范围/射程，以及 DataA–E / UnitID 等效果参数）。
+## 后缀 1–4 对应技能等级 1–4；具体 Data* 含义因 code（技能引擎 ID）而异。
 
 const TABLE_NAME := "AbilityData"
 const SLK_REL_PATH := "Units/AbilityData.json"
 const PRIMARY_KEY := "alias"
 
-@export var alias: String = ""
-@export var code_id: String = ""
-@export var comment: String = ""
-@export var version: int = 0
-@export var use_in_editor: bool = false
-@export var hero: bool = false
-@export var item: bool = false
-@export var sort_key: String = ""
-@export var race: String = ""
-@export var check_dep: bool = false
-@export var levels: int = 0
-@export var req_level: int = 0
-@export var level_skip: int = 0
-@export var priority: int = 0
-@export var targs: String = ""
-@export var cast1: float = 0.0
-@export var dur1: float = 0.0
-@export var hero_dur1: float = 0.0
-@export var cool1: float = 0.0
-@export var cost1: float = 0.0
-@export var area1: float = 0.0
-@export var rng1: float = 0.0
-@export var data_a1: float = 0.0
-@export var data_b1: float = 0.0
-@export var data_c1: float = 0.0
-@export var data_d1: float = 0.0
-@export var data_e1: float = 0.0
-@export var unit_id1: String = ""
-@export var cast2: float = 0.0
-@export var dur2: float = 0.0
-@export var hero_dur2: float = 0.0
-@export var cool2: float = 0.0
-@export var cost2: float = 0.0
-@export var area2: float = 0.0
-@export var rng2: float = 0.0
-@export var data_a2: float = 0.0
-@export var data_b2: float = 0.0
-@export var data_c2: float = 0.0
-@export var data_d2: float = 0.0
-@export var data_e2: float = 0.0
-@export var unit_id2: String = ""
-@export var cast3: float = 0.0
-@export var dur3: float = 0.0
-@export var hero_dur3: float = 0.0
-@export var cool3: float = 0.0
-@export var cost3: float = 0.0
-@export var area3: float = 0.0
-@export var rng3: float = 0.0
-@export var data_a3: float = 0.0
-@export var data_b3: float = 0.0
-@export var data_c3: float = 0.0
-@export var data_d3: float = 0.0
-@export var data_e3: float = 0.0
-@export var unit_id3: String = ""
-@export var cast4: float = 0.0
-@export var dur4: float = 0.0
-@export var hero_dur4: float = 0.0
-@export var cool4: float = 0.0
-@export var cost4: float = 0.0
-@export var area4: float = 0.0
-@export var rng4: float = 0.0
-@export var data_a4: float = 0.0
-@export var data_b4: float = 0.0
-@export var data_c4: float = 0.0
-@export var data_d4: float = 0.0
-@export var data_e4: float = 0.0
-@export var unit_id4: String = ""
-@export var in_beta: bool = false
+@export var alias: String = "" ## 技能别名/主键（四字符 ID，如 AHhb）
+@export var code_id: String = "" ## 引擎技能码（code；决定 Data* 语义）
+@export var comment: String = "" ## 人类可读备注
+@export var version: int = 0 ## 数据版本标记
+@export var use_in_editor: bool = false ## 是否在对象编辑器中可选
+@export var hero: bool = false ## 是否为英雄技能
+@export var item: bool = false ## 是否为物品技能
+@export var sort_key: String = "" ## 编辑器排序键
+@export var race: String = "" ## 所属种族
+@export var check_dep: bool = false ## 是否检查科技依赖
+@export var levels: int = 0 ## 最大等级数
+@export var req_level: int = 0 ## 英雄学习所需英雄等级
+@export var level_skip: int = 0 ## 每升一级所需额外英雄等级间隔
+@export var priority: int = 0 ## AI/自动施法优先级
+@export var targs: String = "" ## 默认目标过滤器（可被等级覆盖）
+# —— 等级 1 ——
+@export var cast1: float = 0.0 ## Lv1：施法时间（秒）
+@export var dur1: float = 0.0 ## Lv1：普通单位上的持续时间
+@export var hero_dur1: float = 0.0 ## Lv1：英雄上的持续时间
+@export var cool1: float = 0.0 ## Lv1：冷却（秒）
+@export var cost1: float = 0.0 ## Lv1：魔法消耗
+@export var area1: float = 0.0 ## Lv1：作用范围（AoE）
+@export var rng1: float = 0.0 ## Lv1：施法射程
+@export var data_a1: float = 0.0 ## Lv1：效果参数 A（语义由 code 决定）
+@export var data_b1: float = 0.0 ## Lv1：效果参数 B
+@export var data_c1: float = 0.0 ## Lv1：效果参数 C
+@export var data_d1: float = 0.0 ## Lv1：效果参数 D
+@export var data_e1: float = 0.0 ## Lv1：效果参数 E
+@export var unit_id1: String = "" ## Lv1：关联单位 ID（召唤物等）
+# —— 等级 2 ——
+@export var cast2: float = 0.0 ## Lv2：施法时间
+@export var dur2: float = 0.0 ## Lv2：持续时间（普通）
+@export var hero_dur2: float = 0.0 ## Lv2：持续时间（英雄）
+@export var cool2: float = 0.0 ## Lv2：冷却
+@export var cost2: float = 0.0 ## Lv2：魔法消耗
+@export var area2: float = 0.0 ## Lv2：作用范围
+@export var rng2: float = 0.0 ## Lv2：施法射程
+@export var data_a2: float = 0.0 ## Lv2：效果参数 A
+@export var data_b2: float = 0.0 ## Lv2：效果参数 B
+@export var data_c2: float = 0.0 ## Lv2：效果参数 C
+@export var data_d2: float = 0.0 ## Lv2：效果参数 D
+@export var data_e2: float = 0.0 ## Lv2：效果参数 E
+@export var unit_id2: String = "" ## Lv2：关联单位 ID
+# —— 等级 3 ——
+@export var cast3: float = 0.0 ## Lv3：施法时间
+@export var dur3: float = 0.0 ## Lv3：持续时间（普通）
+@export var hero_dur3: float = 0.0 ## Lv3：持续时间（英雄）
+@export var cool3: float = 0.0 ## Lv3：冷却
+@export var cost3: float = 0.0 ## Lv3：魔法消耗
+@export var area3: float = 0.0 ## Lv3：作用范围
+@export var rng3: float = 0.0 ## Lv3：施法射程
+@export var data_a3: float = 0.0 ## Lv3：效果参数 A
+@export var data_b3: float = 0.0 ## Lv3：效果参数 B
+@export var data_c3: float = 0.0 ## Lv3：效果参数 C
+@export var data_d3: float = 0.0 ## Lv3：效果参数 D
+@export var data_e3: float = 0.0 ## Lv3：效果参数 E
+@export var unit_id3: String = "" ## Lv3：关联单位 ID
+# —— 等级 4 ——
+@export var cast4: float = 0.0 ## Lv4：施法时间
+@export var dur4: float = 0.0 ## Lv4：持续时间（普通）
+@export var hero_dur4: float = 0.0 ## Lv4：持续时间（英雄）
+@export var cool4: float = 0.0 ## Lv4：冷却
+@export var cost4: float = 0.0 ## Lv4：魔法消耗
+@export var area4: float = 0.0 ## Lv4：作用范围
+@export var rng4: float = 0.0 ## Lv4：施法射程
+@export var data_a4: float = 0.0 ## Lv4：效果参数 A
+@export var data_b4: float = 0.0 ## Lv4：效果参数 B
+@export var data_c4: float = 0.0 ## Lv4：效果参数 C
+@export var data_d4: float = 0.0 ## Lv4：效果参数 D
+@export var data_e4: float = 0.0 ## Lv4：效果参数 E
+@export var unit_id4: String = "" ## Lv4：关联单位 ID
+@export var in_beta: bool = false ## 是否属于 RoC（非 TFT）数据标记
 
 ## 显示名：优先 comment/name，否则主键。
 func display_name() -> String:
