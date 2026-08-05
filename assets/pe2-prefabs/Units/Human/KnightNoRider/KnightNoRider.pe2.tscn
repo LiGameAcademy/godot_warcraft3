@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Dust3x.png" id="1_uqlkv"]
+
+[sub_resource type="Gradient" id="Gradient_eceub"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 0.85490197, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_ib1kf"]
+gradient = SubResource("Gradient_eceub")
+
+[sub_resource type="Curve" id="Curve_ugr8k"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_bs1sh"]
+curve = SubResource("Curve_ugr8k")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_qacly"]
+emission_shape = 3
+emission_box_extents = Vector3(5, 0.5, 20)
+direction = Vector3(0, 1, 0)
+spread = 41.5
+flatness = 0.15
+initial_velocity_min = 13.8
+initial_velocity_max = 13.8
+gravity = Vector3(0, 165, 0)
+scale_min = 17.901001
+scale_max = 33.1695
+scale_curve = SubResource("CurveTexture_bs1sh")
+color_ramp = SubResource("GradientTexture1D_ib1kf")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ncfxj"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_uqlkv")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_kuh35"]
+material = SubResource("StandardMaterial3D_ncfxj")
+
+[node name="Pe2Root" type="Node3D" unique_id=875782544]
+
+[node name="BlizPart_RidingDust" type="GPUParticles3D" parent="." unique_id=1556162592]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.4623, 13.9957, -0.389902)
+cast_shadow = 0
+amount = 16
+lifetime = 0.655
+preprocess = 0.655
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_qacly")
+draw_pass_1 = SubResource("QuadMesh_kuh35")
+metadata/pe2_always_on = true

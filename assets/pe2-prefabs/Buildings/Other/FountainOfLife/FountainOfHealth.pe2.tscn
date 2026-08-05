@@ -1,0 +1,122 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/WaterBlobs1.png" id="1_hmguw"]
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Dust3x.png" id="2_vm6h8"]
+
+[sub_resource type="Gradient" id="Gradient_0iypv"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(0.666667, 0.396078, 1, 1, 0.666667, 0.396078, 1, 1, 0.584314, 0.309804, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_akcso"]
+gradient = SubResource("Gradient_0iypv")
+
+[sub_resource type="Curve" id="Curve_s7gqn"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 0.72448975), 0.0, 0.0, 0, 0, Vector2(1, 0.8214286), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_1brij"]
+curve = SubResource("Curve_s7gqn")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_q2x35"]
+emission_shape = 3
+emission_box_extents = Vector3(3, 0.5, 3)
+direction = Vector3(0, 1, 0)
+spread = 0.0
+flatness = 0.15
+initial_velocity_min = 80.0
+initial_velocity_max = 80.0
+gravity = Vector3(0, -1000, 0)
+scale_min = 18.47475
+scale_max = 27.783
+scale_curve = SubResource("CurveTexture_1brij")
+color_ramp = SubResource("GradientTexture1D_akcso")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lv348"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_hmguw")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_60oba"]
+material = SubResource("StandardMaterial3D_lv348")
+
+[sub_resource type="Gradient" id="Gradient_0otp2"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(0.290196, 0.372549, 1, 1, 0.639216, 0.611765, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_3hpwp"]
+gradient = SubResource("Gradient_0otp2")
+
+[sub_resource type="Curve" id="Curve_htd0m"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 0.74999994), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_u165u"]
+curve = SubResource("Curve_htd0m")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_wvwgx"]
+emission_shape = 3
+emission_box_extents = Vector3(2.5, 0.5, 2.5)
+direction = Vector3(0, 1, 0)
+spread = 74.5
+flatness = 0.15
+initial_velocity_min = 32.6
+initial_velocity_max = 47.4
+gravity = Vector3(0, 0, 0)
+scale_min = 35.802002
+scale_max = 44.226
+scale_curve = SubResource("CurveTexture_u165u")
+color_ramp = SubResource("GradientTexture1D_3hpwp")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_td1ju"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("2_vm6h8")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_kx8hq"]
+material = SubResource("StandardMaterial3D_td1ju")
+
+[node name="Pe2Root" type="Node3D" unique_id=627784475]
+
+[node name="WaterFall" type="GPUParticles3D" parent="." unique_id=205443749]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -25.2699, 103.1, -8.97506)
+cast_shadow = 0
+emitting = false
+amount = 21
+lifetime = 0.5
+preprocess = 0.5
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_q2x35")
+draw_pass_1 = SubResource("QuadMesh_60oba")
+metadata/pe2_always_on = false
+metadata/pe2_active_sequences = PackedStringArray("Stand", "Portrait -1")
+
+[node name="WaterSplash" type="GPUParticles3D" parent="." unique_id=1685445500]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18.9567, 20.4478, -25.3801)
+cast_shadow = 0
+emitting = false
+amount = 6
+lifetime = 0.5
+preprocess = 0.5
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_wvwgx")
+draw_pass_1 = SubResource("QuadMesh_kx8hq")
+metadata/pe2_always_on = false
+metadata/pe2_active_sequences = PackedStringArray("Stand", "Portrait -1")

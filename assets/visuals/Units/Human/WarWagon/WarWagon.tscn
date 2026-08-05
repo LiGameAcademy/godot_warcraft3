@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/asset-converted/Units/Human/WarWagon/WarWagon.scn" id="1_base"]
+[ext_resource type="Script" path="res://scripts/map/presentation/model_visual_sync.gd" id="2_sync"]
+[ext_resource type="PackedScene" path="res://assets/pe2-prefabs/Units/Human/WarWagon/WarWagon.pe2.tscn" id="3_pe2"]
+
+[node name="Units_Human_WarWagon_WarWagon_mdx" instance=ExtResource("1_base")]
+script = ExtResource("2_sync")
+
+[node name="Pe2Root" parent="WarWagon" instance=ExtResource("3_pe2")]

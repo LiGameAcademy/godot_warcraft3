@@ -1,0 +1,65 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/ReplaceableTextures/Weather/Clouds8x8.png" id="1_gse7t"]
+
+[sub_resource type="Gradient" id="Gradient_1k8wj"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(0.737255, 0.647059, 0.368627, 1, 0.737255, 0.647059, 0.368627, 1, 0.737255, 0.647059, 0.368627, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_qke6e"]
+gradient = SubResource("Gradient_1k8wj")
+
+[sub_resource type="Curve" id="Curve_rflee"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_fudrm"]
+curve = SubResource("Curve_rflee")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_n5y6x"]
+emission_shape = 3
+emission_box_extents = Vector3(10.49745, 0.5, 9.2862)
+direction = Vector3(0, 1, 0)
+spread = 30.0
+flatness = 0.15
+initial_velocity_min = 75.0
+initial_velocity_max = 125.0
+gravity = Vector3(0, -100, 0)
+scale_min = 74.5875
+scale_max = 184.275
+scale_curve = SubResource("CurveTexture_fudrm")
+color_ramp = SubResource("GradientTexture1D_qke6e")
+anim_speed_min = 0.25
+anim_speed_max = 0.25
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ariuf"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_gse7t")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 8
+particles_anim_v_frames = 8
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_yq20t"]
+material = SubResource("StandardMaterial3D_ariuf")
+
+[node name="Pe2Root" type="Node3D" unique_id=266738049]
+
+[node name="BlizParticleExplosion" type="GPUParticles3D" parent="." unique_id=472461365]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3055, 143.547, 5.12546)
+cast_shadow = 0
+emitting = false
+amount = 23
+lifetime = 2.05
+preprocess = 0.85
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_n5y6x")
+draw_pass_1 = SubResource("QuadMesh_yq20t")
+metadata/pe2_always_on = false
+metadata/pe2_active_sequences = PackedStringArray()

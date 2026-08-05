@@ -179,18 +179,38 @@ function logStep(title) {
 }
 
 function run(cmd, args, cwd = ROOT, envExtra = {}) {
-  console.log(`$ ${cmd} ${args.join(" ")}`);
-  const r = spawnSync(cmd, args, {
-    cwd,
-    stdio: "inherit",
-    shell: process.platform === "win32" && cmd === "npm",
-    env: { ...process.env, ...envExtra },
-  });
-  if (r.error) {
-    console.error(r.error.message);
-    return 1;
-  }
-  return r.status ?? 1;
+	const printable = args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ");
+	console.log(`$ ${cmd} ${printable}`);
+	const r = spawnSync(cmd, args, {
+		cwd,
+		stdio: "inherit",
+		shell: false,
+		env: { ...process.env, ...envExtra },
+	});
+	if (r.error) {
+		console.error(r.error.message);
+		return 1;
+	}
+	return r.status ?? 1;
+}
+
+function runNpm(args, cwd, envExtra = {}) {
+	// Windows 上 npm.cmd 需要 shell；参数仍按数组传入，避免路径被二次拆分
+	const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+	const printable = args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ");
+	console.log(`$ ${npmCmd} ${printable}`);
+	const r = spawnSync(npmCmd, args, {
+		cwd,
+		stdio: "inherit",
+		shell: true,
+		env: { ...process.env, ...envExtra },
+		windowsVerbatimArguments: false,
+	});
+	if (r.error) {
+		console.error(r.error.message);
+		return 1;
+	}
+	return r.status ?? 1;
 }
 
 function runNode(scriptRel, args = [], cwd = ROOT) {
@@ -203,7 +223,7 @@ function npmInstall(pkg) {
     console.warn(`跳过 npm install: 无 package.json (${pkg})`);
     return 0;
   }
-  return run("npm", ["install"], dir);
+  return runNpm(["install"], dir);
 }
 
 function cacheReady() {
@@ -264,13 +284,13 @@ function stepInstall() {
 }
 
 function stepExtract(opts, gameDir) {
-  logStep("2. MPQ 解包 → .cache/wc3-assets");
-  const args = ["run", "extract", "--", "--game-dir", gameDir];
-  if (opts.force) args.push("--force");
-  for (const g of opts.extractIncludes) {
-    args.push("--include", g);
-  }
-  return run("npm", args, path.join(ROOT, "tools", "mpq-extract"));
+	logStep("2. MPQ 解包 → .cache/wc3-assets");
+	const args = ["src/cli.js", "--game-dir", gameDir];
+	if (opts.force) args.push("--force");
+	for (const g of opts.extractIncludes) {
+		args.push("--include", g);
+	}
+	return run(process.execPath, args, path.join(ROOT, "tools", "mpq-extract"));
 }
 
 function stepSlk(opts) {
@@ -281,45 +301,46 @@ function stepSlk(opts) {
 }
 
 function stepMaps(opts, gameDir) {
-  logStep("4. 地图解析 → assets/map-parsed");
-  for (const slug of opts.maps) {
-    const mapPath = findMapFile(gameDir, slug);
-    if (!mapPath) {
-      console.error(`找不到地图 ${slug}。请确认客户端 Maps/ 下有对应 .w3x，或手动:`);
-      console.error(`  cd tools/map-parse && npm run parse -- --map "<path>.w3x" --force`);
-      return 1;
-    }
-    console.log(`解析 ${slug}: ${mapPath}`);
-    const args = ["run", "parse", "--", "--map", mapPath];
-    if (opts.force) args.push("--force");
-    const code = run("npm", args, path.join(ROOT, "tools", "map-parse"));
-    if (code !== 0) return code;
-  }
-  return 0;
+	logStep("4. 地图解析 → assets/map-parsed");
+	for (const slug of opts.maps) {
+		const mapPath = findMapFile(gameDir, slug);
+		if (!mapPath) {
+			console.error(`找不到地图 ${slug}。请确认客户端 Maps/ 下有对应 .w3x，或手动:`);
+			console.error(`  cd tools/map-parse && node src/cli.js --map "<path>.w3x" --force`);
+			return 1;
+		}
+		console.log(`解析 ${slug}: ${mapPath}`);
+		// 直接调 node，避免 npm 在 Windows 上把带空格路径拆碎
+		const args = ["src/cli.js", "--map", mapPath];
+		if (opts.force) args.push("--force");
+		const code = run(process.execPath, args, path.join(ROOT, "tools", "map-parse"));
+		if (code !== 0) return code;
+	}
+	return 0;
 }
 
 function stepConvert(opts) {
-  logStep("5. 资产转换 BLP/MDX → assets/asset-converted");
-  const ac = path.join(ROOT, "tools", "asset-convert");
-  const env = opts.godot ? { GODOT: opts.godot } : {};
-  if (opts.profile === "full") {
-    const args = ["run", "convert", "--"];
-    if (opts.force) args.push("--force");
-    if (opts.godot) args.push("--godot", opts.godot);
-    return run("npm", args, ac, env);
-  }
-  if (opts.profile === "lost-temple") {
-    const script = path.join(ac, "scripts", "convert-lost-temple.mjs");
-    const args = [script];
-    if (opts.force) args.push("--force");
-    return run(process.execPath, args, ac, env);
-  }
-  // game（默认）= echo isles 子集
-  const script = path.join(ac, "scripts", "convert-echo-isles.mjs");
-  const args = [script];
-  if (opts.force) args.push("--force");
-  if (opts.godot) args.push("--godot", opts.godot);
-  return run(process.execPath, args, ac, env);
+	logStep("5. 资产转换 BLP/MDX → assets/asset-converted");
+	const ac = path.join(ROOT, "tools", "asset-convert");
+	const env = opts.godot ? { GODOT: opts.godot } : {};
+	if (opts.profile === "full") {
+		const args = ["src/cli.js"];
+		if (opts.force) args.push("--force");
+		if (opts.godot) args.push("--godot", opts.godot);
+		return run(process.execPath, args, ac, env);
+	}
+	if (opts.profile === "lost-temple") {
+		const script = path.join(ac, "scripts", "convert-lost-temple.mjs");
+		const args = [script];
+		if (opts.force) args.push("--force");
+		return run(process.execPath, args, ac, env);
+	}
+	// game（默认）= echo isles 子集
+	const script = path.join(ac, "scripts", "convert-echo-isles.mjs");
+	const args = [script];
+	if (opts.force) args.push("--force");
+	if (opts.godot) args.push("--godot", opts.godot);
+	return run(process.execPath, args, ac, env);
 }
 
 function stepSync(opts) {
