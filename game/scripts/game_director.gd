@@ -2,15 +2,18 @@ class_name GameDirector
 extends Node
 
 ## 游戏总管（对标 MapEditor）。
-## 职责：配置 MapLoader、Melee 开局（随机 sloc + 种族预览刷兵）、相机。
+## 职责：配置 MapLoader、Melee 开局、Session/库存、选中、相机。
 
 const MeleeRacePreviewScr = preload("res://game/scripts/data/melee_race_preview.gd")
 const MeleeBootstrapScr = preload("res://game/scripts/logic/melee_bootstrap.gd")
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
+const GameSessionScr = preload("res://game/scripts/session/game_session.gd")
+const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
 @export var game_hud: GameHud
+@export var unit_selector: Node
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -45,6 +48,7 @@ var _cam_min := Vector2(-6912.0, -5376.0)
 var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
+var _session: RefCounted = null
 
 
 func _ready() -> void:
@@ -63,6 +67,10 @@ func _ready() -> void:
 		_on_map_loaded()
 
 
+func get_session() -> RefCounted:
+	return _session
+
+
 func _resolve_exports() -> void:
 	if map_root == null:
 		map_root = get_node_or_null("../MapRoot") as MapLoader
@@ -70,6 +78,8 @@ func _resolve_exports() -> void:
 		rts_camera = get_node_or_null("../RtsCamera") as RtsCamera
 	if game_hud == null:
 		game_hud = get_node_or_null("../GameHud") as GameHud
+	if unit_selector == null:
+		unit_selector = get_node_or_null("../UnitSelector")
 
 
 func _configure_map_root() -> void:
@@ -127,6 +137,20 @@ func _wire_hud() -> void:
 		game_hud.command_pressed.connect(_on_command_pressed)
 
 
+func _setup_selector() -> void:
+	if unit_selector == null or rts_camera == null or map_root == null:
+		return
+	var cam := rts_camera.get_camera()
+	var layer := map_root.get_unit_layer()
+	unit_selector.set("owner_filter", local_player)
+	if unit_selector.has_method("setup"):
+		unit_selector.call("setup", cam, layer)
+	if unit_selector.has_signal("selection_changed"):
+		var sel_sig: Signal = unit_selector.selection_changed
+		if not sel_sig.is_connected(_on_selection_changed):
+			sel_sig.connect(_on_selection_changed)
+
+
 func _map_display_name() -> String:
 	var path := map_dir.path_join("info.json")
 	if FileAccess.file_exists(path):
@@ -163,6 +187,7 @@ func _on_map_loaded() -> void:
 	_bootstrapped = true
 	_hide_start_locations()
 	_bootstrap_melee()
+	_setup_selector()
 
 
 ## 游戏内移除已放置的 sloc（防 MapRoot 早于 Director 配置时漏网）。
@@ -181,6 +206,17 @@ func _hide_start_locations() -> void:
 func _bootstrap_melee() -> void:
 	var race := MeleeRacePreviewScr.race_from_string(preview_race)
 	var preview := MeleeRacePreviewScr.preview_dict(race)
+	var worker_n: int = int(preview.get("worker_count", 5))
+	_session = GameSessionScr.from_melee_bootstrap(
+		map_dir,
+		local_player,
+		str(preview.get("race", "human")),
+		worker_n,
+		PlayerStockScr.MELEE_TOWN_HALL_FOOD
+	)
+	if game_hud:
+		game_hud.bind_stock(_session.local_stock())
+
 	var slocs := MeleeBootstrapScr.collect_slocs(map_dir)
 	if slocs.is_empty():
 		if game_hud:
@@ -202,14 +238,15 @@ func _bootstrap_melee() -> void:
 		if result.get("ok", false):
 			hall_world = result.get("hall_world", Vector3.ZERO) as Vector3
 			if game_hud:
-				game_hud.set_resources(750, 200, 5, 11)
 				game_hud.set_status(
-					"%s · %s @ sloc owner=%s · 刷 %d"
+					"%s · %s @ sloc owner=%s · 刷 %d · 金%d 木%d"
 					% [
 						_map_display_name(),
 						str(preview.get("display_name", "")),
 						str(sloc.get("owner", "?")),
 						int(result.get("spawned", 0)),
+						_session.local_stock().gold,
+						_session.local_stock().lumber,
 					]
 				)
 		else:
@@ -295,4 +332,28 @@ func _on_minimap_clicked(uv: Vector2) -> void:
 
 func _on_command_pressed(slot: int) -> void:
 	if game_hud:
-		game_hud.set_status("指令格 [%d]（阶段 D 接命令层）" % slot)
+		game_hud.set_status("指令格 [%d]（训练/号召稍后接 Order）" % slot)
+
+
+func _on_selection_changed(primary: Node3D, selected: Array) -> void:
+	if game_hud == null:
+		return
+	if primary == null or selected.is_empty():
+		game_hud.set_unit_info("—", 0, 0)
+		game_hud.clear_command_labels()
+		game_hud.set_status("未选中")
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "?"))
+	var name := tid
+	if selected.size() > 1:
+		name = "%s ×%d" % [tid, selected.size()]
+	game_hud.set_unit_info(name, 0, 0)
+	if BuildingVisualScr.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+		game_hud.set_command_labels(
+			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
+		)
+		game_hud.set_status("主城已选 · 指令格为占位")
+	else:
+		game_hud.clear_command_labels()
+		game_hud.set_status("已选 %s" % tid)

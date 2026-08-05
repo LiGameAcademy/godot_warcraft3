@@ -11,8 +11,9 @@
 |------|------|
 | [ROADMAP.md](ROADMAP.md) | **先读**：对战地图开发节奏（阶段 A→E）；现阶段**不**急着实现完整触发器 VM |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 游戏层架构、与 Editor/Map 分层关系、触发器远期设计 |
+| [PATHFINDING_CHOICE.md](PATHFINDING_CHOICE.md) | **寻路选型**：网格 A\* vs NavMesh+RVO（主推网格） |
 | [ENVIRONMENT.md](ENVIRONMENT.md) | 天空 / 天气 / 光照 / 阴影复刻方案（WC3→Godot） |
-| [HUD.md](HUD.md) | 人族游戏 HUD（Console 素材 + API） |
+| [HUD.md](HUD.md) | 人族游戏 HUD（逻辑 Control；API） |
 
 ## 与编辑器的关系
 

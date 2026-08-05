@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://cdwscnq1co36x" path="res://game/scripts/game_director.gd" id="3_director"]
 [ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://game/scripts/presentation/wc3_human_cursor.gd" id="4_cursor"]
 [ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://game/scenes/game_hud.tscn" id="5_hud"]
+[ext_resource type="PackedScene" uid="uid://cunitselector01" path="res://game/scenes/unit_selector.tscn" id="6_sel"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -34,6 +35,8 @@ show_pathing_ground = true
 [node name="RtsCamera" parent="." unique_id=1187867648 instance=ExtResource("2_cam")]
 
 [node name="GameHud" parent="." unique_id=553656308 instance=ExtResource("5_hud")]
+
+[node name="UnitSelector" parent="." instance=ExtResource("6_sel")]
 
 [node name="GameDirector" type="Node" parent="." unique_id=528822564]
 script = ExtResource("3_director")

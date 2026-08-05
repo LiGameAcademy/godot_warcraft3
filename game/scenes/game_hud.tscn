@@ -1,20 +1,12 @@
 [gd_scene format=3 uid="uid://jswtl3uxmvo7"]
 
-[ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
-[ext_resource type="Texture2D" uid="uid://ftty577vgtfq" path="res://assets/asset-converted/UI/Feedback/Resources/ResourceGold.png" id="3_gold"]
-[ext_resource type="Texture2D" uid="uid://eqltmt5ti8nj" path="res://assets/asset-converted/UI/Feedback/Resources/ResourceLumber.png" id="4_lumber"]
-[ext_resource type="Texture2D" uid="uid://cbvgwsafhqhjh" path="res://assets/asset-converted/UI/Feedback/Resources/ResourceSupply.png" id="5_food"]
-[ext_resource type="Texture2D" uid="uid://ddvjhflsajfs3" path="res://assets/map-parsed/echoisles/war3mapMap.png" id="6_minimap"]
-[ext_resource type="Texture2D" uid="uid://fm6ny2x20vw3" path="res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-down.png" id="7_btn_down"]
-[ext_resource type="Texture2D" uid="uid://dsq1wgekssanu" path="res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-highlight.png" id="7_btn_hi"]
-[ext_resource type="Texture2D" uid="uid://fxrjprrrboeq" path="res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-up.png" id="7_btn_up"]
-[ext_resource type="Texture2D" uid="uid://tmthg71rmrwp" path="res://assets/asset-converted/UI/Console/Human/HumanUIPortraitMask.png" id="8_mask"]
+[ext_resource type="Script" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
 
-[node name="GameHud" type="CanvasLayer" unique_id=1727372692]
+[node name="GameHud" type="CanvasLayer"]
 layer = 10
 script = ExtResource("1_hud")
 
-[node name="Root" type="Control" parent="." unique_id=304051792]
+[node name="Root" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -23,261 +15,122 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="TopBar" type="Control" parent="Root" unique_id=35502328]
+[node name="TopBar" type="PanelContainer" parent="Root"]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -380.0
+offset_left = -320.0
 offset_top = 8.0
-offset_right = -16.0
+offset_right = -12.0
 offset_bottom = 44.0
 grow_horizontal = 0
 
-[node name="TopBarBg" type="ColorRect" parent="Root/TopBar" unique_id=2045137665]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-color = Color(0.12, 0.11, 0.1, 0.82)
-
-[node name="TopBarBorder" type="ColorRect" parent="Root/TopBar" unique_id=1798979205]
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -2.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-color = Color(0.72, 0.58, 0.28, 0.7)
-
-[node name="ResRow" type="HBoxContainer" parent="Root/TopBar" unique_id=1261814374]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 10.0
-offset_right = -10.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 18
+[node name="ResRow" type="HBoxContainer" parent="Root/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 16
 alignment = 2
 
-[node name="Gold" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=1354203426]
+[node name="Gold" type="HBoxContainer" parent="Root/TopBar/ResRow"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Icon" type="TextureRect" parent="Root/TopBar/ResRow/Gold" unique_id=1760582926]
-custom_minimum_size = Vector2(26, 26)
+[node name="GoldCaption" type="Label" parent="Root/TopBar/ResRow/Gold"]
 layout_mode = 2
-texture = ExtResource("3_gold")
-expand_mode = 1
-stretch_mode = 5
+text = "金"
 
-[node name="GoldValue" type="Label" parent="Root/TopBar/ResRow/Gold" unique_id=1253910176]
+[node name="GoldValue" type="Label" parent="Root/TopBar/ResRow/Gold"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.92, 0.35, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "750"
+text = "0"
 
-[node name="Lumber" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=2102193059]
+[node name="Lumber" type="HBoxContainer" parent="Root/TopBar/ResRow"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Icon" type="TextureRect" parent="Root/TopBar/ResRow/Lumber" unique_id=2013773850]
-custom_minimum_size = Vector2(26, 26)
+[node name="LumberCaption" type="Label" parent="Root/TopBar/ResRow/Lumber"]
 layout_mode = 2
-texture = ExtResource("4_lumber")
-expand_mode = 1
-stretch_mode = 5
+text = "木"
 
-[node name="LumberValue" type="Label" parent="Root/TopBar/ResRow/Lumber" unique_id=2080004472]
+[node name="LumberValue" type="Label" parent="Root/TopBar/ResRow/Lumber"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.55, 0.95, 0.45, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "200"
+text = "0"
 
-[node name="Food" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=321234845]
+[node name="Food" type="HBoxContainer" parent="Root/TopBar/ResRow"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Icon" type="TextureRect" parent="Root/TopBar/ResRow/Food" unique_id=1646037558]
-custom_minimum_size = Vector2(26, 26)
+[node name="FoodCaption" type="Label" parent="Root/TopBar/ResRow/Food"]
 layout_mode = 2
-texture = ExtResource("5_food")
-expand_mode = 1
-stretch_mode = 5
+text = "人口"
 
-[node name="FoodValue" type="Label" parent="Root/TopBar/ResRow/Food" unique_id=1407494889]
+[node name="FoodValue" type="Label" parent="Root/TopBar/ResRow/Food"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.95, 0.95, 0.98, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "5/11"
+text = "0/0"
 
-[node name="BottomConsole" type="Control" parent="Root" unique_id=716740394]
+[node name="BottomConsole" type="PanelContainer" parent="Root"]
 layout_mode = 1
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -200.0
+offset_top = -168.0
 grow_horizontal = 2
 grow_vertical = 0
 
-[node name="PanelBg" type="ColorRect" parent="Root/BottomConsole" unique_id=1294458698]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.16, 0.14, 0.12, 0.94)
+[node name="Columns" type="HBoxContainer" parent="Root/BottomConsole"]
+layout_mode = 2
+theme_override_constants/separation = 12
 
-[node name="TopEdge" type="ColorRect" parent="Root/BottomConsole" unique_id=848823854]
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 3.0
-grow_horizontal = 2
-mouse_filter = 2
-color = Color(0.72, 0.58, 0.28, 0.75)
-
-[node name="Columns" type="HBoxContainer" parent="Root/BottomConsole" unique_id=2005255712]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = 10.0
-offset_right = -12.0
-offset_bottom = -10.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 14
-
-[node name="MinimapPanel" type="PanelContainer" parent="Root/BottomConsole/Columns" unique_id=1552168522]
-custom_minimum_size = Vector2(176, 0)
+[node name="MinimapPanel" type="PanelContainer" parent="Root/BottomConsole/Columns"]
+custom_minimum_size = Vector2(148, 0)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Minimap" type="TextureRect" parent="Root/BottomConsole/Columns/MinimapPanel" unique_id=998081312]
+[node name="Minimap" type="ColorRect" parent="Root/BottomConsole/Columns/MinimapPanel"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(160, 160)
+custom_minimum_size = Vector2(136, 136)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 mouse_filter = 0
-texture = ExtResource("6_minimap")
-expand_mode = 1
-stretch_mode = 5
+color = Color(0.18, 0.22, 0.2, 1)
 
-[node name="CenterPanel" type="HBoxContainer" parent="Root/BottomConsole/Columns" unique_id=189876975]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 12
-
-[node name="PortraitBox" type="Control" parent="Root/BottomConsole/Columns/CenterPanel" unique_id=783354618]
-custom_minimum_size = Vector2(112, 112)
-layout_mode = 2
-size_flags_vertical = 4
-
-[node name="PortraitBg" type="ColorRect" parent="Root/BottomConsole/Columns/CenterPanel/PortraitBox" unique_id=1602067539]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.05, 0.05, 0.06, 1)
-
-[node name="Portrait" type="TextureRect" parent="Root/BottomConsole/Columns/CenterPanel/PortraitBox" unique_id=551296850]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
-grow_horizontal = 2
-grow_vertical = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="PortraitMask" type="TextureRect" parent="Root/BottomConsole/Columns/CenterPanel/PortraitBox" unique_id=1669822338]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = ExtResource("8_mask")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="InfoCol" type="VBoxContainer" parent="Root/BottomConsole/Columns/CenterPanel" unique_id=1826636815]
+[node name="CenterPanel" type="VBoxContainer" parent="Root/BottomConsole/Columns"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="UnitName" type="Label" parent="Root/BottomConsole/Columns/CenterPanel/InfoCol" unique_id=1357877731]
+[node name="UnitName" type="Label" parent="Root/BottomConsole/Columns/CenterPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.95, 0.75, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.95)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
 text = "—"
 
-[node name="UnitHp" type="Label" parent="Root/BottomConsole/Columns/CenterPanel/InfoCol" unique_id=421551628]
+[node name="UnitHp" type="Label" parent="Root/BottomConsole/Columns/CenterPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.35, 0.95, 0.4, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 15
+text = ""
 
-[node name="StatusLabel" type="Label" parent="Root/BottomConsole/Columns/CenterPanel/InfoCol" unique_id=1914787547]
+[node name="StatusLabel" type="Label" parent="Root/BottomConsole/Columns/CenterPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_colors/font_color = Color(0.82, 0.86, 0.9, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 13
-text = "Echo Isles"
+text = ""
 autowrap_mode = 2
 
-[node name="CommandPanel" type="VBoxContainer" parent="Root/BottomConsole/Columns" unique_id=982198192]
-custom_minimum_size = Vector2(268, 0)
+[node name="CommandPanel" type="VBoxContainer" parent="Root/BottomConsole/Columns"]
+custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 4
 
-[node name="CommandTitle" type="Label" parent="Root/BottomConsole/Columns/CommandPanel" unique_id=1928459649]
+[node name="CommandTitle" type="Label" parent="Root/BottomConsole/Columns/CommandPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.8, 0.65, 1)
-theme_override_font_sizes/font_size = 12
-text = "Commands"
+text = "指令"
 
-[node name="CommandGrid" type="GridContainer" parent="Root/BottomConsole/Columns/CommandPanel" unique_id=930598460]
+[node name="CommandGrid" type="GridContainer" parent="Root/BottomConsole/Columns/CommandPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -285,149 +138,99 @@ theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
 columns = 4
 
-[node name="Cmd0" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1329369193]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd0" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "0"
 
-[node name="Cmd1" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=364794940]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd1" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "1"
 
-[node name="Cmd2" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=143711226]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd2" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "2"
 
-[node name="Cmd3" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1372568448]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd3" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "3"
 
-[node name="Cmd4" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1293273534]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd4" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "4"
 
-[node name="Cmd5" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=491822955]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd5" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "5"
 
-[node name="Cmd6" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=953643090]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd6" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "6"
 
-[node name="Cmd7" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1042388329]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd7" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "7"
 
-[node name="Cmd8" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1229840530]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd8" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "8"
 
-[node name="Cmd9" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1344242833]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd9" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "9"
 
-[node name="Cmd10" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1741082283]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd10" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "10"
 
-[node name="Cmd11" type="TextureButton" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid" unique_id=1878308104]
-custom_minimum_size = Vector2(60, 60)
+[node name="Cmd11" type="Button" parent="Root/BottomConsole/Columns/CommandPanel/CommandGrid"]
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture_normal = ExtResource("7_btn_up")
-texture_pressed = ExtResource("7_btn_down")
-texture_hover = ExtResource("7_btn_hi")
-ignore_texture_size = true
-stretch_mode = 0
+text = "11"
 
-[node name="HintLabel" type="Label" parent="Root" unique_id=1967200726]
+[node name="HintLabel" type="Label" parent="Root"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 12.0
-offset_top = -228.0
+offset_top = -196.0
 offset_right = 720.0
-offset_bottom = -208.0
+offset_bottom = -176.0
 grow_vertical = 0
-theme_override_colors/font_color = Color(0.75, 0.8, 0.85, 0.9)
-theme_override_font_sizes/font_size = 12
-text = "WASD/边缘滚 · 中键旋转 · 滚轮缩放 · 小地图点击跳转"
+text = "LMB 点选/框选 · WASD/边缘滚 · 中键旋转 · 滚轮缩放"

@@ -1,22 +1,14 @@
 class_name GameHud
 extends CanvasLayer
 
-## 人族游戏 HUD：纯 Control 底栏 + 顶栏资源（对标 WC3 Console 布局）。
-##
-## 注意：HumanUITile01–04 是 HumanUI.mdx 的 UV 材质切片，不是整屏 2D 外框；
-## 不能当 TextureRect 全屏壳用。石质气质先用深色底栏 + Console 控件贴图近似；
-## 远期可用 SubViewport(HumanUI.glb) 只替换装饰壳，本 API 不变。
+## 开发期逻辑 HUD：默认 Control，不绑 WC3 Console 贴图。
+## API 稳定，日后可换皮而不改 Director / Session。
 
 signal command_pressed(slot: int)
 signal minimap_clicked(uv: Vector2)
 
-const BTN_UP := "res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-up.png"
-const BTN_DOWN := "res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-down.png"
-const BTN_HI := "res://assets/asset-converted/UI/Widgets/Console/Human/human-console-button-highlight.png"
-const DEFAULT_MINIMAP := "res://assets/map-parsed/echoisles/war3mapMap.png"
-
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
-@export var console_height_ratio: float = 0.24
+@export var console_height_ratio: float = 0.2
 @export var show_dev_hint: bool = true
 
 @onready var _gold_label: Label = %GoldValue
@@ -24,28 +16,19 @@ const DEFAULT_MINIMAP := "res://assets/map-parsed/echoisles/war3mapMap.png"
 @onready var _food_label: Label = %FoodValue
 @onready var _unit_name: Label = %UnitName
 @onready var _unit_hp: Label = %UnitHp
-@onready var _minimap: TextureRect = %Minimap
-@onready var _portrait: TextureRect = %Portrait
+@onready var _minimap: Control = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _status: Label = %StatusLabel
 @onready var _hint: Label = %HintLabel
 @onready var _bottom: Control = $Root/BottomConsole
 
-var _btn_up: Texture2D
-var _btn_down: Texture2D
-var _btn_hi: Texture2D
-
 
 func _ready() -> void:
-	_btn_up = load(BTN_UP) as Texture2D
-	_btn_down = load(BTN_DOWN) as Texture2D
-	_btn_hi = load(BTN_HI) as Texture2D
-	_load_minimap_from_map_dir()
 	_wire_command_buttons()
 	_wire_minimap_input()
 	if _hint:
 		_hint.visible = show_dev_hint
-	set_resources(750, 200, 5, 11)
+	set_resources(0, 0, 0, 0)
 	set_unit_info("—", 0, 0)
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
@@ -70,24 +53,45 @@ func set_resources(gold: int, lumber: int, food: int, food_max: int) -> void:
 		_food_label.text = "%d/%d" % [food, food_max]
 
 
+func bind_stock(stock) -> void:
+	if stock == null:
+		return
+	if not stock.changed.is_connected(_on_stock_changed):
+		stock.changed.connect(_on_stock_changed)
+	_on_stock_changed(stock)
+
+
+func _on_stock_changed(stock) -> void:
+	if stock == null:
+		return
+	set_resources(stock.gold, stock.lumber, stock.food_used, stock.food_cap)
+
+
 func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
 	if _unit_name:
 		_unit_name.text = unit_name if not unit_name.is_empty() else "—"
 	if _unit_hp:
 		if hp_max > 0:
-			_unit_hp.text = "%d / %d" % [hp, hp_max]
+			_unit_hp.text = "HP %d / %d" % [hp, hp_max]
 		else:
 			_unit_hp.text = ""
 
 
-func set_portrait_texture(tex: Texture2D) -> void:
-	if _portrait:
-		_portrait.texture = tex
+func set_command_labels(labels: PackedStringArray) -> void:
+	if _command_grid == null:
+		return
+	for i in range(_command_grid.get_child_count()):
+		var btn := _command_grid.get_child(i) as Button
+		if btn == null:
+			continue
+		if i < labels.size() and not str(labels[i]).is_empty():
+			btn.text = str(labels[i])
+		else:
+			btn.text = str(i)
 
 
-func set_minimap_texture(tex: Texture2D) -> void:
-	if _minimap:
-		_minimap.texture = tex
+func clear_command_labels() -> void:
+	set_command_labels(PackedStringArray())
 
 
 func set_status(text: String) -> void:
@@ -95,41 +99,23 @@ func set_status(text: String) -> void:
 		_status.text = text
 
 
-func set_command_icon(slot: int, tex: Texture2D) -> void:
-	if _command_grid == null or slot < 0 or slot >= _command_grid.get_child_count():
-		return
-	var btn := _command_grid.get_child(slot) as TextureButton
-	if btn == null:
-		return
-	if tex != null:
-		btn.texture_normal = tex
-	elif _btn_up != null:
-		btn.texture_normal = _btn_up
+## 兼容旧调用：开发期无肖像贴图。
+func set_portrait_texture(_tex: Texture2D) -> void:
+	pass
 
 
-func _load_minimap_from_map_dir() -> void:
-	var path := map_dir.path_join("war3mapMap.png")
-	if not ResourceLoader.exists(path):
-		path = DEFAULT_MINIMAP
-	if ResourceLoader.exists(path):
-		set_minimap_texture(load(path) as Texture2D)
+## 兼容旧调用：小地图暂为色块，点击仍发 uv。
+func set_minimap_texture(_tex: Texture2D) -> void:
+	pass
 
 
 func _wire_command_buttons() -> void:
 	if _command_grid == null:
 		return
 	for i in range(_command_grid.get_child_count()):
-		var btn := _command_grid.get_child(i) as TextureButton
+		var btn := _command_grid.get_child(i) as Button
 		if btn == null:
 			continue
-		if btn.texture_normal == null and _btn_up != null:
-			btn.texture_normal = _btn_up
-		if btn.texture_pressed == null and _btn_down != null:
-			btn.texture_pressed = _btn_down
-		if btn.texture_hover == null and _btn_hi != null:
-			btn.texture_hover = _btn_hi
-		btn.ignore_texture_size = true
-		btn.stretch_mode = TextureButton.STRETCH_SCALE
 		if not btn.pressed.is_connected(_on_command_pressed.bind(i)):
 			btn.pressed.connect(_on_command_pressed.bind(i))
 
