@@ -217,10 +217,21 @@ func _input(event: InputEvent) -> void:
 	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
 	if unit_selector == null:
 		_resolve_exports()
-	# 移动瞄准时左键是落点，不要被点选吃掉
+	# 移动瞄准：左键必须在 _input 里下发并 marked handled。
+	# UnitSelector 自带 _input / 全屏 gui 层，若不在此拦截，落点永远进不了 _unhandled_input。
 	if _move_targeting and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# 瞄准态左键：必须在此下发（UnitSelector 会吃掉 _unhandled）。点完即退出瞄准。
+			if _issue_move_at_screen(mb.position, UnitOrder.Source.TARGETING):
+				_flash_cursor_move()
+			_set_move_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+			# 瞄准态右键：取消瞄准（不另下智能指令，避免与「点一下取消」预期冲突）
+			_set_move_targeting(false)
+			get_viewport().set_input_as_handled()
 			return
 	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
@@ -431,26 +442,12 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 移动瞄准模式下：左键落点；Esc 取消
+	# 移动瞄准模式下：Esc 取消（落点已在 _input 处理）
 	if _move_targeting and event is InputEventKey and event.pressed and not event.echo:
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_set_move_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
-	if _move_targeting and event is InputEventMouseButton:
-		var mb_t := event as InputEventMouseButton
-		if mb_t.pressed and mb_t.button_index == MOUSE_BUTTON_LEFT:
-			if _issue_move_at_screen(mb_t.position, UnitOrder.Source.TARGETING):
-				_set_move_targeting(false)
-				get_viewport().set_input_as_handled()
-				return
-		if mb_t.pressed and mb_t.button_index == MOUSE_BUTTON_RIGHT:
-			# 右键在瞄准态仍可智能移动并退出瞄准
-			if enable_move_command and _issue_move_at_screen(mb_t.position, UnitOrder.Source.SMART_RMB):
-				_set_move_targeting(false)
-				_flash_cursor_move()
-				get_viewport().set_input_as_handled()
-				return
 	# 右键移动优先于调试热键：RTS 主操作不应被 F 键分支挡住。
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -564,6 +561,9 @@ func _begin_move_targeting(source: int) -> void:
 
 func _set_move_targeting(active: bool) -> void:
 	_move_targeting = active
+	# 瞄准期间关掉点选，避免 UnitSelector._input 与左键落点抢同一帧
+	if unit_selector != null:
+		unit_selector.enabled = not active
 	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
 		game_cursor.call("set_move_targeting", active)
 	elif game_cursor != null and game_cursor.has_method("set_mode"):

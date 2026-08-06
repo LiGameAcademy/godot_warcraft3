@@ -16,6 +16,9 @@ const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0
 @export var edge_pan_margin: int = 28
 @export var edge_pan_enabled: bool = true
 @export var pan_smoothing: float = 12.0
+## 游戏场景关闭 WASD（与停止/移动等热键冲突）；方向键与边缘滚动仍可用。
+@export var wasd_pan_enabled: bool = false
+@export var arrow_pan_enabled: bool = true
 
 @export_group("旋转")
 @export var look_sensitivity: float = 0.003
@@ -168,14 +171,24 @@ func _process(delta: float) -> void:
 
 func _get_pan_input() -> Vector2:
 	var kb := Vector2.ZERO
-	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
-		kb.x -= 1.0
-	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
-		kb.x += 1.0
-	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
-		kb.y -= 1.0
-	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
-		kb.y += 1.0
+	if arrow_pan_enabled:
+		if Input.is_key_pressed(KEY_LEFT):
+			kb.x -= 1.0
+		if Input.is_key_pressed(KEY_RIGHT):
+			kb.x += 1.0
+		if Input.is_key_pressed(KEY_UP):
+			kb.y -= 1.0
+		if Input.is_key_pressed(KEY_DOWN):
+			kb.y += 1.0
+	if wasd_pan_enabled:
+		if Input.is_key_pressed(KEY_A):
+			kb.x -= 1.0
+		if Input.is_key_pressed(KEY_D):
+			kb.x += 1.0
+		if Input.is_key_pressed(KEY_W):
+			kb.y -= 1.0
+		if Input.is_key_pressed(KEY_S):
+			kb.y += 1.0
 	if kb != Vector2.ZERO:
 		return kb.normalized()
 
