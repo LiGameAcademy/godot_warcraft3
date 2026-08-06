@@ -1,3 +1,4 @@
+class_name PathCellReservation
 extends RefCounted
 ## 运行时寻路格占用/预约（Logic）。
 ##

@@ -1,3 +1,4 @@
+class_name UnitMoveSlots
 extends RefCounted
 ## 多单位右键移动：为每个单位分配错开的终点（WC3 XY）。
 ##

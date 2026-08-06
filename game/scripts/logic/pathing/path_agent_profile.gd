@@ -1,3 +1,4 @@
+class_name PathAgentProfile
 extends RefCounted
 ## 寻路智能体轮廓（Logic）：把 UnitBalance.collision 收成格子净空。
 ##

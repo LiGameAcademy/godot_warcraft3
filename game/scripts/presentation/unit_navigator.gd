@@ -12,9 +12,6 @@ signal arrived
 signal path_failed(reason: String)
 signal locomotion_changed(moving: bool)
 
-const SeparationScr = preload("res://game/scripts/logic/pathing/unit_separation.gd")
-const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_profile.gd")
-
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
@@ -32,12 +29,11 @@ const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_pro
 ## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
 @export var stall_abort_sec: float = 0.4
 
-var _query: RefCounted = null ## PathQuery
+var _query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
-var _crowd: RefCounted = null ## UnitCrowdQuery
-var _reservation: RefCounted = null ## PathCellReservation
-## UnitVisual 实例；用 Node 避免 class_name 全局注册时序导致 Parser Error
-var _visual: Node = null
+var _crowd: UnitCrowdQuery = null
+var _reservation: PathCellReservation = null
+var _visual: UnitVisual = null
 var _waypoints: Array[Vector2] = [] ## WC3 XY
 var _wp_i: int = 0
 var _moving: bool = false
@@ -46,10 +42,10 @@ var _stall_time: float = 0.0
 
 
 func configure(
-	query: RefCounted,
+	query: PathQuery,
 	heightfield: Wc3Heightfield,
-	crowd: RefCounted = null,
-	reservation: RefCounted = null
+	crowd: UnitCrowdQuery = null,
+	reservation: PathCellReservation = null
 ) -> void:
 	_query = query
 	_heightfield = heightfield
@@ -57,7 +53,7 @@ func configure(
 	_reservation = reservation
 
 
-func set_visual(visual: Node) -> void:
+func set_visual(visual: UnitVisual) -> void:
 	_visual = visual
 
 
@@ -87,7 +83,7 @@ func apply_unit_stats(
 		turn_rate = turn_rate_rps
 	if radius_wc3 > 0.0:
 		collision_radius_wc3 = radius_wc3
-		clearance_cells = AgentProfileScr.clearance_from_radius(radius_wc3)
+		clearance_cells = PathAgentProfile.clearance_from_radius(radius_wc3)
 
 
 func is_moving() -> bool:
@@ -253,7 +249,7 @@ func _with_separation(
 		var query_r := maxf(collision_radius_wc3 * 5.0, 128.0)
 		var neighbors: Array = _crowd.call("neighbors_of", body, cur_wc3, query_r, false)
 		if not neighbors.is_empty():
-			var push_vel: Vector2 = SeparationScr.compute_push_velocity(
+			var push_vel: Vector2 = UnitSeparation.compute_push_velocity(
 				cur_wc3,
 				collision_radius_wc3,
 				neighbors,
@@ -338,8 +334,8 @@ func _release_reservation() -> void:
 
 
 func _set_locomotion(moving: bool) -> void:
-	if _visual != null and _visual.has_method("set_locomotion"):
-		_visual.call("set_locomotion", moving)
+	if _visual != null:
+		_visual.set_locomotion(moving)
 	locomotion_changed.emit(moving)
 
 

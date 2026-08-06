@@ -1,10 +1,8 @@
+class_name UnitCrowdQuery
 extends RefCounted
 ## 邻近单位查询：扫 MapUnitLayer 子节点，供 UnitNavigator soft 分离使用。
 ##
 ## Echo Isles 单位量级很小，全量扫描足够；日后可换成寻路格空间哈希。
-
-const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
-const PlacementRulesScr = preload("res://scripts/map/logic/unit_placement_rules.gd")
 
 ## 默认查询半径（WC3）：约覆盖数个农民碰撞圈
 const DEFAULT_RANGE_WC3 := 192.0
@@ -42,7 +40,7 @@ func radius_for_type(type_id: String) -> float:
 	var info: Dictionary = {}
 	if _catalog != null:
 		info = _catalog.lookup(type_id)
-	var r := PlacementRulesScr.collision_radius_wc3(info)
+	var r := UnitPlacementRules.collision_radius_wc3(info)
 	_radius_cache[type_id] = r
 	return r
 
@@ -72,7 +70,7 @@ func neighbors_of(
 			continue
 		if tid.to_lower() == "sloc":
 			continue
-		if not include_buildings and BuildingVisualScr.is_building(tid):
+		if not include_buildings and BuildingVisual.is_building(tid):
 			continue
 		var pos := Vector2(n.global_position.x * inv, -n.global_position.z * inv)
 		if self_pos_wc3.distance_squared_to(pos) > range_sq:

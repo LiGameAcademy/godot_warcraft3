@@ -17,7 +17,7 @@ var max_nodes: int = DEFAULT_MAX_NODES
 ## 当前寻路净空（find_path 时写入；A*/直线/吸附共用）
 var _clearance: int = 0
 ## 可选：运行时格预约（他人占用视为不可走）
-var reservation: RefCounted = null
+var reservation: PathCellReservation = null
 var _agent_id: int = 0
 ## 弦拉直后是否做 Catmull-Rom 细分（不可走采样会丢弃）
 var smooth_catmull: bool = true
@@ -28,7 +28,7 @@ func bind_pathing(map: Wc3PathingMap) -> void:
 	pathing = map
 
 
-func bind_reservation(res: RefCounted) -> void:
+func bind_reservation(res: PathCellReservation) -> void:
 	reservation = res
 
 

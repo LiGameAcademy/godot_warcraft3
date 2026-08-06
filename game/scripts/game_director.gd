@@ -4,24 +4,14 @@ extends Node
 ## 游戏总管（对标 MapEditor）。
 ## 职责：配置 MapLoader、Melee 开局、Session/库存、选中、相机。
 
-const MeleeRacePreviewScr = preload("res://game/scripts/data/melee_race_preview.gd")
-const MeleeBootstrapScr = preload("res://game/scripts/logic/melee_bootstrap.gd")
-const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
-const GameSessionScr = preload("res://game/scripts/session/game_session.gd")
-const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
-const PathQueryScr = preload("res://game/scripts/logic/pathing/path_query.gd")
-const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator.gd")
-const UnitVisualScr = preload("res://game/scripts/presentation/unit_visual.gd")
-const UnitCrowdQueryScr = preload("res://game/scripts/logic/pathing/unit_crowd_query.gd")
-const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slots.gd")
-const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_cell_reservation.gd")
-const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
+## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
 @export var game_hud: GameHud
 @export var unit_selector: Node
+@export var game_cursor: Node
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -62,14 +52,14 @@ var _cam_min := Vector2(-6912.0, -5376.0)
 var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
-var _session: RefCounted = null
+var _session: GameSession = null
 ## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
-var _path_query: RefCounted = null
+var _path_query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
 ## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
-var _crowd_query: RefCounted = null
-var _cell_reservation: RefCounted = null
-var _path_debug: Node3D = null
+var _crowd_query: UnitCrowdQuery = null
+var _cell_reservation: PathCellReservation = null
+var _path_debug: PathDebugDraw = null
 
 
 func _ready() -> void:
@@ -88,8 +78,18 @@ func _ready() -> void:
 		_on_map_loaded()
 
 
-func get_session() -> RefCounted:
+func get_session() -> GameSession:
 	return _session
+
+
+## 按本地玩家种族切换光标图集（human/orc/undead/nightelf）。
+func _apply_cursor_race(race_id: String) -> void:
+	if game_cursor == null:
+		_resolve_exports()
+	if game_cursor == null:
+		return
+	if game_cursor.has_method("set_race"):
+		game_cursor.call("set_race", race_id)
 
 
 func _resolve_exports() -> void:
@@ -113,9 +113,21 @@ func _resolve_exports() -> void:
 				unit_selector = parent_n.find_child("UnitSelector", true, false)
 		if unit_selector == null:
 			unit_selector = get_node_or_null("../UnitSelector")
+	if game_cursor == null:
+		game_cursor = get_node_or_null("../GameCursor")
+		if game_cursor == null and parent_n != null:
+			game_cursor = parent_n.get_node_or_null("GameCursor")
+			if game_cursor == null:
+				game_cursor = parent_n.get_node_or_null("HumanCursor")
 	print(
-		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s"
-		% [map_root != null, rts_camera != null, game_hud != null, unit_selector != null]
+		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s cursor=%s"
+		% [
+			map_root != null,
+			rts_camera != null,
+			game_hud != null,
+			unit_selector != null,
+			game_cursor != null,
+		]
 	)
 
 
@@ -250,19 +262,17 @@ func _on_map_loaded() -> void:
 func _setup_pathing() -> void:
 	if map_root == null:
 		return
-	_path_query = PathQueryScr.new()
+	_path_query = PathQuery.new()
 	_path_query.bind_pathing(map_root.get_pathing_map())
-	_cell_reservation = PathCellReservationScr.new()
-	if _path_query.has_method("bind_reservation"):
-		_path_query.call("bind_reservation", _cell_reservation)
+	_cell_reservation = PathCellReservation.new()
+	_path_query.bind_reservation(_cell_reservation)
 	var hf_dict := map_root.get_heightfield_dict()
 	if not hf_dict.is_empty():
 		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
 	else:
 		_heightfield = null
-	_crowd_query = UnitCrowdQueryScr.new()
-	_crowd_query.call(
-		"configure",
+	_crowd_query = UnitCrowdQuery.new()
+	_crowd_query.configure(
 		map_root.get_unit_layer(),
 		map_root.get_id_catalog()
 	)
@@ -278,7 +288,7 @@ func _ensure_path_debug() -> void:
 		if _path_debug.has_method("set_enabled"):
 			_path_debug.call("set_enabled", show_path_debug)
 		return
-	_path_debug = PathDebugDrawScr.new() as Node3D
+	_path_debug = PathDebugDraw.new()
 	_path_debug.name = "PathDebugDraw"
 	map_root.add_child(_path_debug)
 	if _path_debug.has_method("setup"):
@@ -336,20 +346,21 @@ func _hide_start_locations() -> void:
 
 
 func _bootstrap_melee() -> void:
-	var race := MeleeRacePreviewScr.race_from_string(preview_race)
-	var preview := MeleeRacePreviewScr.preview_dict(race)
+	var race := MeleeRacePreview.race_from_string(preview_race)
+	var preview := MeleeRacePreview.preview_dict(race)
 	var worker_n: int = int(preview.get("worker_count", 5))
-	_session = GameSessionScr.from_melee_bootstrap(
+	_session = GameSession.from_melee_bootstrap(
 		map_dir,
 		local_player,
 		str(preview.get("race", "human")),
 		worker_n,
-		PlayerStockScr.MELEE_TOWN_HALL_FOOD
+		PlayerStock.MELEE_TOWN_HALL_FOOD
 	)
+	_apply_cursor_race(str(preview.get("race", "human")))
 	if game_hud:
 		game_hud.bind_stock(_session.local_stock())
 
-	var slocs := MeleeBootstrapScr.collect_slocs(map_dir)
+	var slocs := MeleeBootstrap.collect_slocs(map_dir)
 	if slocs.is_empty():
 		if game_hud:
 			game_hud.set_status("%s · 无 sloc，跳过开局刷兵" % str(preview.get("display_name", "")))
@@ -357,16 +368,16 @@ func _bootstrap_melee() -> void:
 
 	var sloc: Dictionary
 	if random_start_location:
-		sloc = MeleeBootstrapScr.pick_random_sloc(slocs, _rng)
+		sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
 	else:
 		sloc = _find_sloc_for_owner(slocs, local_player)
 		if sloc.is_empty():
-			sloc = MeleeBootstrapScr.pick_random_sloc(slocs, _rng)
+			sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
 
 	var hall_world := Vector3.ZERO
 	if spawn_melee_base:
 		var hf := map_root.get_heightfield_dict()
-		var result := MeleeBootstrapScr.spawn_at_sloc(map_root, sloc, race, local_player, hf)
+		var result := MeleeBootstrap.spawn_at_sloc(map_root, sloc, race, local_player, hf)
 		if result.get("ok", false):
 			hall_world = result.get("hall_world", Vector3.ZERO) as Vector3
 			if game_hud:
@@ -434,13 +445,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var label := ""
 		match key:
 			KEY_F6:
-				phase = BuildingVisualScr.Phase.BIRTH
+				phase = BuildingVisual.Phase.BIRTH
 				label = "Birth（建造尘）"
 			KEY_F7:
-				phase = BuildingVisualScr.Phase.WORK
+				phase = BuildingVisual.Phase.WORK
 				label = "Stand Work（训练烟）"
 			KEY_F8:
-				phase = BuildingVisualScr.Phase.IDLE
+				phase = BuildingVisual.Phase.IDLE
 				label = "Stand"
 			_:
 				return
@@ -463,7 +474,7 @@ func _issue_stop_command() -> bool:
 			continue
 		var node := n as Node3D
 		var d: Dictionary = node.get_meta("unit_data", {})
-		if BuildingVisualScr.is_building(str(d.get("typeId", ""))):
+		if BuildingVisual.is_building(str(d.get("typeId", ""))):
 			continue
 		var nav := node.get_node_or_null("UnitNavigator")
 		if nav != null and nav.has_method("stop"):
@@ -499,7 +510,7 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		var node := n as Node3D
 		var d: Dictionary = node.get_meta("unit_data", {})
 		var tid := str(d.get("typeId", ""))
-		if BuildingVisualScr.is_building(tid):
+		if BuildingVisual.is_building(tid):
 			continue
 		movers.append(node)
 		var r := 16.0
@@ -510,7 +521,7 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		if game_hud:
 			game_hud.set_status("选中无可用移动单位（建筑？）")
 		return true
-	var goals: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
+	var goals: PackedVector2Array = UnitMoveSlots.assign_goals(
 		movers, radii, goal_center, _path_query
 	)
 	var moved := 0
@@ -550,48 +561,42 @@ func _spawn_move_confirm(goal_wc3: Vector2) -> void:
 	fx.play_at_wc3(goal_wc3, _heightfield, MoveConfirmFx.Kind.MOVE)
 
 
-func _ensure_navigator(unit: Node3D) -> Node:
+func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	var visual := _ensure_unit_visual(unit)
-	var existing := unit.get_node_or_null("UnitNavigator")
+	var existing := unit.get_node_or_null("UnitNavigator") as UnitNavigator
 	if existing != null:
-		if existing.has_method("configure"):
-			existing.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
-		if existing.has_method("set_visual"):
-			existing.call("set_visual", visual)
+		existing.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
+		existing.set_visual(visual)
 		_apply_move_stats(unit, existing)
 		return existing
-	var nav: Node = UnitNavigatorScr.new()
+	var nav := UnitNavigator.new()
 	nav.name = "UnitNavigator"
 	# 先 configure 再进树：即使 _ready 延后，query 也已就绪。
-	if nav.has_method("configure"):
-		nav.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
-	if nav.has_method("set_visual"):
-		nav.call("set_visual", visual)
+	nav.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
+	nav.set_visual(visual)
 	_apply_move_stats(unit, nav)
 	unit.add_child(nav)
 	return nav
 
 
-func _ensure_unit_visual(unit: Node3D) -> Node:
-	var existing := unit.get_node_or_null("UnitVisual")
+func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
+	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
 	if existing != null:
 		return existing
-	# 用 preload 脚本实例化，避免 class_name 全局注册时序导致 Parser Error
-	var vis: Node = UnitVisualScr.new()
+	var vis := UnitVisual.new()
 	vis.name = "UnitVisual"
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
-	if vis.has_method("bind_cache"):
-		vis.call("bind_cache", cache)
+	vis.bind_cache(cache)
 	unit.add_child(vis)
 	return vis
 
 
 ## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
 ## 注意：UnitUI.walk 是动画侧速率，不是对象编辑器「移动速度」。
-func _apply_move_stats(unit: Node3D, nav: Node) -> void:
-	if unit == null or nav == null or not nav.has_method("apply_unit_stats"):
+func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
+	if unit == null or nav == null:
 		return
 	var d: Dictionary = unit.get_meta("unit_data", {})
 	var tid := str(d.get("typeId", "")).strip_edges()
@@ -608,9 +613,9 @@ func _apply_move_stats(unit: Node3D, nav: Node) -> void:
 	var data := Wc3DefStore.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
 	if data != null and data.turn_rate > 0.0:
 		turn = data.turn_rate
-	if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
-		radius = float(_crowd_query.call("radius_for_unit", unit))
-	nav.call("apply_unit_stats", spd, turn, radius)
+	if _crowd_query != null:
+		radius = _crowd_query.radius_for_unit(unit)
+	nav.apply_unit_stats(spd, turn, radius)
 
 
 ## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。
@@ -703,7 +708,7 @@ func _debug_apply_hall_phase(phase: int) -> bool:
 		if tid != "htow" and tid != "hkee" and tid != "hcas":
 			continue
 		if cache != null:
-			BuildingVisualScr.apply_phase(cache, c, tid, phase)
+			BuildingVisual.apply_phase(cache, c, tid, phase)
 		return true
 	return false
 
@@ -739,7 +744,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if selected.size() > 1:
 		label = "%s ×%d" % [tid, selected.size()]
 	game_hud.set_unit_info(label, 0, 0)
-	if BuildingVisualScr.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		game_hud.set_command_labels(
 			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
 		)
