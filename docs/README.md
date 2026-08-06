@@ -12,7 +12,7 @@
 | 目录 | 内容 | 阅读时机 |
 |------|------|----------|
 | [architecture/](architecture/) | 分层总纲、MapRoot 节点树、`scripts/` 目录全景、数据契约、悬崖重构历史 | 入坑第一天；改任何代码前 |
-| [game/](game/) | **游戏场景**路线图 + 架构 + 环境复刻方案（Echo Isles / Melee / 天空天气光照） | 玩法竖切、对战初始化、环境表现时 |
+| [game/](game/) | **游戏场景**路线图 + **人族游玩竖切** + 架构 + 环境（Echo Isles / Melee） | 玩法竖切、对战初始化、环境表现时 |
 | [roadmap/](roadmap/) | 地图模块路线图 ROADMAP + 细粒度待办 TODO | 选下一个地图/编辑器 PR 时 |
 | [data/](data/) | 经典资产路径、合规、离线解包/转换管线 | 处理资产/解包/转换时 |
 | [terrain/](terrain/) | 地面 tile、Autotile、HEX_MAP 经验 | 改地面渲染/几何时 |
@@ -28,10 +28,11 @@
 
 1. **[architecture/LAYERED_ARCHITECTURE.md](architecture/LAYERED_ARCHITECTURE.md)** — 五层分层总纲
 2. **[roadmap/ROADMAP.md](roadmap/ROADMAP.md)** — 地图模块节奏（①–⑫）
-3. **[game/ROADMAP.md](game/ROADMAP.md)** — 游戏场景 / 对战竖切（⑬）
-4. **[architecture/MAP_ARCHITECTURE.md](architecture/MAP_ARCHITECTURE.md)** — 节点树 + 逻辑流
-5. **[architecture/SCRIPTS_LAYOUT.md](architecture/SCRIPTS_LAYOUT.md)** — `scripts/` 目录全景
-6. **[editor/EDITOR.md](editor/EDITOR.md)** — 编辑器入口
+3. **[game/ROADMAP.md](game/ROADMAP.md)** — 游戏场景阶段 A–F（⑬）
+4. **[game/GAMEPLAY_VERTICAL.md](game/GAMEPLAY_VERTICAL.md)** — 人族游玩竖切（当前玩法主线）
+5. **[architecture/MAP_ARCHITECTURE.md](architecture/MAP_ARCHITECTURE.md)** — 节点树 + 逻辑流
+6. **[architecture/SCRIPTS_LAYOUT.md](architecture/SCRIPTS_LAYOUT.md)** — `scripts/` 目录全景
+7. **[editor/EDITOR.md](editor/EDITOR.md)** — 编辑器入口
 
 ## 分层约定（5 层硬门禁）
 

@@ -39,7 +39,7 @@
 ⑬ 游戏场景（对战竖切）→ 见 docs/game/
 ```
 
-地图编辑相关 ①–⑫ 告一段落后，玩法进入 **[docs/game/ROADMAP.md](../game/ROADMAP.md)**（Echo Isles、Melee Bootstrap；触发器远期）。
+地图编辑相关 ①–⑫ 告一段落后，玩法进入 **[docs/game/ROADMAP.md](../game/ROADMAP.md)**（Echo Isles、Melee Bootstrap）与当前主线 **[docs/game/GAMEPLAY_VERTICAL.md](../game/GAMEPLAY_VERTICAL.md)**（人族游玩竖切）；触发器远期。
 
 ---
 
