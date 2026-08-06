@@ -44,6 +44,8 @@ var _accum: float = 0.0
 var _move_frames_left: int = 0
 var _active: bool = false
 var _race_id: String = "human"
+## true：MOVE 动画循环直至取消（行动面板瞄准），不自动回 IDLE
+var _move_sticky: bool = false
 
 
 func _ready() -> void:
@@ -104,14 +106,28 @@ func set_mode(mode: int) -> void:
 	_frame = 0
 	_accum = 0.0
 	if mode == Mode.MOVE:
-		_move_frames_left = maxi(move_flash_loops, 1) * _mode_frame_count(Mode.MOVE)
+		if _move_sticky:
+			_move_frames_left = 0
+		else:
+			_move_frames_left = maxi(move_flash_loops, 1) * _mode_frame_count(Mode.MOVE)
 	else:
+		_move_sticky = false
 		_move_frames_left = 0
 	_apply_frame()
 
 
+## 行动面板「移动」瞄准：箭头循环直到 cancel / 下发命令。
+func set_move_targeting(active: bool) -> void:
+	_move_sticky = active
+	if active:
+		set_mode(Mode.MOVE)
+	else:
+		set_mode(Mode.IDLE)
+
+
 ## 右键下移动令时闪一下蓝色箭头，然后回到 IDLE。
 func flash_move() -> void:
+	_move_sticky = false
 	set_mode(Mode.MOVE)
 
 
@@ -126,7 +142,7 @@ func _process(delta: float) -> void:
 	while _accum >= step:
 		_accum -= step
 		_frame = (_frame + 1) % n
-		if _mode == Mode.MOVE:
+		if _mode == Mode.MOVE and not _move_sticky:
 			_move_frames_left -= 1
 			if _move_frames_left <= 0:
 				set_mode(Mode.IDLE)

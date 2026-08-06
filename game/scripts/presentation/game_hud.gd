@@ -1,10 +1,10 @@
 class_name GameHud
 extends CanvasLayer
 
-## 开发期逻辑 HUD：默认 Control，不绑 WC3 Console 贴图。
-## API 稳定，日后可换皮而不改 Director / Session。
+## 开发期逻辑 HUD：命令格支持图标 / tooltip / 执行中态；可日后换 WC3 Console 皮。
 
 signal command_pressed(slot: int)
+signal command_action(action_id: String)
 signal minimap_clicked(uv: Vector2)
 
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
@@ -20,7 +20,11 @@ signal minimap_clicked(uv: Vector2)
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _status: Label = %StatusLabel
 @onready var _hint: Label = %HintLabel
-@onready var _bottom: Control = $Root/BottomConsole
+@onready var _bottom: Control = $Root/MarginContainer3
+
+## slot → action_id（空=无动作）
+var _slot_action_ids: PackedStringArray = PackedStringArray()
+var _icon_cache: Dictionary = {} ## path → Texture2D
 
 
 func _ready() -> void:
@@ -77,21 +81,59 @@ func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
 			_unit_hp.text = ""
 
 
+## 兼容旧调用：仅文字标签。
 func set_command_labels(labels: PackedStringArray) -> void:
+	var card: Array[Dictionary] = []
+	card.resize(12)
+	for i in range(12):
+		var e: Dictionary = {}
+		if i < labels.size() and not str(labels[i]).is_empty():
+			e["id"] = "slot_%d" % i
+			e["text"] = str(labels[i])
+			e["tooltip"] = str(labels[i])
+			e["enabled"] = true
+		card[i] = e
+	set_command_card(card)
+
+
+func clear_command_labels() -> void:
+	set_command_card([])
+
+
+## entries：长度最多 12；每项 Dictionary：
+## id / text / tooltip / icon / icon_disabled / hotkey_label / executing / enabled
+func set_command_card(entries: Array) -> void:
 	if _command_grid == null:
 		return
+	_slot_action_ids = PackedStringArray()
+	_slot_action_ids.resize(_command_grid.get_child_count())
 	for i in range(_command_grid.get_child_count()):
 		var btn := _command_grid.get_child(i) as Button
 		if btn == null:
 			continue
-		if i < labels.size() and not str(labels[i]).is_empty():
-			btn.text = str(labels[i])
-		else:
-			btn.text = str(i)
+		var entry: Dictionary = {}
+		if i < entries.size() and entries[i] is Dictionary:
+			entry = entries[i] as Dictionary
+		_apply_command_button(btn, i, entry)
 
 
-func clear_command_labels() -> void:
-	set_command_labels(PackedStringArray())
+## 只刷新执行中态（避免整卡重建闪烁）。
+func set_command_executing(action_id: String, executing: bool) -> void:
+	if _command_grid == null or action_id.is_empty():
+		return
+	for i in range(_command_grid.get_child_count()):
+		if i >= _slot_action_ids.size():
+			break
+		if str(_slot_action_ids[i]) != action_id:
+			continue
+		var btn := _command_grid.get_child(i) as Button
+		if btn == null:
+			continue
+		_set_button_executing(btn, executing)
+		if action_id == "move":
+			btn.tooltip_text = _plain_tooltip(_move_tooltip(executing))
+			btn.text = "执行中" if executing else ""
+		break
 
 
 func set_status(text: String) -> void:
@@ -99,14 +141,76 @@ func set_status(text: String) -> void:
 		_status.text = text
 
 
-## 兼容旧调用：开发期无肖像贴图。
 func set_portrait_texture(_tex: Texture2D) -> void:
 	pass
 
 
-## 兼容旧调用：小地图暂为色块，点击仍发 uv。
 func set_minimap_texture(_tex: Texture2D) -> void:
 	pass
+
+
+func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
+	var action_id := str(entry.get("id", "")).strip_edges()
+	_slot_action_ids[slot] = action_id
+	var enabled := bool(entry.get("enabled", not action_id.is_empty()))
+	if action_id.is_empty():
+		btn.text = ""
+		btn.icon = null
+		btn.disabled = true
+		btn.tooltip_text = ""
+		btn.modulate = Color.WHITE
+		btn.focus_mode = Control.FOCUS_NONE
+		return
+	btn.disabled = not enabled
+	btn.focus_mode = Control.FOCUS_ALL
+	btn.tooltip_text = _plain_tooltip(str(entry.get("tooltip", "")))
+	var executing := bool(entry.get("executing", false))
+	var text := str(entry.get("text", ""))
+	if executing and text.is_empty():
+		text = "执行中"
+	btn.text = text
+	var icon_rel := str(entry.get("icon", ""))
+	if not enabled:
+		var dis := str(entry.get("icon_disabled", ""))
+		if not dis.is_empty():
+			icon_rel = dis
+	btn.icon = _load_icon(icon_rel)
+	btn.expand_icon = true
+	_set_button_executing(btn, executing)
+
+
+func _set_button_executing(btn: Button, executing: bool) -> void:
+	# 对齐原作：进行中命令格高亮
+	btn.modulate = Color(1.15, 1.05, 0.55) if executing else Color.WHITE
+
+
+func _move_tooltip(executing: bool) -> String:
+	var body := "移动 (M)\n命令单位移动到指定地点。"
+	if executing:
+		return body + "\n当前：执行中"
+	return body
+
+
+func _plain_tooltip(raw: String) -> String:
+	var re := RegEx.new()
+	if re.compile("\\|c[0-9a-fA-F]{8}") != OK:
+		return raw.replace("|r", "")
+	var s := re.sub(raw, "", true)
+	return s.replace("|r", "")
+
+
+func _load_icon(rel_or_res: String) -> Texture2D:
+	if rel_or_res.is_empty():
+		return null
+	var path := RuntimeAssets.converted_path(rel_or_res)
+	if _icon_cache.has(path):
+		return _icon_cache[path] as Texture2D
+	if not RuntimeAssets.file_exists(path):
+		return null
+	var tex := load(path) as Texture2D
+	if tex != null:
+		_icon_cache[path] = tex
+	return tex
 
 
 func _wire_command_buttons() -> void:
@@ -122,6 +226,11 @@ func _wire_command_buttons() -> void:
 
 func _on_command_pressed(slot: int) -> void:
 	command_pressed.emit(slot)
+	var action_id := ""
+	if slot >= 0 and slot < _slot_action_ids.size():
+		action_id = str(_slot_action_ids[slot])
+	if not action_id.is_empty():
+		command_action.emit(action_id)
 
 
 func _wire_minimap_input() -> void:

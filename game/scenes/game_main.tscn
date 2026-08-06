@@ -44,3 +44,4 @@ script = ExtResource("3_director")
 [node name="GameCursor" type="Node" parent="." unique_id=1503412235]
 script = ExtResource("4_cursor")
 race = "human"
+auto_flash_move_on_rmb = false

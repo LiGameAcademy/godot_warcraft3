@@ -60,6 +60,11 @@ var _heightfield: Wc3Heightfield = null
 var _crowd_query: UnitCrowdQuery = null
 var _cell_reservation: PathCellReservation = null
 var _path_debug: PathDebugDraw = null
+var _command_router: CommandRouter = null
+## 点了行动面板「移动」或热键 M 后，等待左键指定落点
+var _move_targeting: bool = false
+var _card_supports_move: bool = false
+var _last_move_executing: bool = false
 
 
 func _ready() -> void:
@@ -184,6 +189,8 @@ func _wire_hud() -> void:
 		game_hud.minimap_clicked.connect(_on_minimap_clicked)
 	if not game_hud.command_pressed.is_connected(_on_command_pressed):
 		game_hud.command_pressed.connect(_on_command_pressed)
+	if game_hud.has_signal("command_action") and not game_hud.command_action.is_connected(_on_command_action):
+		game_hud.command_action.connect(_on_command_action)
 
 
 func _setup_selector() -> void:
@@ -210,6 +217,11 @@ func _input(event: InputEvent) -> void:
 	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
 	if unit_selector == null:
 		_resolve_exports()
+	# 移动瞄准时左键是落点，不要被点选吃掉
+	if _move_targeting and event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			return
 	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
 			get_viewport().set_input_as_handled()
@@ -276,6 +288,12 @@ func _setup_pathing() -> void:
 		map_root.get_unit_layer(),
 		map_root.get_id_catalog()
 	)
+	_command_router = CommandRouter.new()
+	_command_router.configure(
+		_path_query,
+		_crowd_query,
+		Callable(self, "_ensure_navigator")
+	)
 	_ensure_path_debug()
 
 
@@ -283,21 +301,18 @@ func _ensure_path_debug() -> void:
 	if map_root == null:
 		return
 	if _path_debug != null and is_instance_valid(_path_debug):
-		if _path_debug.has_method("setup"):
-			_path_debug.call("setup", _heightfield)
-		if _path_debug.has_method("set_enabled"):
-			_path_debug.call("set_enabled", show_path_debug)
+		_path_debug.setup(_heightfield)
+		_path_debug.set_enabled(show_path_debug)
 		return
 	_path_debug = PathDebugDraw.new()
 	_path_debug.name = "PathDebugDraw"
 	map_root.add_child(_path_debug)
-	if _path_debug.has_method("setup"):
-		_path_debug.call("setup", _heightfield)
-	if _path_debug.has_method("set_enabled"):
-		_path_debug.call("set_enabled", show_path_debug)
+	_path_debug.setup(_heightfield)
+	_path_debug.set_enabled(show_path_debug)
 
 
 func _process(_delta: float) -> void:
+	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
 
@@ -416,25 +431,49 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 移动瞄准模式下：左键落点；Esc 取消
+	if _move_targeting and event is InputEventKey and event.pressed and not event.echo:
+		if (event as InputEventKey).keycode == KEY_ESCAPE:
+			_set_move_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+	if _move_targeting and event is InputEventMouseButton:
+		var mb_t := event as InputEventMouseButton
+		if mb_t.pressed and mb_t.button_index == MOUSE_BUTTON_LEFT:
+			if _issue_move_at_screen(mb_t.position, UnitOrder.Source.TARGETING):
+				_set_move_targeting(false)
+				get_viewport().set_input_as_handled()
+				return
+		if mb_t.pressed and mb_t.button_index == MOUSE_BUTTON_RIGHT:
+			# 右键在瞄准态仍可智能移动并退出瞄准
+			if enable_move_command and _issue_move_at_screen(mb_t.position, UnitOrder.Source.SMART_RMB):
+				_set_move_targeting(false)
+				_flash_cursor_move()
+				get_viewport().set_input_as_handled()
+				return
 	# 右键移动优先于调试热键：RTS 主操作不应被 F 键分支挡住。
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			if _issue_move_command(mb.position):
+			if _issue_move_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
+				_flash_cursor_move()
 				get_viewport().set_input_as_handled()
 				return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
-		# S = Stop：对齐原作停止命令（寻路分支导航指令，不是采集）
 		if key == KEY_S and enable_move_command:
-			if _issue_stop_command():
+			if _issue_stop(UnitOrder.Source.HOTKEY):
 				get_viewport().set_input_as_handled()
 				return
+		if key == KEY_M and enable_move_command and _card_supports_move:
+			_begin_move_targeting(UnitOrder.Source.HOTKEY)
+			get_viewport().set_input_as_handled()
+			return
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
-			if _path_debug != null and _path_debug.has_method("set_enabled"):
-				_path_debug.call("set_enabled", show_path_debug)
+			if _path_debug != null:
+				_path_debug.set_enabled(show_path_debug)
 			if game_hud:
 				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
 			get_viewport().set_input_as_handled()
@@ -461,34 +500,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
-## 选中单位立即停步并回 Stand（不推动静止单位）。
-func _issue_stop_command() -> bool:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
+## 选中单位立即停步并回 Stand。
+func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
 		return false
 	var selected: Array = unit_selector.call("get_selected")
-	if selected.is_empty():
-		return false
-	var n_stop := 0
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var node := n as Node3D
-		var d: Dictionary = node.get_meta("unit_data", {})
-		if BuildingVisual.is_building(str(d.get("typeId", ""))):
-			continue
-		var nav := node.get_node_or_null("UnitNavigator")
-		if nav != null and nav.has_method("stop"):
-			nav.call("stop")
-			n_stop += 1
+	var n_stop := _command_router.issue_stop(selected, source)
 	if n_stop > 0 and game_hud:
 		game_hud.set_status("停止 · %d 单位" % n_stop)
+	_refresh_command_card()
 	return n_stop > 0
 
 
-## 对当前选中可移动单位下发 go_to。建筑跳过（主城不能走）。
-## 多单位：黄金角螺旋分配错开终点（对齐原作群体落点），再各自 A*；途中 soft push 防途中叠模。
-func _issue_move_command(screen_pos: Vector2) -> bool:
-	if unit_selector == null or _path_query == null:
+## 对当前选中可移动单位下发移动（经 CommandRouter）。
+func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null or _path_query == null:
 		return false
 	if not unit_selector.has_method("get_selected"):
 		return false
@@ -502,40 +530,9 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		return true
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var movers: Array = []
-	var radii := PackedFloat32Array()
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var node := n as Node3D
-		var d: Dictionary = node.get_meta("unit_data", {})
-		var tid := str(d.get("typeId", ""))
-		if BuildingVisual.is_building(tid):
-			continue
-		movers.append(node)
-		var r := 16.0
-		if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
-			r = float(_crowd_query.call("radius_for_unit", node))
-		radii.append(r)
-	if movers.is_empty():
-		if game_hud:
-			game_hud.set_status("选中无可用移动单位（建筑？）")
-		return true
-	var goals: PackedVector2Array = UnitMoveSlots.assign_goals(
-		movers, radii, goal_center, _path_query
-	)
-	var moved := 0
-	var failed := 0
-	for i in range(movers.size()):
-		var node: Node3D = movers[i]
-		var nav := _ensure_navigator(node)
-		if nav == null:
-			continue
-		var slot: Vector2 = goals[i] if i < goals.size() else goal_center
-		if nav.go_to_wc3(slot):
-			moved += 1
-		else:
-			failed += 1
+	var result := _command_router.issue_move_to_wc3(selected, goal_center, source)
+	var moved: int = int(result.get("moved", 0))
+	var failed: int = int(result.get("failed", 0))
 	if moved > 0:
 		_spawn_move_confirm(goal_center)
 	if game_hud:
@@ -545,7 +542,40 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 			)
 		elif failed > 0:
 			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
+		elif _command_router.filter_movers(selected).is_empty():
+			game_hud.set_status("选中无可用移动单位（建筑？）")
+	_refresh_command_card()
 	return moved > 0 or failed > 0
+
+
+func _begin_move_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_movers(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("移动：无可用单位")
+		return
+	_set_move_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
+		game_hud.set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
+
+
+func _set_move_targeting(active: bool) -> void:
+	_move_targeting = active
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		game_cursor.call("set_move_targeting", active)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call(
+			"set_mode",
+			Wc3GameCursor.Mode.MOVE if active else Wc3GameCursor.Mode.IDLE
+		)
+
+
+func _flash_cursor_move() -> void:
+	if game_cursor != null and game_cursor.has_method("flash_move"):
+		game_cursor.call("flash_move")
 
 
 func _spawn_move_confirm(goal_wc3: Vector2) -> void:
@@ -568,6 +598,7 @@ func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 		existing.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
 		existing.set_visual(visual)
 		_apply_move_stats(unit, existing)
+		_wire_navigator_signals(existing)
 		return existing
 	var nav := UnitNavigator.new()
 	nav.name = "UnitNavigator"
@@ -576,7 +607,19 @@ func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	nav.set_visual(visual)
 	_apply_move_stats(unit, nav)
 	unit.add_child(nav)
+	_wire_navigator_signals(nav)
 	return nav
+
+
+func _wire_navigator_signals(nav: UnitNavigator) -> void:
+	if nav == null:
+		return
+	if not nav.locomotion_changed.is_connected(_on_unit_locomotion_changed):
+		nav.locomotion_changed.connect(_on_unit_locomotion_changed)
+
+
+func _on_unit_locomotion_changed(_moving: bool) -> void:
+	_refresh_move_executing_ui()
 
 
 func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
@@ -726,14 +769,28 @@ func _on_minimap_clicked(uv: Vector2) -> void:
 
 
 func _on_command_pressed(slot: int) -> void:
-	if game_hud:
-		game_hud.set_status("指令格 [%d]（训练/号召稍后接 Order）" % slot)
+	# 有 action_id 时由 _on_command_action 处理；纯文字占位格仍提示
+	if game_hud != null and game_hud.has_method("set_status"):
+		pass
+
+
+func _on_command_action(action_id: String) -> void:
+	match action_id:
+		CommandCard.ACTION_MOVE:
+			_begin_move_targeting(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_STOP:
+			_issue_stop(UnitOrder.Source.PANEL)
+		_:
+			if game_hud:
+				game_hud.set_status("指令：%s（未实现）" % action_id)
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
+	_set_move_targeting(false)
 	if game_hud == null:
 		return
 	if primary == null or selected.is_empty():
+		_card_supports_move = false
 		game_hud.set_unit_info("—", 0, 0)
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
@@ -745,10 +802,44 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		label = "%s ×%d" % [tid, selected.size()]
 	game_hud.set_unit_info(label, 0, 0)
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+		_card_supports_move = false
 		game_hud.set_command_labels(
 			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
 		)
 		game_hud.set_status("主城已选 · 指令格为占位")
+	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
+		_card_supports_move = true
+		_refresh_command_card()
+		game_hud.set_status("已选 %s · M 移动 · S 停止" % tid)
 	else:
+		_card_supports_move = false
 		game_hud.clear_command_labels()
 		game_hud.set_status("已选 %s" % tid)
+
+
+func _refresh_command_card() -> void:
+	if game_hud == null or not _card_supports_move or unit_selector == null:
+		return
+	if not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	var moving := false
+	if _command_router != null:
+		moving = _command_router.any_moving(selected)
+	_last_move_executing = moving
+	game_hud.set_command_card(CommandCard.basic_locomotion(moving))
+
+
+func _refresh_move_executing_ui() -> void:
+	if not _card_supports_move or game_hud == null or unit_selector == null:
+		return
+	if not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	var moving := false
+	if _command_router != null:
+		moving = _command_router.any_moving(selected)
+	if moving == _last_move_executing:
+		return
+	_last_move_executing = moving
+	game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
