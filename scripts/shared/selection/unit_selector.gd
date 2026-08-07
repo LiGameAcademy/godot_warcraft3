@@ -225,6 +225,12 @@ func _on_release(screen_pos: Vector2) -> void:
 			clear_selection()
 
 
+## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。
+func pick_at(screen_pos: Vector2) -> Node3D:
+	_try_autobind()
+	return _pick_at(screen_pos)
+
+
 ## 点选：相机射线打竖直胶囊；未命中再脚底像素兜底。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:

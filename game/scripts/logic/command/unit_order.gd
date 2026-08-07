@@ -7,9 +7,9 @@ enum Kind {
 	NONE = 0,
 	MOVE = 1,
 	STOP = 2,
-	## 以下为竖切预留，F0 不派发
 	HARVEST_GOLD = 10,
 	HARVEST_LUMBER = 11,
+	RETURN_GOODS = 12,
 	BUILD = 20,
 	TRAIN = 30,
 	RESEARCH = 40,
@@ -27,6 +27,8 @@ enum Source {
 var kind: int = Kind.NONE
 var goal_wc3: Vector2 = Vector2.INF
 var source: int = Source.UNKNOWN
+## 目标单位 instance_id（金矿等）；0 = 无
+var target_id: int = 0
 
 
 static func move(goal: Vector2, src: int = Source.UNKNOWN) -> UnitOrder:
@@ -44,6 +46,22 @@ static func stop(src: int = Source.UNKNOWN) -> UnitOrder:
 	return o
 
 
+static func harvest_gold(mine: Node, src: int = Source.UNKNOWN) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.HARVEST_GOLD
+	o.source = src
+	if mine != null and is_instance_valid(mine):
+		o.target_id = mine.get_instance_id()
+	return o
+
+
+static func return_goods(src: int = Source.UNKNOWN) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.RETURN_GOODS
+	o.source = src
+	return o
+
+
 func kind_name() -> String:
 	match kind:
 		Kind.MOVE:
@@ -54,6 +72,8 @@ func kind_name() -> String:
 			return "HarvestGold"
 		Kind.HARVEST_LUMBER:
 			return "HarvestLumber"
+		Kind.RETURN_GOODS:
+			return "ReturnGoods"
 		Kind.BUILD:
 			return "Build"
 		Kind.TRAIN:

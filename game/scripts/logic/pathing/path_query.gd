@@ -103,6 +103,85 @@ func snap_to_walkable(
 	return empty
 
 
+## 沿射线向外找第一个可走格（建筑脚印外缘交货/出矿门）。
+## 比环形 snap 更稳：不会拐到建筑侧面导致左右出生点不对称。
+func snap_along_dir_walkable(
+	origin_wc3: Vector2,
+	dir_wc3: Vector2,
+	start_dist_wc3: float,
+	max_extra_cells: int = 16
+) -> Dictionary:
+	var empty := {"ok": false, "wc3": origin_wc3, "cell": Vector2i.ZERO}
+	if not is_ready():
+		return empty
+	var dir := dir_wc3
+	if dir.length_squared() < 0.0001:
+		dir = Vector2(0.0, -1.0)
+	else:
+		dir = dir.normalized()
+	var start := maxf(start_dist_wc3, Wc3Coords.PATHING_CELL)
+	for i in range(0, maxi(max_extra_cells, 0) + 1):
+		var dist := start + float(i) * Wc3Coords.PATHING_CELL
+		var p := origin_wc3 + dir * dist
+		var c := pathing.world_to_cell(p.x, p.y)
+		if can_walk_cell_clear(c.x, c.y, 0):
+			return {
+				"ok": true,
+				"wc3": pathing.cell_center_wc3(c.x, c.y),
+				"cell": c,
+			}
+	var raw := origin_wc3 + dir * start
+	return snap_to_walkable(raw.x, raw.y, maxi(max_extra_cells, 8))
+
+
+## 建筑交货/贴边：在「目标中心 → 朝 from 外侧」取点，再吸附到可走格。
+## 避免 go_to(建筑中心) 被 snap 到建筑背面（远点）。
+func approach_point_wc3(
+	from_wc3: Vector2,
+	target_wc3: Vector2,
+	target_radius_wc3: float = 176.0,
+	margin_wc3: float = 48.0,
+	max_radius_cells: int = 16
+) -> Dictionary:
+	var empty := {"ok": false, "wc3": target_wc3}
+	if not is_ready():
+		return empty
+	var delta := from_wc3 - target_wc3
+	if delta.length_squared() < 1.0:
+		delta = Vector2(0.0, -1.0)
+	var raw := target_wc3 + delta.normalized() * (maxf(target_radius_wc3, 32.0) + margin_wc3)
+	var snap := snap_to_walkable(raw.x, raw.y, max_radius_cells)
+	if bool(snap.get("ok", false)):
+		return {"ok": true, "wc3": snap["wc3"], "cell": snap.get("cell", Vector2i.ZERO)}
+	# 回退：目标周围距 from 最近的可走格
+	var best := Vector2.INF
+	var best_d2 := INF
+	var best_c := Vector2i.ZERO
+	var c0 := pathing.world_to_cell(target_wc3.x, target_wc3.y)
+	var found := false
+	for r in range(1, max_radius_cells + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var cx := c0.x + dx
+				var cy := c0.y + dy
+				if not can_walk_cell_clear(cx, cy, 0):
+					continue
+				var center := pathing.cell_center_wc3(cx, cy)
+				var d2 := from_wc3.distance_squared_to(center)
+				if d2 < best_d2:
+					best_d2 = d2
+					best = center
+					best_c = Vector2i(cx, cy)
+					found = true
+		if found and r >= 3:
+			break
+	if not found:
+		return empty
+	return {"ok": true, "wc3": best, "cell": best_c}
+
+
 ## 8 邻可走格数。建筑 pathTex 凹角口袋通常 ≤3，开阔地接近 8。
 func walkable_neighbor_count(cx: int, cy: int) -> int:
 	if not is_ready():
@@ -239,32 +318,42 @@ func _wc3_clear_ok(wc3_x: float, wc3_y: float) -> bool:
 
 ## 主入口：返回 { ok, waypoints: Array[Vector2](WC3 XY), reason }。
 ## clearance_cells：PathAgentProfile 净空；agent_id：占格预约时排除自己。
+## ignore_reservation：采矿走廊等固定路径，不避开其他单位预约格。
 func find_path(
 	from_wc3: Vector2,
 	to_wc3: Vector2,
 	clearance_cells: int = 0,
-	agent_id: int = 0
+	agent_id: int = 0,
+	ignore_reservation: bool = false
 ) -> Dictionary:
 	if not is_ready():
 		return {"ok": false, "waypoints": [], "reason": "no_pathing"}
 	_clearance = maxi(clearance_cells, 0)
 	_agent_id = agent_id
+	var prev_res: PathCellReservation = reservation
+	if ignore_reservation:
+		reservation = null
 	var start_snap := snap_to_walkable(from_wc3.x, from_wc3.y, 6, _clearance)
 	var goal_snap := snap_to_walkable(to_wc3.x, to_wc3.y, 12, _clearance)
 	if not start_snap.get("ok", false):
+		reservation = prev_res
 		return {"ok": false, "waypoints": [], "reason": "start_blocked"}
 	if not goal_snap.get("ok", false):
+		reservation = prev_res
 		return {"ok": false, "waypoints": [], "reason": "goal_blocked"}
 	var start_c: Vector2i = start_snap["cell"]
 	var goal_c: Vector2i = goal_snap["cell"]
 	var start_p: Vector2 = start_snap["wc3"]
 	var goal_p: Vector2 = goal_snap["wc3"]
 	if start_c == goal_c:
+		reservation = prev_res
 		return {"ok": true, "waypoints": [goal_p], "reason": "same_cell"}
 	if is_straight_walkable(start_p, goal_p):
+		reservation = prev_res
 		return {"ok": true, "waypoints": [goal_p], "reason": "straight"}
 	var cells := _astar(start_c, goal_c)
 	if cells.is_empty():
+		reservation = prev_res
 		return {"ok": false, "waypoints": [], "reason": "unreachable"}
 	var wps: Array[Vector2] = []
 	# 跳过起点格：单位已在附近，从下一格中心开始可减少「先走到格心再出发」的顿挫。
@@ -277,6 +366,7 @@ func find_path(
 	wps = _string_pull(start_p, wps)
 	if smooth_catmull:
 		wps = _catmull_smooth(wps)
+	reservation = prev_res
 	return {"ok": true, "waypoints": wps, "reason": "astar"}
 
 

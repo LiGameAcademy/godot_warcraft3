@@ -63,8 +63,12 @@ var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
+## 点了「采集」或热键 G 后，等待左键点金矿
+var _harvest_targeting: bool = false
 var _card_supports_move: bool = false
+var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
+var _last_harvest_ui: Dictionary = {}
 
 
 func _ready() -> void:
@@ -233,6 +237,18 @@ func _input(event: InputEvent) -> void:
 			_set_move_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
+	# 采集瞄准：左键点金矿
+	if _harvest_targeting and event is InputEventMouseButton:
+		var mb_h := event as InputEventMouseButton
+		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_LEFT:
+			_issue_harvest_at_screen(mb_h.position, UnitOrder.Source.TARGETING)
+			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_RIGHT:
+			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
 	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
 			get_viewport().set_input_as_handled()
@@ -303,7 +319,8 @@ func _setup_pathing() -> void:
 	_command_router.configure(
 		_path_query,
 		_crowd_query,
-		Callable(self, "_ensure_navigator")
+		Callable(self, "_ensure_navigator"),
+		Callable(self, "_ensure_harvest_controller")
 	)
 	_ensure_path_debug()
 
@@ -442,18 +459,18 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 移动瞄准模式下：Esc 取消（落点已在 _input 处理）
-	if _move_targeting and event is InputEventKey and event.pressed and not event.echo:
+	# 移动/采集瞄准：Esc 取消（落点已在 _input 处理）
+	if (_move_targeting or _harvest_targeting) and event is InputEventKey and event.pressed and not event.echo:
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_set_move_targeting(false)
+			_set_harvest_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
-	# 右键移动优先于调试热键：RTS 主操作不应被 F 键分支挡住。
+	# 右键智能命令优先于调试热键：金矿→采集，空地→移动。
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			if _issue_move_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
-				_flash_cursor_move()
+			if _issue_smart_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
 				get_viewport().set_input_as_handled()
 				return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -466,6 +483,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_begin_move_targeting(UnitOrder.Source.HOTKEY)
 			get_viewport().set_input_as_handled()
 			return
+		if key == KEY_G and _card_is_peasant:
+			_begin_harvest_targeting(UnitOrder.Source.HOTKEY)
+			get_viewport().set_input_as_handled()
+			return
+		if key == KEY_R and _card_is_peasant:
+			if _issue_return_goods(UnitOrder.Source.HOTKEY):
+				get_viewport().set_input_as_handled()
+				return
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
@@ -511,6 +536,32 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	return n_stop > 0
 
 
+## 右键智能：点中金矿 → 采金；否则地面移动。
+func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if unit_selector == null or _command_router == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return false
+	var peasants := _command_router.filter_peasants(selected)
+	if not peasants.is_empty() and unit_selector.has_method("pick_at"):
+		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
+		if picked != null and _is_gold_mine(picked):
+			var n := _command_router.issue_harvest_gold(peasants, picked, source)
+			if n > 0:
+				if game_hud:
+					game_hud.set_status("采集金币 · %d 农民" % n)
+				_flash_cursor_move()
+				_refresh_command_card()
+				return true
+	if _issue_move_at_screen(screen_pos, source):
+		_flash_cursor_move()
+		return true
+	return false
+
+
 ## 对当前选中可移动单位下发移动（经 CommandRouter）。
 func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null or _path_query == null:
@@ -545,6 +596,44 @@ func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
 	return moved > 0 or failed > 0
 
 
+func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected") or not unit_selector.has_method("pick_at"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var peasants := _command_router.filter_peasants(selected)
+	if peasants.is_empty():
+		if game_hud:
+			game_hud.set_status("采集：无农民")
+		return false
+	var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
+	if picked == null or not _is_gold_mine(picked):
+		if game_hud:
+			game_hud.set_status("采集：请点金矿")
+		return false
+	var n := _command_router.issue_harvest_gold(peasants, picked, source)
+	if n > 0 and game_hud:
+		game_hud.set_status("采集金币 · %d 农民" % n)
+	_refresh_command_card()
+	return n > 0
+
+
+func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var n := _command_router.issue_return_goods(selected, source)
+	if n > 0 and game_hud:
+		game_hud.set_status("送回资源 · %d 农民" % n)
+	elif game_hud:
+		game_hud.set_status("送回：无负金农民")
+	_refresh_command_card()
+	return n > 0
+
+
 func _begin_move_targeting(source: int) -> void:
 	if unit_selector == null or not unit_selector.has_method("get_selected"):
 		return
@@ -553,17 +642,32 @@ func _begin_move_targeting(source: int) -> void:
 		if game_hud:
 			game_hud.set_status("移动：无可用单位")
 		return
+	_set_harvest_targeting(false)
 	_set_move_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
 		game_hud.set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
 
 
+func _begin_harvest_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_peasants(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("采集：无农民")
+		return
+	# 已有负金：面板若显示交回则不会进此；若空手瞄准
+	_set_move_targeting(false)
+	_set_harvest_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
+		game_hud.set_status("采集瞄准（%s）· 左键点金矿 · Esc 取消" % src)
+
+
 func _set_move_targeting(active: bool) -> void:
 	_move_targeting = active
-	# 瞄准期间关掉点选，避免 UnitSelector._input 与左键落点抢同一帧
-	if unit_selector != null:
-		unit_selector.enabled = not active
+	_sync_selector_enabled_for_targeting()
 	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
 		game_cursor.call("set_move_targeting", active)
 	elif game_cursor != null and game_cursor.has_method("set_mode"):
@@ -571,6 +675,21 @@ func _set_move_targeting(active: bool) -> void:
 			"set_mode",
 			Wc3GameCursor.Mode.MOVE if active else Wc3GameCursor.Mode.IDLE
 		)
+
+
+func _set_harvest_targeting(active: bool) -> void:
+	_harvest_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		# 暂复用移动瞄准光标；后续可换采集专用
+		game_cursor.call("set_move_targeting", active)
+
+
+func _sync_selector_enabled_for_targeting() -> void:
+	if unit_selector == null:
+		return
+	# 任一瞄准态都关掉点选，避免抢左键
+	unit_selector.enabled = not (_move_targeting or _harvest_targeting)
 
 
 func _flash_cursor_move() -> void:
@@ -609,6 +728,82 @@ func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	unit.add_child(nav)
 	_wire_navigator_signals(nav)
 	return nav
+
+
+func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
+	_ensure_unit_visual(unit)
+	var existing := unit.get_node_or_null("HarvestController") as HarvestController
+	if existing != null:
+		existing.configure(
+			Callable(self, "_ensure_navigator"),
+			Callable(self, "_local_stock"),
+			Callable(self, "_unit_host"),
+			Callable(self, "_path_query_ref")
+		)
+		_wire_harvest_signals(existing)
+		return existing
+	var hc := HarvestController.new()
+	hc.name = "HarvestController"
+	hc.configure(
+		Callable(self, "_ensure_navigator"),
+		Callable(self, "_local_stock"),
+		Callable(self, "_unit_host"),
+		Callable(self, "_path_query_ref")
+	)
+	unit.add_child(hc)
+	_wire_harvest_signals(hc)
+	return hc
+
+
+func _local_stock() -> PlayerStock:
+	if _session == null:
+		return null
+	return _session.local_stock()
+
+
+func _unit_host() -> Node:
+	if map_root == null:
+		return null
+	return map_root.get_unit_layer()
+
+
+func _path_query_ref() -> PathQuery:
+	return _path_query
+
+
+func _wire_harvest_signals(hc: HarvestController) -> void:
+	if hc == null:
+		return
+	if not hc.carry_changed.is_connected(_on_harvest_carry_changed):
+		hc.carry_changed.connect(_on_harvest_carry_changed)
+	if not hc.deposited.is_connected(_on_harvest_deposited):
+		hc.deposited.connect(_on_harvest_deposited)
+	if not hc.state_changed.is_connected(_on_harvest_state_changed):
+		hc.state_changed.connect(_on_harvest_state_changed)
+
+
+func _on_harvest_carry_changed(_gold: int, _lumber: int) -> void:
+	_refresh_command_card()
+
+
+func _on_harvest_deposited(gold: int, lumber: int) -> void:
+	if game_hud:
+		if gold > 0:
+			game_hud.set_status("交货 +%d 金" % gold)
+		elif lumber > 0:
+			game_hud.set_status("交货 +%d 木" % lumber)
+	_refresh_command_card()
+
+
+func _on_harvest_state_changed(_state: int) -> void:
+	_refresh_command_card()
+
+
+static func _is_gold_mine(node: Node) -> bool:
+	if node == null:
+		return false
+	var d: Dictionary = node.get_meta("unit_data", {})
+	return str(d.get("typeId", "")).strip_edges() == HarvestController.GOLD_MINE_TYPE
 
 
 func _wire_navigator_signals(nav: UnitNavigator) -> void:
@@ -780,6 +975,10 @@ func _on_command_action(action_id: String) -> void:
 			_begin_move_targeting(UnitOrder.Source.PANEL)
 		CommandCard.ACTION_STOP:
 			_issue_stop(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_HARVEST_GOLD:
+			_begin_harvest_targeting(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_RETURN_GOODS:
+			_issue_return_goods(UnitOrder.Source.PANEL)
 		_:
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
@@ -787,10 +986,12 @@ func _on_command_action(action_id: String) -> void:
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
+	_set_harvest_targeting(false)
 	if game_hud == null:
 		return
 	if primary == null or selected.is_empty():
 		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.set_unit_info("—", 0, 0)
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
@@ -803,16 +1004,21 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	game_hud.set_unit_info(label, 0, 0)
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.set_command_labels(
 			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
 		)
-		game_hud.set_status("主城已选 · 指令格为占位")
+		game_hud.set_status("主城已选 · 具备接收资源能力")
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
 		_refresh_command_card()
-		game_hud.set_status("已选 %s · M 移动 · S 停止" % tid)
+		if _card_is_peasant:
+			game_hud.set_status("已选 %s · M移动 · S停止 · G采集 / R交回" % tid)
+		else:
+			game_hud.set_status("已选 %s · M 移动 · S 停止" % tid)
 	else:
 		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.clear_command_labels()
 		game_hud.set_status("已选 %s" % tid)
 
@@ -824,10 +1030,36 @@ func _refresh_command_card() -> void:
 		return
 	var selected: Array = unit_selector.call("get_selected")
 	var moving := false
+	var carrying := false
+	var harvesting := false
+	var returning := false
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
+		var peasants := _command_router.filter_peasants(selected)
+		var movers := _command_router.filter_movers(selected)
+		_card_is_peasant = (
+			not peasants.is_empty() and peasants.size() == movers.size()
+		)
+		if _card_is_peasant:
+			carrying = _command_router.any_carrying(peasants)
+			harvesting = _command_router.any_harvesting(peasants)
+			returning = _command_router.any_returning(peasants)
+	else:
+		_card_is_peasant = false
 	_last_move_executing = moving
-	game_hud.set_command_card(CommandCard.basic_locomotion(moving))
+	_last_harvest_ui = {
+		"peasant": _card_is_peasant,
+		"carrying": carrying,
+		"harvesting": harvesting,
+		"returning": returning,
+		"moving": moving,
+	}
+	if _card_is_peasant:
+		game_hud.set_command_card(
+			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+		)
+	else:
+		game_hud.set_command_card(CommandCard.basic_locomotion(moving))
 
 
 func _refresh_move_executing_ui() -> void:
@@ -837,9 +1069,32 @@ func _refresh_move_executing_ui() -> void:
 		return
 	var selected: Array = unit_selector.call("get_selected")
 	var moving := false
+	var carrying := false
+	var harvesting := false
+	var returning := false
+	var is_peasant := _card_is_peasant
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
-	if moving == _last_move_executing:
+		if is_peasant:
+			var peasants := _command_router.filter_peasants(selected)
+			carrying = _command_router.any_carrying(peasants)
+			harvesting = _command_router.any_harvesting(peasants)
+			returning = _command_router.any_returning(peasants)
+	var snap := {
+		"peasant": is_peasant,
+		"carrying": carrying,
+		"harvesting": harvesting,
+		"returning": returning,
+		"moving": moving,
+	}
+	if snap == _last_harvest_ui and moving == _last_move_executing:
 		return
 	_last_move_executing = moving
-	game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
+	_last_harvest_ui = snap
+	# 互斥格可能从采集切到交回，需整卡刷新
+	if is_peasant:
+		game_hud.set_command_card(
+			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+		)
+	else:
+		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
