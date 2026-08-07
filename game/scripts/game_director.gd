@@ -738,7 +738,8 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 			Callable(self, "_ensure_navigator"),
 			Callable(self, "_local_stock"),
 			Callable(self, "_unit_host"),
-			Callable(self, "_path_query_ref")
+			Callable(self, "_path_query_ref"),
+			Callable(self, "_crowd_query_ref")
 		)
 		_wire_harvest_signals(existing)
 		return existing
@@ -748,7 +749,8 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 		Callable(self, "_ensure_navigator"),
 		Callable(self, "_local_stock"),
 		Callable(self, "_unit_host"),
-		Callable(self, "_path_query_ref")
+		Callable(self, "_path_query_ref"),
+		Callable(self, "_crowd_query_ref")
 	)
 	unit.add_child(hc)
 	_wire_harvest_signals(hc)
@@ -769,6 +771,10 @@ func _unit_host() -> Node:
 
 func _path_query_ref() -> PathQuery:
 	return _path_query
+
+
+func _crowd_query_ref() -> UnitCrowdQuery:
+	return _crowd_query
 
 
 func _wire_harvest_signals(hc: HarvestController) -> void:

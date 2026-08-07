@@ -19,7 +19,7 @@ const MINE_EXIT_MARGIN_WC3 := 16.0
 ## 改出矿/走廊布局时递增，强制重建缓存。
 const CORRIDOR_LAYOUT_VERSION := 2
 ## 人族进矿时长（秒）。实机观感约 1.3；非 Ahar.Dur1（伐木）。
-const DEFAULT_DWELL_SEC := 2
+const DEFAULT_DWELL_SEC := 1.3
 ## 默认按 5 车道散开（对应最优农民数）。
 const DEFAULT_LANE_COUNT := 5
 

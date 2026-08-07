@@ -2,8 +2,8 @@ class_name HarvestController
 extends Node
 
 ## 农民采集「订单 AI」：一次 HarvestGold 命令下的自动循环。
-## 首趟：矿口车道散开进矿；第一次出矿/送矿起：统一出矿门 ↔ 统一交货点固定走廊。
-## 进矿只隐藏不改坐标；出矿瞬移到「矿上离主城最近点」。
+## 进矿只隐藏；出矿选「朝主城、可贴矿、无单位占用」的落点再显示。
+## 送矿/回矿各自找空闲接近点；采矿幽灵模式互不挡路。
 
 signal state_changed(state: int)
 signal carry_changed(gold: int, lumber: int)
@@ -22,32 +22,37 @@ const WORKER_PEASANT := "hpea"
 ## 金矿贴边：路径 snap 后的放宽半径。
 const ENTER_MINE_MAX_WC3 := 280.0
 const QUEUE_SLOT_ARRIVE_WC3 := 48.0
-## 到达统一交货点即交金。
-const DROPOFF_GOAL_ARRIVE_WC3 := 96.0
-## 主城脚印外余量；交货半径 = footprint_half + margin（须能站在可走格上）。
+## 到达个人交货点即交金。
+const DROPOFF_GOAL_ARRIVE_WC3 := 72.0
+## 主城 collision 外余量（勿用 pathTex 半宽，否则交货点离城太远）。
+const DROPOFF_APPROACH_MARGIN_WC3 := 40.0
 const DROPOFF_MARGIN_WC3 := 64.0
 const DEFAULT_BUILDING_RADIUS_WC3 := 176.0
 const MAX_DROPOFF_REPATH := 1
 ## 回矿途中寻路失败可重试；对齐 WC3：Harvest 订单持续，不因一次 path fail 中断。
 const MAX_MINE_REPATH := 8
-## 靠近统一出矿门才可进矿/排队。
+## 靠近出矿口/个人入矿点。
 const MINE_PORTAL_ARRIVE_WC3 := 72.0
+## 出矿/接近点互斥间距（农民 collision≈16，略放宽）。
+const SLOT_SEP_WC3 := 52.0
+const EXIT_LATERAL_STEP_WC3 := 40.0
+const EXIT_ALONG_STEP_WC3 := 32.0
 
 var _state: int = State.IDLE
 var _mine: Node3D = null
 var _mine_rt: GoldMineRuntime = null
 var _dropoff: Node3D = null
-## 统一交货点（主城上离矿最近，全员相同）。
+## 本趟个人交货接近点。
 var _dropoff_goal_wc3: Vector2 = Vector2.INF
-## 统一出矿/回矿门（矿上离主城最近，全员相同）。
+## 本趟出矿落点 / 回矿接近点。
 var _mine_portal_wc3: Vector2 = Vector2.INF
-## 本农民矿口候位（仅首趟散开 / 排队，不参与运金轨迹）。
+## 本农民矿口候位（仅首趟散开 / 排队）。
 var _wait_goal_wc3: Vector2 = Vector2.INF
 var _dropoff_repath: int = 0
 var _mine_repath: int = 0
 var _lane_index: int = 0
 var _lane_count: int = GoldMineRuntime.DEFAULT_LANE_COUNT
-## 首趟多选：先散开再进矿；之后走出矿门。
+## 首趟多选：先散开再进矿。
 var _use_scatter_approach: bool = true
 var _carry_gold: int = 0
 var _carry_lumber: int = 0
@@ -57,6 +62,7 @@ var _ensure_navigator: Callable = Callable()
 var _get_stock: Callable = Callable()
 var _get_unit_host: Callable = Callable()
 var _get_path_query: Callable = Callable()
+var _get_crowd: Callable = Callable()
 var _was_visible: bool = true
 var _active: bool = false
 var _mine_repath_cooldown: float = 0.0
@@ -66,12 +72,14 @@ func configure(
 	ensure_navigator: Callable,
 	get_stock: Callable,
 	get_unit_host: Callable,
-	get_path_query: Callable = Callable()
+	get_path_query: Callable = Callable(),
+	get_crowd: Callable = Callable()
 ) -> void:
 	_ensure_navigator = ensure_navigator
 	_get_stock = get_stock
 	_get_unit_host = get_unit_host
 	_get_path_query = get_path_query
+	_get_crowd = get_crowd
 	_load_ahar_params()
 
 
@@ -381,10 +389,13 @@ func _exit_mine_with_gold() -> void:
 		taken = _mine_rt.exit_mine(body, want)
 	_carry_gold = taken
 	_carry_lumber = 0
-	# 出矿：全员瞬移到「矿上离主城最近」的统一点，再显示并去交货
-	_place_at_shared_exit(body)
+	# 先写上金袋（仍隐藏），显示时就已是负金外观
+	if taken > 0:
+		_apply_carry_visual(true)
+	# 出矿：选朝主城、可贴矿、无占用的落点，再显示并去交货
+	_place_at_free_mine_exit(body)
 	_restore_visible()
-	_apply_carry_visual()
+	_apply_carry_visual(true)
 	carry_changed.emit(_carry_gold, _carry_lumber)
 	if taken <= 0:
 		# 矿空：停止采集循环
@@ -393,9 +404,10 @@ func _exit_mine_with_gold() -> void:
 		_set_state(State.IDLE)
 		set_process(false)
 		return
-	# 第一次出矿起进入固定走廊模式（送矿/回矿都走统一出矿门）
 	_use_scatter_approach = false
+	_dropoff_goal_wc3 = Vector2.INF
 	_go_dropoff()
+	_apply_carry_visual(true)
 
 
 func _do_deposit() -> void:
@@ -413,24 +425,23 @@ func _do_deposit() -> void:
 	var l := int(deposited_amt.get("lumber", 0))
 	_carry_gold = 0
 	_carry_lumber = 0
-	# 保留统一交货点，避免每趟重新 approach 导致路线漂移
 	_dropoff_repath = 0
 	_mine_repath = 0
-	# 第一次送矿完成后：回矿只去统一出矿门，不再回首趟散开点
 	_use_scatter_approach = false
-	_apply_carry_visual()
+	_mine_portal_wc3 = Vector2.INF
+	# 交货瞬间摘掉金袋（force + 0 blend）
+	_apply_carry_visual(true)
 	carry_changed.emit(0, 0)
 	if g > 0 or l > 0:
 		deposited.emit(g, l)
 	if _mine != null and is_instance_valid(_mine) and _active:
 		_mine_rt = GoldMineRuntime.ensure(_mine)
-		# WC3：交金后自动 resume harvest 到「上次的矿」；先保证站在可走格再寻路
 		_ensure_walkable_start(body)
 		_set_state(State.MOVE_TO_MINE)
 		set_process(true)
 		if not _go_mine_approach():
-			# 首帧失败不 abort：留在 MOVE_TO_MINE 由 tick 重试
 			_mine_repath_cooldown = 0.15
+		_apply_carry_visual(true)
 	else:
 		_active = false
 		_set_harvest_ghost(false)
@@ -451,7 +462,7 @@ func _go_mine_approach() -> bool:
 	if body == null:
 		return false
 	_ensure_walkable_start(body)
-	# 首趟多选散开；循环中走统一出矿门
+	# 首趟散开；之后找空闲入矿接近点
 	return _issue_mine_path(body)
 
 
@@ -498,7 +509,8 @@ func _go_dropoff() -> void:
 	if not _resolve_dropoff():
 		abort()
 		return
-	if _dropoff_goal_wc3 == Vector2.INF or _mine_portal_wc3 == Vector2.INF:
+	# 确保有出矿参考点；交货点本趟现场算
+	if _mine_portal_wc3 == Vector2.INF:
 		_cache_corridor_goals()
 	_dropoff_repath = 0
 	_set_harvest_ghost(true)
@@ -526,7 +538,7 @@ func _cache_corridor_goals() -> void:
 	if _dropoff == null or not is_instance_valid(_dropoff):
 		_mine_portal_wc3 = wait_goal
 		return
-	# 固定走廊：出矿贴金矿（collision）；交货用主城 pathTex 外缘
+	# 固定出矿瞬移点（贴矿）；交货/回矿接近点本趟现场算
 	var mine_half := _mine_rt.mine_radius_wc3()
 	var hall_half := _footprint_half_wc3(_dropoff)
 	var portals := _mine_rt.shared_corridor_portals(
@@ -535,7 +547,7 @@ func _cache_corridor_goals() -> void:
 	if portals.is_empty():
 		return
 	_mine_portal_wc3 = portals.get("mine", wait_goal) as Vector2
-	_dropoff_goal_wc3 = portals.get("hall", Vector2.INF) as Vector2
+	# 不在这里写死交货点，留给个人 approach
 
 
 func _footprint_half_wc3(node: Node) -> float:
@@ -569,65 +581,163 @@ func _path_to_wait_slot(body: Node3D) -> bool:
 
 
 func _path_to_mine_portal(body: Node3D) -> bool:
+	## 回矿：找朝向自己一侧、空闲的入矿接近点。
 	if body == null or not _mine_valid():
 		return false
-	if _mine_portal_wc3 == Vector2.INF:
-		_cache_corridor_goals()
-	# 优先走固定回程路点（全员同一条）
-	if _mine_rt != null:
-		var wps: Array[Vector2] = _mine_rt.corridor_waypoints_to_mine()
-		if not wps.is_empty():
-			return _follow_fixed_waypoints(wps, _mine_portal_wc3)
-	if _mine_portal_wc3 == Vector2.INF:
-		return _path_to_wait_slot(body)
-	return _go_to_wc3(_mine_portal_wc3)
+	var goal := _pick_free_approach_wc3(body, _mine)
+	if goal == Vector2.INF:
+		goal = _compute_approach_goal(body, _mine)
+	_mine_portal_wc3 = goal
+	return _go_to_wc3(goal)
 
 
-func _place_at_shared_exit(body: Node3D) -> void:
-	## 出矿瞬移：全员同一点 = 矿 footprint 上离主城最近的可走格。
-	if body == null:
+func _place_at_free_mine_exit(body: Node3D) -> void:
+	## 出矿：在矿外缘朝主城一侧，选可走且无其他单位占用的点。
+	if body == null or not _mine_valid():
 		return
-	if _mine_portal_wc3 == Vector2.INF:
+	if _dropoff == null or not is_instance_valid(_dropoff):
+		_resolve_dropoff_from_mine()
+	var exit_pt := _pick_free_mine_exit_wc3(body)
+	if exit_pt == Vector2.INF:
+		# 兜底：走廊矿端（可能叠人，但保证能出）
 		_cache_corridor_goals()
-	if _mine_portal_wc3 == Vector2.INF:
+		exit_pt = _mine_portal_wc3
+	if exit_pt == Vector2.INF:
 		return
-	_place_at_wc3(body, _mine_portal_wc3)
-
-
-func _follow_fixed_waypoints(waypoints: Array, goal_hint: Vector2 = Vector2.INF) -> bool:
-	if not _ensure_navigator.is_valid():
-		return false
-	var body := _body()
-	if body == null:
-		return false
-	var nav := _ensure_navigator.call(body) as UnitNavigator
-	if nav == null:
-		return false
-	nav.set_harvest_ghost(true)
-	if nav.has_method("go_waypoints_wc3"):
-		return bool(nav.call("go_waypoints_wc3", waypoints, goal_hint))
-	if goal_hint != Vector2.INF:
-		return nav.go_to_wc3(goal_hint)
-	if not waypoints.is_empty() and waypoints[waypoints.size() - 1] is Vector2:
-		return nav.go_to_wc3(waypoints[waypoints.size() - 1] as Vector2)
-	return false
+	_mine_portal_wc3 = exit_pt
+	_place_at_wc3(body, exit_pt)
 
 
 func _path_to_dropoff_approach(body: Node3D) -> bool:
+	## 送矿：找主城侧空闲交货接近点。
 	if body == null or _dropoff == null:
 		return false
-	if _dropoff_goal_wc3 == Vector2.INF:
-		_cache_corridor_goals()
-	# 优先走固定去程路点（全员同一条，不再每趟 A* / snap）
-	if _mine_rt != null:
-		var wps: Array[Vector2] = _mine_rt.corridor_waypoints_to_hall()
-		if not wps.is_empty():
-			return _follow_fixed_waypoints(wps, _dropoff_goal_wc3)
-	if _dropoff_goal_wc3 == Vector2.INF:
-		var goal := _compute_approach_goal(body, _dropoff)
-		_dropoff_goal_wc3 = goal
-		return _go_to_wc3(goal)
-	return _go_to_wc3(_dropoff_goal_wc3)
+	var goal := _pick_free_approach_wc3(body, _dropoff)
+	if goal == Vector2.INF:
+		goal = _compute_approach_goal(body, _dropoff)
+	_dropoff_goal_wc3 = goal
+	return _go_to_wc3(goal)
+
+
+func _pick_free_mine_exit_wc3(body: Node3D) -> Vector2:
+	if not _mine_valid():
+		return Vector2.INF
+	var mine_xy := Wc3Coords.godot_to_wc3_xy(_mine.global_position)
+	var hall_xy := mine_xy + Vector2(0.0, -400.0)
+	if _dropoff != null and is_instance_valid(_dropoff):
+		hall_xy = Wc3Coords.godot_to_wc3_xy(_dropoff.global_position)
+	var to_hall := hall_xy - mine_xy
+	if to_hall.length_squared() < 1.0:
+		to_hall = Vector2(0.0, -1.0)
+	var dir := to_hall.normalized()
+	var perp := Vector2(-dir.y, dir.x)
+	var along0 := _mine_rt.mine_radius_wc3() + GoldMineRuntime.MINE_EXIT_MARGIN_WC3
+	var pq := _path_query()
+	var best := Vector2.INF
+	var best_score := INF
+	# 优先：更靠近主城（along 小、|lateral| 小），且可走、空闲
+	for ring in range(0, 5):
+		var along := along0 + float(ring) * EXIT_ALONG_STEP_WC3
+		for lat_i in range(-5, 6):
+			var lat := float(lat_i) * EXIT_LATERAL_STEP_WC3
+			var raw := mine_xy + dir * along + perp * lat
+			var p := _snap_walkable_wc3(raw)
+			if p == Vector2.INF:
+				continue
+			if not _is_slot_free_wc3(p, body):
+				continue
+			# 分：距主城 + 横向惩罚（同距时偏中间）
+			var score := p.distance_to(hall_xy) + absf(lat) * 0.2 + float(ring) * 8.0
+			if score < best_score:
+				best_score = score
+				best = p
+		if best != Vector2.INF and ring >= 1:
+			break
+	if best != Vector2.INF:
+		return best
+	# 放宽：只要可走（允许略挤）
+	if pq != null and pq.has_method("snap_along_dir_walkable"):
+		var sm: Dictionary = pq.call(
+			"snap_along_dir_walkable", mine_xy, dir, along0, 16
+		)
+		if bool(sm.get("ok", false)):
+			return sm["wc3"] as Vector2
+	return Vector2.INF
+
+
+func _pick_free_approach_wc3(body: Node3D, target: Node3D) -> Vector2:
+	if body == null or target == null:
+		return Vector2.INF
+	var from := Wc3Coords.godot_to_wc3_xy(body.global_position)
+	var center := Wc3Coords.godot_to_wc3_xy(target.global_position)
+	# 交货/入矿都用 collision，不用 pathTex 半宽（主城 16x16 半宽≈256，会离城太远）
+	var radius := _building_radius_wc3(target)
+	if _mine_valid() and target == _mine:
+		radius = _mine_rt.mine_radius_wc3()
+	var delta := from - center
+	if delta.length_squared() < 1.0:
+		delta = Vector2(0.0, -1.0)
+	var outward := delta.normalized()
+	var perp := Vector2(-outward.y, outward.x)
+	var margin := DROPOFF_APPROACH_MARGIN_WC3
+	if _mine_valid() and target == _mine:
+		margin = GoldMineRuntime.MINE_EXIT_MARGIN_WC3 + 24.0
+	var along0 := maxf(radius, 32.0) + margin
+	var best := Vector2.INF
+	var best_score := INF
+	for ring in range(0, 4):
+		var along := along0 + float(ring) * EXIT_ALONG_STEP_WC3
+		for lat_i in range(-4, 5):
+			var lat := float(lat_i) * EXIT_LATERAL_STEP_WC3
+			var raw := center + outward * along + perp * lat
+			var p := _snap_walkable_wc3(raw)
+			if p == Vector2.INF:
+				continue
+			if not _is_slot_free_wc3(p, body):
+				continue
+			# 偏向贴建筑 + 离自己近
+			var score := (
+				center.distance_to(p) * 1.2
+				+ from.distance_to(p) * 0.35
+				+ absf(lat) * 0.25
+				+ float(ring) * 10.0
+			)
+			if score < best_score:
+				best_score = score
+				best = p
+		if best != Vector2.INF:
+			break
+	if best != Vector2.INF:
+		return best
+	return _compute_approach_goal(body, target)
+
+
+func _snap_walkable_wc3(raw: Vector2) -> Vector2:
+	var pq := _path_query()
+	if pq == null:
+		return raw
+	if pq.has_method("can_walk_wc3") and bool(pq.call("can_walk_wc3", raw.x, raw.y)):
+		return raw
+	if pq.has_method("snap_to_walkable"):
+		var snap: Dictionary = pq.call("snap_to_walkable", raw.x, raw.y, 6)
+		if bool(snap.get("ok", false)):
+			return snap["wc3"] as Vector2
+	return Vector2.INF
+
+
+func _is_slot_free_wc3(pos_wc3: Vector2, body: Node3D) -> bool:
+	var crowd := _crowd()
+	if crowd == null:
+		return true
+	if crowd.has_method("is_slot_free"):
+		return bool(crowd.call("is_slot_free", pos_wc3, body, SLOT_SEP_WC3))
+	return true
+
+
+func _crowd() -> UnitCrowdQuery:
+	if _get_crowd.is_valid():
+		return _get_crowd.call() as UnitCrowdQuery
+	return null
 
 
 func _on_mine_slot_available() -> void:
@@ -690,7 +800,8 @@ func _can_deposit_now(body: Node3D) -> bool:
 
 
 func _deposit_accept_radius_wc3(building: Node) -> float:
-	return _footprint_half_wc3(building) + DROPOFF_MARGIN_WC3
+	# 与接近点同用 collision，勿用 pathTex 半宽（否则「能交」圈离城过远）
+	return _building_radius_wc3(building) + DROPOFF_MARGIN_WC3
 
 
 func _resolve_dropoff() -> bool:
@@ -742,17 +853,21 @@ func _compute_approach_goal(body: Node3D, target: Node3D) -> Vector2:
 	var from := Wc3Coords.godot_to_wc3_xy(body.global_position)
 	var center := Wc3Coords.godot_to_wc3_xy(target.global_position)
 	var radius := _building_radius_wc3(target)
+	var margin := DROPOFF_APPROACH_MARGIN_WC3
+	if _mine_valid() and target == _mine:
+		radius = _mine_rt.mine_radius_wc3()
+		margin = GoldMineRuntime.MINE_EXIT_MARGIN_WC3 + 24.0
 	var pq := _path_query()
 	if pq != null and pq.has_method("approach_point_wc3"):
 		var snap: Dictionary = pq.call(
-			"approach_point_wc3", from, center, radius, 48.0, 16
+			"approach_point_wc3", from, center, radius, margin, 16
 		)
 		if bool(snap.get("ok", false)):
 			return snap["wc3"] as Vector2
 	var delta := from - center
 	if delta.length_squared() < 1.0:
 		delta = Vector2(0.0, -1.0)
-	return center + delta.normalized() * (radius + 48.0)
+	return center + delta.normalized() * (radius + margin)
 
 
 func _go_to_wc3(goal: Vector2) -> bool:
@@ -810,7 +925,7 @@ func _restore_visible() -> void:
 		body.visible = true
 
 
-func _apply_carry_visual() -> void:
+func _apply_carry_visual(force: bool = false) -> void:
 	var body := _body()
 	if body == null:
 		return
@@ -818,11 +933,11 @@ func _apply_carry_visual() -> void:
 	if vis == null:
 		return
 	if _carry_gold > 0:
-		vis.set_carry(UnitVisual.Carry.GOLD)
+		vis.set_carry(UnitVisual.Carry.GOLD, force)
 	elif _carry_lumber > 0:
-		vis.set_carry(UnitVisual.Carry.LUMBER)
+		vis.set_carry(UnitVisual.Carry.LUMBER, force)
 	else:
-		vis.set_carry(UnitVisual.Carry.NONE)
+		vis.set_carry(UnitVisual.Carry.NONE, force)
 
 
 func _set_state(s: int) -> void:

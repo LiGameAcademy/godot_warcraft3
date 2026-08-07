@@ -18,6 +18,8 @@ enum Carry {
 ## Walk↔Stand 交叉淡入（秒）。过短仍像硬切，过长会脚滑。
 const BLEND_TO_WALK := 0.2
 const BLEND_TO_STAND := 0.28
+## 负资源外观切换：必须立刻（金袋 geoset 不能等 blend）。
+const BLEND_CARRY_SWITCH := 0.0
 
 var _cache: MapModelCache = null
 var _moving: bool = false
@@ -38,12 +40,21 @@ func get_carry() -> int:
 
 
 ## 切换负资源外观（金袋 / 木材）。强制重播当前位移态对应动画。
-func set_carry(carry: int) -> void:
-	if _carry == carry and not _logical.is_empty():
+## force=true：即使状态未变也重播（出矿/交货瞬间）。
+func set_carry(carry: int, force: bool = false) -> void:
+	var want := _logical_for(_moving, carry)
+	# 仅当「已声称的 carry」且「实际播到的逻辑名」都匹配才跳过；
+	# 避免 Gold 回退成 Walk 后把 _logical 卡死、金袋永远不刷。
+	if not force and _carry == carry and _logical == want and not _logical.is_empty():
 		return
+	var carry_changed := _carry != carry
 	_carry = carry
 	_logical = ""
-	set_locomotion(_moving)
+	# 负资源开/关：0 blend，否则走路几步才看到金袋/空手
+	var blend := BLEND_CARRY_SWITCH if carry_changed or force else (
+		BLEND_TO_WALK if _moving else BLEND_TO_STAND
+	)
+	_play_logical(_logical_for(_moving, _carry), blend)
 
 
 ## moving=true → Walk[_Gold|_Lumber]；false → Stand[…]。同态不重播。
@@ -52,10 +63,11 @@ func set_locomotion(moving: bool) -> void:
 	if _moving == moving and _logical == want and not _logical.is_empty():
 		return
 	_moving = moving
-	if moving:
-		_play_logical(want, BLEND_TO_WALK)
-	else:
-		_play_logical(want, BLEND_TO_STAND)
+	# 负资源态下切 Walk/Stand 也尽量短，避免金袋晚一拍
+	var blend := BLEND_TO_WALK if moving else BLEND_TO_STAND
+	if _carry != Carry.NONE:
+		blend = minf(blend, 0.05)
+	_play_logical(want, blend)
 
 
 func _logical_for(moving: bool, carry: int) -> String:
@@ -79,21 +91,23 @@ func _play_logical(logical: String, blend: float) -> void:
 		resolved = BuildingVisual.resolve_animation(body, logical.replace("_", " "))
 	if resolved.is_empty() and logical == "Walk" and _cache != null:
 		resolved = _resolve_walk_prefix(body)
+	var played_as := logical
 	if resolved.is_empty():
-		# 负资源动画缺失时回退空手，避免完全不动
+		# 负资源动画缺失时回退空手，避免完全不动；勿把 _logical 标成 Gold（否则再也刷不回金袋）
 		if logical.ends_with("_Gold") or logical.ends_with("_Lumber"):
 			var fallback := "Walk" if _moving else "Stand"
 			resolved = BuildingVisual.resolve_animation(body, fallback)
+			played_as = fallback
 		if resolved.is_empty() and logical.begins_with("Stand"):
 			_play_stand_fallback(body, blend)
 			return
 		if resolved.is_empty():
 			return
 	if _play_with_blend(body, resolved, blend):
-		_logical = logical
+		_logical = played_as
 		# PE2：优先完整逻辑名，失败时用手空态
-		var pe2 := logical
-		if logical.ends_with("_Gold") or logical.ends_with("_Lumber"):
+		var pe2 := played_as
+		if pe2.ends_with("_Gold") or pe2.ends_with("_Lumber"):
 			pe2 = "Walk" if _moving else "Stand"
 		Wc3Pe2Particles.apply_sequence(body, pe2)
 

@@ -62,6 +62,8 @@ func neighbors_of(
 		if c == self_unit or not (c is Node3D):
 			continue
 		var n := c as Node3D
+		if not n.visible:
+			continue
 		if not n.has_meta("unit_data"):
 			continue
 		var d: Dictionary = n.get_meta("unit_data", {})
@@ -77,3 +79,19 @@ func neighbors_of(
 			continue
 		out.append({"pos": pos, "r": radius_for_type(tid), "id": n.get_instance_id()})
 	return out
+
+
+## 落点是否足够空（与可见邻居不重叠）。min_sep：中心距下限。
+func is_slot_free(
+	pos_wc3: Vector2,
+	self_unit: Node,
+	min_sep_wc3: float = 48.0
+) -> bool:
+	var neighbors := neighbors_of(self_unit, pos_wc3, maxf(min_sep_wc3 * 3.0, 128.0), false)
+	var need := maxf(min_sep_wc3, 32.0)
+	for n in neighbors:
+		var other: Vector2 = n.get("pos", Vector2.ZERO)
+		var orad := float(n.get("r", 16.0))
+		if pos_wc3.distance_to(other) < need + orad * 0.35:
+			return false
+	return true
