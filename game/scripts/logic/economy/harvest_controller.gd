@@ -212,6 +212,15 @@ func _tick_move_to_mine() -> void:
 	if body == null:
 		abort()
 		return
+	# 贴矿即可抢槽：矿里人出来时不必等导航停稳
+	if _dist_wc3(body, _mine) <= ENTER_MINE_MAX_WC3:
+		_connect_mine_signals()
+		if _mine_rt.queue_index(body) < 0:
+			_mine_rt.enqueue(body)
+		if _mine_rt.try_enter(body):
+			_mine_repath = 0
+			_begin_inside_mine()
+			return
 	var nav := _nav()
 	if nav != null and nav.is_moving():
 		return
@@ -236,10 +245,11 @@ func _near_mine_entry(body: Node3D) -> bool:
 	if body == null:
 		return false
 	var cur := Wc3Coords.godot_to_wc3_xy(body.global_position)
-	# 运金循环中：只认统一出矿门（不再认首趟散开候位）
+	# 运金循环：优先认个人入矿接近点
 	if not _use_scatter_approach:
 		if _mine_portal_wc3 != Vector2.INF:
-			return cur.distance_to(_mine_portal_wc3) <= MINE_PORTAL_ARRIVE_WC3
+			if cur.distance_to(_mine_portal_wc3) <= MINE_PORTAL_ARRIVE_WC3:
+				return true
 		return _dist_wc3(body, _mine) <= ENTER_MINE_MAX_WC3
 	if _mine_portal_wc3 != Vector2.INF:
 		if cur.distance_to(_mine_portal_wc3) <= MINE_PORTAL_ARRIVE_WC3:
@@ -247,8 +257,8 @@ func _near_mine_entry(body: Node3D) -> bool:
 	if _wait_goal_wc3 != Vector2.INF:
 		if cur.distance_to(_wait_goal_wc3) <= QUEUE_SLOT_ARRIVE_WC3:
 			return true
-	# 兜底：贴矿心且已在脚印外缘附近
-	return _dist_wc3(body, _mine) <= ENTER_MINE_MAX_WC3 and _mine_portal_wc3 == Vector2.INF
+	# 已贴矿：允许进/排队（portal 已缓存时也要认，否则会空等在矿边）
+	return _dist_wc3(body, _mine) <= ENTER_MINE_MAX_WC3
 
 
 func _issue_mine_path(body: Node3D) -> bool:
@@ -741,11 +751,18 @@ func _crowd() -> UnitCrowdQuery:
 
 
 func _on_mine_slot_available() -> void:
-	if not _active or _state != State.WAIT_IN_QUEUE:
+	if not _active:
+		return
+	# 候位中或仍在走近矿：矿空立刻抢（不必等导航停）
+	if _state != State.WAIT_IN_QUEUE and _state != State.MOVE_TO_MINE:
 		return
 	var body := _body()
 	if body == null or not _mine_valid():
 		return
+	if _dist_wc3(body, _mine) > ENTER_MINE_MAX_WC3:
+		return
+	if _mine_rt.queue_index(body) < 0:
+		_mine_rt.enqueue(body)
 	if _mine_rt.try_enter(body):
 		_begin_inside_mine()
 
