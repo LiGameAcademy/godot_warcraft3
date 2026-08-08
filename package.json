@@ -1,0 +1,24 @@
+{
+  "name": "godot-warcraft3",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Warcraft III map / game engine reimplementation on Godot 4. Bootstrap entry: node tools/bootstrap.mjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "workspaces": [
+    "tools/asset-convert",
+    "tools/lib",
+    "tools/map-parse",
+    "tools/mpq-extract",
+    "tools/slk-export"
+  ],
+  "scripts": {
+    "bootstrap": "node tools/bootstrap.mjs",
+    "convert": "npm run convert --workspace asset-convert",
+    "parse": "npm run parse --workspace map-parse",
+    "extract": "npm run extract --workspace mpq-extract",
+    "export-slk": "npm run export --workspace slk-export"
+  }
+}

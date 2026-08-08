@@ -3,7 +3,7 @@
 > **角色**：明确 `godot_warcraft3` git 仓库与本地资源的边界。
 > **决策**（老李 D3，2026-08-08）：**任何 wc3 资源不入 git**。
 > 仓库只装：源码 / 工具 / 文档 / 配置文件。所有 wc3 资源靠 `tools/bootstrap.mjs` 一键生成。
-> 最后更新：2026-08-08
+> 最后更新：2026-08-08（补 .gdignore + --clean-imports）
 
 ---
 
@@ -40,12 +40,13 @@ node tools/bootstrap.mjs      # 一键：extract → convert → parse → slk
 `tools/bootstrap.mjs` 流程：
 
 1. **检查依赖**：node >= 18、godot 二进制、WC3 安装（`tools/bootstrap.config.json` 或环境变量 `WC3_PATH`）
-2. **npm install**：5 个子工具（并行）
-3. **mpq-extract**：从 WC3 安装 → MPQ → 原文件（war3 / mdx / blp / slk）→ `tools/mpq-extract/tmp/`
-4. **asset-convert**：原文件 → PNG / GLB / SCN / PE2 → `assets/asset-converted/`
-5. **map-parse**：地图 w3x → JSON → `assets/map-parsed/<name>/`
-6. **slk-export**：SLK → JSON → `assets/slk-exported/`
-7. **打印** "✅ 资源就绪"
+2. **ensure .gdignore**：`assets/asset-converted/.gdignore` 必须存在 —— 阻止 Godot auto-import 在 GLB 旁生成 `<model>_<tex>.png` 重复副产物（GLB 规范要求 image embedded，无法用 URI 共享）
+3. **npm install**：5 个子工具（并行）
+4. **mpq-extract**：从 WC3 安装 → MPQ → 原文件（war3 / mdx / blp / slk）→ `tools/mpq-extract/tmp/`
+5. **asset-convert**：原文件 → PNG / GLB / SCN / PE2 → `assets/asset-converted/`
+6. **map-parse**：地图 w3x → JSON → `assets/map-parsed/<name>/`
+7. **slk-export**：SLK → JSON → `assets/slk-exported/`
+8. **打印** "✅ 资源就绪"
 
 ---
 
@@ -119,6 +120,41 @@ assets/visuals/Buildings/       # commit dbe96d8 加入（master 可能已合并
 | Godot 没装 | 同上 + 提示装 Godot 4.x（asset-convert bake .scn 用）|
 | StormLib 没编译 | mpq-extract 跳过，提示 `cd tools/mpq-extract && npm install` |
 | node < 18 | bootstrap 报错，提示升级 node |
+
+---
+
+## 7. .gdignore 阻止 Godot auto-import 重复贴图
+
+**问题**：GLB 规范要求 image embedded（bufferView），不允许外部 URI 共享贴图。
+GLB 内的贴图字节 + 同一贴图被 N 个模型使用 → N 份重复字节（无法在 GLB 格式下消除）。
+更糟：Godot 看到 `res://assets/asset-converted/.../<name>.glb` 会 **auto-import**，并把 embedded image 抽到
+GLB 同目录的 `<model>_<tex>.png`，再生成 `.ctex` 和 `.import`。同一 BLP（如 `Textures/Footman.blp`）
+被 50 个模型用 → 50 份重复 PNG（md5 相同，文件名不同）+ 50 份重复 .ctex。
+
+**解法**：`assets/asset-converted/.gdignore`（**入库**）—— Godot 跳过整个目录的 auto-import。
+
+**取舍**：
+- 失去：Godot 的 .ctex 压缩贴图（运行时 ImageTexture 是未压缩）
+- 保留：.scn 内嵌 `ImageTexture` 子资源（`bake_model_scenes` 烘焙时已写入 .scn），无需外部 .ctex
+- 节省：每个共享 BLP 砍掉 N-1 份重复 PNG + .ctex + .import
+- 代价：编辑器 / runtime 不能 `res://assets/asset-converted/.../X.glb` 自动加载（运行时本来就走
+  `RuntimeAssets.project_abs` + 显式 GLTFDocument / PackedScene，不依赖 res://）
+
+**.gitignore 配对**：`assets/asset-converted/**` 忽略所有 + `!assets/asset-converted/.gdignore` 白名单，
+让 .gdignore 本身入库。
+
+**老 PC 升级步骤**：
+```bash
+git pull
+node tools/bootstrap.mjs --clean-imports   # 清旧 import 残留
+node tools/bootstrap.mjs                   # 重新生成
+```
+
+`--clean-imports` 删除：
+- `**/*.import`（Godot auto-import 元数据，.gdignore 后不再生成）
+- GLB 旁的 `<model>_<tex>.png`（重复副产物，canonical 在 `Textures/`，保留）
+
+不动：`*.glb` / `*.scn` / `Textures/*.png` / `_placeholders/` / `*.pe2.json` / `*.geosetvis.json`。
 
 ---
 
