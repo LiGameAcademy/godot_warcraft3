@@ -60,16 +60,21 @@ const log = (msg) => console.log(`[bootstrap] ${msg}`);
 const vlog = (msg) => verbose && console.log(`  ${msg}`);
 
 // ===== run subprocess =====
+/** @param {{shell?: boolean, cwd?: string, env?: Record<string, string>}} [opts] */
+//   opts.shell: 必须显式传；不靠推断。
+//     true  → 走 cmd.exe（用于 npm 这类 .ps1 脚本）
+//     false → 直接 exec（用于 node 这类真 .exe；避开 cmd.exe 对路径空格/括号的转义）
 function run(cmd, cmdArgs, opts = {}) {
   const label = `${cmd} ${cmdArgs.join(" ")}`;
   vlog(`$ ${label}`);
-  // shell:true：Windows 上 npm 没 .exe 扩展名（只是 npm.ps1），Node spawnSync 不带 shell 找不到。
-  //         命令参数全是工具 args（npm run/parse/exec），用户不可控输入，shell 注入风险 0。
+  if (opts.shell === undefined) {
+    throw new Error(`run("${cmd}", ...): opts.shell 必须显式传（true/false）`);
+  }
   const result = spawnSync(cmd, cmdArgs, {
     stdio: verbose ? "inherit" : "pipe",
     cwd: opts.cwd || REPO_ROOT,
     env: { ...process.env, ...(opts.env || {}) },
-    shell: true,
+    shell: opts.shell,
   });
   if (result.status !== 0) {
     console.error(`❌ ${label} failed (exit ${result.status ?? "null"})`);
@@ -89,14 +94,8 @@ function checkNodeMin(minMajor) {
   }
 }
 
-function checkDep(label, cmd, cmdArgs) {
-  // shell:true — 同 run()，让 Windows 能解析 npm.ps1 / godot.exe
-  const r = spawnSync(cmd, cmdArgs, { shell: true });
-  if (r.status !== 0) {
-    console.error(`❌ Missing dependency: ${label}`);
-    console.error(`   See docs/tools/ASSET_LAYOUT.md §6`);
-    process.exit(1);
-  }
+function checkDep() {
+  throw new Error("checkDep 已废弃：用 main() 内的 spawnSync 显式调用");
 }
 
 function loadConfig() {
@@ -269,12 +268,18 @@ function main() {
 
   // --- 1. check deps ---
   log("--- checking dependencies ---");
-  if (godotPath) {
-    log(`godot: ${godotPath}`);
-    checkDep("godot", godotPath, ["--version"]);
-  } else {
-    log(`godot: <PATH>`);
-    checkDep("godot", "godot", ["--version"]);
+  // godot 是 .exe → shell:false 避免 cmd.exe 转义路径
+  // （"godot" 走 PATH 解析；具体路径走 .exe 直 exec）
+  const godotBin = godotPath || "godot";
+  const godotIsExe = /\.exe$/i.test(godotBin);
+  log(`godot: ${godotBin}`);
+  {
+    const r = spawnSync(godotBin, ["--version"], { shell: !godotIsExe });
+    if (r.status !== 0) {
+      console.error(`❌ Missing dependency: godot`);
+      console.error(`   See docs/tools/ASSET_LAYOUT.md §6`);
+      process.exit(1);
+    }
   }
   if (wc3Path) {
     log(`WC3: ${wc3Path}`);
@@ -301,21 +306,19 @@ function main() {
     process.exit(0);
   }
 
-  // --- 4. npm install ---
+  // --- 4. npm install (workspaces) ---
+  // npm 是 npm.ps1，shell:true 让 Windows 能 exec
   log("--- npm install (workspaces) ---");
-  run("npm", ["install", "--workspaces", "--include-workspace-root"]);
+  run("npm", ["install", "--workspaces", "--include-workspace-root"], { shell: true });
+
+  // --- 5/6/7/8. 工具调用全部直跑 node（避开 cmd.exe wrap 路径转义） ---
+  // node 是真 .exe，shell:false 也能 exec；不走 npm run 意味着路径里的空格/括号不会被 cmd.exe 转义
+  // CLI 入口约定：tools/<name>/src/cli.js（与 package.json scripts: "<name>": "node src/cli.js" 对应）
 
   // --- 5. mpq-extract ---
   if (!skip.extract && wc3Path) {
     log("--- mpq-extract ---");
-    // mpq-extract CLI 只读 --game-dir 参数，不读 env var
-    run(
-      "npm",
-      [
-        "run", "--workspace", "mpq-extract", "extract", "--",
-        "--game-dir", wc3Path,
-      ],
-    );
+    run("node", ["tools/mpq-extract/src/cli.js", "--game-dir", wc3Path], { shell: false });
   } else {
     log("--- skip mpq-extract ---");
   }
@@ -325,10 +328,10 @@ function main() {
     log("--- asset-convert (m2g) ---");
     const include = (config.convert?.include || []).flatMap((g) => ["--include", g]);
     const exclude = (config.convert?.exclude || []).flatMap((g) => ["--exclude", g]);
-    run("npm", [
-      "run", "--workspace", "asset-convert", "convert", "--",
+    run("node", [
+      "tools/asset-convert/src/cli.js",
       ...include, ...exclude,
-    ]);
+    ], { shell: false });
   } else {
     log("--- skip asset-convert ---");
   }
@@ -342,11 +345,10 @@ function main() {
     } else {
       for (const m of items) {
         log(`  parsing ${m.name} (${m.w3x})`);
-        // map-parse 不需要 WC3 路径（吃 .cache/wc3-assets + config.maps.items 的 w3x）
-        run("npm", [
-          "run", "--workspace", "map-parse", "parse", "--",
+        run("node", [
+          "tools/map-parse/src/cli.js",
           m.w3x, m.out,
-        ]);
+        ], { shell: false });
       }
     }
   } else {
@@ -356,7 +358,7 @@ function main() {
   // --- 8. slk-export ---
   if (!skip.slk) {
     log("--- slk-export ---");
-    run("npm", ["run", "--workspace", "slk-export", "export"]);
+    run("node", ["tools/slk-export/src/cli.js"], { shell: false });
   } else {
     log("--- skip slk-export ---");
   }
