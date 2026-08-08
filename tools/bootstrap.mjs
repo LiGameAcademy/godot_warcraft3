@@ -63,14 +63,16 @@ const vlog = (msg) => verbose && console.log(`  ${msg}`);
 function run(cmd, cmdArgs, opts = {}) {
   const label = `${cmd} ${cmdArgs.join(" ")}`;
   vlog(`$ ${label}`);
+  // shell:true：Windows 上 npm 没 .exe 扩展名（只是 npm.ps1），Node spawnSync 不带 shell 找不到。
+  //         命令参数全是工具 args（npm run/parse/exec），用户不可控输入，shell 注入风险 0。
   const result = spawnSync(cmd, cmdArgs, {
     stdio: verbose ? "inherit" : "pipe",
     cwd: opts.cwd || REPO_ROOT,
     env: { ...process.env, ...(opts.env || {}) },
-    shell: false,
+    shell: true,
   });
   if (result.status !== 0) {
-    console.error(`❌ ${label} failed (exit ${result.status})`);
+    console.error(`❌ ${label} failed (exit ${result.status ?? "null"})`);
     if (!verbose && result.stderr) {
       console.error(result.stderr.toString());
     }
@@ -88,7 +90,8 @@ function checkNodeMin(minMajor) {
 }
 
 function checkDep(label, cmd, cmdArgs) {
-  const r = spawnSync(cmd, cmdArgs, { shell: false });
+  // shell:true — 同 run()，让 Windows 能解析 npm.ps1 / godot.exe
+  const r = spawnSync(cmd, cmdArgs, { shell: true });
   if (r.status !== 0) {
     console.error(`❌ Missing dependency: ${label}`);
     console.error(`   See docs/tools/ASSET_LAYOUT.md §6`);
@@ -305,10 +308,13 @@ function main() {
   // --- 5. mpq-extract ---
   if (!skip.extract && wc3Path) {
     log("--- mpq-extract ---");
+    // mpq-extract CLI 只读 --game-dir 参数，不读 env var
     run(
       "npm",
-      ["run", "--workspace", "mpq-extract", "extract"],
-      { env: { WC3_PATH: wc3Path } },
+      [
+        "run", "--workspace", "mpq-extract", "extract", "--",
+        "--game-dir", wc3Path,
+      ],
     );
   } else {
     log("--- skip mpq-extract ---");
@@ -336,12 +342,11 @@ function main() {
     } else {
       for (const m of items) {
         log(`  parsing ${m.name} (${m.w3x})`);
-        const args = [
+        // map-parse 不需要 WC3 路径（吃 .cache/wc3-assets + config.maps.items 的 w3x）
+        run("npm", [
           "run", "--workspace", "map-parse", "parse", "--",
           m.w3x, m.out,
-        ];
-        if (wc3Path) args.push("--wc3", wc3Path);
-        run("npm", args);
+        ]);
       }
     }
   } else {
