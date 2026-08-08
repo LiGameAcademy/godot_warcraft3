@@ -8,15 +8,20 @@
 //   2. ensure .gdignore（asset-converted/ — 阻止 Godot auto-import 生成重复贴图）
 //   3. npm install（5 个子工具 workspaces）
 //   4. mpq-extract   （按 config.skip.extract 跳过）
-//   5. asset-convert （按 config.skip.convert 跳过）
+//   5. asset-convert （按 config.skip.convert 跳过；默认含 eager bake 见下）
 //   6. map-parse     （按 config.maps.items 列表）
 //   7. slk-export    （按 config.skip.slk 跳过）
 //   8. 打印 "✅ 资源就绪"
+//
+// 关于 "asset-convert 是否含 bake"：m2g cli 默认 doScn=true（modelsOnly 模式下也跑 bake），
+// 所以 asset-convert 阶段已经 = MDX → GLB → SCN 一条龙（eager bake）。
+// --no-bake / config.skip.bake=true 时给 m2g 加 --skip-scn，asset-convert 只产 GLB。
 //
 // 用法：
 //   node tools/bootstrap.mjs [options]
 //     --no-extract      跳过 mpq-extract
 //     --no-convert      跳过 m2g convert
+//     --no-bake         asset-convert 阶段跳过 .scn bake（m2g 加 --skip-scn）
 //     --no-parse        跳过 map-parse
 //     --no-slk          跳过 slk-export
 //     --clean           清掉本地缓存再跑（保留 .gdignore）
@@ -117,6 +122,7 @@ const HELP_TEXT = `godot_warcraft3 bootstrap
   node tools/bootstrap.mjs [options]
     --no-extract      跳过 mpq-extract
     --no-convert      跳过 m2g convert
+    --no-bake         asset-convert 阶段不烤 .scn（m2g 加 --skip-scn）
     --no-parse        跳过 map-parse
     --no-slk          跳过 slk-export
     --clean           清掉本地缓存再跑（保留 .gdignore）
@@ -129,7 +135,7 @@ const HELP_TEXT = `godot_warcraft3 bootstrap
   wc3.path / godot.path / maps.items / convert.{include,exclude} / skip.*
 
 示例：
-  # 完整跑（首次 clone）
+  # 完整跑（首次 clone）— asset-convert 阶段已含 eager bake
   node tools/bootstrap.mjs
 
   # 只重做 slk-export（slk 表改了）
@@ -137,6 +143,9 @@ const HELP_TEXT = `godot_warcraft3 bootstrap
 
   # 改了 config.maps 后
   node tools/bootstrap.mjs --no-extract --no-convert
+
+  # asset-convert 只产 GLB，不烤 .scn（后续手动 bake）
+  node tools/bootstrap.mjs --no-bake
 
   # 清掉所有本地缓存重来
   node tools/bootstrap.mjs --clean
@@ -265,6 +274,8 @@ function main() {
     envOr(config.godot?.path, "GODOT");
   const skip = config.skip || {};
   const doClean = clean || skip.clean;
+  // --no-bake 走 CLI flag；config.skip.bake 走配置文件
+  const skipBake = hasFlag("no-bake") || skip.bake;
 
   // --- 1. check deps ---
   log("--- checking dependencies ---");
@@ -323,14 +334,22 @@ function main() {
     log("--- skip mpq-extract ---");
   }
 
-  // --- 6. asset-convert ---
+  // --- 6. asset-convert（默认含 eager bake：MDX → GLB → .scn） ---
+  // m2g cli 默认 doScn=true（modelsOnly 模式也跑 bake），所以这一阶段
+  // 一次性把 .glb 和 .scn 都烤出来。--no-bake 跳过 .scn 部分。
   if (!skip.convert) {
-    log("--- asset-convert (m2g) ---");
+    if (skipBake) {
+      log("--- asset-convert (m2g, --skip-scn) ---");
+    } else {
+      log("--- asset-convert (m2g, 含 eager bake .scn) ---");
+    }
     const include = (config.convert?.include || []).flatMap((g) => ["--include", g]);
     const exclude = (config.convert?.exclude || []).flatMap((g) => ["--exclude", g]);
+    const skipScnFlag = skipBake ? ["--skip-scn"] : [];
     run("node", [
       "tools/asset-convert/src/cli.js",
       ...include, ...exclude,
+      ...skipScnFlag,
     ], { shell: false });
   } else {
     log("--- skip asset-convert ---");
