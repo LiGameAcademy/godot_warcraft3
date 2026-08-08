@@ -3,7 +3,7 @@ extends Node3D
 
 ## 游戏用 RTS 相机：地面观察点 + Pivot 俯仰/偏航 + 相机距离。
 ## 滚轮缩放复刻 WC3 MiscData.txt：[Camera] 六档 Distance/AOA 联动。
-## 不占用右键（留给选单位/下命令）。
+## 不占用右键（留给选单位/下命令）；默认不响应中键旋转（对齐原作）。
 
 ## WC3 MiscData Distance（游戏单位）→ Godot（× WORLD_SCALE）。
 ## AOA 304→339：拉近时从俯视逐渐抬到近似平视（pitch = AOA − 360）。
@@ -25,8 +25,8 @@ const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0
 @export var min_pitch_deg: float = -75.0
 @export var max_pitch_deg: float = -18.0
 @export var initial_pitch_deg: float = -56.0
-## 中键拖拽可临时改俯仰；下一次滚轮会回到当前缩放档的 AOA。
-@export var allow_manual_orbit: bool = true
+## WC3 原作无中键/拖拽旋转镜头；默认关闭。调试预览可再打开。
+@export var allow_manual_orbit: bool = false
 
 @export_group("缩放")
 ## true：滚轮走 WC3 六档，距离与俯仰联动；false：自由距离 + 固定俯仰。
