@@ -2,7 +2,8 @@
 
 > **角色**：`MapDoodadLayer` 把 `doodads.json` 里的 WC3 装饰物转成 Godot 3D 实例。
 > 关键行为：**改地形时自动刷 Y**（`change_doodad_heights` 等价，commit `365efab`）。
-> 最后更新：2026-07-31
+> 最后更新：2026-08-08  
+> 玩法侧可交互树（伐木/破坏）：见 [game/TREE_INTERACT.md](../game/TREE_INTERACT.md)。
 
 ---
 
@@ -226,3 +227,5 @@ MapLoader.rebuild_terrain_cliffs_water (L220+)
 - [data/PIPELINE.md](../data/PIPELINE.md) —— `war3map.doo` → `doodads.json` 解析流水线
 - [data/WC3_ASSET_PATHS.md](../data/WC3_ASSET_PATHS.md) —— `Units/<id>/<id>.mdx` 路径
 - [roadmap/ROADMAP.md §⑩ 应用高度](../roadmap/ROADMAP.md) —— change_doodad_heights 完整设计
+- [game/TREE_INTERACT.md](../game/TREE_INTERACT.md) —— **可交互树**：MM→Node promote、扣血入口、防闪烁（玩法侧）
+- [game/SELECTION_RINGS.md](../game/SELECTION_RINGS.md) —— 树/金矿黄环

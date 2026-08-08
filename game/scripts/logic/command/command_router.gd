@@ -2,12 +2,14 @@ class_name CommandRouter
 extends RefCounted
 
 ## 命令层入口：合法 UnitOrder → 可移动单位 → UnitNavigator / HarvestController。
-## 不读 InputEvent；输入由 GameDirector 解析后调用本类。
+## 不读 InputEvent；输入由 GameDirector 解析目标后调用本类。
+## 右键智能：issue_smart(SmartTarget) — 全体下发，按单位能力匹配动作（不能则降级 Move）。
 
 signal stop_issued(count: int)
 signal move_issued(moved: int, failed: int, goal_wc3: Vector2)
 signal harvest_issued(count: int)
 signal return_issued(count: int)
+signal smart_issued(summary: Dictionary)
 
 const META_ORDER_QUEUE := "order_queue"
 
@@ -131,6 +133,64 @@ func issue_stop(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 	return n_stop
 
 
+## 智能交互：同一 SmartTarget 广播给框选单位，各自按能力匹配具体 Order。
+## 返回 { ok, kind, harvested, returned, moved, failed, goal_wc3 }。
+func issue_smart(
+	selected: Array,
+	target: SmartTarget,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> Dictionary:
+	var empty := {
+		"ok": false,
+		"kind": "",
+		"harvested": 0,
+		"returned": 0,
+		"moved": 0,
+		"failed": 0,
+		"goal_wc3": Vector2.INF,
+	}
+	if target == null:
+		return empty
+	var movers := filter_movers(selected)
+	if movers.is_empty():
+		return empty
+	var out := empty.duplicate()
+	out["kind"] = target.kind_name()
+	out["goal_wc3"] = target.goal_wc3
+	match target.kind:
+		SmartTarget.Kind.GROUND:
+			var mr := _issue_move_subset(movers, target.goal_wc3, source)
+			out["moved"] = int(mr.get("moved", 0))
+			out["failed"] = int(mr.get("failed", 0))
+			out["ok"] = out["moved"] > 0 or out["failed"] > 0
+		SmartTarget.Kind.GOLD_MINE:
+			var parts := _split_can_harvest(movers)
+			out["harvested"] = issue_harvest_gold(parts["special"], target.node, source)
+			var mr2 := _issue_move_subset(parts["fallback"], target.goal_wc3, source)
+			out["moved"] = int(mr2.get("moved", 0))
+			out["failed"] = int(mr2.get("failed", 0))
+			out["ok"] = out["harvested"] > 0 or out["moved"] > 0 or out["failed"] > 0
+		SmartTarget.Kind.TREE:
+			var parts_t := _split_can_harvest(movers)
+			out["harvested"] = issue_harvest_lumber(parts_t["special"], target.tree_cn, source)
+			var mr3 := _issue_move_subset(parts_t["fallback"], target.goal_wc3, source)
+			out["moved"] = int(mr3.get("moved", 0))
+			out["failed"] = int(mr3.get("failed", 0))
+			out["ok"] = out["harvested"] > 0 or out["moved"] > 0 or out["failed"] > 0
+		SmartTarget.Kind.DROPOFF:
+			var parts_d := _split_can_return_to(movers, target.node)
+			out["returned"] = issue_return_goods(parts_d["special"], source, target.node)
+			var mr4 := _issue_move_subset(parts_d["fallback"], target.goal_wc3, source)
+			out["moved"] = int(mr4.get("moved", 0))
+			out["failed"] = int(mr4.get("failed", 0))
+			out["ok"] = out["returned"] > 0 or out["moved"] > 0 or out["failed"] > 0
+		_:
+			return empty
+	if out["ok"]:
+		smart_issued.emit(out)
+	return out
+
+
 ## 群体散开落点后各自 A*。返回 { moved, failed, goal_wc3, movers }。
 func issue_move_to_wc3(
 	selected: Array,
@@ -219,10 +279,43 @@ func issue_harvest_gold(
 	return n
 
 
-## 负资源农民送回最近可接收建筑。
+## 选中农民对树木开始伐木循环（可多人同砍；按车道散开，满则改砍附近树）。
+func issue_harvest_lumber(
+	selected: Array,
+	creation_number: int,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> int:
+	if creation_number < 0 or not _ensure_harvest.is_valid():
+		return 0
+	var peasants := filter_peasants(selected)
+	var order := UnitOrder.harvest_lumber(creation_number, source)
+	var lane_count := maxi(peasants.size(), 1)
+	var n := 0
+	var lane := 0
+	for node in peasants:
+		var q := queue_for(node)
+		if q:
+			q.set_current(order)
+		var hc := _ensure_harvest.call(node) as HarvestController
+		if hc == null:
+			continue
+		var nav := node.get_node_or_null("UnitNavigator") as UnitNavigator
+		if nav != null:
+			nav.stop()
+		hc.set_lumber_lanes(lane, lane_count)
+		if hc.start_harvest_lumber(creation_number):
+			n += 1
+		lane += 1
+	if n > 0:
+		harvest_issued.emit(n)
+	return n
+
+
+## 负资源农民送回；preferred_dropoff 为右键点中的主城/伐木场（可选）。
 func issue_return_goods(
 	selected: Array,
-	source: int = UnitOrder.Source.UNKNOWN
+	source: int = UnitOrder.Source.UNKNOWN,
+	preferred_dropoff: Node3D = null
 ) -> int:
 	if not _ensure_harvest.is_valid():
 		return 0
@@ -233,6 +326,12 @@ func issue_return_goods(
 		var hc_existing := node.get_node_or_null("HarvestController") as HarvestController
 		if hc_existing == null or not hc_existing.is_carrying():
 			continue
+		var mask := _carry_mask_of(hc_existing)
+		if preferred_dropoff != null and is_instance_valid(preferred_dropoff):
+			if not ReceiveResources.can_receive(preferred_dropoff, mask):
+				continue
+			if not _same_owner(node, preferred_dropoff):
+				continue
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
@@ -242,11 +341,76 @@ func issue_return_goods(
 		var nav := node.get_node_or_null("UnitNavigator") as UnitNavigator
 		if nav != null:
 			nav.stop()
-		if hc.start_return_goods():
+		if hc.start_return_goods(preferred_dropoff):
 			n += 1
 	if n > 0:
 		return_issued.emit(n)
 	return n
+
+
+func _carry_mask_of(hc: HarvestController) -> int:
+	if hc == null:
+		return int(ReceiveResources.Kind.NONE)
+	if hc.carry_gold() > 0:
+		return int(ReceiveResources.Kind.GOLD)
+	if hc.carry_lumber() > 0:
+		return int(ReceiveResources.Kind.LUMBER)
+	return int(ReceiveResources.Kind.NONE)
+
+
+func _same_owner(a: Node, b: Node) -> bool:
+	if a == null or b == null:
+		return false
+	var da: Dictionary = a.get_meta("unit_data", {})
+	var db: Dictionary = b.get_meta("unit_data", {})
+	return int(da.get("owner", -1)) == int(db.get("owner", -2))
+
+
+## 能采（农民）vs 仅移动。远期可换成 UnitCapability。
+func _split_can_harvest(movers: Array[Node3D]) -> Dictionary:
+	var special: Array = []
+	var fallback: Array = []
+	for node in movers:
+		if HarvestController.is_peasant(node):
+			special.append(node)
+		else:
+			fallback.append(node)
+	return {"special": special, "fallback": fallback}
+
+
+## 能向该建筑送回负重 vs 仅移动。
+func _split_can_return_to(movers: Array[Node3D], building: Node3D) -> Dictionary:
+	var special: Array = []
+	var fallback: Array = []
+	for node in movers:
+		if not HarvestController.is_peasant(node):
+			fallback.append(node)
+			continue
+		var hc := node.get_node_or_null("HarvestController") as HarvestController
+		if hc == null or not hc.is_carrying():
+			fallback.append(node)
+			continue
+		var mask := _carry_mask_of(hc)
+		if (
+			building != null
+			and is_instance_valid(building)
+			and ReceiveResources.can_receive(building, mask)
+			and _same_owner(node, building)
+		):
+			special.append(node)
+		else:
+			fallback.append(node)
+	return {"special": special, "fallback": fallback}
+
+
+func _issue_move_subset(
+	units: Array,
+	goal_wc3: Vector2,
+	source: int
+) -> Dictionary:
+	if units.is_empty() or goal_wc3 == Vector2.INF:
+		return {"moved": 0, "failed": 0, "goal_wc3": goal_wc3}
+	return issue_move_to_wc3(units, goal_wc3, source)
 
 
 func _abort_harvest(node: Node3D) -> void:

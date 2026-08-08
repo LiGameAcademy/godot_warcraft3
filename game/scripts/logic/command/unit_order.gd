@@ -55,6 +55,15 @@ static func harvest_gold(mine: Node, src: int = Source.UNKNOWN) -> UnitOrder:
 	return o
 
 
+## 伐木：target_id 复用为 doodad creationNumber（非 Node instance_id）。
+static func harvest_lumber(creation_number: int, src: int = Source.UNKNOWN) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.HARVEST_LUMBER
+	o.source = src
+	o.target_id = creation_number
+	return o
+
+
 static func return_goods(src: int = Source.UNKNOWN) -> UnitOrder:
 	var o := UnitOrder.new()
 	o.kind = Kind.RETURN_GOODS

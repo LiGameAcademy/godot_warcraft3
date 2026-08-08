@@ -434,14 +434,24 @@ func remove_doodad_instance(creation_number: int) -> bool:
 		return false
 	var ok: bool = _doodads.remove_by_creation_number(creation_number)
 	if ok:
-		var cn: int = creation_number
-		for i in range(_pathing_doodad_entries.size() - 1, -1, -1):
-			var e: Variant = _pathing_doodad_entries[i]
-			if typeof(e) == TYPE_DICTIONARY and int((e as Dictionary).get("creationNumber", -1)) == cn:
-				_pathing_doodad_entries.remove_at(i)
-				break
-		_rebuild_pathing_overlay()
+		clear_doodad_pathing(creation_number)
 	return ok
+
+
+## 只清 pathing 脚印、保留 Present（树桩：可走但看得见）。
+func clear_doodad_pathing(creation_number: int) -> bool:
+	if creation_number < 0:
+		return false
+	var removed := false
+	for i in range(_pathing_doodad_entries.size() - 1, -1, -1):
+		var e: Variant = _pathing_doodad_entries[i]
+		if typeof(e) == TYPE_DICTIONARY and int((e as Dictionary).get("creationNumber", -1)) == creation_number:
+			_pathing_doodad_entries.remove_at(i)
+			removed = true
+			break
+	if removed:
+		_rebuild_pathing_overlay()
+	return removed
 
 
 ## 查找装饰物 Present 节点（编辑器选中环等）。
@@ -449,6 +459,18 @@ func find_doodad_node(creation_number: int) -> Node3D:
 	if _doodads == null:
 		return null
 	return _doodads.find_by_creation_number(creation_number)
+
+
+## 玩法：MM → 独立 Node（先挂后藏）。已是单实例则原样返回。
+func ensure_doodad_promoted(creation_number: int) -> Node3D:
+	if _doodads == null:
+		return null
+	return _doodads.ensure_promoted(creation_number)
+
+
+## 当前用于 pathing blit 的 doodad 条目（含树木）。
+func get_pathing_doodad_entries() -> Array:
+	return _pathing_doodad_entries
 
 
 ## 更新一条 Present：先删后加；失败（MultiMesh）返回 false，调用方应全量 rebuild。

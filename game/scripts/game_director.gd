@@ -61,9 +61,10 @@ var _crowd_query: UnitCrowdQuery = null
 var _cell_reservation: PathCellReservation = null
 var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
+var _tree_registry: TreeRegistry = null
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
-## 点了「采集」或热键 G 后，等待左键点金矿
+## 点了「采集」或热键 G 后，等待左键点金矿/树
 var _harvest_targeting: bool = false
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
@@ -209,12 +210,14 @@ func _setup_selector() -> void:
 	unit_selector.set("owner_filter", -1)
 	if unit_selector.has_method("setup"):
 		unit_selector.call("setup", cam, layer, null)
+	# 原作：树不可左键选中；伐木只走右键智能命令
+	unit_selector.pick_extra = Callable()
 	if unit_selector.has_signal("selection_changed"):
 		var sel_sig: Signal = unit_selector.selection_changed
 		if not sel_sig.is_connected(_on_selection_changed):
 			sel_sig.connect(_on_selection_changed)
 	if game_hud:
-		game_hud.set_status("点选就绪 · LMB 点选/框选 · RMB 移动")
+		game_hud.set_status("点选就绪 · LMB 单位/金矿 · RMB 矿/树/移动")
 
 
 func _input(event: InputEvent) -> void:
@@ -322,7 +325,26 @@ func _setup_pathing() -> void:
 		Callable(self, "_ensure_navigator"),
 		Callable(self, "_ensure_harvest_controller")
 	)
+	_setup_tree_registry()
 	_ensure_path_debug()
+
+
+func _setup_tree_registry() -> void:
+	if map_root == null:
+		return
+	if _tree_registry == null or not is_instance_valid(_tree_registry):
+		_tree_registry = TreeRegistry.new()
+		_tree_registry.name = "TreeRegistry"
+		add_child(_tree_registry)
+	var cam: Camera3D = null
+	if rts_camera != null:
+		cam = rts_camera.get_camera()
+	_tree_registry.configure(map_root, map_root.get_id_catalog(), cam)
+	_tree_registry.rebuild_from_map()
+
+
+func _tree_registry_ref() -> TreeRegistry:
+	return _tree_registry
 
 
 func _ensure_path_debug() -> void:
@@ -536,7 +558,7 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	return n_stop > 0
 
 
-## 右键智能：点中金矿 → 采金；否则地面移动。
+## 右键智能：识别 SmartTarget → CommandRouter.issue_smart（按单位能力匹配）。
 func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector == null or _command_router == null:
 		return false
@@ -545,21 +567,103 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	var selected: Array = unit_selector.call("get_selected")
 	if selected.is_empty():
 		return false
-	var peasants := _command_router.filter_peasants(selected)
-	if not peasants.is_empty() and unit_selector.has_method("pick_at"):
+	var target := _resolve_smart_target(screen_pos, selected)
+	if target == null:
+		if game_hud:
+			game_hud.set_status("命令：未点到有效目标")
+		return false
+	var result := _command_router.issue_smart(selected, target, source)
+	if not bool(result.get("ok", false)):
+		return false
+	_flash_cursor_move()
+	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
+	if int(result.get("moved", 0)) > 0 and goal != Vector2.INF:
+		_spawn_move_confirm(goal)
+	if game_hud:
+		game_hud.set_status(_format_smart_status(result))
+	_refresh_command_card()
+	return true
+
+
+## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
+func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
+	var ground_goal := _screen_to_goal_wc3(screen_pos)
+	if unit_selector != null and unit_selector.has_method("pick_at"):
 		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
 		if picked != null and _is_gold_mine(picked):
-			var n := _command_router.issue_harvest_gold(peasants, picked, source)
-			if n > 0:
-				if game_hud:
-					game_hud.set_status("采集金币 · %d 农民" % n)
-				_flash_cursor_move()
-				_refresh_command_card()
-				return true
-	if _issue_move_at_screen(screen_pos, source):
-		_flash_cursor_move()
-		return true
+			return SmartTarget.gold_mine(picked, _node_goal_wc3(picked, ground_goal))
+		if picked != null and _is_own_dropoff_building(picked, selected):
+			return SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
+	if _tree_registry != null:
+		var cn := _tree_registry.pick_cn_at_screen(screen_pos)
+		if cn >= 0:
+			var tree_goal := _tree_registry.get_pos_wc3(cn)
+			if tree_goal == Vector2.INF:
+				tree_goal = ground_goal
+			return SmartTarget.tree(cn, tree_goal)
+	if ground_goal == Vector2.INF:
+		return null
+	return SmartTarget.ground(ground_goal)
+
+
+func _screen_to_goal_wc3(screen_pos: Vector2) -> Vector2:
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		return Vector2.INF
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	return Vector2(hit.x * inv, -hit.z * inv)
+
+
+func _node_goal_wc3(node: Node3D, fallback: Vector2) -> Vector2:
+	if node == null or not is_instance_valid(node):
+		return fallback
+	return Wc3Coords.godot_to_wc3_xy(node.global_position)
+
+
+func _is_own_dropoff_building(building: Node3D, selected: Array) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	var bd: Dictionary = building.get_meta("unit_data", {})
+	var tid := str(bd.get("typeId", "")).strip_edges()
+	if ReceiveResources.capability_for_type(tid) == int(ReceiveResources.Kind.NONE):
+		return false
+	var b_owner := int(bd.get("owner", -1))
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var ud: Dictionary = (n as Node).get_meta("unit_data", {})
+		if int(ud.get("owner", -2)) == b_owner:
+			return true
 	return false
+
+
+func _format_smart_status(result: Dictionary) -> String:
+	var harvested := int(result.get("harvested", 0))
+	var returned := int(result.get("returned", 0))
+	var moved := int(result.get("moved", 0))
+	var kind := str(result.get("kind", ""))
+	match kind:
+		"GoldMine":
+			if harvested > 0 and moved > 0:
+				return "智能 · 采金 %d · 移动 %d" % [harvested, moved]
+			if harvested > 0:
+				return "采集金币 · %d 单位" % harvested
+		"Tree":
+			if harvested > 0 and moved > 0:
+				return "智能 · 伐木 %d · 移动 %d" % [harvested, moved]
+			if harvested > 0:
+				return "采集木材 · %d 单位" % harvested
+		"Dropoff":
+			if returned > 0 and moved > 0:
+				return "智能 · 送回 %d · 移动 %d" % [returned, moved]
+			if returned > 0:
+				return "送回资源 · %d 单位" % returned
+	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
+	if moved > 0 and goal != Vector2.INF:
+		return "移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved]
+	if int(result.get("failed", 0)) > 0 and goal != Vector2.INF:
+		return "无法到达 (%.0f, %.0f)" % [goal.x, goal.y]
+	return "智能 · %s" % kind
 
 
 ## 对当前选中可移动单位下发移动（经 CommandRouter）。
@@ -599,7 +703,7 @@ func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
 func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected") or not unit_selector.has_method("pick_at"):
+	if not unit_selector.has_method("get_selected"):
 		return false
 	var selected: Array = unit_selector.call("get_selected")
 	var peasants := _command_router.filter_peasants(selected)
@@ -607,16 +711,33 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 		if game_hud:
 			game_hud.set_status("采集：无农民")
 		return false
-	var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
-	if picked == null or not _is_gold_mine(picked):
-		if game_hud:
-			game_hud.set_status("采集：请点金矿")
-		return false
-	var n := _command_router.issue_harvest_gold(peasants, picked, source)
-	if n > 0 and game_hud:
-		game_hud.set_status("采集金币 · %d 农民" % n)
-	_refresh_command_card()
-	return n > 0
+	if unit_selector.has_method("pick_at"):
+		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
+		if picked != null and _is_gold_mine(picked):
+			var n := _command_router.issue_harvest_gold(peasants, picked, source)
+			if n > 0 and game_hud:
+				game_hud.set_status("采集金币 · %d 农民" % n)
+			_refresh_command_card()
+			return n > 0
+		if picked != null and _is_harvestable_tree_node(picked):
+			var cn := _tree_cn_of(picked)
+			if cn >= 0:
+				var nl := _command_router.issue_harvest_lumber(peasants, cn, source)
+				if nl > 0 and game_hud:
+					game_hud.set_status("采集木材 · %d 农民" % nl)
+				_refresh_command_card()
+				return nl > 0
+	if _tree_registry != null:
+		var cn2 := _tree_registry.pick_cn_at_screen(screen_pos)
+		if cn2 >= 0:
+			var nl2 := _command_router.issue_harvest_lumber(peasants, cn2, source)
+			if nl2 > 0 and game_hud:
+				game_hud.set_status("采集木材 · %d 农民" % nl2)
+			_refresh_command_card()
+			return nl2 > 0
+	if game_hud:
+		game_hud.set_status("采集：请点金矿或树木")
+	return false
 
 
 func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
@@ -629,7 +750,7 @@ func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if n > 0 and game_hud:
 		game_hud.set_status("送回资源 · %d 农民" % n)
 	elif game_hud:
-		game_hud.set_status("送回：无负金农民")
+		game_hud.set_status("送回：无负重农民")
 	_refresh_command_card()
 	return n > 0
 
@@ -739,7 +860,8 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 			Callable(self, "_local_stock"),
 			Callable(self, "_unit_host"),
 			Callable(self, "_path_query_ref"),
-			Callable(self, "_crowd_query_ref")
+			Callable(self, "_crowd_query_ref"),
+			Callable(self, "_tree_registry_ref")
 		)
 		_wire_harvest_signals(existing)
 		return existing
@@ -750,7 +872,8 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 		Callable(self, "_local_stock"),
 		Callable(self, "_unit_host"),
 		Callable(self, "_path_query_ref"),
-		Callable(self, "_crowd_query_ref")
+		Callable(self, "_crowd_query_ref"),
+		Callable(self, "_tree_registry_ref")
 	)
 	unit.add_child(hc)
 	_wire_harvest_signals(hc)
@@ -786,9 +909,13 @@ func _wire_harvest_signals(hc: HarvestController) -> void:
 		hc.deposited.connect(_on_harvest_deposited)
 	if not hc.state_changed.is_connected(_on_harvest_state_changed):
 		hc.state_changed.connect(_on_harvest_state_changed)
+	if hc.has_signal("entered_unselectable") and not hc.entered_unselectable.is_connected(
+		_on_harvest_entered_unselectable
+	):
+		hc.entered_unselectable.connect(_on_harvest_entered_unselectable)
 
 
-func _on_harvest_carry_changed(_gold: int, _lumber: int) -> void:
+func _on_harvest_carry_changed(_resource_id: String, _amount: int) -> void:
 	_refresh_command_card()
 
 
@@ -803,6 +930,32 @@ func _on_harvest_deposited(gold: int, lumber: int) -> void:
 
 func _on_harvest_state_changed(_state: int) -> void:
 	_refresh_command_card()
+
+
+func _on_harvest_entered_unselectable(unit: Node3D) -> void:
+	if unit == null or unit_selector == null:
+		return
+	if unit_selector.has_method("deselect_unit"):
+		unit_selector.call("deselect_unit", unit)
+
+
+func _is_harvestable_tree_node(node: Node) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var dd: Dictionary = node.get_meta("doodad_data", {})
+	if dd.is_empty():
+		return false
+	var cn := int(dd.get("creationNumber", -1))
+	if cn < 0 or _tree_registry == null:
+		return false
+	return _tree_registry.is_alive(cn)
+
+
+func _tree_cn_of(node: Node) -> int:
+	if node == null:
+		return -1
+	var dd: Dictionary = node.get_meta("doodad_data", {})
+	return int(dd.get("creationNumber", -1))
 
 
 static func _is_gold_mine(node: Node) -> bool:
@@ -860,7 +1013,9 @@ func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
 	if _crowd_query != null:
 		radius = _crowd_query.radius_for_unit(unit)
 	nav.apply_unit_stats(spd, turn, radius)
-
+	# 农民 soft 分离略放大，减轻采金/伐木叠人（不改 UnitBalance.collision 权威值）
+	if tid == HarvestController.WORKER_PEASANT:
+		nav.separation_radius_mul = 1.45
 
 ## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。
 ## 为何不用物理射线：会先打到单位网格/选中环，目标变成「自己脚下」→ 表现为不移动。
@@ -1008,6 +1163,21 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if selected.size() > 1:
 		label = "%s ×%d" % [tid, selected.size()]
 	game_hud.set_unit_info(label, 0, 0)
+	# 中立金矿：黄环 + 储量状态（树不可左键选中）
+	if tid == "ngol" or _is_gold_mine(primary):
+		_card_supports_move = false
+		_card_is_peasant = false
+		game_hud.clear_command_labels()
+		var gold_left := int(d.get("goldAmount", -1))
+		var rt := GoldMineRuntime.ensure(primary)
+		if rt != null:
+			gold_left = rt.remaining_gold
+		elif gold_left < 0:
+			gold_left = 12500
+		# Info 区无 HP 槽时只显示名称；储量走 status
+		game_hud.set_unit_info("金矿", 0, 0)
+		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
+		return
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
 		_card_is_peasant = false

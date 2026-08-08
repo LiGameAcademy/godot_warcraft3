@@ -96,9 +96,10 @@ game/scripts/
 │   └── runtime_unit.gd          # 新增：运行时单位权威（id/type/owner/hp/orders…）
 └── logic/
     ├── command/
-    │   ├── order.gd             # 命令枚举/结构：Move/Stop/Harvest/Build/Train/Research/Ability…
+    │   ├── unit_order.gd        # Move/Stop/Harvest/Return…
+    │   ├── smart_target.gd      # 右键交互目标（Ground/Mine/Tree/Dropoff）
     │   ├── order_queue.gd       # 当前命令 + 可选队列
-    │   └── command_router.gd    # 输入/HUD → 合法 Order → 派发
+    │   └── command_router.gd    # issue_smart / 具体 Order 派发
     ├── economy/
     │   └── (F1) harvest_*.gd
     ├── construction/
@@ -116,7 +117,7 @@ game/scripts/
 | 项 | 决策 |
 |----|------|
 | 单位权威 | `RuntimeUnit`（Session）为主；Present 节点只同步姿态/动画 |
-| 右键智能命令 | 对金矿/树/地面/敌我：先做**最小智能**（金矿→HarvestGold，树→HarvestLumber，空地→Move） |
+| 右键智能命令 | Director 识别 `SmartTarget` → `CommandRouter.issue_smart`：全体广播，按单位能力匹配（能采→Harvest，能交→Return，否则→Move）。远期加 Attack 等 Kind / Capability，不在 Director 按兵种分支 |
 | 建筑占位 | 建造中写入 pathTex；完工后保持；取消需回滚脚印 |
 | 进度条 | HUD Info 区显示「建造中/训练中/研究中」百分比即可 |
 
@@ -141,14 +142,23 @@ game/scripts/
 | 层 | 做什么 |
 |----|--------|
 | Data/Catalog | 金矿剩余量：`unit_data.goldAmount` 或 `Agld.DataA1`（默认 12500） |
-| Logic | `GoldMineRuntime`（槽位/排队/储量）+ `HarvestController` 订单 AI |
-| Present | 负金 `Walk_Gold`/`Stand_Gold`；进矿隐藏 |
+| Logic | `GoldMineRuntime` + `HarvestController` + `CarrySlot`（资源 id+数量；采到异类时丢弃旧负重） |
+| Present | 负金/负木 geoset；进矿隐藏 |
 | Session | `PlayerStock.add_gold/add_lumber`；交货走 `ReceiveResources` |
+
+换采集目标：**不**因负异类资源而先交货；出矿/砍中第一击时 `CarrySlot` 整槽替换。  
+送回：面板/热键「交付」，或负重单位**右键**己方主城/伐木场（`SmartTarget.DROPOFF`；无负重者降级为移动）。
+
+伐木 / 树 Present / 选中环专项设计（落地前必读）：
+
+- [TREE_INTERACT.md](TREE_INTERACT.md) — MultiMesh promote、`apply_damage` 统一入口、防闪烁  
+- [SELECTION_RINGS.md](SELECTION_RINGS.md) — 己方绿环 / 中立金矿·树黄环  
 
 **简化（允许）**
 
-- 伐木后置；金矿可先无限或读地图储量  
+- 金矿可先无限或读地图储量  
 - 交货建筑搜索：距离最近、同玩家、类型匹配  
+- 伐木场优先交货见 F5；树闲置 demote 回 MM 后置  
 
 **验收**
 
@@ -170,8 +180,9 @@ game/scripts/
 | 同时进矿 | 普通矿 **1** 人（`Agld.DataB1≈1`） | `max_inside`；队外 FIFO 只定进矿权 |
 | 「5 连连看」 | 主城贴矿时约 **5** 农民效率最高（约 **1 人在矿内、4 人在路上**），不是队外站成一列 | 车道散开 + ~1.3s 进矿时长形成传送带节奏 |
 | 进矿时长 | 实机观感约 **1.3s**（非 `Ahar.Dur1`） | `GoldMineRuntime.dwell_sec`（默认 1.3） |
-| 单次负金 | `Ahar.DataB1` = **10** | `HarvestController` 读 Ahar |
-| `Ahar.Dur1=1.1` | **伐木**周期，不是进矿 | 勿混用 |
+| 单次负金 | `Ahar.DataC1` = **10** | `HarvestController` 读 Ahar |
+| 伐木每击 | `DataA1=1` 伤树兼得木；`DataB1=10` 容量；`Dur1=1.1` 每击间隔 | 攒满容量再交货 |
+| `Ahar.Dur1=1.1` | **伐木每击间隔**，不是进矿 | 勿混用 |
 | 矿口散开 | 多选下令时自然停在矿口附近不同点 | `entrance_slot_wc3(lane)` 仅候位 |
 | 采矿寻路 | 出矿/交货/入矿找空闲落点，自然错开 | 朝主城贴矿采样空位；approach 避开已占点；幽灵模式互不挡 |
 | 归属 | `ngol` 保持中立；任何玩家都可采 | P0 不锁矿；软宣称可后置 |
@@ -464,3 +475,4 @@ game/scripts/logic/
 | 2026-08-07 | 普通金矿同时进矿 1 人 + FIFO 进矿权；「5 连连看」= 效率最优（约 1 矿内 / 4 路上），非队外站列；进矿默认 1.3s（非 Ahar.Dur1）；闹鬼/缠绕后置 |
 | 2026-08-07 | 固定运金走廊：端点+路点只算一次；采矿幽灵模式互不挡路；进矿只隐藏、出矿瞬移统一出口 |
 | 2026-08-07 | 自动回城/回矿属 Harvest 订单 AI；交货点由 ReceiveResources 查询，非硬编码坐标 |
+| 2026-08-08 | 右键智能：`SmartTarget` + `issue_smart`；混选时能采的采、不能的走目标点；完整 UnitCapability 后置 |

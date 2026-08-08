@@ -25,6 +25,8 @@ var _cache: MapModelCache = null
 var _moving: bool = false
 var _carry: int = Carry.NONE
 var _logical: String = ""
+## 伐木站桩：播 Attack Lumber，期间忽略 locomotion
+var _chopping: bool = false
 
 
 func bind_cache(cache: MapModelCache) -> void:
@@ -39,6 +41,10 @@ func get_carry() -> int:
 	return _carry
 
 
+func is_chopping() -> bool:
+	return _chopping
+
+
 ## 切换负资源外观（金袋 / 木材）。强制重播当前位移态对应动画。
 ## force=true：即使状态未变也重播（出矿/交货瞬间）。
 func set_carry(carry: int, force: bool = false) -> void:
@@ -50,6 +56,9 @@ func set_carry(carry: int, force: bool = false) -> void:
 	var carry_changed := _carry != carry
 	_carry = carry
 	_logical = ""
+	if _chopping:
+		# 砍伐中只更新 carry 状态，动画仍由 Attack Lumber 主导
+		return
 	# 负资源开/关：0 blend，否则走路几步才看到金袋/空手
 	var blend := BLEND_CARRY_SWITCH if carry_changed or force else (
 		BLEND_TO_WALK if _moving else BLEND_TO_STAND
@@ -59,6 +68,13 @@ func set_carry(carry: int, force: bool = false) -> void:
 
 ## moving=true → Walk[_Gold|_Lumber]；false → Stand[…]。同态不重播。
 func set_locomotion(moving: bool) -> void:
+	# 位移必须打断砍伐姿态，否则会「边播 Attack Lumber 边走路」
+	if _chopping and moving:
+		_chopping = false
+		_logical = ""
+	elif _chopping:
+		_moving = moving
+		return
 	var want := _logical_for(moving, _carry)
 	if _moving == moving and _logical == want and not _logical.is_empty():
 		return
@@ -68,6 +84,24 @@ func set_locomotion(moving: bool) -> void:
 	if _carry != Carry.NONE:
 		blend = minf(blend, 0.05)
 	_play_logical(want, blend)
+
+
+## 伐木站桩：播 Attack Lumber（回退 Attack）。结束时恢复 Walk/Stand。
+## 已在砍伐中再次 set(true)：保持循环（多击攒木），不打断。
+func set_chopping(active: bool) -> void:
+	if _chopping == active:
+		if active and (_logical == "Attack_Lumber" or _logical == "Attack"):
+			return
+		if not active:
+			return
+	_chopping = active
+	if active:
+		_moving = false
+		_logical = ""
+		_play_logical("Attack_Lumber", 0.08)
+	else:
+		_logical = ""
+		_play_logical(_logical_for(_moving, _carry), BLEND_TO_WALK if _moving else BLEND_TO_STAND)
 
 
 func _logical_for(moving: bool, carry: int) -> String:
@@ -86,15 +120,18 @@ func _play_logical(logical: String, blend: float) -> void:
 	if body == null:
 		return
 	var resolved := BuildingVisual.resolve_animation(body, logical)
-	# Stand_Gold / Walk_Gold 等：再试空格写法
+	# Stand_Gold / Walk_Gold / Attack_Lumber 等：再试空格写法
 	if resolved.is_empty() and logical.contains("_"):
 		resolved = BuildingVisual.resolve_animation(body, logical.replace("_", " "))
 	if resolved.is_empty() and logical == "Walk" and _cache != null:
 		resolved = _resolve_walk_prefix(body)
 	var played_as := logical
 	if resolved.is_empty():
+		if logical == "Attack_Lumber":
+			resolved = BuildingVisual.resolve_animation(body, "Attack")
+			played_as = "Attack"
 		# 负资源动画缺失时回退空手，避免完全不动；勿把 _logical 标成 Gold（否则再也刷不回金袋）
-		if logical.ends_with("_Gold") or logical.ends_with("_Lumber"):
+		elif logical.ends_with("_Gold") or logical.ends_with("_Lumber"):
 			var fallback := "Walk" if _moving else "Stand"
 			resolved = BuildingVisual.resolve_animation(body, fallback)
 			played_as = fallback
@@ -107,7 +144,9 @@ func _play_logical(logical: String, blend: float) -> void:
 		_logical = played_as
 		# PE2：优先完整逻辑名，失败时用手空态
 		var pe2 := played_as
-		if pe2.ends_with("_Gold") or pe2.ends_with("_Lumber"):
+		if pe2.begins_with("Attack"):
+			pe2 = "Attack"
+		elif pe2.ends_with("_Gold") or pe2.ends_with("_Lumber"):
 			pe2 = "Walk" if _moving else "Stand"
 		Wc3Pe2Particles.apply_sequence(body, pe2)
 

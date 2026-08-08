@@ -12,6 +12,10 @@ var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
 var last_placed: int = 0
 var last_placeholder: int = 0
+## MultiMesh：creationNumber → {root, index, entry, glb, type_id, variation, xf}
+var _mm_by_cn: Dictionary = {}
+## 已提升为独立 Node 的树/装饰物
+var _promoted_by_cn: Dictionary = {}
 
 
 func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
@@ -47,9 +51,26 @@ func add_one(d: Dictionary, hf: Wc3Heightfield) -> bool:
 	return true
 
 
-## 按 creationNumber 移除 Present 节点（MultiMesh 组内无法精确删 → 返回 false，调用方应全量 rebuild）。
+## 按 creationNumber 移除 Present（含 promote 节点；MM 槽位置空）。
 func remove_by_creation_number(creation_number: int) -> bool:
-	var node := find_by_creation_number(creation_number)
+	if creation_number < 0:
+		return false
+	var removed := false
+	if _promoted_by_cn.has(creation_number):
+		var pn: Node = _promoted_by_cn[creation_number]
+		_promoted_by_cn.erase(creation_number)
+		if pn != null and is_instance_valid(pn):
+			if pn.get_parent() == self:
+				remove_child(pn)
+			pn.free()
+			removed = true
+	if _mm_by_cn.has(creation_number):
+		_hide_mm_instance(creation_number)
+		_mm_by_cn.erase(creation_number)
+		removed = true
+	if removed:
+		return true
+	var node := _find_single_instance(creation_number)
 	if node == null:
 		return false
 	remove_child(node)
@@ -57,10 +78,82 @@ func remove_by_creation_number(creation_number: int) -> bool:
 	return true
 
 
-## 单实例 Present（非 MultiMesh 组内条目）。找不到返回 null。
+## 单实例或已 promote 的 Present。找不到返回 null（纯 MM 未 promote 时为 null）。
 func find_by_creation_number(creation_number: int) -> Node3D:
 	if creation_number < 0:
 		return null
+	if _promoted_by_cn.has(creation_number):
+		var p: Node = _promoted_by_cn[creation_number]
+		if p is Node3D and is_instance_valid(p):
+			return p as Node3D
+		_promoted_by_cn.erase(creation_number)
+	return _find_single_instance(creation_number)
+
+
+## 需要独立 Node 时调用：先挂 Node 再 hide MM（防闪烁）。已是单实例则直接返回。
+func ensure_promoted(creation_number: int) -> Node3D:
+	if creation_number < 0:
+		return null
+	var existing := find_by_creation_number(creation_number)
+	if existing != null:
+		return existing
+	if not _mm_by_cn.has(creation_number):
+		return null
+	var info: Dictionary = _mm_by_cn[creation_number]
+	var entry: Dictionary = info.get("entry", {})
+	var glb := str(info.get("glb", ""))
+	var type_id := str(info.get("type_id", entry.get("id", "")))
+	if glb.is_empty() or _cache == null or entry.is_empty():
+		return null
+	var node := _cache.instance_glb(glb)
+	if node == null:
+		return null
+	node.name = "%s_%s" % [type_id, str(creation_number)]
+	# 与单实例 doodad 同路径：GLB 根已含 MODEL_SCALE，勿直接套 MM 的 WORLD_SCALE xf
+	_apply_doodad_xform(node, entry, true)
+	node.set_meta("doodad_data", entry)
+	node.set_meta("promoted_from_mm", true)
+	# A：先入树
+	add_child(node)
+	_promoted_by_cn[creation_number] = node
+	# Stand + 按 geosetvis 显隐（树：藏 Geoset 树桩；勿 reveal_all 把桩亮出来）
+	_cache.autoplay_stand(node, false)
+	if _cache.has_method("snap_stand_geoset_visibility"):
+		_cache.call("snap_stand_geoset_visibility", node)
+	# 无可见 mesh 则绝不藏 MM（否则「树瞬间消失」）
+	if not _has_any_visible_mesh(node):
+		push_warning("[MapDoodadLayer] promote cn=%d 无可见 mesh，保留 MM" % creation_number)
+		return node
+	_hide_mm_instance(creation_number)
+	return node
+
+
+func _has_any_visible_mesh(root: Node) -> bool:
+	if root == null:
+		return false
+	for c in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi != null and mi.visible and mi.mesh != null:
+			return true
+	return false
+
+
+func _force_meshes_visible(root: Node) -> void:
+	if root == null:
+		return
+	for c in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi == null:
+			continue
+		mi.visible = true
+		mi.scale = Vector3.ONE if mi.scale.length_squared() < 1e-8 else mi.scale
+
+
+func has_mm_instance(creation_number: int) -> bool:
+	return _mm_by_cn.has(creation_number)
+
+
+func _find_single_instance(creation_number: int) -> Node3D:
 	for c in get_children():
 		if not (c is Node3D):
 			continue
@@ -71,6 +164,25 @@ func find_by_creation_number(creation_number: int) -> Node3D:
 			continue
 		return c as Node3D
 	return null
+
+
+func _hide_mm_instance(creation_number: int) -> void:
+	if not _mm_by_cn.has(creation_number):
+		return
+	var info: Dictionary = _mm_by_cn[creation_number]
+	var root: Node = info.get("root")
+	var idx := int(info.get("index", -1))
+	if root == null or not is_instance_valid(root) or idx < 0:
+		return
+	# E：该 instance scale=0，不改 visible_instance_count
+	var hidden := Transform3D.IDENTITY.scaled(Vector3.ZERO)
+	for c in root.get_children():
+		var mmi := c as MultiMeshInstance3D
+		if mmi == null or mmi.multimesh == null:
+			continue
+		if idx >= mmi.multimesh.instance_count:
+			continue
+		mmi.multimesh.set_instance_transform(idx, hidden)
 
 
 func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
@@ -94,6 +206,8 @@ func build(ctx: MapBuildContext) -> void:
 	_clear_children()
 	last_placed = 0
 	last_placeholder = 0
+	_mm_by_cn.clear()
+	_promoted_by_cn.clear()
 	if ctx == null:
 		return
 	var doodads: Array = ctx.doodads.get("doodads", [])
@@ -201,6 +315,21 @@ func _place_multimesh_group(type_id: String, variation: int, glb: String, list: 
 		root.free()
 		return false
 	add_child(root)
+	# 双向索引：供 ensure_promoted / 精确 hide（勿依赖 GPU 侧数据）
+	for i in range(list.size()):
+		var d: Dictionary = list[i]
+		var cn := int(d.get("creationNumber", -1))
+		if cn < 0:
+			continue
+		_mm_by_cn[cn] = {
+			"root": root,
+			"index": i,
+			"entry": d,
+			"glb": glb,
+			"type_id": type_id,
+			"variation": variation,
+			"xf": xforms[i],
+		}
 	return true
 
 
@@ -317,5 +446,7 @@ func _doodad_transform(d: Dictionary) -> Transform3D:
 
 
 func _clear_children() -> void:
+	_mm_by_cn.clear()
+	_promoted_by_cn.clear()
 	for c in get_children():
 		c.queue_free()

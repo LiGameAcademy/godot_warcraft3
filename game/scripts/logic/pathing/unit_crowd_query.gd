@@ -92,6 +92,7 @@ func is_slot_free(
 	for n in neighbors:
 		var other: Vector2 = n.get("pos", Vector2.ZERO)
 		var orad := float(n.get("r", 16.0))
-		if pos_wc3.distance_to(other) < need + orad * 0.35:
+		# 中心距须 ≥ min_sep，并再留半个对方半径余量
+		if pos_wc3.distance_to(other) < need + orad * 0.5:
 			return false
 	return true

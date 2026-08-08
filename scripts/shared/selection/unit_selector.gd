@@ -13,8 +13,16 @@ extends Node
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
 
 const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
-const SEL_RING_COLOR := Color(0.15, 1.0, 0.25, 1.0)
+const SEL_RING_COLOR_OWN := Color(0.15, 1.0, 0.25, 1.0)
+const SEL_RING_COLOR_NEUTRAL := Color(1.0, 0.92, 0.15, 1.0)
+## 兼容旧名
+const SEL_RING_COLOR := SEL_RING_COLOR_OWN
 const SEL_RING_Y_BIAS := 0.06
+
+enum RingKind {
+	OWN = 1,
+	NEUTRAL = 2,
+}
 ## 无 SLK scale 时的默认拾取半径（Godot 单位 ≈ WC3 40）
 const DEFAULT_UNIT_RADIUS := 0.40
 const DEFAULT_BUILDING_RADIUS := 1.20
@@ -38,6 +46,8 @@ signal selection_changed(primary: Node3D, selected: Array)
 var camera: Camera3D
 var unit_host: Node
 var overlay_parent: Control
+## 额外拾取（如树木 promote）：Callable(screen_pos: Vector2) -> Node3D
+var pick_extra: Callable = Callable()
 
 var _marquee: MarqueeSelection = MarqueeSelection.new()
 var _overlay: MarqueeOverlay = null
@@ -151,6 +161,19 @@ func select_node(node: Node3D) -> void:
 	_set_selection([node])
 
 
+## 进矿等：从当前选中移除（对齐 WC3 进矿不可选）。
+func deselect_unit(node: Node3D) -> void:
+	if node == null or _selected.is_empty():
+		return
+	var next: Array[Node3D] = []
+	for n in _selected:
+		if n != node and is_instance_valid(n):
+			next.append(n)
+	if next.size() == _selected.size():
+		return
+	_set_selection(next)
+
+
 ## 主输入：全屏层 gui_input（可靠）。`_unhandled_input` 仅作无层时的兜底。
 func _on_world_gui_input(event: InputEvent) -> void:
 	_try_autobind()
@@ -219,13 +242,15 @@ func _on_release(screen_pos: Vector2) -> void:
 		_select_in_rect(rect)
 	else:
 		var picked := _pick_at(screen_pos)
+		if picked == null and pick_extra.is_valid():
+			picked = pick_extra.call(screen_pos) as Node3D
 		if picked != null:
 			_set_selection([picked])
 		else:
 			clear_selection()
 
 
-## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。
+## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。不含树木（树走 pick_extra）。
 func pick_at(screen_pos: Vector2) -> Node3D:
 	_try_autobind()
 	return _pick_at(screen_pos)
@@ -412,6 +437,9 @@ func _iter_unit_nodes() -> Array[Node3D]:
 		if not (c is Node3D):
 			continue
 		var n := c as Node3D
+		# 进矿隐藏 / 显式封锁：不可点选、不可框选（对齐原作）
+		if not n.visible or bool(n.get_meta("selection_blocked", false)):
+			continue
 		if not n.has_meta("unit_data"):
 			continue
 		var d: Dictionary = n.get_meta("unit_data", {})
@@ -509,6 +537,29 @@ func _refresh_rings() -> void:
 			ring.queue_free()
 
 
+func ring_kind_for(node: Node3D) -> int:
+	if node == null:
+		return RingKind.OWN
+	var ud: Dictionary = node.get_meta("unit_data", {})
+	var tid := str(ud.get("typeId", "")).strip_edges()
+	# 树不可左键选中；黄环仅中立金矿等单位
+	if tid == "ngol":
+		return RingKind.NEUTRAL
+	# 中立玩家（常见 12–15）选中也偏黄
+	var owner_id := int(ud.get("owner", 0))
+	if owner_id >= 12:
+		return RingKind.NEUTRAL
+	return RingKind.OWN
+
+
+func _ring_color(kind: int) -> Color:
+	match kind:
+		RingKind.NEUTRAL:
+			return SEL_RING_COLOR_NEUTRAL
+		_:
+			return SEL_RING_COLOR_OWN
+
+
 func _make_ring(host: Node3D) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.name = "SelectionRing"
@@ -524,7 +575,7 @@ func _make_ring(host: Node3D) -> MeshInstance3D:
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	mat.render_priority = 20
-	mat.albedo_color = SEL_RING_COLOR
+	mat.albedo_color = _ring_color(ring_kind_for(host))
 	var tex: Texture2D = RuntimeAssets.load_converted_texture(SEL_CIRCLE_TEX)
 	if tex != null:
 		mat.albedo_texture = tex
@@ -547,6 +598,9 @@ func _update_ring(mi: MeshInstance3D, host: Node3D) -> void:
 		mi.mesh = plane
 	plane.size = Vector2(diam, diam)
 	mi.position = Vector3(0.0, SEL_RING_Y_BIAS, 0.0)
+	var mat := mi.material_override as StandardMaterial3D
+	if mat != null:
+		mat.albedo_color = _ring_color(ring_kind_for(host))
 	mi.visible = true
 
 

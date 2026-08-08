@@ -28,8 +28,11 @@ signal locomotion_changed(moving: bool)
 @export var enable_separation: bool = true
 ## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
 @export var stall_abort_sec: float = 0.4
-## 采矿幽灵模式：不占格、不 soft 分离、寻路忽略他人预约 → 固定走廊互不挡。
+## 采矿幽灵模式：不占格、寻路忽略他人预约 → 固定走廊互不挡。
+## keep_separation=true：仍 soft 分离（伐木用；采金走廊通常关分离）。
 var harvest_ghost: bool = false
+## soft 分离半径倍率（农民略放大，减轻叠人）。
+@export var separation_radius_mul: float = 1.0
 
 var _query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
@@ -44,14 +47,16 @@ var _stall_time: float = 0.0
 var _saved_separation: bool = true
 
 
-func set_harvest_ghost(on: bool) -> void:
+func set_harvest_ghost(on: bool, keep_separation: bool = false) -> void:
 	if on == harvest_ghost:
 		if on:
 			_release_reservation()
+			if keep_separation:
+				enable_separation = true
 		return
 	if on:
 		_saved_separation = enable_separation
-		enable_separation = false
+		enable_separation = keep_separation
 		harvest_ghost = true
 		_release_reservation()
 	else:
@@ -288,9 +293,10 @@ func _with_separation(
 		var query_r := maxf(collision_radius_wc3 * 5.0, 128.0)
 		var neighbors: Array = _crowd.call("neighbors_of", body, cur_wc3, query_r, false)
 		if not neighbors.is_empty():
+			var sep_r := collision_radius_wc3 * maxf(separation_radius_mul, 1.0)
 			var push_vel: Vector2 = UnitSeparation.compute_push_velocity(
 				cur_wc3,
-				collision_radius_wc3,
+				sep_r,
 				neighbors,
 				body.get_instance_id()
 			)
