@@ -325,9 +325,15 @@ function main() {
   // --- 5/6/7/8. 工具调用全部直跑 node（避开 cmd.exe wrap 路径转义） ---
   // node 是真 .exe，shell:false 也能 exec；不走 npm run 意味着路径里的空格/括号不会被 cmd.exe 转义
   // CLI 入口约定：tools/<name>/src/cli.js（与 package.json scripts: "<name>": "node src/cli.js" 对应）
+  //
+  // 阶段跳过：--no-XXX CLI flag **OR** config.skip.XXX=true。两者一致，避免之前 --no-parse 装饰品 bug。
+  const skipExtract = hasFlag("no-extract") || skip.extract;
+  const skipConvert = hasFlag("no-convert") || skip.convert;
+  const skipParse   = hasFlag("no-parse")   || skip.parse;
+  const skipSlk     = hasFlag("no-slk")     || skip.slk;
 
   // --- 5. mpq-extract ---
-  if (!skip.extract && wc3Path) {
+  if (!skipExtract && wc3Path) {
     log("--- mpq-extract ---");
     run("node", ["tools/mpq-extract/src/cli.js", "--game-dir", wc3Path], { shell: false });
   } else {
@@ -337,7 +343,7 @@ function main() {
   // --- 6. asset-convert（默认含 eager bake：MDX → GLB → .scn） ---
   // m2g cli 默认 doScn=true（modelsOnly 模式也跑 bake），所以这一阶段
   // 一次性把 .glb 和 .scn 都烤出来。--no-bake 跳过 .scn 部分。
-  if (!skip.convert) {
+  if (!skipConvert) {
     if (skipBake) {
       log("--- asset-convert (m2g, --skip-scn) ---");
     } else {
@@ -356,7 +362,7 @@ function main() {
   }
 
   // --- 7. map-parse ---
-  if (!skip.parse) {
+  if (!skipParse) {
     log("--- map-parse ---");
     const items = config.maps?.items || [];
     if (items.length === 0) {
@@ -375,7 +381,7 @@ function main() {
   }
 
   // --- 8. slk-export ---
-  if (!skip.slk) {
+  if (!skipSlk) {
     log("--- slk-export ---");
     run("node", ["tools/slk-export/src/cli.js"], { shell: false });
   } else {
