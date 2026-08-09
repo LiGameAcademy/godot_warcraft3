@@ -11,11 +11,13 @@ signal harvest_issued(count: int)
 signal return_issued(count: int)
 signal smart_issued(summary: Dictionary)
 signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
+signal train_issued(unit_id: String) ## F2-6: 训练令下给建筑
 
 const META_ORDER_QUEUE := "order_queue"
 
 var _path_query: PathQuery = null
 var _crowd_query: UnitCrowdQuery = null
+var _session: GameSession = null
 ## Callable(unit: Node3D) -> UnitNavigator
 var _ensure_navigator: Callable = Callable()
 ## Callable(unit: Node3D) -> HarvestController
@@ -29,10 +31,12 @@ func configure(
 	crowd_query: UnitCrowdQuery,
 	ensure_navigator: Callable,
 	ensure_harvest: Callable = Callable(),
-	ensure_build: Callable = Callable()
+	ensure_build: Callable = Callable(),
+	session: GameSession = null
 ) -> void:
 	_path_query = path_query
 	_crowd_query = crowd_query
+	_session = session
 	_ensure_navigator = ensure_navigator
 	_ensure_harvest = ensure_harvest
 	_ensure_build = ensure_build
@@ -424,6 +428,53 @@ func _abort_harvest(node: Node3D) -> void:
 	var hc := node.get_node_or_null("HarvestController") as HarvestController
 	if hc != null:
 		hc.abort()
+
+
+## F2-6：建筑训练单位。building 是已建好的 Barracks/Altar 等 Node3D。
+## 行为：扣资源 + 挂 TrainQueue 子节点 + start。
+## 完工由 TrainQueue.training_completed signal 通知（Director 订阅刷单位）。
+## F2-6 简化：1 队列；fused 人口校验留 F3-F4。
+func issue_train(building: Node3D, unit_id: String) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	# 资源 / 时间从 UnitBalance 读
+	var time_sec: float = BuildingCatalog.get_build_time(unit_id)
+	var gold: int = BuildingCatalog.get_gold_cost(unit_id)
+	var lumber: int = BuildingCatalog.get_lumber_cost(unit_id)
+	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
+		# 非可训单位（或中立单位无时间）
+		return false
+	# 资源扣减（需 router 持有 session）
+	if _session != null:
+		var stock: PlayerStock = _session.local_stock()
+		if stock == null or not stock.try_spend(gold, lumber):
+			return false
+	else:
+		# 兜底：未配 session 时不扣（验收集成时 F2-7 接 Director 配 session）
+		pass
+	# site/owner 从 building meta 读
+	var d: Dictionary = building.get_meta("unit_data", {})
+	var pos: Dictionary = d.get("position", {})
+	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	var owner: int = int(d.get("owner", 0))
+	# TrainQueue：复用已有（无则创建）；F2-6 简化：1 队列 = 已有则 noop
+	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
+	if queue == null:
+		queue = TrainQueue.new()
+		queue.name = "TrainQueue"
+		building.add_child(queue)
+	if queue.is_training():
+		# 已训中：尝试退款刚扣的（WC3：训练进行中不能叠加）
+		if _session != null:
+			var s: PlayerStock = _session.local_stock()
+			if s != null:
+				s.add_gold(gold)
+				s.add_lumber(lumber)
+		return false
+	if not queue.start(unit_id, time_sec, gold, lumber, site_wc3, owner):
+		return false
+	train_issued.emit(unit_id)
+	return true
 
 
 ## F2-3：选中农民对工地 wc3_xy 发起 BUILD 令。

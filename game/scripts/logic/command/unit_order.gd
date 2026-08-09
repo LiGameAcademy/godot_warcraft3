@@ -83,6 +83,16 @@ static func build(p_building_id: String, site_wc3: Vector2, src: int = Source.PA
 	return o
 
 
+## 训练 Order。unit_id + 工地 wc3_xy（建筑门口）；具体逻辑在 TrainQueue。
+static func train(p_unit_id: String, site_wc3: Vector2, src: int = Source.PANEL) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.TRAIN
+	o.source = src
+	o.building_id = p_unit_id ## 复用：训的是哪类单位
+	o.goal_wc3 = site_wc3
+	return o
+
+
 func kind_name() -> String:
 	match kind:
 		Kind.MOVE:
