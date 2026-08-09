@@ -344,8 +344,8 @@ function stepConvert(opts) {
 }
 
 function stepSync(opts) {
-  logStep("6. 同步编辑器 UI → asset-converted/UI");
-  const args = ["tools/sync-editor-assets.mjs"];
+  logStep("6. sync-data-assets → slk-exported + PathTextures");
+  const args = ["tools/sync-data-assets.mjs"];
   if (opts.force) args.push("--force");
   return run(process.execPath, args, ROOT);
 }

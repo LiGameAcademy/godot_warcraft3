@@ -223,14 +223,16 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 ### F2 · 建造祭坛、农场、兵营
 
-> **当前进度：F2-1 docs 已落 → 准备 F2-2 data（3 建筑 Catalog）**  
-> 分支：`feature/building-system`
+> **当前进度：骨架已有 → 按 [BUILD_SYSTEM.md](BUILD_SYSTEM.md) 校正人族语义并接线**  
+> 分支：`feature/building-system`  
+> **设计契约（必读）：** 四族建造非对称 → 用 `ConstructionProfile` + Strategy，F2 只实现人族；**禁止**把「工人隐藏」当默认（那是兽/灵）。
 
 **玩法**
 
 - 选中农民 → 命令卡选建筑（或临时快捷键）→ 进入放置预览 → 左键确认  
 - 合法性：金钱木材、pathing、与己方建筑间距（复用/移植 `unit_placement_rules`）  
-- 农民走去工地 → 建造计时（`UnitBalanceDef.bldtm`）→ 完工刷建筑、扣资源在**下单时或开工时**（对齐 WC3：下单扣费）  
+- 农民走去工地 → **人族保持可见施工**（可后续多农民 Repair 加速）→ 计时/HP 进度（`bldtm`）→ 完工刷建筑  
+- 扣资源在**下单时**（对齐 WC3；一单只扣一次，不按选中农民人数倍扣）  
 - Farm 完工：`PlayerStock.add_food_cap`（读建筑 `fmade`）
 
 **本步建筑集（锁死）**
@@ -245,53 +247,57 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 | # | 关注点 | 关键产物 | 状态 |
 |---|--------|----------|------|
-| **F2-1** | docs: F2 详细计划 + 代码落点 | 本节 + ROADMAP 同步 | ✅ |
-| **F2-2** | data: 3 建筑 Catalog（Altar/Farm/Barracks） | `BuildingCatalog` + `BuildingDef` 资源 + `UnitBalanceDef` 引用 | ⏳ |
-| **F2-3** | logic: BuildController（建造命令 + 选址 + 资源校验） | `game/scripts/logic/construction/build_controller.gd`（复用/移植 `unit_placement_rules`） | ⏳ |
-| **F2-4** | present: PlacementGhost（绿/红合法性预览） | `game/scripts/presentation/placement_ghost.gd`（半透明 ghost + 跟随鼠标） | ⏳ |
-| **F2-5** | logic: BuildProgress（工地幼体 → 全尺寸 + 农民变工地） | `BuildSite` runtime + 进度 timer + 模型替换 | ⏳ |
-| **F2-6** | logic: TrainQueue 最小（兵营训步兵 1 队列 + 出门） | `game/scripts/logic/production/train_queue.gd`（延伸 F3/F4 框架） | ⏳ |
-| **F2-7** | test: selftest_build_*(5/5 PASS) | 选址 / 资源 / 进度 / 训练 / 取消 5 项单测 | ⏳ |
+| **F2-1** | docs: F2 计划 + [BUILD_SYSTEM.md](BUILD_SYSTEM.md) 四族契约 | 本节 + BUILD_SYSTEM + ROADMAP | ✅ |
+| **F2-2** | data: BuildingCatalog + ConstructionProfile（人族） | `BuildingCatalog` + `construction_profile_catalog.gd` | ⏳ |
+| **F2-3** | logic: BuildSite 共享真相 + HumanStrategy + 单次扣费 | `construction/*` + Router 映射 `BuildOrder` | ⏳ |
+| **F2-4** | present: PlacementGhost（绿/红合法性预览） | `placement_ghost.gd` | ⏳ |
+| **F2-5** | logic/present: 工地进度（人族可见施工；非隐藏农民） | `BuildSite` + 进度条；P1 多工加速 | ⏳ |
+| **F2-6** | logic: TrainQueue 最小（兵营训步兵 1 队列 + 出门） | `train_queue.gd`（延伸 F3/F4） | ⏳ |
+| **F2-7** | test: selftest 覆盖 Profile 语义 | 单工可见 / 单次扣费 / 取消退款 / 选址 | ⏳ |
 
 **代码落点（不破架构）**
 
 ```text
 game/scripts/
 ├── logic/
-│   ├── construction/         # F2 关注点
-│   │   ├── build_controller.gd     # F2-3 建造命令入口
-│   │   ├── placement_rules.gd      # F2-3 移植 unit_placement_rules
-│   │   ├── build_site.gd           # F2-5 工地 runtime
-│   │   └── build_order.gd          # F2-3 农民→工地的 Order 类型
-│   └── production/           # F2-6 + F3-F4 共用
-│       └── train_queue.gd          # F2-6 训练队列（最小版）
+│   ├── construction/         # F2 关注点（契约见 BUILD_SYSTEM.md）
+│   │   ├── build_site.gd           # 工地共享真相（进度/builders/退款）
+│   │   ├── build_controller.gd     # 工人侧：走位 / join
+│   │   ├── placement_rules.gd      # 组合谓词（pathing + requirePlace）
+│   │   ├── build_order.gd
+│   │   └── strategies/             # Human 必做；兽灵亡 stub
+│   └── production/
+│       └── train_queue.gd
+├── data/
+│   ├── building_catalog.gd
+│   └── construction_profile_catalog.gd
 ├── presentation/
-│   ├── placement_ghost.gd          # F2-4 半透明预览
-│   └── build_progress_bar.gd       # F2-5 HUD 进度条
+│   ├── placement_ghost.gd
+│   └── build_progress_bar.gd
 └── session/
-    └── player_stock.gd             # 已存在：F2-3 扣资源 / F2-5 加人口
+    └── player_stock.gd
 ```
 
 **复用与边界**
 
+- 四族机制与数据钩子：**[BUILD_SYSTEM.md](BUILD_SYSTEM.md)**（`AHbu`/`Builds=`/`requirePlace`）
 - `scripts/shared/selection/`：框选只己方（已落）+ 命令卡入口（已落）
-- `scripts/shared/economy/harvest_*`（F1）：CarrySlot 模式可类比 BuildOrder
 - `scripts/map/presentation/layers/map_unit_layer.gd`：建筑放置走 unit layer API（**不**直接 `add_child` 到 MapRoot）
-- `unit_placement_rules.gd`（编辑器侧）：**移植**到 `game/scripts/logic/construction/placement_rules.gd`（去掉编辑器 Document 依赖）
-- WC3 ID 表固定 3 个：`hhou` / `halt` / `hbar`（本步锁死；不解锁更多）
+- `unit_placement_rules.gd`（编辑器侧）：游戏侧 `placement_rules.gd` 共享纯规则，不依赖 Document
+- WC3 ID 表固定 3 个：`hhou` / `halt` / `hbar`（本步锁死；菜单数据源目标仍是 `Builds=`，再过滤子集）
 
-**验收剧本（人工）**
+**验收剧本（人工 · 人族语义）**
 
-1. 开局后选 5 农民 → 命令卡出现「建 Farm/Altar/Barracks」3 个图标（disabled 当资源不足）
-2. 点 Farm → 鼠标拖半透明绿色 ghost，移到非法格变红
-3. 左键确认：资源立即扣（hhou=180 金 / 50 木）；农民走向工地
-4. 工地出现「幼体」模型，farmer 隐藏 ~30s（`bldtm` 读 Balance）
-5. 完工刷全尺寸 Farm；人口上限 +6（hhou.fmade）；农民不变回（WC3：变不回，留工地）
-6. 同样流程造 Altar / Barracks
-7. 选中 Barracks → 命令卡出现「训 Footman」图标 → 点 → 队列进度 → 完成 → Barracks 门口刷步兵
-8. 取消建造（P1）：工地消失、退款 50%（WC3 行为）
+1. 开局后选农民 → 命令卡出现「建 Farm/Altar/Barracks」（资源不足 disabled）
+2. 点 Farm → ghost 绿/红随合法性变化
+3. 左键确认：**只扣一次**资源（hhou 金/木读 Balance）；农民走向工地
+4. 施工期间农民**保持可见**（Work/等效修理）；**不是**隐身进建筑
+5. 完工刷 Farm；人口 +`fmade`；农民释放可再下令
+6. （P1）第二农民加入同一工地 → 进度加快且不二次扣费
+7. 同样流程造 Altar / Barracks；Barracks 训 Footman（F2-6）
+8. 取消：工地消失、按 Profile 退款、农民恢复 IDLE/可见
 
-**F2-1 收尾：分步 + 代码落点已就绪 → 下一步 F2-2 data**
+**下一步：** 按 BUILD_SYSTEM §12 做人族 Strategy + Director 接线（修 High 问题）
 
 ---
 

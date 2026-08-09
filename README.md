@@ -42,11 +42,11 @@ node tools/dev-setup.mjs --game-dir "D:/Program Files (x86)/Warcraft3"
 默认 `--profile game` 会依次：
 
 1. `npm install`（`mpq-extract` / `asset-convert` / `slk-export` / `map-parse`）
-2. MPQ 解包 → `.cache/wc3-assets/`
+2. MPQ 解包 → `.cache/wc3-assets/`（**仅中间态**；运行时不读）
 3. SLK → `assets/slk-exported/`
 4. 解析 Echo Isles → `assets/map-parsed/echoisles/`
 5. 转换人族 Melee + Lordaeron 子集 → `assets/asset-converted/`（含自动 bake `.scn`）
-6. 同步编辑器 UI txt
+6. `sync-data-assets`：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
 7. Godot headless：PE2 粒子预制 + `visuals` 封装（`Buildings/Human` 等）
 
 完成后用 Godot 打开本仓库，运行 `game/scenes/game_main.tscn`。
@@ -89,25 +89,25 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
 | 路径 | 说明 |
 |------|------|
-| `.cache/wc3-assets/` | MPQ 解包镜像 |
-| `assets/asset-converted/` | PNG / GLB / `.scn` / `pe2.json`（已 `.gdignore`） |
-| `assets/slk-exported/` | 单位/技能等表 JSON |
-| `assets/map-parsed/` | 地图 JSON（如 echoisles） |
+| `.cache/wc3-assets/` | MPQ 解包**中间态**（工具用；游戏/编辑器禁止依赖） |
+| `assets/asset-converted/` | 视觉车道：PNG / GLB / `.scn` / PathTextures（`.gdignore`） |
+| `assets/slk-exported/` | 数据车道：SLK JSON + UnitFunc/Strings + UI txt |
+| `assets/map-parsed/` | 地图车道：解析 JSON（如 echoisles） |
 | `assets/pe2-prefabs/` | PE2 GPU 粒子预制（**可提交**） |
 | `assets/visuals/` | 模型视觉封装 tscn（**可提交**） |
 
-逻辑路径与经典客户端一致，例如 `Units/Human/Footman/Footman.mdx`。运行时经 Autoload `AssetProvider` 解析，勿把暴雪文件塞进 git。
+逻辑路径与经典客户端一致。运行时经 Autoload `AssetProvider`：**overlay → converted → slk-exported**（不读 `.cache`）。
 
-路径手册：[docs/data/WC3_ASSET_PATHS.md](docs/data/WC3_ASSET_PATHS.md)。
+三车道契约：[docs/architecture/ASSET_LANES.md](docs/architecture/ASSET_LANES.md)。路径手册：[docs/data/WC3_ASSET_PATHS.md](docs/data/WC3_ASSET_PATHS.md)。
 
 ---
 
 ## 冒烟检查
 
-1. `.cache/wc3-assets/` 非空，且存在 `.cache/manifest.json`
-2. `assets/slk-exported/Units/UnitBalance.json` 存在
+1. `.cache/wc3-assets/` 非空（bootstrap 中间态），且存在 `.cache/manifest.json`
+2. `assets/slk-exported/Units/UnitBalance.json` 与 `HumanUnitFunc.txt` 存在
 3. `assets/map-parsed/echoisles/summary.json` 存在
-4. `assets/asset-converted/Buildings/Human/TownHall/` 下有 `.glb`（或 `.scn`）
+4. `assets/asset-converted/Buildings/Human/TownHall/` 下有 `.glb`（或 `.scn`）；`PathTextures/` 非空
 5. Godot 运行 `game_main`：能看到主城、农民可框选右键移动
 
 热键：`S` 停止选中单位 · `F9` 路径调试线。
@@ -117,6 +117,7 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 ## 文档与架构
 
 - 分层总纲：[docs/architecture/LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)
+- 资产三车道：[docs/architecture/ASSET_LANES.md](docs/architecture/ASSET_LANES.md)
 - 游戏场景：[docs/game/README.md](docs/game/README.md) · 寻路选型：[docs/game/PATHFINDING_CHOICE.md](docs/game/PATHFINDING_CHOICE.md)
 - 地图编辑器：[docs/editor/EDITOR.md](docs/editor/EDITOR.md)
 - 水体：[docs/water/WATER.md](docs/water/WATER.md)

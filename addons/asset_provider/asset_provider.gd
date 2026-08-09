@@ -1,13 +1,16 @@
 extends Node
 class_name AssetProviderNode
 ## 逻辑路径 → 物理文件。
-## 查找顺序：mod overlay → asset-converted → .cache/wc3-assets。
+## 查找顺序：mod overlay → asset-converted → slk-exported（数据车道）。
+## 不读 .cache/wc3-assets（extract 中间态；见 docs/architecture/ASSET_LANES.md）。
 ## 转换产物扩展名：.blp→.png，.mdx/.mdl→.glb。
 
 
 const SETTINGS_CACHE_DIR := "warcraft3/asset_cache_dir"
 const SETTINGS_CONVERTED_DIR := "warcraft3/asset_converted_dir"
+const SETTINGS_DATA_DIR := "warcraft3/asset_data_dir"
 const DEFAULT_CONVERTED_RES := "res://assets/asset-converted"
+const DEFAULT_DATA_RES := "res://assets/slk-exported"
 
 ## { "id": String, "root": String }，后注册者优先。
 var _overlays: Array[Dictionary] = []
@@ -17,6 +20,7 @@ func _ready() -> void:
 	pass
 
 
+## extract 中间态根（仅工具/诊断用；resolve 不使用）。
 func get_cache_root() -> String:
 	var configured: String = str(ProjectSettings.get_setting(SETTINGS_CACHE_DIR, ""))
 	if not configured.is_empty():
@@ -31,6 +35,14 @@ func get_converted_root() -> String:
 	return ProjectSettings.globalize_path(DEFAULT_CONVERTED_RES).replace("\\", "/")
 
 
+## 数据车道：SLK JSON + UnitFunc/UI txt（tools/sync-data-assets 写入）。
+func get_data_root() -> String:
+	var configured: String = str(ProjectSettings.get_setting(SETTINGS_DATA_DIR, ""))
+	if not configured.is_empty():
+		return configured.replace("\\", "/").simplify_path()
+	return ProjectSettings.globalize_path(DEFAULT_DATA_RES).replace("\\", "/")
+
+
 func _project_join(rel: String) -> String:
 	var project_root := ProjectSettings.globalize_path("res://").replace("\\", "/")
 	if project_root.ends_with("/"):
@@ -42,11 +54,14 @@ func normalize_logical_path(logical_path: String) -> String:
 	var p := logical_path.replace("\\", "/")
 	while p.begins_with("/"):
 		p = p.substr(1)
-	# 允许误传 res://assets/asset-converted/X
+	# 允许误传 res://assets/asset-converted/X 或 slk-exported/X
 	const PREFIXES: Array[String] = [
 		"res://assets/asset-converted/",
 		"assets/asset-converted/",
 		"asset-converted/",
+		"res://assets/slk-exported/",
+		"assets/slk-exported/",
+		"slk-exported/",
 		"res://.cache/wc3-assets/",
 		".cache/wc3-assets/",
 	]
@@ -58,6 +73,7 @@ func normalize_logical_path(logical_path: String) -> String:
 
 
 ## 解析逻辑路径到绝对磁盘路径；找不到时返回空字符串。
+## 不回退 .cache（缺文件 → 跑 bootstrap / sync-data-assets）。
 func resolve(logical_path: String) -> String:
 	var logical := normalize_logical_path(logical_path)
 	if logical.is_empty():
@@ -73,9 +89,9 @@ func resolve(logical_path: String) -> String:
 	if not from_converted.is_empty():
 		return from_converted
 
-	var from_cache := _first_existing(get_cache_root(), logical)
-	if not from_cache.is_empty():
-		return from_cache
+	var from_data := _first_existing(get_data_root(), logical)
+	if not from_data.is_empty():
+		return from_data
 	return ""
 
 
@@ -89,7 +105,7 @@ func _first_existing(root: String, logical: String) -> String:
 	return ""
 
 
-## 同一逻辑路径在 converted / cache 下的可能相对名。
+## 同一逻辑路径在 converted / data 下的可能相对名。
 func _candidate_relatives(logical: String) -> PackedStringArray:
 	var out := PackedStringArray()
 	out.append(logical)

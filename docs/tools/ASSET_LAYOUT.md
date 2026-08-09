@@ -3,7 +3,7 @@
 > **角色**：明确 `godot_warcraft3` git 仓库与本地资源的边界。
 > **决策**（老李 D3，2026-08-08）：**任何 wc3 资源不入 git**。
 > 仓库只装：源码 / 工具 / 文档 / 配置文件。所有 wc3 资源靠 `tools/bootstrap.mjs` 一键生成。
-> 最后更新：2026-08-08（补 .gdignore + --clean-imports）
+> 最后更新：2026-08-09（三车道：运行时不读 `.cache`；见 [ASSET_LANES.md](../architecture/ASSET_LANES.md)）
 
 ---
 
@@ -34,7 +34,7 @@
 git clone <repo>
 cd godot_warcraft3
 npm install                  # 顶层 workspaces（5 个子工具）
-node tools/bootstrap.mjs      # 一键：extract → convert → parse → slk
+node tools/bootstrap.mjs      # 一键：extract → convert → parse → slk → sync-data
 ```
 
 `tools/bootstrap.mjs` 流程：
@@ -42,11 +42,14 @@ node tools/bootstrap.mjs      # 一键：extract → convert → parse → slk
 1. **检查依赖**：node >= 18、godot 二进制、WC3 安装（`tools/bootstrap.config.json` 或环境变量 `WC3_PATH`）
 2. **ensure .gdignore**：`assets/asset-converted/.gdignore` 必须存在 —— 阻止 Godot auto-import 在 GLB 旁生成 `<model>_<tex>.png` 重复副产物（GLB 规范要求 image embedded，无法用 URI 共享）
 3. **npm install**：5 个子工具（并行）
-4. **mpq-extract**：从 WC3 安装 → MPQ → 原文件（war3 / mdx / blp / slk）→ `tools/mpq-extract/tmp/`
-5. **asset-convert**：原文件 → PNG / GLB / SCN / PE2 → `assets/asset-converted/`
-6. **map-parse**：地图 w3x → JSON → `assets/map-parsed/<name>/`
-7. **slk-export**：SLK → JSON → `assets/slk-exported/`
-8. **打印** "✅ 资源就绪"
+4. **mpq-extract**：从 WC3 安装 → MPQ → 原文件 → `.cache/wc3-assets/`（**中间态**）
+5. **asset-convert**：→ `assets/asset-converted/`（视觉车道）
+6. **map-parse**：→ `assets/map-parsed/<name>/`（地图车道）
+7. **slk-export**：→ `assets/slk-exported/`（数据车道 JSON）
+8. **sync-data-assets**：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
+9. **打印** "✅ 资源就绪"
+
+运行时只读三车道，不读 `.cache`：见 [ASSET_LANES.md](../architecture/ASSET_LANES.md)。
 
 ---
 

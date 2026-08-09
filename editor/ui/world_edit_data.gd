@@ -3,15 +3,15 @@ class_name WorldEditData
 
 ## 解析经典编辑器 `UI/WorldEditData.txt`（地形集、地图尺寸档、默认值）。
 ##
-## 解析顺序（AssetProvider / RuntimeAssets）：
-##   1. `assets/asset-converted/UI/WorldEditData.txt`（推荐：sync-editor-assets 同步）
-##   2. `.cache/wc3-assets/UI/WorldEditData.txt`（MPQ 解包缓存）
-## 同步命令：`node tools/sync-editor-assets.mjs`
+## 权威路径：`assets/slk-exported/UI/WorldEditData.txt`（sync-data-assets）。
+## 解析：AssetProvider overlay → converted → slk-exported（不读 .cache）。
+## 同步：`node tools/sync-data-assets.mjs`
 ## 找不到时用脚本内置回退表，新建地图对话框仍可工作。
 
 
 const LOGICAL_PATH := "UI/WorldEditData.txt"
 const CAMERA_BORDER := 6 ## 兼容旧调用：每侧名义边距；实际默认补边见 Wc3Coords L6R6B4T8
+## 编辑器图标落在视觉车道（ReplaceableTextures 等），不是 slk-exported
 const CONVERTED_UI := "res://assets/asset-converted/"
 
 var tilesets: Array = [] ## { id, name_key, blight }
@@ -197,13 +197,8 @@ func _parse_brush_entry(id_key: String, val: String) -> Dictionary:
 
 
 func _resolve(logical: String) -> String:
-	var abs_path := RuntimeAssets.resolve(logical)
-	if not abs_path.is_empty():
-		return abs_path
-	var guess := ProjectSettings.globalize_path("res://").path_join(".cache/wc3-assets").path_join(logical)
-	if FileAccess.file_exists(guess):
-		return guess
-	return ""
+	# 仅 assets/（converted → slk-exported）；缺文件跑 sync-data-assets / bootstrap
+	return RuntimeAssets.resolve(logical)
 
 
 func _apply_fallback() -> void:

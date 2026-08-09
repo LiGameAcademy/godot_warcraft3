@@ -110,7 +110,7 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 |----|------|------|
 | F0 | 命令 / SmartTarget / Router；农民移动停止面板 | ✅ |
 | F1 | 采集金、木、送回；树 promote；CarrySlot | ✅ |
-| F2 | 祭坛、农场、兵营（建造 + 占位 + 人口） | 7 子步：docs ✅ → data → logic → ghost → progress → train → test |
+| F2 | 祭坛、农场、兵营（建造 + 占位 + 人口） | 契约见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md)；人族 Strategy 竖切，预留四族 Profile |
 | F3 | 召唤大法师 | |
 | F4 | 训练步兵 | |
 | F5 | 伐木场 | |

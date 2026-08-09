@@ -101,7 +101,7 @@ Infrastructure
 | `runtime_assets.gd` | 路径 resolve、load 贴图/图集 | 资源找不到、路径规则 |
 | `map_model_cache.gd` | GLB 场景/网格缓存 | 模型实例化/动画 |
 | `map_placeholders.gd` | 缺模灰盒 | 占位外观 |
-| `addons/asset_provider/` | overlay → converted → `.cache` | 资产优先级 |
+| `addons/asset_provider/` | overlay → converted → slk-exported（**不读** `.cache`） | 资产优先级；见 [ASSET_LANES.md](ASSET_LANES.md) |
 
 ### 2.4 着色器
 
@@ -122,9 +122,9 @@ Infrastructure
 | 类别 | 位置 | 内容 |
 | ------ | ------ | ------ |
 | 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](docs/architecture/MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
-| 表数据 | `assets/slk-exported/` | Terrain / Water / Unit / Doodad 等 |
-| 转换资产 | `assets/asset-converted/` | PNG / GLB / 同目录 `.scn`（gitignore；Inspect 优先 `.scn`） |
-| 原始缓存 | `.cache/wc3-assets/` | MPQ 解包，gitignore |
+| 表/文本数据 | `assets/slk-exported/` | SLK JSON + UnitFunc/UI txt（数据车道） |
+| 转换资产 | `assets/asset-converted/` | PNG / GLB / `.scn` / PathTextures（视觉车道） |
+| extract 中间态 | `.cache/wc3-assets/` | 仅工具；运行时禁止依赖（[ASSET_LANES.md](ASSET_LANES.md)） |
 | 编辑器内存 | `MapDocument.hf` → `MapLoader._external_hf` | 与 JSON 同形，优先于磁盘 |
 
 **heightfield 关键键：**

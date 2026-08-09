@@ -149,7 +149,7 @@ signal tile_selected(tile_id: String)
 
 实现：[`world_edit_data.gd`](../../../editor/scripts/ui/world_edit_data.gd)
 
-**作用**：解析 `WorldEditData.txt`（`assets/asset-converted/UI/` 或 `.cache/wc3-assets/UI/`）。
+**作用**：解析 `WorldEditData.txt`（`assets/slk-exported/UI/`；见 [ASSET_LANES.md](../architecture/ASSET_LANES.md)）。
 
 **关键数据**：
 
@@ -193,4 +193,4 @@ signal tile_selected(tile_id: String)
 | 地表调色板 | `editor/scripts/ui/tile_palette.gd` |
 | WE 工具/悬崖数据 | `editor/scripts/ui/world_edit_data.gd` |
 | 字符串 / i18n | `editor/scripts/ui/editor_i18n.gd` + `editor/locale/editor_strings.csv` |
-| 同步 WE 资产 | [`tools/sync-editor-assets.mjs`](../../../tools/sync-editor-assets.mjs) |
+| 同步 WE / UnitFunc 数据 | [`tools/sync-data-assets.mjs`](../../../tools/sync-data-assets.mjs) |
