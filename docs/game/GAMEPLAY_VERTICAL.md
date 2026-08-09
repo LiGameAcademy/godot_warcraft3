@@ -223,6 +223,9 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 ### F2 · 建造祭坛、农场、兵营
 
+> **当前进度：F2-1 docs 已落 → 准备 F2-2 data（3 建筑 Catalog）**  
+> 分支：`feature/building-system`
+
 **玩法**
 
 - 选中农民 → 命令卡选建筑（或临时快捷键）→ 进入放置预览 → 左键确认  
@@ -238,11 +241,57 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 | 祭坛 | `halt` | F3 |
 | 兵营 | `hbar` | F4 |
 
-**验收**
+**实现子步（7 commit · 1 关注点 / 1 commit）**
 
-- 能造出三座建筑；人口随 Farm 增加；pathing 脚印正确；取消建造退款（至少 P1）
+| # | 关注点 | 关键产物 | 状态 |
+|---|--------|----------|------|
+| **F2-1** | docs: F2 详细计划 + 代码落点 | 本节 + ROADMAP 同步 | ✅ |
+| **F2-2** | data: 3 建筑 Catalog（Altar/Farm/Barracks） | `BuildingCatalog` + `BuildingDef` 资源 + `UnitBalanceDef` 引用 | ⏳ |
+| **F2-3** | logic: BuildController（建造命令 + 选址 + 资源校验） | `game/scripts/logic/construction/build_controller.gd`（复用/移植 `unit_placement_rules`） | ⏳ |
+| **F2-4** | present: PlacementGhost（绿/红合法性预览） | `game/scripts/presentation/placement_ghost.gd`（半透明 ghost + 跟随鼠标） | ⏳ |
+| **F2-5** | logic: BuildProgress（工地幼体 → 全尺寸 + 农民变工地） | `BuildSite` runtime + 进度 timer + 模型替换 | ⏳ |
+| **F2-6** | logic: TrainQueue 最小（兵营训步兵 1 队列 + 出门） | `game/scripts/logic/production/train_queue.gd`（延伸 F3/F4 框架） | ⏳ |
+| **F2-7** | test: selftest_build_*(5/5 PASS) | 选址 / 资源 / 进度 / 训练 / 取消 5 项单测 | ⏳ |
 
-**依赖**：F0；建议 F1 可并行，但验收剧本按游玩顺序
+**代码落点（不破架构）**
+
+```text
+game/scripts/
+├── logic/
+│   ├── construction/         # F2 关注点
+│   │   ├── build_controller.gd     # F2-3 建造命令入口
+│   │   ├── placement_rules.gd      # F2-3 移植 unit_placement_rules
+│   │   ├── build_site.gd           # F2-5 工地 runtime
+│   │   └── build_order.gd          # F2-3 农民→工地的 Order 类型
+│   └── production/           # F2-6 + F3-F4 共用
+│       └── train_queue.gd          # F2-6 训练队列（最小版）
+├── presentation/
+│   ├── placement_ghost.gd          # F2-4 半透明预览
+│   └── build_progress_bar.gd       # F2-5 HUD 进度条
+└── session/
+    └── player_stock.gd             # 已存在：F2-3 扣资源 / F2-5 加人口
+```
+
+**复用与边界**
+
+- `scripts/shared/selection/`：框选只己方（已落）+ 命令卡入口（已落）
+- `scripts/shared/economy/harvest_*`（F1）：CarrySlot 模式可类比 BuildOrder
+- `scripts/map/presentation/layers/map_unit_layer.gd`：建筑放置走 unit layer API（**不**直接 `add_child` 到 MapRoot）
+- `unit_placement_rules.gd`（编辑器侧）：**移植**到 `game/scripts/logic/construction/placement_rules.gd`（去掉编辑器 Document 依赖）
+- WC3 ID 表固定 3 个：`hhou` / `halt` / `hbar`（本步锁死；不解锁更多）
+
+**验收剧本（人工）**
+
+1. 开局后选 5 农民 → 命令卡出现「建 Farm/Altar/Barracks」3 个图标（disabled 当资源不足）
+2. 点 Farm → 鼠标拖半透明绿色 ghost，移到非法格变红
+3. 左键确认：资源立即扣（hhou=180 金 / 50 木）；农民走向工地
+4. 工地出现「幼体」模型，farmer 隐藏 ~30s（`bldtm` 读 Balance）
+5. 完工刷全尺寸 Farm；人口上限 +6（hhou.fmade）；农民不变回（WC3：变不回，留工地）
+6. 同样流程造 Altar / Barracks
+7. 选中 Barracks → 命令卡出现「训 Footman」图标 → 点 → 队列进度 → 完成 → Barracks 门口刷步兵
+8. 取消建造（P1）：工地消失、退款 50%（WC3 行为）
+
+**F2-1 收尾：分步 + 代码落点已就绪 → 下一步 F2-2 data**
 
 ---
 
@@ -499,3 +548,4 @@ game/scripts/logic/
 | 2026-08-07 | 自动回城/回矿属 Harvest 订单 AI；交货点由 ReceiveResources 查询，非硬编码坐标 |
 | 2026-08-08 | 右键智能：`SmartTarget` + `issue_smart`；混选时能采的采、不能的走目标点；完整 UnitCapability 后置 |
 | 2026-08-09 | F0+F1 验收通过；玩法主线进 F2；野怪/小动物尸体 Geoset 走 geosetvis+Stand snap（与树桩同管线） |
+| 2026-08-09 | F2 拆 7 commit（docs/data/logic×3/present/test）；锁 3 建筑 `hhou`/`halt`/`hbar`；开 `feature/building-system` 分支 |
