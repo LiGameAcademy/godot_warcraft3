@@ -180,9 +180,12 @@ async function main() {
 
   if (doScn) {
     console.log("\n—— 烘焙 .scn（与 GLB 同目录）——");
-    const code = bakeModelScenes({
+    // workers 从 env 读（bootstrap.mjs 透传 WORKERS=2 等）
+    const workers = Number(process.env.WORKERS || process.env.BAKE_WORKERS) || 1;
+    const code = await bakeModelScenes({
       include: includesForBake(opts.include),
       force: opts.force,
+      workers,
       godot: opts.godot,
     });
     if (code !== 0) errors += 1;
