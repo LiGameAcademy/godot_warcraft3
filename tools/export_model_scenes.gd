@@ -5,6 +5,8 @@ extends SceneTree
 ## 用法:
 ##   godot --headless --path . -s res://tools/export_model_scenes.gd
 ##   godot --headless --path . -s res://tools/export_model_scenes.gd -- --include Units/Human/ --force
+##   # 并行分桶：N 个 worker 各跑 --shard N --shard-id K（0..N-1）
+##   godot --headless --path . -s res://tools/export_model_scenes.gd -- --shard 4 --shard-id 2
 ##
 ## 通常由 tools/asset-convert（npm run convert）在转完模型后自动调用。
 
@@ -17,6 +19,8 @@ func _run() -> void:
 	var includes: PackedStringArray = PackedStringArray()
 	var force := false
 	var limit := 0
+	var shard := -1
+	var shard_id := -1
 	var args := OS.get_cmdline_user_args()
 	var i := 0
 	while i < args.size():
@@ -33,6 +37,16 @@ func _run() -> void:
 			limit = int(args[i])
 		elif s.begins_with("--limit="):
 			limit = int(s.substr("--limit=".length()))
+		elif s == "--shard" and i + 1 < args.size():
+			i += 1
+			shard = int(args[i])
+		elif s.begins_with("--shard="):
+			shard = int(s.substr("--shard=".length()))
+		elif s == "--shard-id" and i + 1 < args.size():
+			i += 1
+			shard_id = int(args[i])
+		elif s.begins_with("--shard-id="):
+			shard_id = int(s.substr("--shard-id=".length()))
 		i += 1
 
 	var root_abs := RuntimeAssets.project_abs(RuntimeAssets.CONVERTED_RES_ROOT)
@@ -59,6 +73,10 @@ func _run() -> void:
 		var logical_glb := rel.substr(idx + marker.length())
 		if not includes.is_empty() and not _matches_any_include(logical_glb, includes):
 			continue
+		# Shard 分桶：基于 logical_glb hash % N 决定本 worker 是否处理
+		if shard > 0 and shard_id >= 0:
+			if logical_glb.hash() % shard != shard_id:
+				continue
 		done += 1
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
@@ -91,9 +109,10 @@ func _run() -> void:
 			print("export_model_scenes: progress exported=%d ..." % exported)
 
 	var include_desc := ",".join(includes) if not includes.is_empty() else ""
+	var shard_desc := (" shard=%d/%d" % [shard_id + 1 if shard > 0 else 0, shard]) if shard > 0 else ""
 	print(
-		"export_model_scenes: exported=%d skipped=%d failed=%d include='%s' out=同目录 .scn"
-		% [exported, skipped, failed, include_desc]
+		"export_model_scenes: exported=%d skipped=%d failed=%d include='%s'%s out=同目录 .scn"
+		% [exported, skipped, failed, include_desc, shard_desc]
 	)
 	# 部分模型（DNC/UI 等）headless 加载失败属可预期；有成功导出则视为通过
 	quit(0 if failed == 0 or exported > 0 or skipped > 0 else 1)

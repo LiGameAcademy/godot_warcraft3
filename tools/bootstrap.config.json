@@ -9,17 +9,33 @@
     "path": "C:/Users/Administrator/Desktop/Godot_v4.6.3-stable_win64_console.exe"
   },
   "maps": {
-    "_comment": "要解析的地图列表（map-parse 用）。每条 name=唯一标识 / w3x=相对 wc3.path 的路径 / out=输出目录名（落到 assets/map-parsed/ 下）。",
+    "_comment": "要解析的地图列表（map-parse 用）。每条 name=唯一标识 / w3x=相对 wc3-assets 根目录的路径 / out=输出目录名（落到 assets/map-parsed/ 下）。",
     "items": [
       {
         "name": "LostTemple",
-        "w3x": "Maps/(2)LostTemple.w3x",
+        "w3x": "(4)LostTemple.w3x",
         "out": "losttemple"
       },
       {
         "name": "EchoIsles",
-        "w3x": "Maps/(4)EchoIsles.w3x",
+        "_comment": "TODO: 1.30+ 装 TFT 不含 EchoIsles.w3x（已确认不在 War3.mpq / War3x.mpq）；老李本地有 w3x 请放入 .cache/wc3-assets/ 后去掉 _comment + bootstrap 会自动接",
+        "w3x": "(4)EchoIsles.w3x",
         "out": "echoisles"
+      },
+      {
+        "name": "GnollWood",
+        "w3x": "(6)GnollWood.w3x",
+        "out": "gnollwood"
+      },
+      {
+        "name": "TurtleRock",
+        "w3x": "(4)TurtleRock.w3x",
+        "out": "turtlerock"
+      },
+      {
+        "name": "TwistedMeadows",
+        "w3x": "(4)TwistedMeadows.w3x",
+        "out": "twistedmeadows"
       }
     ]
   },

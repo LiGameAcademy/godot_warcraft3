@@ -161,4 +161,54 @@ node tools/bootstrap.mjs                   # 重新生成
 
 ---
 
-最后更新：2026-08-08
+## 8. eager bake (.scn 一次性烤完)
+
+**为什么需要 eager bake**：
+- `.scn` 是 Godot native PackedScene binary，runtime 加载比 `.glb` 快 **3-5x**
+  - `.scn` 直接 `_get_object_from_buf` 解码
+  - `.glb` 走 `GLTFDocument` 解析 JSON + BIN chunk + 递归 build + 后处理
+- `.scn` 预烘焙 4 件事，runtime 不用再算：
+  1. **Geoset visibility 注入**：从 `*.geosetvis.json` 写 `:visible` 轨到 AnimationPlayer
+  2. **PE2 粒子 prefab**：从 `*.pe2.json` 构 GPUParticles3D 子树
+  3. **WC3 材质修正**：FilterMode → depth_draw_mode（避免半透明建筑透视）
+  4. **ImageTexture 内嵌 + Stand 显隐预 roll**
+
+**当前默认行为**（`m2g` cli）：
+
+| 阶段 | `--scn-only` | `--skip-scn` | 默认 |
+|------|------|------|------|
+| textures | ✗ | ✗ | ✅ |
+| models | ✗ | ✗ | ✅ |
+| scn bake | ✅ | ✗ | ✅ |
+
+`m2g` cli 默认 `doScn=true`（modelsOnly 也跑 bake），所以 `node tools/asset-convert/src/cli.js` 默认就 = MDX → GLB → SCN 一条龙。bootstrap 阶段叫"asset-convert"，但实际含 eager bake。
+
+**bootstrap CLI**：
+- `--no-bake`：m2g 加 `--skip-scn`，asset-convert 只产 GLB（备用场景：手动 bake）
+- `config.skip.bake: true`：同上（配置文件等价）
+
+**Lazy bake 兜底**（`MapModelCache`）：
+- 首次 `instance_glb` 时如果 .scn 缺失 → 走 `GLTFDocument` 慢路径 + 后台 `_lazy_bake_queue` 排队烤 .scn
+- 下次同 path 命中走 PackedScene 快路径
+- eager bake 跑完后 lazy queue 几乎为空（除非 earger 之后又删了 .scn）
+
+**为什么不让 lazy bake 替代 eager bake**：
+- lazy bake 在 cold start 首次 instance 时才烤，单位面板 50+ 模型冷启动会卡（每个 1-10s）
+- eager bake 把 30-50 min 烘焙集中到 bootstrap 阶段，runtime 零成本
+
+**预期时间**（老 PC 满跑）：
+- mpq-extract: 2-3 min（首次），< 1 min（增量）
+- asset-convert + bake: 30-50 min（全量），3-10 min（增量）
+- map-parse: 1-2 min（每张图）
+- slk-export: < 30s
+- 总计: **30-50 min 首次**，**3-10 min 增量**
+
+**完整性检查**（`tools/check-asset-integrity.mjs`）：
+- 检查 6 项：MDX→GLB→SCN 覆盖 / 地图解析 / SLK 导出 / Godot import 残留 / GLB 旁重复 PNG
+- 用法：`node tools/check-asset-integrity.mjs [--md report.md] [--fail]`
+- `--fail` 模式有缺口 exit 1，可接入 pre-commit / CI
+- 当前状态（**bf9fa2f**）：1 个缺口（EchoIsles 缺 w3x 源，等老李补）
+
+---
+
+最后更新：2026-08-09
