@@ -10,6 +10,7 @@ signal move_issued(moved: int, failed: int, goal_wc3: Vector2)
 signal harvest_issued(count: int)
 signal return_issued(count: int)
 signal smart_issued(summary: Dictionary)
+signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
 
 const META_ORDER_QUEUE := "order_queue"
 
@@ -19,18 +20,22 @@ var _crowd_query: UnitCrowdQuery = null
 var _ensure_navigator: Callable = Callable()
 ## Callable(unit: Node3D) -> HarvestController
 var _ensure_harvest: Callable = Callable()
+## Callable(unit: Node3D) -> BuildController（F2-3）
+var _ensure_build: Callable = Callable()
 
 
 func configure(
 	path_query: PathQuery,
 	crowd_query: UnitCrowdQuery,
 	ensure_navigator: Callable,
-	ensure_harvest: Callable = Callable()
+	ensure_harvest: Callable = Callable(),
+	ensure_build: Callable = Callable()
 ) -> void:
 	_path_query = path_query
 	_crowd_query = crowd_query
 	_ensure_navigator = ensure_navigator
 	_ensure_harvest = ensure_harvest
+	_ensure_build = ensure_build
 
 
 func queue_for(unit: Node) -> OrderQueue:
@@ -419,3 +424,36 @@ func _abort_harvest(node: Node3D) -> void:
 	var hc := node.get_node_or_null("HarvestController") as HarvestController
 	if hc != null:
 		hc.abort()
+
+
+## F2-3：选中农民对工地 wc3_xy 发起 BUILD 令。
+## peasant 已在 CommandRouter.filter_peasants 过滤（仅 hpea）。
+## 返回实际开工的 peasant 数。
+func issue_build(
+	peasants: Array,
+	building_id: String,
+	site_wc3: Vector2,
+	source: int = UnitOrder.Source.PANEL
+) -> int:
+	if not _ensure_build.is_valid():
+		return 0
+	if not BuildingCatalog.is_building(building_id):
+		return 0
+	var n: int = 0
+	for node in peasants:
+		var bc: BuildController = _ensure_build.call(node) as BuildController
+		if bc == null:
+			continue
+		var order: UnitOrder = UnitOrder.build(building_id, site_wc3, source)
+		order.target_id = node.get_instance_id() if node != null else 0
+		order.builder = node
+		if bc.start_build(order):
+			n += 1
+	if n > 0:
+		build_issued.emit(n)
+	return n
+
+
+## F2-3：取消指定 peasant 的当前建造（一般用于右键取消或死亡）。
+## 当前简化：Director 直接持有 peasant 引用时可调 peasant 节点的 BuildController.cancel()。
+## 保留本入口为后续中央化取消（多选取消）做准备。
