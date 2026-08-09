@@ -4,19 +4,19 @@ import { fileURLToPath } from "node:url";
 import { convertBlpBatch } from "./convert-blp.js";
 import { convertMdxBatch } from "./convert-mdx.js";
 import { resolveFromPackage } from "./paths.js";
+import { reconcileM2gToolVersion } from "./m2g-tool-version.js";
 import { bakeModelScenes } from "../scripts/bake-model-scenes.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, "../..");
 
 function printHelp() {
   console.log(`用法:
   npm run convert -- [选项]
 
 顺序说明:
-  默认先转换贴图 (BLP→PNG)，再转换模型 (MDX→GLB)，
-  再调用 Godot 将 GLB 烘焙为同目录 .scn（最终运行时优先格式）。
-
+  默认先转换贴图 (BLP→PNG)，再转换模型 (MDX→GLB)，再调用 Godot 将 GLB 烘焙为同目录 .scn（最终运行时优先格式）。
 选项:
   --in <path>           解包资产根目录（默认: ../../.cache/wc3-assets）
   --out <path>          转换输出根目录（默认: ../../assets/asset-converted）
@@ -156,6 +156,19 @@ async function main() {
 
   let errors = 0;
 
+  // P3-9：m2g 工具代码变更自动 force 重烤
+  // 修 m2g 工具一行业务逻辑后，老 PC 跑 bootstrap 不会漏改、产出过期 .glb
+  const toolVer = reconcileM2gToolVersion(REPO_ROOT, {
+    hashFile: path.join(REPO_ROOT, ".cache", "m2g-tool-hash"),
+    force: opts.force,
+  });
+  if (toolVer.force && !opts.force) {
+    console.log(`[tool] 工具变更 → 自动 force=true（${toolVer.reason}）`);
+  } else if (toolVer.hash) {
+    console.log(`[tool] ${toolVer.reason}`);
+  }
+  const modelForce = toolVer.force || opts.force;
+
   if (doTextures) {
     const r = convertBlpBatch({
       inDir,
@@ -171,7 +184,7 @@ async function main() {
     const r = await convertMdxBatch({
       inDir,
       outDir,
-      force: opts.force,
+      force: modelForce,
       include: opts.include,
       exclude: opts.exclude,
     });
