@@ -22,6 +22,7 @@ import {
   normalizeLogicalPath,
 } from "./paths.js";
 import { walkFiles } from "./walk.js";
+import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
 
 const MODEL_SCALE = 0.01;
 
@@ -197,7 +198,6 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
 
   const pe2Logical = mdxLogicalToPe2(logicalPath);
   const dest = path.join(outDir, ...pe2Logical.split("/"));
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
   const payload = {
     version: 2,
     source: normalizeLogicalPath(logicalPath),
@@ -207,7 +207,8 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     })),
     emitters,
   };
-  fs.writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  // P3-10：原子写盘（.tmp → rename）—— 中途崩溃不留半成品 .pe2.json
+  atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
 }
 
@@ -267,13 +268,13 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
 
   const visLogical = mdxLogicalToGeosetVis(logicalPath);
   const dest = path.join(outDir, ...visLogical.split("/"));
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
   const payload = {
     version: 1,
     source: normalizeLogicalPath(logicalPath),
     sequences: sequencesOut,
   };
-  fs.writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  // P3-10：原子写盘
+  atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
 }
 
@@ -901,10 +902,31 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 
   const glbLogical = mdxLogicalToGlb(logicalPath);
   const dest = path.join(outDir, ...glbLogical.split("/"));
+  const pe2Dest = path.join(outDir, ...mdxLogicalToPe2(logicalPath).split("/"));
+  const geosetVisDest = path.join(
+    outDir,
+    ...mdxLogicalToGeosetVis(logicalPath).split("/"),
+  );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  await new NodeIO().write(dest, document);
-  writePe2Sidecar(model, logicalPath, inDir, outDir);
-  writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
+
+  // P3-10：原子写盘
+  // 旧实现：NodeIO.write(PE2) → writePe2Sidecar(PE2) → writeGeosetVisSidecar。
+  // 中途崩溃 → GLB 已写但 pe2/geosetvis 缺失，下次 cache 看到 .glb 就 skip，
+  // runtime 走 JSON fallback 但 GLB 也没了（或半成品解析失败）。
+  // 新实现：GLB 写 .tmp，全部成功后再 rename；任何 throw → 清掉所有可能残留。
+  const glbTmp = dest + ".tmp";
+  try {
+    await new NodeIO().write(glbTmp, document);
+    writePe2Sidecar(model, logicalPath, inDir, outDir);
+    writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
+    fs.renameSync(glbTmp, dest);
+  } catch (err) {
+    try { fs.unlinkSync(glbTmp); } catch { /* tmp 不存在或不可删，忽略 */ }
+    try { fs.unlinkSync(dest); } catch { /* rename 之前的 dest 不存在，忽略 */ }
+    try { fs.unlinkSync(pe2Dest); } catch { /* 同上 */ }
+    try { fs.unlinkSync(geosetVisDest); } catch { /* 同上 */ }
+    throw err;
+  }
   return dest;
 }
 
