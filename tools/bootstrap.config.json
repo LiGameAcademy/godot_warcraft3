@@ -17,12 +17,6 @@
         "out": "losttemple"
       },
       {
-        "name": "EchoIsles",
-        "_comment": "TODO: 1.30+ 装 TFT 不含 EchoIsles.w3x（已确认不在 War3.mpq / War3x.mpq）；老李本地有 w3x 请放入 .cache/wc3-assets/ 后去掉 _comment + bootstrap 会自动接",
-        "w3x": "(4)EchoIsles.w3x",
-        "out": "echoisles"
-      },
-      {
         "name": "GnollWood",
         "w3x": "(6)GnollWood.w3x",
         "out": "gnollwood"

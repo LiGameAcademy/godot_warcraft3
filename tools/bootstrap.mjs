@@ -42,7 +42,7 @@ import {
   mkdirSync,
   writeFileSync,
 } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -363,18 +363,30 @@ function main() {
   }
 
   // --- 7. map-parse ---
+  // maps.items[].w3x 相对 .cache/wc3-assets/（MPQ 解出的地图，与 ASSET_LANES 中间态一致）
   if (!skipParse) {
     log("--- map-parse ---");
     const items = config.maps?.items || [];
+    const cacheMapsRoot = join(REPO_ROOT, ".cache", "wc3-assets");
     if (items.length === 0) {
       log("  (no maps in config.maps.items, skip)");
     } else {
       for (const m of items) {
-        log(`  parsing ${m.name} (${m.w3x})`);
-        run("node", [
+        const absMap = isAbsolute(m.w3x)
+          ? m.w3x
+          : join(cacheMapsRoot, m.w3x);
+        if (!existsSync(absMap)) {
+          console.error(`❌ map not found: ${absMap}`);
+          console.error(`   (config.maps item: ${m.name} / ${m.w3x})`);
+          process.exit(1);
+        }
+        log(`  parsing ${m.name} (${absMap})`);
+        const parseArgs = [
           "tools/map-parse/src/cli.js",
-          m.w3x, m.out,
-        ], { shell: false });
+          "--map", absMap,
+          "--force",
+        ];
+        run("node", parseArgs, { shell: false });
       }
     }
   } else {
