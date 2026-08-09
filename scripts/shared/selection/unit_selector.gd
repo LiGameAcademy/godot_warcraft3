@@ -36,8 +36,10 @@ const BUILDING_RAY_PENALTY := 1.75
 signal selection_changed(primary: Node3D, selected: Array)
 
 @export var enabled: bool = true
-## ≥0 时只可选该 owner；-1 不限
+## ≥0 时只可选该 owner；-1 不限（点选仍可看中立金矿等）
 @export var owner_filter: int = -1
+## 框选（多选）仅保留该玩家单位/建筑；-1 不限。对齐原作：敌对/中立不可框选。
+@export var marquee_owner: int = -1
 @export var allow_buildings: bool = true
 @export var allow_units: bool = true
 ## 输入层 CanvasLayer.layer；须低于 GameHud（默认 10）
@@ -384,6 +386,14 @@ func _select_in_rect(rect: Rect2) -> void:
 			var box := _screen_aabb(n)
 			if box.has_area() and box.intersects(rect):
 				hits.append(n)
+	# 框选：只收己方（中立金矿/敌对野怪不可多选）
+	if marquee_owner >= 0:
+		var owned: Array[Node3D] = []
+		for n in hits:
+			var ud: Dictionary = n.get_meta("unit_data", {})
+			if int(ud.get("owner", -1)) == marquee_owner:
+				owned.append(n)
+		hits = owned
 	# WC3：框选同时命中单位+建筑 → 只留单位；纯建筑框仍可选中建筑。
 	_set_selection(_prefer_units_over_buildings(hits))
 

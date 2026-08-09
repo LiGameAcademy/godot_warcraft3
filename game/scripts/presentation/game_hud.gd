@@ -25,6 +25,7 @@ signal minimap_clicked(uv: Vector2)
 ## slot → action_id（空=无动作）
 var _slot_action_ids: PackedStringArray = PackedStringArray()
 var _icon_cache: Dictionary = {} ## path → Texture2D
+var _game_minimap: Control = null
 
 
 func _ready() -> void:
@@ -36,6 +37,40 @@ func _ready() -> void:
 	set_unit_info("—", 0, 0)
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
+	if not map_dir.is_empty():
+		setup_minimap_map(map_dir)
+
+
+## Director：注入 heightfield / 单位层 / 相机，并加载 war3mapMap。
+func configure_minimap(
+	map_directory: String,
+	heightfield: Wc3Heightfield,
+	unit_host: Node,
+	camera: Camera3D,
+	camera_rig: Node3D,
+	local_player: int = 0
+) -> void:
+	if not map_directory.is_empty():
+		map_dir = map_directory
+	_ensure_game_minimap()
+	if _game_minimap == null:
+		return
+	_game_minimap.configure(heightfield, unit_host, camera, camera_rig, local_player)
+	setup_minimap_map(map_dir)
+
+
+func setup_minimap_map(map_directory: String) -> bool:
+	_ensure_game_minimap()
+	if _game_minimap == null:
+		return false
+	return _game_minimap.load_from_map_dir(map_directory)
+
+
+func _ensure_game_minimap() -> void:
+	if _game_minimap != null and is_instance_valid(_game_minimap):
+		return
+	if _minimap != null and _minimap.has_method("configure") and _minimap.has_signal("clicked"):
+		_game_minimap = _minimap
 
 
 func _apply_bottom_height() -> void:
@@ -145,8 +180,10 @@ func set_portrait_texture(_tex: Texture2D) -> void:
 	pass
 
 
-func set_minimap_texture(_tex: Texture2D) -> void:
-	pass
+func set_minimap_texture(tex: Texture2D) -> void:
+	_ensure_game_minimap()
+	if _game_minimap != null:
+		_game_minimap.set_background_texture(tex)
 
 
 func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
@@ -234,10 +271,20 @@ func _on_command_pressed(slot: int) -> void:
 
 
 func _wire_minimap_input() -> void:
+	_ensure_game_minimap()
+	if _game_minimap != null:
+		if not _game_minimap.clicked.is_connected(_on_game_minimap_clicked):
+			_game_minimap.clicked.connect(_on_game_minimap_clicked)
+		return
+	# 兼容旧 ColorRect 占位
 	if _minimap == null:
 		return
 	if not _minimap.gui_input.is_connected(_on_minimap_gui_input):
 		_minimap.gui_input.connect(_on_minimap_gui_input)
+
+
+func _on_game_minimap_clicked(uv: Vector2) -> void:
+	minimap_clicked.emit(uv)
 
 
 func _on_minimap_gui_input(event: InputEvent) -> void:

@@ -281,7 +281,10 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 			BuildingVisualScr.apply_idle(_cache, node, type_id)
 			_apply_building_ground(node, type_id, hf)
 		else:
+			# Stand + geosetvis 定格：藏尸体/无关 Geoset（羊、野猪、野怪等同建筑/树）
 			_cache.autoplay_stand(node)
+			if _cache.has_method("snap_stand_geoset_visibility"):
+				_cache.call("snap_stand_geoset_visibility", node)
 			if not glb.is_empty():
 				_Pe2.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)

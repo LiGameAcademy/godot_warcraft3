@@ -207,7 +207,9 @@ func _setup_selector() -> void:
 	if cam == null or layer == null:
 		push_warning("GameDirector: UnitSelector.setup 跳过（camera=%s layer=%s）" % [cam, layer])
 		return
+	# 点选：中立金矿等仍可选；框选：仅己方（不可多选敌对/中立）
 	unit_selector.set("owner_filter", -1)
+	unit_selector.set("marquee_owner", local_player)
 	if unit_selector.has_method("setup"):
 		unit_selector.call("setup", cam, layer, null)
 	# 原作：树不可左键选中；伐木只走右键智能命令
@@ -295,6 +297,7 @@ func _on_map_loaded() -> void:
 	_bootstrap_melee()
 	_setup_selector()
 	_setup_pathing()
+	_setup_minimap()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -327,6 +330,22 @@ func _setup_pathing() -> void:
 	)
 	_setup_tree_registry()
 	_ensure_path_debug()
+
+
+func _setup_minimap() -> void:
+	if game_hud == null or map_root == null or rts_camera == null:
+		return
+	if not game_hud.has_method("configure_minimap"):
+		return
+	var cam := rts_camera.get_camera()
+	game_hud.configure_minimap(
+		map_dir,
+		_heightfield,
+		map_root.get_unit_layer(),
+		cam,
+		rts_camera,
+		local_player
+	)
 
 
 func _setup_tree_registry() -> void:
@@ -1115,13 +1134,19 @@ func _debug_apply_hall_phase(phase: int) -> bool:
 func _on_minimap_clicked(uv: Vector2) -> void:
 	if rts_camera == null:
 		return
-	var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
-	# 小地图顶 = 北 = 较大 WC3.Y
-	var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
-	var world := Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
+	var world: Vector3
+	if _heightfield != null and _heightfield.is_valid():
+		world = MapMinimapUtils.minimap_uv_to_world(uv, _heightfield, 0.0)
+	else:
+		var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
+		var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
+		world = Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
 	rts_camera.focus_on_position(world)
 	if game_hud:
-		game_hud.set_status("镜头 → (%.0f, %.0f)" % [wx, wy])
+		var inv := 1.0 / Wc3Coords.WORLD_SCALE
+		game_hud.set_status(
+			"镜头 → (%.0f, %.0f)" % [world.x * inv, -world.z * inv]
+		)
 
 
 func _on_command_pressed(slot: int) -> void:

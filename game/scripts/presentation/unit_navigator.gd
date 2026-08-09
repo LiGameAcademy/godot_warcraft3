@@ -15,9 +15,9 @@ signal locomotion_changed(moving: bool)
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
-@export var arrive_eps_wc3: float = 8.0
+@export var arrive_eps_wc3: float = 10.0
 ## 最终路点（常在不可走边缘）放宽阈值，避免贴墙永远差几单位到不了。
-@export var arrive_eps_last_wc3: float = 18.0
+@export var arrive_eps_last_wc3: float = 22.0
 @export var face_move_dir: bool = true
 ## WC3 UnitData.turnRate：圈/秒。0.6 ≈ 农民；角速度 = turn_rate * TAU。
 @export var turn_rate: float = 0.5
@@ -285,7 +285,9 @@ func _with_separation(
 	dist_to_target: float = INF
 ) -> Vector2:
 	var next := desired_wc3
-	var near_last := is_last and dist_to_target <= arrive_eps_last_wc3 * 3.0
+	# 接近末点：关墙推并减弱 soft 分离，减轻「推开↔追目标」微抖
+	var near_last := is_last and dist_to_target <= arrive_eps_last_wc3 * 4.0
+	var sep_scale := 0.35 if near_last else 1.0
 	if not near_last and _query != null and _query.has_method("compute_wall_push_velocity"):
 		var wall_vel: Vector2 = _query.call("compute_wall_push_velocity", cur_wc3, 2)
 		next += wall_vel * delta
@@ -300,7 +302,7 @@ func _with_separation(
 				neighbors,
 				body.get_instance_id()
 			)
-			next += push_vel * delta
+			next += push_vel * delta * sep_scale
 	return _clamp_walkable(next, desired_wc3, cur_wc3)
 
 

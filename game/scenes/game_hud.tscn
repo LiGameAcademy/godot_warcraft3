@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://jswtl3uxmvo7"]
 
 [ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
+[ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://game/scripts/presentation/game_minimap.gd" id="2_minimap"]
 
 [node name="GameHud" type="CanvasLayer" unique_id=1807320661]
 layer = 10
@@ -90,13 +91,13 @@ custom_minimum_size = Vector2(148, 0)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Minimap" type="ColorRect" parent="Root/MarginContainer/MinimapPanel" unique_id=1263699207]
+[node name="Minimap" type="Control" parent="Root/MarginContainer/MinimapPanel" unique_id=1263699207]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(136, 136)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-color = Color(0.18, 0.22, 0.2, 1)
+script = ExtResource("2_minimap")
 
 [node name="MarginContainer2" type="MarginContainer" parent="Root" unique_id=325332713]
 custom_minimum_size = Vector2(600, 150)
