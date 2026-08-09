@@ -222,3 +222,13 @@
   同 `*.geosetvis.json` + AnimationPlayer `:visible`；加载后先 snap 到 Stand 姿态。  
   旧转换物无 geosetvis 时需 `node src/cli.js --models-only --force --include "Units/**"` 后 bake。  
   验收 Peasant：`Stand` 仅身体；`Stand_Gold`/`Stand_Lumber` 出袋/木；`Death` 出尸体。
+
+- [x] **树桩 Stand 藏 / Death 显**（2026-08-08）  
+  `MapDoodadLayer.ensure_promoted` → `snap_stand_geoset_visibility`；禁止 reveal_all。  
+  `MapModelCache`：有 Stand 即定格（勿因「非骨骼 Stand」跳过）；注入名大小写不敏感。
+
+- [x] **野怪 / 小动物尸体 Geoset**（2026-08-09）  
+  Present：`MapUnitLayer` 放置后 `snap_stand_geoset_visibility`。  
+  资产：`Units/Critters/**` + Echo Isles 常用 Creeps 已补 `geosetvis`；其余 Creeps 按需 `--include`。  
+  验收：开局羊/猪/豺狼人等脚下无尸体叠影；Death 后尸体片可见。  
+  详见 [GAMEPLAY_VERTICAL.md §5.1](../game/GAMEPLAY_VERTICAL.md)。

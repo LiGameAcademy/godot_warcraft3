@@ -3,7 +3,8 @@
 > 目标：按**真实开局游玩顺序**，在 Echo Isles 上跑通「采矿伐木 → 基建 → 英雄 → 兵营产兵 → 科技分支 → 大法师技能」闭环。  
 > 范围：**仅人族 Melee 最小集**；不做完整科技树、不做多族、不做联机。  
 > 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [HUD.md](HUD.md)  
-> 最后更新：2026-08-05
+> 最后更新：2026-08-09  
+> **当前进度：F0 + F1 已落地 → 下一步 F2 建造**
 
 ---
 
@@ -14,22 +15,25 @@
 | 游戏壳 + Echo Isles | `game/scenes/game_main.tscn` | F6 跑当前场景 |
 | Melee 开局 | `melee_bootstrap.gd` + `GameSession` + `PlayerStock` | 主城/农民/金木/人口已有 |
 | 选中 / 移动 / Stop | `UnitSelector` + `PathQuery` + `UnitNavigator` | 阶段 D 够用 |
+| 命令层 | `CommandRouter` + `UnitOrder` + `SmartTarget` | 右键智能按能力匹配 |
+| 采集金/木 | `HarvestController` + `CarrySlot` + `TreeRegistry` | F1 闭环；智能送回主城 |
 | 资源 HUD | `GameHud.set_resources` / `bind_stock` | 金木人口可刷 |
-| 命令格占位 | `GameHud.command_pressed` | 主城已有调试标签 |
-| 建造判定雏形 | `unit_placement_rules.gd`（编辑器侧） | 游戏侧需抽/复用 |
+| 命令格 | `CommandCard` + 面板交付/采集/移动 | 主城仍有调试标签 |
+| 建造判定雏形 | `unit_placement_rules.gd`（编辑器侧） | **游戏侧需抽/复用 → F2** |
 | 数值权威 | `UnitBalanceDef` / `UnitDataDef` / `UnitUiDef` / `UnitAbilitiesDef` | 造价、人口、技能表 |
-| 金矿类型 | `ngol`（Bootstrap 已识别） | 地图上已有金矿实体 |
+| 金矿 / 可伐树 | `ngol` · `TreeRegistry` + doodad promote | 树桩 geosetvis 已对齐 |
 
-**明确缺口（本竖切要补）：** 单位命令状态机、采集、建造队列、训练队列、科技树/需求、防御姿态、技能施放。
+**下一步缺口：** 建造队列（F2）→ 训练（F3–F4）→ 科技/技能。  
+**Present 并行：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `snap_stand_geoset_visibility`，见 §5）。
 
 ---
 
 ## 1. 竖切总览
 
 ```text
-F0  命令与单位运行时骨架     Order / 队列 / Session 单位权威
-F1  采集金币 + 采集木材      农民 ↔ 金矿 / 树木
-F2  建造祭坛、农场、兵营     农民建造 + 占位 + 完工
+F0  命令与单位运行时骨架     ✅ Order / Smart / Router
+F1  采集金币 + 采集木材      ✅ 农民 ↔ 金矿 / 树木 / 送回
+F2  建造祭坛、农场、兵营     ← 下一步：农民建造 + 占位 + 完工
 F3  召唤大法师               祭坛训练英雄
 F4  训练步兵                 兵营产 hfoo
 F5  建造伐木场               木材回收点（效率/路径）
@@ -40,7 +44,7 @@ F9  步兵切换顶盾             Adef 开/关
 F10 大法师技能               先原生子集，再评估 AbilitySystem 插件
 ```
 
-编号即推荐实现顺序；**F0 是 F1–F10 的前置公共基建**，不要跳过。
+编号即推荐实现顺序；**F0/F1 已完成，主线进入 F2**。
 
 游玩验收剧本（人工点一遍）：
 
@@ -405,13 +409,30 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 | 能力 | 首次需要 | 说明 |
 |------|----------|------|
-| 智能右键 | F1 | 矿/树/地面 |
+| 智能右键 | F1 ✅ | `SmartTarget` → `issue_smart`；矿/树/交货/地面 |
 | 建造预览幽灵 | F2 | 绿/红合法性 |
 | 训练/研究队列 UI | F3 | 命令卡 + Info 进度 |
 | 需求检查（建筑/科技） | F6/F8 | `Requirements` 查询 |
 | Rally point | F4 P1 | 右键设集结点 |
-| 死亡与尸体 | 不阻塞竖切 | 可后置 |
+| 单位 Geoset 显隐 | Present 并行 | Stand 藏尸体；Death 显尸体（同树桩管线） |
+| 死亡与尸体逻辑 | 战斗前 | 玩法层可后置；**Present 须先藏好** |
 | 攻击与伤害 | F10 前可无 | 暴风雪可先「只特效+假数字」 |
+
+### 5.1 野怪 / 小动物尸体 Geoset（Present）
+
+WC3 单位 MDX 常把**活体 + 尸体 + 武器变体**放在同一模型，用 GeosetAnim 在 Stand 隐藏无关片。Godot 丢蒙皮 scale 轨后须：
+
+1. convert 写 `*.geosetvis.json`（Sequence 作用域 alpha）  
+2. `MapModelCache` 注入 AnimationPlayer `Geoset_*:visible` 并 **Stand 定格**  
+3. `MapUnitLayer` 放置非建筑时：`autoplay_stand` + `snap_stand_geoset_visibility`（禁止 `reveal_all`）
+
+| 资产范围 | 说明 |
+|----------|------|
+| `Units/Critters/**` | 羊/猪/浣熊等；缺旁路时 `--models-only --force --include "Units/Critters/**"` |
+| Echo Isles 常见 Creeps | Gnoll / Kobold / Murloc / Ogre / ForestTroll 等已补转示例 |
+| 验收 | 开局野怪与小动物**无脚下尸体叠影**；播 Death 后尸体 Geoset 可见 |
+
+不阻塞 F2；与建造管线可并行。
 
 ---
 
@@ -428,15 +449,16 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 ## 7. 建议迭代切分（可多次 PR）
 
-| 迭代 | 交付 | 约当步骤 |
-|------|------|----------|
-| G1 | Order 骨架 + 智能右键空壳 | F0 |
-| G2 | 采矿 + 伐木 + 交货 | F1 |
-| G3 | 建造三件套 + Farm 人口 | F2 |
-| G4 | 祭坛训英雄 + 兵营训步兵 | F3–F4 |
-| G5 | Mill + Blacksmith + 火枪手 | F5–F6 |
-| G6 | Keep 升级 + Defend 研究/切换 | F7–F9 |
-| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 |
+| 迭代 | 交付 | 约当步骤 | 状态 |
+|------|------|----------|------|
+| G1 | Order 骨架 + 智能右键 | F0 | ✅ |
+| G2 | 采矿 + 伐木 + 交货 + CarrySlot | F1 | ✅ |
+| G2.5 | 野怪/小动物 Stand 藏尸体 Geoset | Present | ✅ 代码+Echo 资产；其余 Creeps 按需补转 |
+| G3 | 建造三件套 + Farm 人口 | F2 | ← 玩法主线下一步 |
+| G4 | 祭坛训英雄 + 兵营训步兵 | F3–F4 | |
+| G5 | Mill + Blacksmith + 火枪手 | F5–F6 | |
+| G6 | Keep 升级 + Defend 研究/切换 | F7–F9 | |
+| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 | |
 
 每迭代验收以 §1 剧本对应条目为准；合并前 F6 跑 `game_main` 不破现有移动。
 
@@ -476,3 +498,4 @@ game/scripts/logic/
 | 2026-08-07 | 固定运金走廊：端点+路点只算一次；采矿幽灵模式互不挡路；进矿只隐藏、出矿瞬移统一出口 |
 | 2026-08-07 | 自动回城/回矿属 Harvest 订单 AI；交货点由 ReceiveResources 查询，非硬编码坐标 |
 | 2026-08-08 | 右键智能：`SmartTarget` + `issue_smart`；混选时能采的采、不能的走目标点；完整 UnitCapability 后置 |
+| 2026-08-09 | F0+F1 验收通过；玩法主线进 F2；野怪/小动物尸体 Geoset 走 geosetvis+Stand snap（与树桩同管线） |
