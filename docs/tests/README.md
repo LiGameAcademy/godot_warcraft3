@@ -49,6 +49,7 @@ godot --headless --path . -s res://tests/unit/selftest_def_store_cliff.gd
 godot --headless --path . -s res://tests/unit/selftest_cliff_trans_catalog.gd
 godot --headless --path . -s res://tests/water/selftest_shoreline.gd
 godot --headless --path . -s res://tests/unit/selftest_building_catalog.gd
+godot --headless --path . -s res://tests/unit/selftest_build_flow.gd
 ```
 
 > 注：`.claude/settings.json` 已允许 `Bash(godot --headless --path . -s res://tests/unit/selftest_ramp_logic.gd)`。
@@ -58,7 +59,7 @@ godot --headless --path . -s res://tests/unit/selftest_building_catalog.gd
 | 区域 | 覆盖 |
 |------|------|
 | Data | `selftest_map_data.gd`（heightfield JSON 往返） |
-| Catalog | `selftest_cliff_trans_catalog.gd` / `selftest_def_store_cliff.gd` / `selftest_building_catalog.gd`（F2 建造管线）|
+| Catalog | `selftest_cliff_trans_catalog.gd` / `selftest_def_store_cliff.gd` / `selftest_building_catalog.gd`（F2 建筑数据）/ `selftest_build_flow.gd`（F2 资源/退款/流程数据）|
 | Logic - Terrain | `selftest_terrain_logic.gd` / `selftest_ground_mesh.gd` / `selftest_paint_ground_rebuild.gd` |
 | Logic - Cliff | `selftest_cliff_variants.gd` / `selftest_cliff_level3.gd` / `selftest_cliff_ground_tex.gd` |
 | Logic - Ramp | `selftest_ramp_data.gd` / `selftest_ramp_logic.gd` / `selftest_ramp_present.gd` |
