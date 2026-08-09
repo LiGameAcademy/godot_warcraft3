@@ -41,6 +41,8 @@ tools/mpq-extract/vendor/stormlib/**
 !tools/mpq-extract/vendor/stormlib/.gitkeep
 tools/mpq-extract/tmp/
 tools/asset-convert/tmp/
+# m2g 跑 atomic write smoke test 留的 tmp 验证文件（不应入库）
+tools/asset-convert/tmp-validate*
 tools/map-parse/tmp/
 # reconvert-additive-geosets 扫描缓存（本地生成）
 tools/asset-convert/scripts/_additive_geoset_hits.json
