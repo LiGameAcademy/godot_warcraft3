@@ -91,6 +91,7 @@ docs/design/
 1. **确认位置**——已有子目录用现有的；新专题新建 `design/<topic>/`
 2. **README 必填**——每个子目录有 README.md 总览 + 当前状态
 3. **cross-link 风格**——优先用**当前文件目录相对**；跨级用 `../`
-4. **死链即 TODO**——指向不存在文件的 link 在 `roadmap/TODO.md` "死链清单" 段记录
+4. **死链即 TODO**——指向不存在文件的 link 在 [roadmap/TODO.md "死链清单" 段](../roadmap/TODO.md) 记录
+5. **CI 验证**——提交前跑一遍 `node tools/check-docs-links.mjs`，零死链再 commit
 
 最后更新：2026-08-10

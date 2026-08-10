@@ -397,9 +397,8 @@ MapLoader._load_all
 
 - [README.md](README.md) —— present 总览
 - [Z_ORDER.md](Z_ORDER.md) —— 渲染顺序 + 几何策略
-- [MAP_LOADER.md](../../present/MAP_LOADER.md) —— `MapLoader` 编排
-- [MAP_BUILD_CONTEXT.md](../../present/MAP_BUILD_CONTEXT.md) —— ctx 数据结构
-- [PRESENT_UTILS.md](../../present/PRESENT_UTILS.md) —— 工具类
+- [LAYERS.md §8](LAYERS.md) —— `MapLoader` 编排（关键调用链总览）
+- [LAYERS.md §0](LAYERS.md) —— ctx 数据结构 + 工具类
 - [hivewe/WATER_DEEP_ANALYSIS.md §5](../hivewe/WATER_DEEP_ANALYSIS.md) —— water/foam shader 对照
 - [hivewe/RAMP.md §5](../hivewe/RAMP.md) —— HivEWE 入口判定
 - [architecture/LAYERED_ARCHITECTURE.md §7](../../architecture/LAYERED_ARCHITECTURE.md) —— present 边界

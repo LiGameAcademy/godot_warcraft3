@@ -34,7 +34,7 @@ RuntimeAssets / Wc3*Catalog / Wc3*Logic  → Map*Layer → 场景
 
 ### 阶段 1：解包（MPQ → 原始资产）
 
-工具：[`tools/mpq-extract/`](../../../tools/mpq-extract/)
+工具：[`tools/mpq-extract/`](../../tools/mpq-extract/)
 
 ```bash
 cd tools/mpq-extract
@@ -67,7 +67,7 @@ npm run extract -- --game-dir "C:/definitely-not-wc3"
 
 ### 阶段 2：转换贴图 + 模型（BLP/MDX → PNG/GLB）
 
-工具：[`tools/asset-convert/`](../../../tools/asset-convert/)
+工具：[`tools/asset-convert/`](../../tools/asset-convert/)
 
 ```bash
 cd tools/asset-convert
@@ -101,7 +101,7 @@ npm run convert:models --
 
 ### 阶段 3：SLK 表导出
 
-工具：[`tools/slk-export/`](../../../tools/slk-export/)
+工具：[`tools/slk-export/`](../../tools/slk-export/)
 
 ```bash
 cd tools/slk-export
@@ -150,7 +150,7 @@ node src/cli.js --include "Units/**" --overwrite
 
 ### 阶段 4：地图解析
 
-工具：[`tools/map-parse/`](../../../tools/map-parse/)
+工具：[`tools/map-parse/`](../../tools/map-parse/)
 
 ```bash
 # 先确保 tools/mpq-extract 装好（依赖 StormLib）
@@ -179,7 +179,7 @@ npm run parse -- --raw
 
 ### 阶段 5：编辑器资产同步
 
-工具：[`tools/sync-editor-assets.mjs`](../../../tools/sync-editor-assets.mjs)
+工具：[`tools/sync-editor-assets.mjs`](../../tools/sync-editor-assets.mjs)
 
 ```bash
 node tools/sync-editor-assets.mjs
@@ -190,7 +190,7 @@ node tools/sync-editor-assets.mjs
 
 ### 阶段 6：运行时解析（Autoload）
 
-实现：[`addons/asset_provider/asset_provider.gd`](../../../addons/asset_provider/asset_provider.gd)（Autoload `AssetProvider`）
+实现：[`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd)（Autoload `AssetProvider`）
 
 ```gdscript
 # 推荐：经 RuntimeAssets（地图代码统一入口）
@@ -273,8 +273,8 @@ godot --path . -e
 - 改贴图 / 模型转换 → `tools/asset-convert/src/`
 - 改表解析 → `tools/slk-export/src/cli.js`
 - 改地图解析 → `tools/map-parse/src/`
-- 改路径解析 → [`addons/asset_provider/asset_provider.gd`](../../../addons/asset_provider/asset_provider.gd)
-- 改加载顺序 / 开关 → [`scripts/map/presentation/map_loader.gd`](../../map/presentation/map_loader.gd)
+- 改路径解析 → [`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd)
+- 改加载顺序 / 开关 → [`scripts/map/presentation/map_loader.gd`](../../scripts/map/presentation/map_loader.gd)
 
 ## 6. 后续（未实现）
 

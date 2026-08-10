@@ -158,5 +158,5 @@ size 8  → 半径 7
 | 笔刷数据改写 | `editor/scripts/map_document.gd` |
 | 撤销/重做 | [`editor/scripts/commands/`](COMMANDS.md) |
 | 重建路径 | `editor/scripts/editor.gd` (`_on_brush_rebuild`) |
-| 笔刷 UI（尺寸/形状） | [`editor/scripts/ui/tool_palette_window.gd`](UI.md) |
+| 笔刷 UI（尺寸/形状） | [`editor/ui/tool_palette_window.gd`](UI.md) |
 | 笔刷操作手感 | `editor/scripts/editor.gd`（_process / 拾取） |

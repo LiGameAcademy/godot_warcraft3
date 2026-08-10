@@ -2,7 +2,7 @@
 
 > 编辑器 UI 组件目录：menu_bar / toolbar / tool_palette / new_map_dialog / tile_palette。
 >
-> 全部位于 [`editor/scripts/ui/`](../../../editor/scripts/ui/)。
+> 全部位于 [`editor/ui/`](../../../editor/ui/)。
 > 国际化：[I18N.md](I18N.md)。
 
 ## 1. 总览
@@ -34,7 +34,7 @@ editor_main.tscn
 
 ## 3. `MenuBar`（顶栏菜单）
 
-**布局**：[`menu_bar.tscn`](../../../editor/scripts/ui/menu_bar.tscn)
+**布局**：[`menu_bar.tscn`](../../../editor/ui/menu_bar.tscn)
 
 **经典 World Editor 顶栏**（File / Edit / View / Window）。
 
@@ -69,13 +69,13 @@ func _on_locale_changed(_locale: String) -> void:
 
 ## 4. `Toolbar`（工具栏）
 
-**布局**：[`toolbar.tscn`](../../../editor/scripts/ui/toolbar.tscn)
+**布局**：[`toolbar.tscn`](../../../editor/ui/toolbar.tscn)
 
 快捷按钮（撤销/重做/视图切换等）。较小，功能可由 `MenuBar` 替代。
 
 ## 5. `ToolPaletteWindow`（工具面板浮窗）
 
-**布局**：[`tool_palette_window.tscn`](../../../editor/scripts/ui/tool_palette_window.tscn)（最大 UI 组件，~24K 字节）
+**布局**：[`tool_palette_window.tscn`](../../../editor/ui/tool_palette_window.tscn)（最大 UI 组件，~24K 字节）
 
 **职责**：
 - 地表贴图选择（按 tileset 分组）
@@ -114,7 +114,7 @@ tool_palette.cliff_settings_changed.connect(_on_cliff_settings)
 
 ## 6. `NewMapDialog`（新建地图对话框）
 
-**布局**：[`new_map_dialog.tscn`](../../../editor/scripts/ui/new_map_dialog.tscn)
+**布局**：[`new_map_dialog.tscn`](../../../editor/ui/new_map_dialog.tscn)
 
 **字段**：
 
@@ -129,7 +129,7 @@ tool_palette.cliff_settings_changed.connect(_on_cliff_settings)
 
 ## 7. `TilePalette`（地表贴图调色板）
 
-**布局**：[`tile_palette.tscn`](../../../editor/scripts/ui/tile_palette.tscn)
+**布局**：[`tile_palette.tscn`](../../../editor/ui/tile_palette.tscn)
 
 按地形集字母分页（`L` Lordaeron / `A` Ashenvale / `N` Northrend / `B` Barrens / `C` Cityscape / `D` Dalaran / `F` Felwood / `G` Icecrown / `I` Sunwell 等）。
 
@@ -147,7 +147,7 @@ signal tile_selected(tile_id: String)
 
 ## 8. `WorldEditData`（WE 配置解析）
 
-实现：[`world_edit_data.gd`](../../../editor/scripts/ui/world_edit_data.gd)
+实现：[`world_edit_data.gd`](../../../editor/ui/world_edit_data.gd)
 
 **作用**：解析 `WorldEditData.txt`（`assets/asset-converted/UI/` 或 `.cache/wc3-assets/UI/`）。
 
@@ -167,7 +167,7 @@ signal tile_selected(tile_id: String)
 
 ## 9. `WorldEditStrings`（WE 字符串解析）
 
-实现：[`world_edit_strings.gd`](../../../editor/scripts/ui/world_edit_strings.gd)
+实现：[`world_edit_strings.gd`](../../../editor/ui/world_edit_strings.gd)
 
 **作用**：解析 `WorldEditStrings.txt`，提供 `WESTRING_*` 翻译覆盖。
 
@@ -175,7 +175,7 @@ signal tile_selected(tile_id: String)
 
 ## 10. 加新 UI 组件流程
 
-1. **新建** `editor/scripts/ui/<name>.gd` + `<name>.tscn`
+1. **新建** `editor/ui/<name>.gd` + `<name>.tscn`
 2. **挂到** `editor/scenes/editor_main.tscn` 或子节点
 3. **信号** 用 `signal <event>(...)`，由 `MapEditor` / `MapDocument` 监听
 4. **翻译** item text / label 用 `EditorI18n.t(key)`；label 用 `EditorI18n.label(key)`（自动加冒号）
@@ -186,11 +186,11 @@ signal tile_selected(tile_id: String)
 
 | 想改什么 | 去哪 |
 |----------|------|
-| 菜单项 / 加速键 | `editor/scripts/ui/menu_bar.gd` + `menu_bar.tscn` |
-| 工具栏按钮 | `editor/scripts/ui/toolbar.gd` + `toolbar.tscn` |
-| 笔刷 UI | `editor/scripts/ui/tool_palette_window.gd` |
-| 新建地图对话框 | `editor/scripts/ui/new_map_dialog.gd` |
-| 地表调色板 | `editor/scripts/ui/tile_palette.gd` |
-| WE 工具/悬崖数据 | `editor/scripts/ui/world_edit_data.gd` |
-| 字符串 / i18n | `editor/scripts/ui/editor_i18n.gd` + `editor/locale/editor_strings.csv` |
+| 菜单项 / 加速键 | `editor/ui/menu_bar.gd` + `menu_bar.tscn` |
+| 工具栏按钮 | `editor/ui/toolbar.gd` + `toolbar.tscn` |
+| 笔刷 UI | `editor/ui/tool_palette_window.gd` |
+| 新建地图对话框 | `editor/ui/new_map_dialog.gd` |
+| 地表调色板 | `editor/ui/tile_palette.gd` |
+| WE 工具/悬崖数据 | `editor/ui/world_edit_data.gd` |
+| 字符串 / i18n | `editor/ui/editor_i18n.gd` + `editor/locale/editor_strings.csv` |
 | 同步 WE 资产 | [`tools/sync-editor-assets.mjs`](../../../tools/sync-editor-assets.mjs) |

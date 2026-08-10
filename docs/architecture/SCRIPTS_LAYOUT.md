@@ -23,8 +23,8 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 
 | Autoload | 脚本 | 职责 |
 |----------|------|------|
-| `AssetProvider` | [`addons/asset_provider/asset_provider.gd`](../../../addons/asset_provider/asset_provider.gd) | 逻辑路径解析（mods → converted → .cache） |
-| `EditorI18n` | [`editor/scripts/ui/editor_i18n.gd`](../../../editor/scripts/ui/editor_i18n.gd) | 编辑器字符串 i18n |
+| `AssetProvider` | [`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd) | 逻辑路径解析（mods → converted → .cache） |
+| `EditorI18n` | [`editor/ui/editor_i18n.gd`](../../editor/ui/editor_i18n.gd) | 编辑器字符串 i18n |
 | `Wc3DefStore` | `scripts/auto/wc3_def_store.gd` | SLK 静态表缓存（TerrainArt 四表预加载） |
 
 ---
@@ -203,8 +203,8 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 
 | Autoload | 注册 | 路径 |
 |----------|------|------|
-| `AssetProvider` | `project.godot` | [`addons/asset_provider/asset_provider.gd`](../../../addons/asset_provider/asset_provider.gd) |
-| `EditorI18n` | `project.godot` | [`editor/scripts/ui/editor_i18n.gd`](../../../editor/scripts/ui/editor_i18n.gd) |
+| `AssetProvider` | `project.godot` | [`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd) |
+| `EditorI18n` | `project.godot` | [`editor/ui/editor_i18n.gd`](../../editor/ui/editor_i18n.gd) |
 | `Wc3DefStore` | `project.godot` | `scripts/auto/wc3_def_store.gd` |
 
 ---

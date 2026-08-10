@@ -2,7 +2,7 @@
 
 > 编辑器直崖数据、选型、异种策略与回归。斜坡见 [RAMP_WE.md](../ramp/RAMP_WE.md)（WE 思路；实现待重做）。  
 > **分层重构计划**见 [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md)。  
-> HiveWE 路径见 [`.cursor/rules/hivewe-cliff-reference.mdc`](../.cursor/rules/hivewe-cliff-reference.mdc)。
+> HiveWE 路径见 [`.cursor/rules/hivewe-cliff-reference.mdc`](../../../.cursor/rules/hivewe-cliff-reference.mdc)。
 
 ## 1. 数据模型
 
@@ -86,6 +86,6 @@ godot --headless --path . -s res://tests/cliff/selftest_cliff_ground_tex.gd
 | `scripts/map/logic/cliff/wc3_cliff_logic.gd` | TAG / 叠段 / placements / 同步 |
 | `scripts/map/presentation/cliff/wc3_cliff_builder.gd` | 直崖 MultiMesh 实例 |
 | `scripts/map/presentation/layers/map_terrain_layer.gd` | 挖洞、`corner_texture` |
-| `editor/scripts/ui/tool_palette_window.gd` | 类型图标 |
+| `editor/ui/tool_palette_window.gd` | 类型图标 |
 | [EDITOR.md](../editor/EDITOR.md) §5.3 | 编辑器流程 |
 | [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) | 分层重构里程碑 |

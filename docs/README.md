@@ -48,5 +48,5 @@
 
 ## docs 历史
 
-- 2026-08-10 docs 拍平（B 方案）：所有 ramp/cliff/water/doodad/unit/editor/shader/terrain/hivewe/present/game 拍平到 `design/<topic>/`；保留 architecture/data/roadmap/test-cases/tests/blog 一级。`test-cases/` 新建为手动验收文档目录（与 `tests/` 测试索引互补）。见 [design/README.md](design/README.md)。
+- 2026-08-10 docs 拍平（B 方案）+ 链接修复：所有 ramp/cliff/water/doodad/unit/editor/shader/terrain/hivewe/present/game 拍平到 `design/<topic>/`；保留 architecture/data/roadmap/test-cases/tests/blog 一级。`test-cases/` 新建为手动验收文档目录（与 `tests/` 测试索引互补）。提交前用 `node tools/check-docs-links.mjs` 验证 docs/ 内零死链。见 [design/README.md](design/README.md) · [roadmap/TODO.md 死链清单](roadmap/TODO.md)。
 - 2026-08-03 原始结构：ramp/cliff/water/doodad/... 各自为一级 + game/architecture/data/roadmap/blog 并存。

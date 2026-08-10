@@ -227,19 +227,68 @@
 
 ## 死链清单（docs/ 拍平后，2026-08-10）
 
-docs/ 拍平到 `design/<topic>/` 后，verify 扫出 9 个 dead link（文件本来就不存在）：
+docs/ 拍平到 `design/<topic>/` 后，verify 扫出 9 个 dead link（文件本来就不存在）。
 
-| 源文件 | 死链 | 状态 |
-|--------|------|------|
-| `docs/data/WC3_ASSET_PATHS.md` | `../tools/map-parse/README.md` | TODO（tools/map-parse README 不存在） |
-| `docs/design/doodad/Y_REFRESH.md` | `../../architecture/UNDO.md` | TODO（UNDO 文档没建） |
-| `docs/design/presentation/LAYERS.md` | `../../present/MAP_LOADER.md` | TODO |
-| `docs/design/presentation/LAYERS.md` | `../../present/MAP_BUILD_CONTEXT.md` | TODO |
-| `docs/design/presentation/LAYERS.md` | `../../present/PRESENT_UTILS.md` | TODO |
-| `docs/design/presentation/README.md` | `../../present/MAP_LOADER.md` | TODO |
-| `docs/design/presentation/README.md` | `../../present/MAP_BUILD_CONTEXT.md` | TODO |
-| `docs/design/presentation/README.md` | `../../present/PRESENT_UTILS.md` | TODO |
-| `docs/design/unit/HIVEWE_ALIGN.md` | `../../unit/SCHEMA.md` | TODO |
+### 已重定向（2026-08-10）
+
+| 源文件 | 旧死链 | 现链向 | 说明 |
+|--------|--------|--------|------|
+| `docs/design/doodad/Y_REFRESH.md` | `../../architecture/UNDO.md` | `../hivewe/UNDO.md` | UNDO 实际在 `design/hivewe/UNDO.md`（HiveWE 行为参考） |
+| `docs/design/presentation/LAYERS.md`（×3） | `../../present/MAP_LOADER.md` / `MAP_BUILD_CONTEXT.md` / `PRESENT_UTILS.md` | `LAYERS.md`（§0 / §8） | 三个规划文档未建，内容已合入 `LAYERS.md`（ctx/工具类见 §0，build 流程见 §8） |
+| `docs/design/presentation/README.md`（×3） | 同上 | 同上 | 同上 |
+| `docs/design/unit/HIVEWE_ALIGN.md`（×3） | `../../unit/SCHEMA.md` | `../../roadmap/TODO.md`（"待建" 标记保留） | SCHEMA.md 待建（N2 落地），文本已带 TODO 标记，末尾 cross-link 改指 TODO 死链清单 |
+
+### 已修深度（仓库外参考，docs/ 内原本也不算死链，但相对深度欠一级，顺手补齐）
+
+| 源文件 | 旧链 | 现链 | 说明 |
+|--------|------|------|------|
+| `docs/data/WC3_ASSET_PATHS.md` | `../tools/map-parse/README.md` | `../../tools/map-parse/README.md` | 仓库根外部参考 |
+| `docs/design/cliff/CLIFF.md` | `../.cursor/rules/hivewe-cliff-reference.mdc` | `../../../.cursor/rules/hivewe-cliff-reference.mdc` | 仓库根外部参考 |
+| `docs/design/editor/README.md` | `../../editor/scenes/editor_main.tscn` | `../../../editor/scenes/editor_main.tscn` | 仓库根外部参考 |
+
+> 仓库外参考（`../../../tools/...` / `../../../editor/...` / `../../../addons/...` / `../../../.cursor/...`）一律视为有效外部链接，不计入 docs/ 死链。
+
+### 本轮新增修复（2026-08-10，第二轮）
+
+新增 8 个 markdown 引用 `editor/scripts/ui/...`（commit `aec5e04 editor: move UI to editor/ui` 搬走，但文档没跟上），统一改成 `editor/ui/`：
+
+| 源文件 | 数量 |
+|--------|------|
+| `docs/architecture/SCRIPTS_LAYOUT.md` | 2 |
+| `docs/design/cliff/CLIFF.md` | 1 |
+| `docs/design/editor/BRUSHES.md` | 2 |
+| `docs/design/editor/I18N.md` | 6 |
+| `docs/design/editor/README.md` | 1 |
+| `docs/design/editor/UI.md` | 13 |
+| `docs/design/minimap/MINIMAP.md` | 4 |
+| `docs/design/terrain/HEX_MAP_LESSONS.md` | 1 |
+
+`docs/data/PIPELINE.md` 和 `docs/architecture/SCRIPTS_LAYOUT.md` 多 `../` 深度（从 `../../../` 减为 `../../`）。`PIPELINE.md` 末尾 `../../map/...` 路径错（应是 `../../scripts/map/...`），已修。
+
+### CI 守卫脚本
+
+`tools/check-docs-links.mjs`（无依赖，纯 Node ESM）：
+
+- 默认扫描 `docs/` 下所有 `.md` 的 `[text](path)` 链接
+- "docs 内解析失败的文件" 算死链 → 退出码 1
+- "解析到 docs 外" 仓库内孤儿路径 → 仅 `--strict` 才算失败
+- 用法：
+  ```bash
+  node tools/check-docs-links.mjs             # 默认（CI 友好，docs 内死链为 0 即过）
+  node tools/check-docs-links.mjs --quiet     # 只打印汇总行
+  node tools/check-docs-links.mjs --strict    # 仓库外孤儿也视为失败
+  node tools/check-docs-links.mjs --docs docs/blog   # 扫描其它子目录
+  ```
+
+### 当前状态（2026-08-10）
+
+- `docs/ 内 dead = 0`，仓库外孤儿 = 4（链接到目录但目录无 `README.md`）：
+  - `docs/data/PIPELINE.md :: ../../tools/mpq-extract/`（链接到目录，缺 README.md）
+  - `docs/design/editor/BRUSHES.md :: ../../../editor/scripts/commands/`（同上）
+  - `docs/design/editor/COMMANDS.md :: ../../../editor/scripts/commands/`（同上）
+  - `docs/design/editor/UI.md :: ../../../editor/ui/`（同上）
+
+  这 4 个是"指向目录但目录没有 README.md"，**目录本身存在且有内容**——选项 A：补 README；选项 B：链接改到具体文件（如 `editor/scripts/commands/editor_command.gd`）。`--strict` 模式下脚本会报失败。
 
 历史坏 link（错深度，已修）：
 - `docs/architecture/SCRIPTS_LAYOUT.md` `../LAYERED_ARCHITECTURE.md` → `LAYERED_ARCHITECTURE.md`（同目录）

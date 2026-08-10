@@ -29,7 +29,7 @@
 | `.w3m` / `.w3x` | 地图包（本身也是带头的 MPQ） | `map-parse` |
 | `.w3n` | 战役包 | 战役流程 |
 
-地图**内部**还有 `war3map.w3e`、`war3mapUnits.doo` 等，见 [map-parse README](../tools/map-parse/README.md)，不在全局资产树里。
+地图**内部**还有 `war3map.w3e`、`war3mapUnits.doo` 等，见 [map-parse README](../../tools/map-parse/README.md)，不在全局资产树里。
 
 ---
 

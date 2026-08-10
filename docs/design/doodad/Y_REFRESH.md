@@ -211,4 +211,4 @@ func _apply_height_update(hf: Wc3Heightfield) -> void:
 - [DOO_FORMAT.md](DOO_FORMAT.md) —— doodads.json schema
 - [present/README.md §6](../presentation/README.md) —— 改地形 rebuild 流程
 - [roadmap/ROADMAP.md §⑩ 应用高度](../../roadmap/ROADMAP.md) —— change_doodad_heights 完整设计
-- [architecture/UNDO.md](../../architecture/UNDO.md) —— 撤销栈（待补）
+- [hivewe/UNDO.md](../hivewe/UNDO.md) —— HiveWE 撤销栈参考（行为对比）

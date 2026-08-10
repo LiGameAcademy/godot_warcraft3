@@ -14,9 +14,11 @@
 |------|------|------|
 | `LAYERS.md` | — | 每层职责 + 关键 API + 调用链 |
 | `Z_ORDER.md` | — | 渲染顺序 + 几何策略 + 与 HivEWE 对照 |
-| `MAP_LOADER.md` | — | `MapLoader` 编排（ensure_*_topology + build flow）|
-| `MAP_BUILD_CONTEXT.md` | — | `MapBuildContext` 数据结构（present 持有）|
-| `PRESENT_UTILS.md` | — | `Wc3CliffBuilder` / `HeightfieldMesh` / `Wc3CliffHeightMap` 工具类 |
+| `LAYERS.md` | — | 7 个 `Map*Layer` 逐层职责 + 关键 API + 调用链（包含 ctx + 工具类）|
+| `Z_ORDER.md` | — | 渲染顺序 + 几何策略 |
+
+> 历史上的 `MAP_LOADER.md` / `MAP_BUILD_CONTEXT.md` / `PRESENT_UTILS.md` 三个规划文档**未建**，
+> 内容已合入 `LAYERS.md`（build 流程见 §0、§8；ctx/工具类见 §0）。
 
 **对应的 `scripts/map/presentation/`**：
 
@@ -103,7 +105,7 @@ MapLoader.reload_from_hf(hf, info, p_map_dir)
   → _load_all() (L259+)
      1. Wc3IdCatalog / Wc3TerrainTileCatalog / Wc3CliffCatalog 加载
      2. MapBuildContext.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
-     3. _apply_ramp_cliff_filter(ctx)  ← 挂崖前 filter（[MAP_LOADER.md](../../present/MAP_LOADER.md)）
+     3. _apply_ramp_cliff_filter(ctx)  ← 挂崖前 filter（详见 [LAYERS.md](LAYERS.md)）
      4. _terrain.build(ctx)           ← MapTerrainLayer.build
         → ensure_ramp_topology()      ← 间接触发 Wc3RampCollect.collect
         → plan_dig_mask + plan_entrance_tiles + plan_entrance_height_boost
@@ -170,7 +172,7 @@ MapLoader.show_ramp_debug             # @export
 
 1. **[LAYERS.md](LAYERS.md)** —— 确认改哪个 layer（不要混多个 layer 逻辑）
 2. **[Z_ORDER.md](Z_ORDER.md)** —— 确认渲染顺序（`render_priority` / `cull_mode` / `blend_mode`）
-3. **[MAP_LOADER.md](../../present/MAP_LOADER.md)** —— 确认 build 流程入口
+3. **[LAYERS.md](LAYERS.md) §8** —— 确认 build 流程入口（`MapLoader.reload_from_hf` → 各 layer.build）
 
 ### 7.2 改 MeshInstance3D / MultiMesh
 
@@ -225,9 +227,9 @@ MapLoader.show_ramp_debug             # @export
 - **改地面贴图 / 挖洞** → [LAYERS.md](LAYERS.md) §1 + `map_terrain_layer.gd` + [Z_ORDER.md](Z_ORDER.md)
 - **改水面 / 岸浪** → [LAYERS.md](LAYERS.md) §4 + `map_water_layer.gd` + [hivewe/WATER_DEEP_ANALYSIS.md §5](../hivewe/WATER_DEEP_ANALYSIS.md)
 - **改 doodad 挂模 / placeholder** → [LAYERS.md](LAYERS.md) §5 + `map_doodad_layer.gd`
-- **改 build 流程**（顺序 / 跳过某步） → [MAP_LOADER.md](../../present/MAP_LOADER.md)
-- **改 ctx 数据结构** → [MAP_BUILD_CONTEXT.md](../../present/MAP_BUILD_CONTEXT.md)
-- **改工具类**（cliff_builder / water_mesh / heightfield_mesh） → [PRESENT_UTILS.md](../../present/PRESENT_UTILS.md)
+- **改 build 流程**（顺序 / 跳过某步） → [LAYERS.md](LAYERS.md) §8
+- **改 ctx 数据结构** → [LAYERS.md](LAYERS.md) §0
+- **改工具类**（cliff_builder / water_mesh / heightfield_mesh） → [LAYERS.md](LAYERS.md) §0 + `scripts/map/presentation/` 源码
 
 ---
 

@@ -16,7 +16,7 @@
 
 ### 1.1 现状
 
-- **编辑器小地图**：已有初步实现于 `editor/scripts/ui/editor_inspect_window.gd`，仅限编辑器内使用
+- **编辑器小地图**：已有初步实现于 `editor/ui/editor_inspect_window.gd`，仅限编辑器内使用
 - **游戏内小地图**：尚未实现
 - **问题**：现有实现紧耦合于编辑器 UI，无法在游戏运行时复用
 
@@ -81,7 +81,7 @@ scripts/
         ├── map_minimap_layer.gd      # Node3D 载体（Static 模式）
         └── map_minimap_viewport.gd   # 子 Viewport 渲染（Runtime 模式）
 
-editor/scripts/ui/
+editor/ui/
 └── minimap/
     └── editor_minimap_panel.gd       # 编辑器内小地图 Panel（使用 Static 模式）
 ```
@@ -455,7 +455,7 @@ func _on_doc_changed():
 
 ### Phase 2：Static 模式（编辑器）
 5. 实现 `MapMinimapLayer`
-6. 在 `editor/scripts/ui/` 下新建 `minimap/` 目录
+6. 在 `editor/ui/` 下新建 `minimap/` 目录
 7. 实现 `EditorMinimapPanel`
 8. 集成到编辑器主窗口，验证点击跳转相机
 
@@ -475,7 +475,7 @@ func _on_doc_changed():
 
 ## 9. 参考文件
 
-- `editor/scripts/ui/editor_inspect_window.gd` — 现有小地图实现（参考坐标转换逻辑）
+- `editor/ui/editor_inspect_window.gd` — 现有小地图实现（参考坐标转换逻辑）
 - `scripts/map/data/wc3_heightfield.gd` — 高度场数据结构
 - `scripts/map/data/wc3_coords.gd` — 坐标转换参考
 - `scripts/map/presentation/map_build_context.gd` — Layer 构建上下文

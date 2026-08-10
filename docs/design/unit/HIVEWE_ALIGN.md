@@ -73,7 +73,7 @@ GLB 缺失时调 `MapPlaceholders.make_entity` —— 占位带 owner 染色，�
 
 ### 3.1 `units.json` schema 字段补齐
 
-**位置**：`docs/unit/SCHEMA.md`（待建） + `MapUnitLayer` 字段读取
+**位置**：`docs/unit/SCHEMA.md`（**待建**，见 [roadmap/TODO.md 死链清单](../../roadmap/TODO.md)）+ `MapUnitLayer` 字段读取
 
 **HivEWE Unit 完整字段**（`units.ixx:32-67`）：
 
@@ -99,7 +99,7 @@ GLB 缺失时调 `MapPlaceholders.make_entity` —— 占位带 owner 染色，�
 | `random_type` / `random[]` | int / bytes | 随机 variation（**缺**）|
 | `move_height` | float | 悬空高度（**缺**，地形 Y 偏移）|
 
-**待补**：先写 `docs/unit/SCHEMA.md` 把所有字段固化，**再**改 `MapUnitLayer`
+**待补**：先写 `docs/unit/SCHEMA.md` 把所有字段固化（见 [roadmap/TODO.md 死链清单](../../roadmap/TODO.md)），**再**改 `MapUnitLayer`
 读（按 ramp 路线图先例"docs 先行"）。
 
 ### 3.2 unit_brush（编辑器 paint）
@@ -292,7 +292,7 @@ selectable 单位阻挡 pathing。
 - [../hivewe/OPERATORS.md §6.4](../hivewe/OPERATORS.md) —— HivEWE unit 操作符
 - [../present/Z_ORDER.md §3](../presentation/Z_ORDER.md) —— Unit Z 顺序（在 doodad 之上 / cliff 之下）
 - [../shader/](../shader/) —— shader 文档（INSTANCE_CUSTOM 用法）
-- 待建：[SCHEMA.md](../../unit/SCHEMA.md) —— 17 字段完整 schema（N2 落地）
+- 待建：[SCHEMA.md](../../roadmap/TODO.md) —— 17 字段完整 schema（待建，N2 落地；死链清单已记）
 
 ---
 

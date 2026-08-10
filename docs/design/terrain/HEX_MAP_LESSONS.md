@@ -22,7 +22,7 @@
 ## 2. 相同点
 
 1. **都是 Godot 4 地图编辑器**：笔刷改数据 → 重建 Mesh → 预览。
-2. **Logic / UI 意图分离**：hex 的 `HexMapEditor` ↔ `HexMapEditorPanel`；本项目的 `MapEditor` ↔ `editor/scripts/ui/*`。
+2. **Logic / UI 意图分离**：hex 的 `HexMapEditor` ↔ `HexMapEditorPanel`；本项目的 `MapEditor` ↔ `editor/ui/*`。
 3. **笔划式 Undo**：hex 用 stroke 前后 diff；本项目用 `PaintStrokeCommand` + 顶点快照。
 4. **Texture2DArray + 自定义 Shader 混地形**：两边都走这条路（本项目已有 `Wc3GroundTileCatalog`）。
 5. **几何/规则常量集中**：hex 的 `HexMetrics` ↔ 本项目的 `Wc3Coords` + 各 Logic 常量。
