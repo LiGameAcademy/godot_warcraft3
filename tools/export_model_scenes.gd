@@ -63,10 +63,12 @@ func _run() -> void:
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
 		var disk_scn := RuntimeAssets.project_abs(scn_res)
-		if force and FileAccess.file_exists(disk_scn):
-			DirAccess.remove_absolute(disk_scn)
+		# force=true 时清缓存，instance 时拿 GLB 重烤；**不删 scn**——
+		# 若先删 scn + Ctrl+C 中断，已删的 scn 不会被重建 → 净结果是 scn 数减少。
+		# 当前实现：bake_model_scene 直接覆盖同名 scn；bake 失败时旧 scn 保留。
+		if force:
 			cache.evict(glb_res)
-		elif not force and FileAccess.file_exists(disk_scn):
+		elif FileAccess.file_exists(disk_scn):
 			var gstat := FileAccess.get_modified_time(disk_glb)
 			var sstat := FileAccess.get_modified_time(disk_scn)
 			if sstat >= gstat:
