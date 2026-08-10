@@ -17,8 +17,8 @@
 | **小地图（实时）** | 待开 | 对齐 HiveWE `terrain.ixx::minimap_image` |
 | **装饰物面板 + 笔刷编辑** | ✅ 二期 | 放置/选中/移旋删/撤销/PE2/Inspect |
 | **单位面板** | 进行中 | 种族筛选 + 列表 + 玩家色 + Inspect |
-| **单位笔刷** | 待开 | 见 [unit/HIVEWE_ALIGN.md](../unit/HIVEWE_ALIGN.md) |
-| **水体** | 部分 | 见 [WATER.md](../water/WATER.md)；岸浪精调暂搁 |
+| **单位笔刷** | 待开 | 见 [unit/HIVEWE_ALIGN.md](../design/unit/HIVEWE_ALIGN.md) |
+| **水体** | 部分 | 见 [WATER.md](../design/water/WATER.md)；岸浪精调暂搁 |
 
 ---
 
@@ -77,7 +77,7 @@
 
 ## 单位面板 / 笔刷
 
-> 对照 [unit/HIVEWE_ALIGN.md](../unit/HIVEWE_ALIGN.md)。与装饰物差异：玩家色、单 instance（不 MultiMesh）、字段更多、无 tileset 分类。
+> 对照 [unit/HIVEWE_ALIGN.md](../design/unit/HIVEWE_ALIGN.md)。与装饰物差异：玩家色、单 instance（不 MultiMesh）、字段更多、无 tileset 分类。
 
 ### 进行中
 
@@ -97,7 +97,7 @@
 
 ## 小地图（编辑器导航窗）
 
-> 设计拍板：[minimap_phase3_design.md](../minimap_phase3_design.md)（2026-08-01）
+> 设计拍板：[minimap_phase3_design.md](../design/minimap/PHASE3.md)（2026-08-01）
 
 ### 已完成
 
@@ -133,7 +133,7 @@
 - [ ] 存盘插值 A/B：Nearest vs Bilinear
 - [ ] 写回 `.w3x` / BLP（选图菜单真机资源）
 
-参考：HiveWE `terrain.ixx` L833–871、`ground_texture.ixx`；[WATER_DEEP_ANALYSIS.md §7](../hivewe/WATER_DEEP_ANALYSIS.md)；[minimap_phase3_design.md](../minimap_phase3_design.md)。
+参考：HiveWE `terrain.ixx` L833–871、`ground_texture.ixx`；[WATER_DEEP_ANALYSIS.md §7](../design/hivewe/WATER_DEEP_ANALYSIS.md)；[minimap_phase3_design.md](../design/minimap/PHASE3.md)。
 
 ---
 
@@ -143,7 +143,7 @@
 - [x] `Wc3TerrainTileCatalog` 仅地表；`Wc3WaterParams` 读 `WaterTypeDef`
 - [x] **`Wc3CliffCatalog`** — CliffTypes 表列 + 岩壁 PNG / modelDir 资源映射
 - [x] `MapBuildContext.cliff_catalog` / `MapLoader.get_cliff_catalog()`
-- [x] 更新 [CLIFF.md](../cliff/CLIFF.md) §8 路径表
+- [x] 更新 [CLIFF.md](../design/cliff/CLIFF.md) §8 路径表
 - [x] `selftest_cliff_*` / `selftest_def_store_cliff` 绿（Catalog 接线后）
 - [ ] Lost Temple 手测：崖外观与拆分前一致
 
@@ -164,7 +164,7 @@
 
 ## 地形 / 斜坡
 
-- [x] **斜坡 Logic（崖边 A）**：Paint + Collect 对齐 [RAMP_WE.md](../ramp/RAMP_WE.md)。勿与「应用高度」纯高度坡（B）混淆。
+- [x] **斜坡 Logic（崖边 A）**：Paint + Collect 对齐 [RAMP_WE.md](../design/ramp/RAMP_WE.md)。勿与「应用高度」纯高度坡（B）混淆。
 - [x] 存盘权威：`FLAG_RAMP` / `has_ramp`
 - [x] Catalog：`Wc3CliffTransCatalog` + `ramp_model_dir`
 - [x] Present：`MapRampLayer` 挂 CliffTrans + undig 入口 + romp dig + hide 直崖
@@ -172,7 +172,7 @@
 
 ## 岸浪
 
-- [ ] 泡沫精调暂搁，见 [WATER.md](../water/WATER.md)。
+- [ ] 泡沫精调暂搁，见 [WATER.md](../design/water/WATER.md)。
 
 ## 单位
 
@@ -222,3 +222,25 @@
   同 `*.geosetvis.json` + AnimationPlayer `:visible`；加载后先 snap 到 Stand 姿态。  
   旧转换物无 geosetvis 时需 `node src/cli.js --models-only --force --include "Units/**"` 后 bake。  
   验收 Peasant：`Stand` 仅身体；`Stand_Gold`/`Stand_Lumber` 出袋/木；`Death` 出尸体。
+
+---
+
+## 死链清单（docs/ 拍平后，2026-08-10）
+
+docs/ 拍平到 `design/<topic>/` 后，verify 扫出 9 个 dead link（文件本来就不存在）：
+
+| 源文件 | 死链 | 状态 |
+|--------|------|------|
+| `docs/data/WC3_ASSET_PATHS.md` | `../tools/map-parse/README.md` | TODO（tools/map-parse README 不存在） |
+| `docs/design/doodad/Y_REFRESH.md` | `../../architecture/UNDO.md` | TODO（UNDO 文档没建） |
+| `docs/design/presentation/LAYERS.md` | `../../present/MAP_LOADER.md` | TODO |
+| `docs/design/presentation/LAYERS.md` | `../../present/MAP_BUILD_CONTEXT.md` | TODO |
+| `docs/design/presentation/LAYERS.md` | `../../present/PRESENT_UTILS.md` | TODO |
+| `docs/design/presentation/README.md` | `../../present/MAP_LOADER.md` | TODO |
+| `docs/design/presentation/README.md` | `../../present/MAP_BUILD_CONTEXT.md` | TODO |
+| `docs/design/presentation/README.md` | `../../present/PRESENT_UTILS.md` | TODO |
+| `docs/design/unit/HIVEWE_ALIGN.md` | `../../unit/SCHEMA.md` | TODO |
+
+历史坏 link（错深度，已修）：
+- `docs/architecture/SCRIPTS_LAYOUT.md` `../LAYERED_ARCHITECTURE.md` → `LAYERED_ARCHITECTURE.md`（同目录）
+- `docs/architecture/SCRIPTS_LAYOUT.md` `../../ramp/RAMP_WE.md` → `../design/ramp/RAMP_WE.md`（ramp 已挪移）

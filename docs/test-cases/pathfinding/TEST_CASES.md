@@ -1,7 +1,7 @@
 # 寻路 · 测试用例
 
 > 状态：**F-PATH 6 步 + F3 4 步全 ✅，本用例文档覆盖完整。**  
-> 配合：[PATHFINDING_INDEX.md](../../game/PATHFINDING_INDEX.md) / [GROUP_MOVE.md](../../game/GROUP_MOVE.md) / [PATHFINDING_CHOICE.md](../../game/PATHFINDING_CHOICE.md)  
+> 配合：[PATHFINDING_INDEX.md](../../design/pathfinding/INDEX.md) / [GROUP_MOVE.md](../../design/pathfinding/GROUP_MOVE.md) / [PATHFINDING_CHOICE.md](../../design/pathfinding/CHOICE.md)  
 > 最后更新：2026-08-10
 
 ---

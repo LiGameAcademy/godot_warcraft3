@@ -9,7 +9,7 @@
 | [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层分层总纲（Data / Catalog / Logic / Presentation / Editor）+ 门禁 + 命名约定 |
 | [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | MapRoot 节点树 + 脚本职责全表 + 手动干预速查 + 重构优先级 |
 | [MAP_DATA.md](MAP_DATA.md) | 地图数据契约（`Wc3Heightfield` / `Wc3TileVertex` JSON 键表 + 序列化示例） |
-| [CLIFF_REFACTOR.md](CLIFF_REFACTOR.md) | 悬崖分层重构历史（M0–M2 已完成于 tag `milestone/cliff-layered`） |
+| [CLIFF_REFACTOR.md](../design/cliff/CLIFF_REFACTOR.md) | 悬崖分层重构历史（M0–M2 已完成于 tag `milestone/cliff-layered`） |
 | [SCRIPTS_LAYOUT.md](SCRIPTS_LAYOUT.md) | `scripts/` 目录树 + 分层映射（catalog / data / logic / presentation / infra） |
 
 ## 阅读顺序

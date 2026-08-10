@@ -172,7 +172,7 @@ docs/architecture/LAYERED_ARCHITECTURE.md  # 分层总纲
 
 ## 7. 斜坡派生（Logic；非 JSON 权威）
 
-存盘权威仍是 `FLAG_RAMP`。Paint/Collect 契约见 [RAMP_WE.md](docs/ramp/RAMP_WE.md)。
+存盘权威仍是 `FLAG_RAMP`。Paint/Collect 契约见 [RAMP_WE.md](../design/ramp/RAMP_WE.md)。
 
 | 类型 | 职责 |
 |------|------|

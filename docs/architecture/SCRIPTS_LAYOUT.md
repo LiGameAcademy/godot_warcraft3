@@ -19,7 +19,7 @@ scripts/
     └── presentation/              Presentation（场景层）
 ```
 
-Autoload（见 [LAYERED_ARCHITECTURE.md §2](../LAYERED_ARCHITECTURE.md)）：
+Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 
 | Autoload | 脚本 | 职责 |
 |----------|------|------|
@@ -143,9 +143,9 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](../LAYERED_ARCHITECTURE.md)）：
 |------|------|
 | `wc3_ramp_paint.gd` | Paint ≈ `update_ramp`；只写 `FLAG_RAMP`（**不**写 HF 高度） |
 | `wc3_ramp_collect.gd` | Collect ≈ `update_cliff_meshes` 数据侧；输出 `Wc3RampCollectResult`（含 `romp`） |
-| `wc3_ramp_logic.gd` | 斜坡逻辑层入口（对齐 HiveWE / [RAMP_WE.md](../../ramp/RAMP_WE.md)） |
+| `wc3_ramp_logic.gd` | 斜坡逻辑层入口（对齐 HiveWE / [RAMP_WE.md](../design/ramp/RAMP_WE.md)） |
 
-权威：[RAMP_WE.md](../../ramp/RAMP_WE.md) §4-§5。
+权威：[RAMP_WE.md](../design/ramp/RAMP_WE.md) §4-§5。
 
 ---
 
