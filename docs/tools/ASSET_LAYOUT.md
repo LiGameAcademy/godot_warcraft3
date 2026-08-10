@@ -40,10 +40,10 @@ node tools/bootstrap.mjs      # 一键：extract → convert → parse → slk �
 `tools/bootstrap.mjs` 流程：
 
 1. **检查依赖**：node >= 18、godot 二进制、WC3 安装（`tools/bootstrap.config.json` 或环境变量 `WC3_PATH`）
-2. **ensure .gdignore**：`assets/asset-converted/.gdignore` 必须存在 —— 阻止 Godot auto-import 在 GLB 旁生成 `<model>_<tex>.png` 重复副产物（GLB 规范要求 image embedded，无法用 URI 共享）
+2. **ensure .gdignore（可选）**：方案 B 后贴图已外链到 `Textures/`；`.gdignore` 仅用于避免编辑器扫几千个 `.gltf` 时卡顿，不再是「防重复 PNG」刚需
 3. **npm install**：5 个子工具（并行）
 4. **mpq-extract**：从 WC3 安装 → MPQ → 原文件 → `.cache/wc3-assets/`（**中间态**）
-5. **asset-convert**：→ `assets/asset-converted/`（视觉车道）
+5. **asset-convert**：→ `assets/asset-converted/`（视觉车道：`.gltf` + 外链 PNG + `.scn`）
 6. **map-parse**：→ `assets/map-parsed/<name>/`（地图车道）
 7. **slk-export**：→ `assets/slk-exported/`（数据车道 JSON）
 8. **sync-data-assets**：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
@@ -126,38 +126,35 @@ assets/visuals/Buildings/       # commit dbe96d8 加入（master 可能已合并
 
 ---
 
-## 7. .gdignore 阻止 Godot auto-import 重复贴图
+## 7. 贴图共享（方案 B：`.gltf` + 外部 URI）
 
-**问题**：GLB 规范要求 image embedded（bufferView），不允许外部 URI 共享贴图。
-GLB 内的贴图字节 + 同一贴图被 N 个模型使用 → N 份重复字节（无法在 GLB 格式下消除）。
-更糟：Godot 看到 `res://assets/asset-converted/.../<name>.glb` 会 **auto-import**，并把 embedded image 抽到
-GLB 同目录的 `<model>_<tex>.png`，再生成 `.ctex` 和 `.import`。同一 BLP（如 `Textures/Footman.blp`）
-被 50 个模型用 → 50 份重复 PNG（md5 相同，文件名不同）+ 50 份重复 .ctex。
+**问题（旧 GLB）**：二进制 GLB 规范要求 image embedded，同一张 `Textures/Foo.png` 会被 N 个模型各嵌一份；
+Godot auto-import 还会再抽出 `<model>_baseColor_*.png` 副产物。
 
-**解法**：`assets/asset-converted/.gdignore`（**入库**）—— Godot 跳过整个目录的 auto-import。
+**解法**：MDX → **`.gltf` + `.bin`**，`images[].uri` 相对指向 `Textures/*.png` / `_placeholders/*.png`（磁盘唯一）。
+运行时 `RuntimeAssets.load_gltf_scene` 对 `.gltf` 走 `GLTFDocument.append_from_file`，才能解析外部图。
 
-**取舍**：
-- 失去：Godot 的 .ctex 压缩贴图（运行时 ImageTexture 是未压缩）
-- 保留：.scn 内嵌 `ImageTexture` 子资源（`bake_model_scenes` 烘焙时已写入 .scn），无需外部 .ctex
-- 节省：每个共享 BLP 砍掉 N-1 份重复 PNG + .ctex + .import
-- 代价：编辑器 / runtime 不能 `res://assets/asset-converted/.../X.glb` 自动加载（运行时本来就走
-  `RuntimeAssets.project_abs` + 显式 GLTFDocument / PackedScene，不依赖 res://）
+**`.gdignore`**：外链后不再强制。若要在编辑器 FileSystem 看模型，可删顶层 `.gdignore`；
+共享贴图只会 import 一次。若仍想避免大批量 import，可保留 `.gdignore`，运行时仍走磁盘路径。
 
-**.gitignore 配对**：`assets/asset-converted/**` 忽略所有 + `!assets/asset-converted/.gdignore` 白名单，
-让 .gdignore 本身入库。
+**迁移**：`npm run convert -- --models-only` 会生成 `.gltf` 并删掉同 stem 的旧 `.glb`。
+加载侧仍回退识别遗留 `.glb`。
+
+**.gitignore 配对**：`assets/asset-converted/**` 忽略所有 + `!assets/asset-converted/.gdignore` 白名单（若保留）。
 
 **老 PC 升级步骤**：
 ```bash
 git pull
-node tools/bootstrap.mjs --clean-imports   # 清旧 import 残留
-node tools/bootstrap.mjs                   # 重新生成
+node tools/bootstrap.mjs --clean-imports   # 清旧 import / 旁路 PNG 副产物
+npm run convert -- --models-only           # 重出 .gltf
+npm run bake:scn                           # 重烤 .scn
 ```
 
 `--clean-imports` 删除：
-- `**/*.import`（Godot auto-import 元数据，.gdignore 后不再生成）
-- GLB 旁的 `<model>_<tex>.png`（重复副产物，canonical 在 `Textures/`，保留）
+- `**/*.import`
+- GLB/GLTF 旁的 `<model>_<tex>.png`（重复副产物；canonical 在 `Textures/`）
 
-不动：`*.glb` / `*.scn` / `Textures/*.png` / `_placeholders/` / `*.pe2.json` / `*.geosetvis.json`。
+不动：`*.gltf` / `*.bin` / `*.scn` / `Textures/*.png` / `_placeholders/` / `*.pe2.json` / `*.geosetvis.json`。
 
 ---
 

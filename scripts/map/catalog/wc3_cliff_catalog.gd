@@ -66,12 +66,14 @@ func get_def(cliff_id: String) -> CliffTypeDef:
 	return _cliff_def(cliff_id)
 
 
-## —— 资源映射：Cliffs / CityCliffs GLB ——
+## —— 资源映射：Cliffs / CityCliffs 模型（优先 .gltf）——
 
 static func glb_path(model_dir: String, tag: String, variation: int) -> String:
-	return RuntimeAssets.converted_path(
-		"Doodads/Terrain/%s/%s%s%d.glb" % [model_dir, model_dir, tag, variation]
-	)
+	var stem := "Doodads/Terrain/%s/%s%s%d" % [model_dir, model_dir, tag, variation]
+	var gltf := RuntimeAssets.converted_path(stem + ".gltf")
+	if RuntimeAssets.file_exists(gltf):
+		return gltf
+	return RuntimeAssets.converted_path(stem + ".glb")
 
 
 ## 该 TAG 磁盘上最大变体下标；无任何文件返回 -1。
@@ -183,8 +185,8 @@ func list_model_tags(model_dir: String) -> PackedStringArray:
 		da.list_dir_begin()
 		var fname := da.get_next()
 		while fname != "":
-			if not da.current_is_dir() and fname.begins_with(prefix) and fname.ends_with(".glb"):
-				var stem := fname.trim_suffix(".glb").substr(prefix.length())
+			if not da.current_is_dir() and fname.begins_with(prefix) and (fname.ends_with(".gltf") or fname.ends_with(".glb")):
+				var stem := fname.get_basename().substr(prefix.length())
 				# stem = TAG + variationDigit(s)；TAG 恒 4 字符 A–C
 				if stem.length() >= 5:
 					var tag := stem.substr(0, 4)

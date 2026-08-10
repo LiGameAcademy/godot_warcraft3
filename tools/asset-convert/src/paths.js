@@ -37,33 +37,66 @@ export function blpLogicalToPng(logicalPath) {
   return `${n}.png`;
 }
 
-/** Map WC3 model path to converted GLB logical path.
- *  GLB 写到 raw/ 子目录，避免 Godot 编辑器 auto-import（同名 .scn/PNG 副产物冲突）。
- *  .scn/.pe2.json/.png 仍在原目录，FileSystem 可见。
+/**
+ * Map WC3 model path to converted glTF logical path（JSON + 外部 URI 贴图）。
+ * 方案 B：不再写二进制 .glb（embed 贴图无法跨模型共享）。
  */
+export function mdxLogicalToGltf(logicalPath) {
+  const n = normalizeLogicalPath(logicalPath);
+  if (n.toLowerCase().endsWith(".mdx") || n.toLowerCase().endsWith(".mdl")) {
+    return `${n.slice(0, -4)}.gltf`;
+  }
+  return `${n}.gltf`;
+}
+
+/** @deprecated 兼容旧调用名；现返回 .gltf */
 export function mdxLogicalToGlb(logicalPath) {
-  const n = normalizeLogicalPath(logicalPath);
-  const base = stripExt(n);
-  return `${base}/raw/${baseExt(n, ".glb")}`;
+  return mdxLogicalToGltf(logicalPath);
 }
 
-function baseExt(p, ext) {
-  return `${stripExt(p)}${ext}`;
-}
-
-function stripExt(p) {
-  const i = p.lastIndexOf(".");
-  return i > 0 ? p.slice(0, i) : p;
-}
-
-/** Map WC3 model path to ParticleEmitter2 sidecar JSON (next to .scn, NOT inside raw/). */
+/** Map WC3 model path to ParticleEmitter2 sidecar JSON (next to .gltf). */
 export function mdxLogicalToPe2(logicalPath) {
-  const n = normalizeLogicalPath(logicalPath);
-  return `${stripExt(n)}.pe2.json`;
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.pe2.json`;
+  }
+  return `${gltf}.pe2.json`;
 }
 
-/** Map WC3 model path to Geoset visibility sidecar (Godot bake injects AnimationPlayer tracks). */
+/** Map WC3 model path to Geoset visibility sidecar. */
 export function mdxLogicalToGeosetVis(logicalPath) {
-  const n = normalizeLogicalPath(logicalPath);
-  return `${stripExt(n)}.geosetvis.json`;
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.geosetvis.json`;
+  }
+  return `${gltf}.geosetvis.json`;
+}
+
+/**
+ * 从模型逻辑路径到贴图逻辑路径的相对 URI（posix，供 glTF images[].uri）。
+ * WC3 路径大小写混乱：公共前缀按不敏感匹配，下行段保留 pngLogical 原大小写。
+ */
+export function uriFromModelToPng(modelLogical, pngLogical) {
+  const model = normalizeLogicalPath(modelLogical);
+  const to = normalizeLogicalPath(pngLogical);
+  const fromParts = path.posix.dirname(model).split("/").filter(Boolean);
+  const toParts = path.posix.dirname(to).split("/").filter(Boolean);
+  const base = path.posix.basename(to);
+
+  let i = 0;
+  while (
+    i < fromParts.length &&
+    i < toParts.length &&
+    fromParts[i].toLowerCase() === toParts[i].toLowerCase()
+  ) {
+    i += 1;
+  }
+  const ups = fromParts.length - i;
+  const down = toParts.slice(i);
+  const segs = [...Array.from({ length: ups }, () => ".."), ...down, base];
+  let rel = segs.join("/");
+  if (!rel.startsWith(".")) {
+    rel = `./${rel}`;
+  }
+  return rel;
 }

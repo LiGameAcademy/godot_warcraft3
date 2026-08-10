@@ -12,10 +12,9 @@
 
 # Converted Godot-ready assets (PNG/GLB/SCN + synced editor UI txt) — regenerate via tools
 # Do NOT commit Blizzard content (see docs/data/LEGAL.md)
-# 顶层不再有 .gdignore；GLB 现位于各 model 目录的 raw/ 子目录（自带 .gdignore 防止 import）
+# .gdignore 例外：必须入库，否则 Godot 会 auto-import GLB 并在同目录生成重复 PNG 副产物
 assets/asset-converted/**
-# 必须入库：raw/ 下的 .gdignore 让 Godot 忽略 GLB，否则会 auto-import 副产物
-!assets/asset-converted/**/raw/.gdignore
+!assets/asset-converted/.gdignore
 
 # Legacy model-scenes/ (deprecated: .scn now sits next to GLB under asset-converted/)
 assets/model-scenes/**

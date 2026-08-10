@@ -74,11 +74,13 @@ static func slk_path(relative_or_res: String) -> String:
 
 
 ## 逻辑路径（相对 asset-converted 子树）→ res://assets/pe2-prefabs/...
-## 例：Doodads/.../Foo.glb → res://assets/pe2-prefabs/Doodads/.../Foo.pe2.tscn
+## 例：Doodads/.../Foo.gltf → res://assets/pe2-prefabs/Doodads/.../Foo.pe2.tscn
 static func pe2_prefab_path(relative_or_glb: String) -> String:
 	var p := relative_or_res_to_logical(relative_or_glb)
 	var lower := p.to_lower()
-	if lower.ends_with(".glb"):
+	if lower.ends_with(".gltf"):
+		p = p.substr(0, p.length() - 5) + ".pe2.tscn"
+	elif lower.ends_with(".glb"):
 		p = p.substr(0, p.length() - 4) + ".pe2.tscn"
 	elif lower.ends_with(".pe2.json"):
 		p = p.substr(0, p.length() - ".pe2.json".length()) + ".pe2.tscn"
@@ -87,11 +89,13 @@ static func pe2_prefab_path(relative_or_glb: String) -> String:
 	return PE2_PREFABS_RES_ROOT.path_join(p)
 
 
-## 逻辑 / GLB 路径 → res://assets/visuals/.../Foo.tscn（继承 bake .scn 的视觉封装）。
+## 逻辑 / 模型路径 → res://assets/visuals/.../Foo.tscn（继承 bake .scn 的视觉封装）。
 static func visual_scene_path(relative_or_glb: String) -> String:
 	var p := relative_or_res_to_logical(relative_or_glb)
 	var lower := p.to_lower()
-	if lower.ends_with(".glb") or lower.ends_with(".scn"):
+	if lower.ends_with(".gltf"):
+		p = p.substr(0, p.length() - 5) + ".tscn"
+	elif lower.ends_with(".glb") or lower.ends_with(".scn"):
 		p = p.substr(0, p.length() - 4) + ".tscn"
 	elif lower.ends_with(".tscn"):
 		pass
@@ -135,11 +139,13 @@ static func relative_or_res_to_logical(relative_or_res: String) -> String:
 	return p
 
 
-## 逻辑 / GLB 路径 → 与 GLB 同目录的 .scn（asset-converted/.../Foo.scn）。
+## 逻辑 / 模型路径 → 与模型同目录的 .scn（asset-converted/.../Foo.scn）。
 static func model_scene_path(relative_or_glb: String) -> String:
 	var p := relative_or_res_to_logical(relative_or_glb)
 	var lower := p.to_lower()
-	if lower.ends_with(".glb"):
+	if lower.ends_with(".gltf"):
+		p = p.substr(0, p.length() - 5) + ".scn"
+	elif lower.ends_with(".glb"):
 		p = p.substr(0, p.length() - 4) + ".scn"
 	elif lower.ends_with(".scn"):
 		pass
@@ -152,7 +158,9 @@ static func model_scene_path(relative_or_glb: String) -> String:
 static func legacy_model_scene_path(relative_or_glb: String) -> String:
 	var p := relative_or_res_to_logical(relative_or_glb)
 	var lower := p.to_lower()
-	if lower.ends_with(".glb"):
+	if lower.ends_with(".gltf"):
+		p = p.substr(0, p.length() - 5) + ".scn"
+	elif lower.ends_with(".glb"):
 		p = p.substr(0, p.length() - 4) + ".scn"
 	elif not lower.ends_with(".scn"):
 		p = p + ".scn"
@@ -163,7 +171,9 @@ static func legacy_model_scene_path(relative_or_glb: String) -> String:
 static func model_scene_user_path(relative_or_glb: String) -> String:
 	var p := relative_or_res_to_logical(relative_or_glb)
 	var lower := p.to_lower()
-	if lower.ends_with(".glb"):
+	if lower.ends_with(".gltf"):
+		p = p.substr(0, p.length() - 5) + ".scn"
+	elif lower.ends_with(".glb"):
 		p = p.substr(0, p.length() - 4) + ".scn"
 	elif not lower.ends_with(".scn"):
 		p = p + ".scn"
@@ -279,11 +289,15 @@ static func load_converted_texture(relative: String) -> Texture2D:
 
 
 static func load_gltf_scene(res_or_abs: String) -> Node3D:
-	var disk_path := _resolve_glb_disk_path(res_or_abs)
+	var disk_path := project_abs(res_or_abs)
 	if disk_path.is_empty() or not FileAccess.file_exists(disk_path):
 		return null
 	if _gltf_fail_cache.has(disk_path):
 		return null
+	# 方案 B：.gltf 必须走 append_from_file，才能解析外部 images[].uri（共享 Textures/）
+	var lower := disk_path.to_lower()
+	if lower.ends_with(".gltf"):
+		return _load_gltf_from_file(disk_path)
 	var bytes := FileAccess.get_file_as_bytes(disk_path)
 	if not _is_plausible_gltf_bytes(bytes):
 		_gltf_fail_cache[disk_path] = true
@@ -291,26 +305,29 @@ static func load_gltf_scene(res_or_abs: String) -> Node3D:
 	return load_gltf_scene_from_bytes(bytes, disk_path)
 
 
-## GLB 现位于 asset-converted/.../<Name>/raw/<Name>.glb（避开 Godot auto-import）。
-## 兼容旧路径（直接放同目录）：先尝试 res_or_abs，再尝试 raw/ 子目录。
-static func _resolve_glb_disk_path(res_or_abs: String) -> String:
-	var p := res_or_abs.replace("\\", "/")
-	# res:// / 绝对盘符 / 相对盘符 → 全部到绝对盘符
-	var abs_p := project_abs(p)
-	if FileAccess.file_exists(abs_p):
-		return abs_p
-	# 兼容旧布局：GLB 在 raw/ 子目录
-	var lower := p.to_lower()
-	if lower.ends_with(".glb"):
-		var stem := p.substr(0, p.length() - 4)
-		var with_raw := stem + "/raw/" + p.get_file()
-		var abs_raw := project_abs(with_raw)
-		if FileAccess.file_exists(abs_raw):
-			return abs_raw
-	return abs_p
+## 磁盘 .gltf（+ .bin + 外部 PNG URI）→ 场景。
+static func _load_gltf_from_file(disk_path: String) -> Node3D:
+	if _gltf_fail_cache.has(disk_path):
+		return null
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	var err := doc.append_from_file(disk_path, state)
+	if err != OK:
+		_gltf_fail_cache[disk_path] = true
+		return null
+	var scene := doc.generate_scene(state)
+	if scene is Node3D:
+		return scene as Node3D
+	if scene:
+		var root3d := Node3D.new()
+		root3d.add_child(scene)
+		return root3d
+	_gltf_fail_cache[disk_path] = true
+	return null
 
 
 ## 已读入内存的 GLB 字节 → 场景（主线程调用；纹理相对 base_dir 解析）。
+## 注意：.gltf JSON 不要走这条（外部 URI 从 buffer 无法可靠解析）。
 static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: String) -> Node3D:
 	var disk_path := project_abs(glb_res_or_abs)
 	if _gltf_fail_cache.has(disk_path):
@@ -341,6 +358,7 @@ static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: S
 
 
 ## GLB 魔数 `glTF`；空 BIN / 坏 chunk 在校验阶段拦掉，避免引擎「Buffer 0」ERROR。
+## JSON .gltf 请走 append_from_file，不在此校验通过。
 static func is_plausible_gltf_bytes(bytes: PackedByteArray) -> bool:
 	return _is_plausible_gltf_bytes(bytes)
 
@@ -351,10 +369,7 @@ static func _is_plausible_gltf_bytes(bytes: PackedByteArray) -> bool:
 	# Binary GLB：magic = 'glTF'
 	if bytes[0] == 0x67 and bytes[1] == 0x6C and bytes[2] == 0x54 and bytes[3] == 0x46:
 		return _glb_chunks_look_ok(bytes)
-	# JSON .gltf（本管线基本不用；缺外部 bin 时引擎也会报 Buffer 0）
-	var c0 := bytes[0]
-	if c0 == 0x7B or c0 == 0x5B:
-		return false
+	# JSON .gltf：字节路径不支持（需 append_from_file）
 	return false
 
 

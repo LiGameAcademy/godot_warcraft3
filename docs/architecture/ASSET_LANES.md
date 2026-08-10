@@ -26,8 +26,8 @@
 .cache/wc3-assets/                 ← extract 中间态（工具可读；游戏不可依赖）
   │
   ├─ tools/asset-convert ──────────► assets/asset-converted/   【视觉】
-  │                                    PNG / GLB / .scn / PathTextures
-  │                                    （.gdignore，防 Godot auto-import）
+  │                                    PNG / GLTF(+bin, 外链贴图) / .scn
+  │                                    （可选 .gdignore）
   │
   ├─ tools/slk-export ─────────────► assets/slk-exported/      【数据】
   │  tools/sync-data-assets            SLK JSON

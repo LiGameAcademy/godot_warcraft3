@@ -98,7 +98,10 @@ function main() {
   }
 
   // 扫所有 .glb
-  const allGlb = walk(ASSET_CONVERTED, (p) => p.toLowerCase().endsWith(".glb"));
+  const allGlb = walk(ASSET_CONVERTED, (p) => {
+    const l = p.toLowerCase();
+    return l.endsWith(".gltf") || l.endsWith(".glb");
+  });
   report.glbTotal = allGlb.length;
   console.log(`[check-scn] .glb 总数: ${report.glbTotal}`);
 
@@ -125,9 +128,7 @@ function main() {
   // 找缺漏：glb 有但 scn 无（且未被 .no-scn 标）
   for (const g of allGlb) {
     const rel = relative(ASSET_CONVERTED, g).replace(/\\/g, "/");
-    // GLB 在 raw/ 子目录：去掉 /raw/ 段以与同 stem .scn 匹配
-    //   例：Buildings/Human/TownHall/raw/TownHall.glb -> Buildings/Human/TownHall/TownHall
-    const stem = rel.replace(/\/raw\//, "/").replace(/\.glb$/, "");
+    const stem = rel.replace(/\.gltf$/i, "").replace(/\.glb$/i, "");
     const cat = classifyGlb(rel);
     if (!report.byCategory[cat]) {
       report.byCategory[cat] = { glb: 0, scn: 0, missing: [], excluded: 0 };
@@ -150,8 +151,7 @@ function main() {
   const glbStems = new Set();
   for (const g of allGlb) {
     const rel = relative(ASSET_CONVERTED, g).replace(/\\/g, "/");
-    // 去 /raw/ 段以与同 stem .scn 比较
-    glbStems.add(rel.replace(/\/raw\//, "/").replace(/\.glb$/, ""));
+    glbStems.add(rel.replace(/\.gltf$/i, "").replace(/\.glb$/i, ""));
   }
   for (const s of allScn) {
     const rel = relative(ASSET_CONVERTED, s).replace(/\\/g, "/");
@@ -166,8 +166,7 @@ function main() {
   for (const s of allScn) {
     const rel = relative(ASSET_CONVERTED, s).replace(/\\/g, "/");
     const stem = rel.replace(/\.scn$/, "");
-    // scn 对应 glb 的路径 = stem + .glb
-    if (!noScnSet.has(stem + ".glb")) {
+    if (!noScnSet.has(stem + ".gltf") && !noScnSet.has(stem + ".glb")) {
       effectiveScn++;
     }
   }

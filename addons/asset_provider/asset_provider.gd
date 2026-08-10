@@ -113,9 +113,12 @@ func _candidate_relatives(logical: String) -> PackedStringArray:
 	if lower.ends_with(".blp"):
 		out.append(logical.substr(0, logical.length() - 4) + ".png")
 	elif lower.ends_with(".mdx") or lower.ends_with(".mdl"):
-		out.append(logical.substr(0, logical.length() - 4) + ".glb")
+		var stem := logical.substr(0, logical.length() - 4)
+		out.append(stem + ".gltf")
+		out.append(stem + ".glb")
 	elif logical.get_extension().is_empty():
 		out.append(logical + ".png")
+		out.append(logical + ".gltf")
 		out.append(logical + ".glb")
 	return out
 

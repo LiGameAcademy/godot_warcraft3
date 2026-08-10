@@ -17,14 +17,49 @@ import {
 import {
   blpLogicalToPng,
   mdxLogicalToGeosetVis,
-  mdxLogicalToGlb,
+  mdxLogicalToGltf,
   mdxLogicalToPe2,
   normalizeLogicalPath,
+  uriFromModelToPng,
 } from "./paths.js";
 import { walkFiles } from "./walk.js";
 import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
 
 const MODEL_SCALE = 0.01;
+
+/** 合法 .gltf：JSON 且含 asset.version（方案 B 外链贴图）。 */
+function isValidGltfOnDisk(absPath) {
+  let fd;
+  try {
+    fd = fs.openSync(absPath, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    if (stat.size < 32) return false;
+    const n = Math.min(stat.size, 256);
+    const buf = Buffer.alloc(n);
+    fs.readSync(fd, buf, 0, n, 0);
+    const head = buf.toString("utf8").trimStart();
+    if (!head.startsWith("{")) return false;
+    return /"asset"\s*:/.test(head);
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function unlinkQuiet(p) {
+  try {
+    fs.unlinkSync(p);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** @param {unknown} v */
 function asVec3(v) {
@@ -512,11 +547,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   /** @type {Map<number, import('@gltf-transform/core').Material>} */
   const materialCache = new Map();
 
-  // GLB 规范要求 image 必须是 embedded（bufferView），不允许外部 URI。
-  // glTF-Transform v4.4.1 写 GLB 时会丢弃 setURI；Godot 加载时也会要求 uri/bufferView 二选一。
-  // 因此贴图只能 embed。重复贴图问题改在 .gdignore 层解决（assets/asset-converted/.gdignore
-  // 阻止 Godot auto-import → 不再生成 <model>_<tex>.png 副产物）。所有模型共享
-  // assets/asset-converted/Textures/<name>.png 单一 canonical PNG。
+  // 方案 B：.gltf + 外部 URI 指向 assets/asset-converted/Textures|… 下唯一 PNG。
+  // 不再 setImage embed（GLB 规范强制内嵌，无法跨模型共享）。
+  const gltfLogical = mdxLogicalToGltf(logicalPath);
+
   function getTexture(textureId) {
     if (textureCache.has(textureId)) return textureCache.get(textureId);
     const texInfo = model.Textures?.[textureId];
@@ -524,10 +558,14 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       isReplaceable: Boolean(texInfo?.ReplaceableId),
       replaceableId: texInfo?.ReplaceableId || 0,
     });
+    const uri = uriFromModelToPng(gltfLogical, resolved.pngLogical);
+    // 必须同时 setImage + setURI：仅 URI 会被 writer 丢弃；
+    // 有二者时 .gltf writer 把图写到 uri 路径（canonical 已在 Textures/ 则覆盖同文件）。
     const texture = document
       .createTexture(resolved.pngLogical)
       .setMimeType("image/png")
-      .setImage(resolved.pngBytes);
+      .setImage(resolved.pngBytes)
+      .setURI(uri);
     textureCache.set(textureId, texture);
     return texture;
   }
@@ -900,8 +938,8 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 
   document.getRoot().setDefaultScene(scene);
 
-  const glbLogical = mdxLogicalToGlb(logicalPath);
-  const dest = path.join(outDir, ...glbLogical.split("/"));
+  const dest = path.join(outDir, ...gltfLogical.split("/"));
+  const destBin = dest.replace(/\.gltf$/i, ".bin");
   const pe2Dest = path.join(outDir, ...mdxLogicalToPe2(logicalPath).split("/"));
   const geosetVisDest = path.join(
     outDir,
@@ -909,22 +947,18 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
-  // P3-10：原子写盘
-  // 旧实现：NodeIO.write(PE2) → writePe2Sidecar(PE2) → writeGeosetVisSidecar。
-  // 中途崩溃 → GLB 已写但 pe2/geosetvis 缺失，下次 cache 看到 .glb 就 skip，
-  // runtime 走 JSON fallback 但 GLB 也没了（或半成品解析失败）。
-  // 新实现：GLB 写 .tmp，全部成功后再 rename；任何 throw → 清掉所有可能残留。
-  const glbTmp = dest + ".tmp";
+  // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
+  // sidecar 先写；gltf/bin 后写。中途失败清掉本模型产物。
   try {
-    await new NodeIO().write(glbTmp, document);
     writePe2Sidecar(model, logicalPath, inDir, outDir);
     writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
-    fs.renameSync(glbTmp, dest);
+    await new NodeIO().write(dest, document);
+    unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
-    try { fs.unlinkSync(glbTmp); } catch { /* tmp 不存在或不可删，忽略 */ }
-    try { fs.unlinkSync(dest); } catch { /* rename 之前的 dest 不存在，忽略 */ }
-    try { fs.unlinkSync(pe2Dest); } catch { /* 同上 */ }
-    try { fs.unlinkSync(geosetVisDest); } catch { /* 同上 */ }
+    unlinkQuiet(dest);
+    unlinkQuiet(destBin);
+    unlinkQuiet(pe2Dest);
+    unlinkQuiet(geosetVisDest);
     throw err;
   }
   return dest;
@@ -941,8 +975,8 @@ export async function convertMdxBatch(options) {
   console.log(`\n[models] 发现 ${files.length} 个 .mdx/.mdl`);
 
   for (const file of files) {
-    const glbLogical = mdxLogicalToGlb(file.logicalPath);
-    const dest = path.join(outDir, ...glbLogical.split("/"));
+    const gltfLogical = mdxLogicalToGltf(file.logicalPath);
+    const dest = path.join(outDir, ...gltfLogical.split("/"));
     const pe2Dest = path.join(outDir, ...mdxLogicalToPe2(file.logicalPath).split("/"));
     const geosetVisDest = path.join(
       outDir,
@@ -959,14 +993,20 @@ export async function convertMdxBatch(options) {
       const dstStat = fs.statSync(dest);
       const pe2Stat = fs.statSync(pe2Dest);
       const visStat = fs.statSync(geosetVisDest);
+      const valid = isValidGltfOnDisk(dest);
       if (
         dstStat.mtimeMs >= srcStat.mtimeMs &&
         dstStat.size > 0 &&
+        valid &&
         pe2Stat.mtimeMs >= srcStat.mtimeMs &&
         visStat.mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
         continue;
+      }
+      if (!valid && dstStat.size > 0) {
+        unlinkQuiet(dest);
+        unlinkQuiet(dest.replace(/\.gltf$/i, ".bin"));
       }
     }
 

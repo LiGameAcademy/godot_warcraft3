@@ -147,7 +147,7 @@ func _collect_glb(dir_abs: String, out: PackedStringArray) -> void:
 			var full := dir_abs.path_join(name)
 			if d.current_is_dir():
 				_collect_glb(full, out)
-			elif name.to_lower().ends_with(".glb"):
+			elif name.to_lower().ends_with(".gltf") or name.to_lower().ends_with(".glb"):
 				out.append(full)
 		name = d.get_next()
 	d.list_dir_end()

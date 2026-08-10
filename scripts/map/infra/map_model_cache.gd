@@ -615,6 +615,8 @@ func _geoset_vis_json_path(glb_path: String) -> String:
 	var lower := logical.to_lower()
 	if lower.ends_with(".glb"):
 		logical = logical.substr(0, logical.length() - 4) + ".geosetvis.json"
+	elif lower.ends_with(".gltf"):
+		logical = logical.substr(0, logical.length() - 5) + ".geosetvis.json"
 	elif lower.ends_with(".scn"):
 		logical = logical.substr(0, logical.length() - 4) + ".geosetvis.json"
 	else:

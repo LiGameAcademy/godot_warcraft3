@@ -37,7 +37,7 @@ func rebuild_from_disk() -> int:
 	var fname := dir.get_next()
 	var n := 0
 	while fname != "":
-		if not dir.current_is_dir() and fname.ends_with(".glb"):
+		if not dir.current_is_dir() and (fname.ends_with(".gltf") or fname.ends_with(".glb")):
 			var parsed: Dictionary = parse_basename(fname.get_basename())
 			if bool(parsed.get("ok", false)) and str(parsed.get("family", "")) == family:
 				var tag: String = str(parsed["tag"])
@@ -169,14 +169,16 @@ func basename_for_tag(tag: String, variation: int = 0) -> String:
 	return "%s%s%d" % [family, tag, variation]
 
 
-## res://assets/asset-converted/... 逻辑路径；未登记且 disk 也不存在时仍返回候选路径。
+## res://assets/asset-converted/... 逻辑路径；优先 .gltf，回退 .glb。
 func path_for_tag(tag: String, variation: int = 0) -> String:
 	var base := basename_for_tag(tag, variation)
 	if base.is_empty():
 		return ""
-	return RuntimeAssets.converted_path(
-		"Doodads/Terrain/%s/%s.glb" % [family, base]
-	)
+	var stem := "Doodads/Terrain/%s/%s" % [family, base]
+	var gltf := RuntimeAssets.converted_path(stem + ".gltf")
+	if RuntimeAssets.file_exists(gltf):
+		return gltf
+	return RuntimeAssets.converted_path(stem + ".glb")
 
 
 ## 仅当目录中已登记（或磁盘存在）时返回路径，否则 ""。

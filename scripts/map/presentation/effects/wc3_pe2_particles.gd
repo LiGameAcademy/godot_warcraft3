@@ -14,7 +14,10 @@ const META_ALWAYS_ON := "pe2_always_on"
 
 static func pe2_path_from_glb(glb_path: String) -> String:
 	var p := glb_path.replace("\\", "/")
-	if p.to_lower().ends_with(".glb"):
+	var lower := p.to_lower()
+	if lower.ends_with(".gltf"):
+		return p.substr(0, p.length() - 5) + ".pe2.json"
+	if lower.ends_with(".glb"):
 		return p.substr(0, p.length() - 4) + ".pe2.json"
 	return p + ".pe2.json"
 

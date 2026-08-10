@@ -205,7 +205,7 @@ async function main() {
   }
 
   console.log(
-    "\n全部完成。输出示例: res://assets/asset-converted/Units/.../Foo.glb + Foo.scn（已 gitignore）",
+    "\n全部完成。输出示例: res://assets/asset-converted/Units/.../Foo.gltf（外链 Textures/*.png）+ Foo.scn（已 gitignore）",
   );
   process.exit(errors > 0 ? 2 : 0);
 }

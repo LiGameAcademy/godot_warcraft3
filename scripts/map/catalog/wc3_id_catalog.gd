@@ -191,20 +191,21 @@ func model_base_path(type_id: String) -> String:
 	return file
 
 
-## 解析已转换 GLB；树木等带 variation 后缀（LordaeronTree0.glb）。
+## 解析已转换模型（优先 .gltf 外链贴图，回退旧 .glb）。
 func converted_glb_path(type_id: String, variation: int = 0) -> String:
 	var base := model_base_path(type_id)
 	if base.is_empty():
 		return ""
-	var candidates: PackedStringArray = [
-		"%s%d.glb" % [base, variation],
-		"%s.glb" % base,
-		"%s0.glb" % base,
+	var stems: PackedStringArray = [
+		"%s%d" % [base, variation],
+		"%s" % base,
+		"%s0" % base,
 	]
-	for rel in candidates:
-		var p := RuntimeAssets.converted_path(rel)
-		if RuntimeAssets.file_exists(p):
-			return p
+	for stem in stems:
+		for ext in [".gltf", ".glb"]:
+			var p := RuntimeAssets.converted_path(stem + ext)
+			if RuntimeAssets.file_exists(p):
+				return p
 	return ""
 
 
