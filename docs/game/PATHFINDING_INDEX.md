@@ -1,6 +1,6 @@
 # 寻路系统 · 设计索引
 
-> 状态：**F-PATH-1 设计文档**（明早验收先看这个）  
+> 状态：**F-PATH-6 综合 selftest 5/5**（寻路 4 模块 + 1 集成）  
 > 配合：[PATHFINDING_CHOICE.md](PATHFINDING_CHOICE.md)（主方案：WC3 离散网格 A*）  
 > 最后更新：2026-08-10
 
@@ -21,11 +21,11 @@
 | 阶段 | 交付 | 状态 |
 |------|------|------|
 | **F-PATH-1** | 本设计文档 | ✅ |
-| F-PATH-2 | `SteeringBehaviors`（seek/arrive/pursue/evade/wander） | 待办 |
-| F-PATH-3 | `PathArc`（弧线转弯，不切直角） | 待办 |
-| F-PATH-4 | `SlopeSpeed`（斜坡速度衰减） | 待办 |
-| F-PATH-5 | `FormationFollow`（编队跟随） | 待办 |
-| F-PATH-6 | selftest 5/5 | 待办 |
+| F-PATH-2 | `SteeringBehaviors`（seek/arrive/pursue/evade/wander） | ✅ |
+| F-PATH-3 | `PathArc`（弧线转弯，不切直角） | ✅ |
+| F-PATH-4 | `SlopeSpeed`（斜坡速度衰减） | ✅ |
+| F-PATH-5 | `FormationFollow`（编队跟随） | ✅ |
+| **F-PATH-6** | **selftest 5/5**（综合 4 模块 + 1 集成） | **✅** |
 
 ---
 
