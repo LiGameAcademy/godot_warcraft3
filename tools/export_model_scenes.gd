@@ -59,16 +59,18 @@ func _run() -> void:
 		var logical_glb := rel.substr(idx + marker.length())
 		if not includes.is_empty() and not _matches_any_include(logical_glb, includes):
 			continue
+		# 已标 .no-scn 的 GLB 跳过（粒子/装饰/水相关/Portrait 等不需要 scn）
+		if _is_no_scn(logical_glb):
+			skipped += 1
+			continue
 		done += 1
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
 		var disk_scn := RuntimeAssets.project_abs(scn_res)
-		# force=true 时清缓存，instance 时拿 GLB 重烤；**不删 scn**——
-		# 若先删 scn + Ctrl+C 中断，已删的 scn 不会被重建 → 净结果是 scn 数减少。
-		# 当前实现：bake_model_scene 直接覆盖同名 scn；bake 失败时旧 scn 保留。
-		if force:
+		if force and FileAccess.file_exists(disk_scn):
+			DirAccess.remove_absolute(disk_scn)
 			cache.evict(glb_res)
-		elif FileAccess.file_exists(disk_scn):
+		elif not force and FileAccess.file_exists(disk_scn):
 			var gstat := FileAccess.get_modified_time(disk_glb)
 			var sstat := FileAccess.get_modified_time(disk_scn)
 			if sstat >= gstat:
@@ -105,6 +107,32 @@ func _matches_any_include(logical_glb: String, includes: PackedStringArray) -> b
 		if logical_glb.findn(str(inc)) >= 0:
 			return true
 	return false
+
+
+## 读 assets/asset-converted/.no-scn 标记；命中 → true（跳过 bake）。
+## 文件不存在或读失败 → false（不抛错）。
+## 性能：728 行的 Set lookup，O(1)。
+var _no_scn_set: Dictionary = {}
+
+func _load_no_scn() -> void:
+	if not _no_scn_set.is_empty():
+		return
+	var path := RuntimeAssets.project_abs("res://assets/asset-converted/.no-scn")
+	if not FileAccess.file_exists(path):
+		return
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		if not line.is_empty() and not line.begins_with("#"):
+			_no_scn_set[line] = true
+	f.close()
+
+
+func _is_no_scn(logical_glb: String) -> bool:
+	_load_no_scn()
+	return _no_scn_set.has(logical_glb)
 
 
 func _collect_glb(dir_abs: String, out: PackedStringArray) -> void:
