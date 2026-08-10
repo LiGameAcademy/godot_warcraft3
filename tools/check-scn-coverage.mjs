@@ -125,7 +125,9 @@ function main() {
   // 找缺漏：glb 有但 scn 无（且未被 .no-scn 标）
   for (const g of allGlb) {
     const rel = relative(ASSET_CONVERTED, g).replace(/\\/g, "/");
-    const stem = rel.replace(/\.glb$/, "");
+    // GLB 在 raw/ 子目录：去掉 /raw/ 段以与同 stem .scn 匹配
+    //   例：Buildings/Human/TownHall/raw/TownHall.glb -> Buildings/Human/TownHall/TownHall
+    const stem = rel.replace(/\/raw\//, "/").replace(/\.glb$/, "");
     const cat = classifyGlb(rel);
     if (!report.byCategory[cat]) {
       report.byCategory[cat] = { glb: 0, scn: 0, missing: [], excluded: 0 };
@@ -148,7 +150,8 @@ function main() {
   const glbStems = new Set();
   for (const g of allGlb) {
     const rel = relative(ASSET_CONVERTED, g).replace(/\\/g, "/");
-    glbStems.add(rel.replace(/\.glb$/, ""));
+    // 去 /raw/ 段以与同 stem .scn 比较
+    glbStems.add(rel.replace(/\/raw\//, "/").replace(/\.glb$/, ""));
   }
   for (const s of allScn) {
     const rel = relative(ASSET_CONVERTED, s).replace(/\\/g, "/");

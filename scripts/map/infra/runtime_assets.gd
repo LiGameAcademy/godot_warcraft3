@@ -279,7 +279,7 @@ static func load_converted_texture(relative: String) -> Texture2D:
 
 
 static func load_gltf_scene(res_or_abs: String) -> Node3D:
-	var disk_path := project_abs(res_or_abs)
+	var disk_path := _resolve_glb_disk_path(res_or_abs)
 	if disk_path.is_empty() or not FileAccess.file_exists(disk_path):
 		return null
 	if _gltf_fail_cache.has(disk_path):
@@ -289,6 +289,25 @@ static func load_gltf_scene(res_or_abs: String) -> Node3D:
 		_gltf_fail_cache[disk_path] = true
 		return null
 	return load_gltf_scene_from_bytes(bytes, disk_path)
+
+
+## GLB 现位于 asset-converted/.../<Name>/raw/<Name>.glb（避开 Godot auto-import）。
+## 兼容旧路径（直接放同目录）：先尝试 res_or_abs，再尝试 raw/ 子目录。
+static func _resolve_glb_disk_path(res_or_abs: String) -> String:
+	var p := res_or_abs.replace("\\", "/")
+	# res:// / 绝对盘符 / 相对盘符 → 全部到绝对盘符
+	var abs_p := project_abs(p)
+	if FileAccess.file_exists(abs_p):
+		return abs_p
+	# 兼容旧布局：GLB 在 raw/ 子目录
+	var lower := p.to_lower()
+	if lower.ends_with(".glb"):
+		var stem := p.substr(0, p.length() - 4)
+		var with_raw := stem + "/raw/" + p.get_file()
+		var abs_raw := project_abs(with_raw)
+		if FileAccess.file_exists(abs_raw):
+			return abs_raw
+	return abs_p
 
 
 ## 已读入内存的 GLB 字节 → 场景（主线程调用；纹理相对 base_dir 解析）。

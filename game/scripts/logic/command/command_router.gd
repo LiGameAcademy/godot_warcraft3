@@ -492,12 +492,13 @@ func issue_build(
 		return 0
 	var n: int = 0
 	for node in peasants:
-		var bc: BuildController = _ensure_build.call(node) as BuildController
+		var candidate: Node3D = node as Node3D
+		if candidate == null:
+			continue
+		var bc: BuildController = _ensure_build.call(candidate) as BuildController
 		if bc == null:
 			continue
-		var order: UnitOrder = UnitOrder.build(building_id, site_wc3, source)
-		order.target_id = node.get_instance_id() if node != null else 0
-		order.builder = node
+		var order: BuildOrder = BuildOrder.create(building_id, site_wc3, candidate)
 		if bc.start_build(order):
 			n += 1
 	if n > 0:

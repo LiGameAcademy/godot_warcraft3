@@ -37,32 +37,33 @@ export function blpLogicalToPng(logicalPath) {
   return `${n}.png`;
 }
 
-/** Map WC3 model path to converted GLB logical path. */
+/** Map WC3 model path to converted GLB logical path.
+ *  GLB 写到 raw/ 子目录，避免 Godot 编辑器 auto-import（同名 .scn/PNG 副产物冲突）。
+ *  .scn/.pe2.json/.png 仍在原目录，FileSystem 可见。
+ */
 export function mdxLogicalToGlb(logicalPath) {
   const n = normalizeLogicalPath(logicalPath);
-  if (n.toLowerCase().endsWith(".mdx")) {
-    return `${n.slice(0, -4)}.glb`;
-  }
-  if (n.toLowerCase().endsWith(".mdl")) {
-    return `${n.slice(0, -4)}.glb`;
-  }
-  return `${n}.glb`;
+  const base = stripExt(n);
+  return `${base}/raw/${baseExt(n, ".glb")}`;
 }
 
-/** Map WC3 model path to ParticleEmitter2 sidecar JSON (next to GLB). */
+function baseExt(p, ext) {
+  return `${stripExt(p)}${ext}`;
+}
+
+function stripExt(p) {
+  const i = p.lastIndexOf(".");
+  return i > 0 ? p.slice(0, i) : p;
+}
+
+/** Map WC3 model path to ParticleEmitter2 sidecar JSON (next to .scn, NOT inside raw/). */
 export function mdxLogicalToPe2(logicalPath) {
-  const glb = mdxLogicalToGlb(logicalPath);
-  if (glb.toLowerCase().endsWith(".glb")) {
-    return `${glb.slice(0, -4)}.pe2.json`;
-  }
-  return `${glb}.pe2.json`;
+  const n = normalizeLogicalPath(logicalPath);
+  return `${stripExt(n)}.pe2.json`;
 }
 
 /** Map WC3 model path to Geoset visibility sidecar (Godot bake injects AnimationPlayer tracks). */
 export function mdxLogicalToGeosetVis(logicalPath) {
-  const glb = mdxLogicalToGlb(logicalPath);
-  if (glb.toLowerCase().endsWith(".glb")) {
-    return `${glb.slice(0, -4)}.geosetvis.json`;
-  }
-  return `${glb}.geosetvis.json`;
+  const n = normalizeLogicalPath(logicalPath);
+  return `${stripExt(n)}.geosetvis.json`;
 }

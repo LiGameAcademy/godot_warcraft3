@@ -239,6 +239,12 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 			inst.free()
 	var proto := _ensure_scene(path, prefer_visuals)
 	if proto == null:
+		var abs := RuntimeAssets.project_abs(path)
+		var exists := not abs.is_empty() and FileAccess.file_exists(abs)
+		push_warning(
+			"MapModelCache.instance_glb_preview failed: path=%s prefer_visuals=%s disk_abs=%s exists=%s"
+			% [path, prefer_visuals, abs, exists]
+		)
 		return null
 	var dup := proto.duplicate() as Node3D
 	if dup != null:

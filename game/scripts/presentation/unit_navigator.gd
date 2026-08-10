@@ -58,6 +58,8 @@ var _prev_wc3: Vector2 = Vector2.INF
 var _formation_slot: int = -1
 var _formation_name: String = ""
 var _formation_spacing: float = 64.0
+## harvest_ghost 切换前暂存原分离设置，便于 off 时恢复。
+var _saved_separation: bool = true
 
 
 func set_harvest_ghost(on: bool, keep_separation: bool = false) -> void:

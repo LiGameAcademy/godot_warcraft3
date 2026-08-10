@@ -1,0 +1,2 @@
+## Godot: 文件存在即忽略整个目录（不读内容）。
+## docs/ 仅有 .md，不会有可导入资源，但保留 .gdignore 防止意外被 SceneFormatLoader 处理。
