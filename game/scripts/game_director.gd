@@ -14,6 +14,7 @@ const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator
 const UnitVisualScr = preload("res://game/scripts/presentation/unit_visual.gd")
 const UnitCrowdQueryScr = preload("res://game/scripts/logic/pathing/unit_crowd_query.gd")
 const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slots.gd")
+const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
 const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_cell_reservation.gd")
 const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
@@ -409,9 +410,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			if _issue_move_command(mb.position):
-				get_viewport().set_input_as_handled()
-				return
+			# Shift+RMB → 队形排开（F3）；RMB → 落点散开（经典）
+			if mb.shift_pressed:
+				if _issue_group_move_command(mb.position, FormationFollowScr.FORMATION_RECT):
+					get_viewport().set_input_as_handled()
+					return
+			else:
+				if _issue_move_command(mb.position):
+					get_viewport().set_input_as_handled()
+					return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
 		# S = Stop：对齐原作停止命令（寻路分支导航指令，不是采集）
@@ -534,6 +541,86 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 			)
 		elif failed > 0:
 			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
+	return moved > 0 or failed > 0
+
+
+## F3-2: Shift+RMB 队形排开群体移动（FormationFollow）。
+## 行为：leader = primary selected；follower = selected[1:]；
+## 头一回算 slot（leader_heading=0 硬编码），各 follower 各自 A* 到 slot 目标。
+## WC3 复刻：不做 leader 边走 follower 边跟（见 docs/game/GROUP_MOVE.md §3.5）。
+func _issue_group_move_command(
+	screen_pos: Vector2,
+	formation: String,
+	spacing: float = 64.0
+) -> bool:
+	if unit_selector == null or _path_query == null:
+		return false
+	if not unit_selector.has_method("get_primary") or not unit_selector.has_method("get_selected"):
+		return false
+	var primary: Node3D = unit_selector.call("get_primary")
+	var selected: Array = unit_selector.call("get_selected")
+	if primary == null or selected.is_empty():
+		return false
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		if game_hud:
+			game_hud.set_status("队形移动：未点到地面")
+		return true
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
+	# 过滤建筑（不可移动）
+	var movers: Array = []
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		var d: Dictionary = node.get_meta("unit_data", {})
+		var tid := str(d.get("typeId", ""))
+		if BuildingVisualScr.is_building(tid):
+			continue
+		movers.append(node)
+	if movers.is_empty():
+		if game_hud:
+			game_hud.set_status("选中无可用移动单位（建筑？）")
+		return true
+	# leader 位置（WC3 XY）
+	var leader: Node3D = primary
+	var leader_pos := Vector2(
+		leader.global_position.x * inv, -leader.global_position.z * inv
+	)
+	# 算 slot（F3 硬编码 heading=0，future 接 leader facing）
+	var slots: PackedVector2Array = FormationFollowScr.slot_positions(
+		leader_pos, 0.0, movers.size(), formation, spacing
+	)
+	# leader 走 goal_center（slot[0] = leader_pos + (0,0) = leader_pos，但要走到 goal）
+	# followers 走 slot[1..]
+	var moved := 0
+	var failed := 0
+	for i in range(movers.size()):
+		var node: Node3D = movers[i]
+		var nav := _ensure_navigator(node)
+		if nav == null:
+			continue
+		var goal: Vector2
+		if node == leader:
+			goal = goal_center  # leader 直接走落点
+		else:
+			# follower 走 slot 偏移（相对 leader 当前位置，offset 到 goal_center）
+			var offset: Vector2 = slots[i] - slots[0]  # slot 0 = leader_pos
+			goal = goal_center + offset
+		if nav.go_to_wc3(goal):
+			moved += 1
+		else:
+			failed += 1
+	if moved > 0:
+		_spawn_move_confirm(goal_center)
+	if game_hud:
+		if moved > 0:
+			game_hud.set_status(
+				"队形移动 [%s] → (%.0f, %.0f) · %d 单位" % [formation, goal_center.x, goal_center.y, moved]
+			)
+		elif failed > 0:
+			game_hud.set_status("队形移动：无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
 	return moved > 0 or failed > 0
 
 

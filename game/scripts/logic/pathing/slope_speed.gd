@@ -18,10 +18,17 @@ const MAX_SLOPE_DEG := 30.0
 
 
 ## 衰减后速度。
-## 入口：self_pos / prev_pos（WC3 XY；屏 y-down）；base_speed。
-static func apply(self_pos: Vector2, prev_pos: Vector2, base_speed: float) -> float:
+## 入口：self_pos / prev_pos（WC3 XY；屏 y-down）；base_speed；max_deg（可选，默认 30°）。
+static func apply(
+	self_pos: Vector2,
+	prev_pos: Vector2,
+	base_speed: float,
+	max_deg: float = MAX_SLOPE_DEG
+) -> float:
 	if base_speed <= 0.0:
 		return 0.0
+	if max_deg <= 0.0:
+		max_deg = MAX_SLOPE_DEG
 	var dx: float = self_pos.x - prev_pos.x
 	var dy: float = self_pos.y - prev_pos.y
 	var horiz: float = absf(dx)
@@ -30,18 +37,18 @@ static func apply(self_pos: Vector2, prev_pos: Vector2, base_speed: float) -> fl
 	# 屏 y-down：上坡 = dy < 0；下坡 = dy > 0
 	var slope_rad: float = atan2(absf(dy), maxf(horiz, 0.5))
 	var slope_deg: float = rad_to_deg(slope_rad)
-	if slope_deg > MAX_SLOPE_DEG:
-		slope_deg = MAX_SLOPE_DEG
-	# 线性插值：0° → 1.0；MAX_SLOPE_DEG → up_factor（screen y-up = 上坡）
+	if slope_deg > max_deg:
+		slope_deg = max_deg
+	# 线性插值：0° → 1.0；max_deg → up_factor（screen y-up = 上坡）
 	# 屏幕坐标 dy < 0 → 上坡（屏向上）→ UPHILL_FACTOR
 	# 屏幕坐标 dy > 0 → 下坡（屏向下）→ DOWNHILL_FACTOR
 	var factor: float = 1.0
 	if dy < 0.0:
 		# 上坡
-		factor = lerpf(1.0, UPHILL_FACTOR, slope_deg / MAX_SLOPE_DEG)
+		factor = lerpf(1.0, UPHILL_FACTOR, slope_deg / max_deg)
 	else:
 		# 下坡（包含水平 dy=0）
-		factor = lerpf(1.0, DOWNHILL_FACTOR, slope_deg / MAX_SLOPE_DEG)
+		factor = lerpf(1.0, DOWNHILL_FACTOR, slope_deg / max_deg)
 	return base_speed * factor
 
 

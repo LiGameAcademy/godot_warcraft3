@@ -14,6 +14,8 @@ signal locomotion_changed(moving: bool)
 
 const SeparationScr = preload("res://game/scripts/logic/pathing/unit_separation.gd")
 const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_profile.gd")
+const SlopeSpeedScr = preload("res://game/scripts/logic/pathing/slope_speed.gd")
+const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
 
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
@@ -29,6 +31,10 @@ const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_pro
 ## A* 净空格数（由 collision 推导）；0 = 单格通道即可。
 @export var clearance_cells: int = 0
 @export var enable_separation: bool = true
+## F3-3: 上下坡速度衰减（WC3 真实斜坡观感，必须开）。
+@export var enable_slope_speed: bool = true
+## F3-3: 上坡/下坡最大坡度（度）；超此值钳到。
+@export var slope_max_deg: float = 30.0
 ## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
 @export var stall_abort_sec: float = 0.4
 
@@ -43,6 +49,12 @@ var _wp_i: int = 0
 var _moving: bool = false
 var _goal_wc3: Vector2 = Vector2.INF
 var _stall_time: float = 0.0
+## F3-3: 上一帧位置（SlopeSpeed 调速用）
+var _prev_wc3: Vector2 = Vector2.INF
+## F3-3: formation 标记（-1 = leader / non-follower；>=0 = slot index）
+var _formation_slot: int = -1
+var _formation_name: String = ""
+var _formation_spacing: float = 64.0
 
 
 func configure(
@@ -101,10 +113,27 @@ func stop() -> void:
 	_wp_i = 0
 	_goal_wc3 = Vector2.INF
 	_stall_time = 0.0
+	_prev_wc3 = Vector2.INF
 	set_process(false)
 	_release_reservation()
 	if was:
 		_set_locomotion(false)
+
+
+## F3-3: 标记 follower 在 formation 中的 slot（调试/可视化用；不影响寻路）。
+## slot = -1 → leader（或非编队）；slot >= 0 → follower slot index。
+func set_formation_slot(slot: int, formation: String = "", spacing: float = 64.0) -> void:
+	_formation_slot = slot
+	_formation_name = formation
+	_formation_spacing = spacing
+
+
+func get_formation_slot() -> int:
+	return _formation_slot
+
+
+func get_formation_name() -> String:
+	return _formation_name
 
 
 ## 对目标点求路并开始跟随。返回是否成功发出路径。
@@ -206,6 +235,12 @@ func _process(delta: float) -> void:
 		_stall_time = 0.0
 		return
 	var step := speed_wc3 * delta
+	# F3-3: 上下坡速度衰减（WC3 真实斜坡观感）
+	if enable_slope_speed and _prev_wc3 != Vector2.INF:
+		var adjusted: float = SlopeSpeedScr.apply(
+			cur_wc3, _prev_wc3, speed_wc3, slope_max_deg
+		)
+		step = adjusted * delta
 	var desired: Vector2
 	if step >= dist:
 		desired = target_wc3
@@ -215,6 +250,7 @@ func _process(delta: float) -> void:
 	var moved := next.distance_to(cur_wc3)
 	_apply_wc3_pos(body, next)
 	_refresh_reservation(body)
+	_prev_wc3 = next  # F3-3: 记下上一帧位置
 	# 面向合成速度方向（含轻微侧移），比纯路点更稳
 	var move_dir := next - cur_wc3
 	if face_move_dir and move_dir.length_squared() > 0.01:
@@ -306,6 +342,7 @@ func _finish() -> void:
 	_wp_i = 0
 	_goal_wc3 = Vector2.INF
 	_stall_time = 0.0
+	_prev_wc3 = Vector2.INF
 	set_process(false)
 	_release_reservation()
 	_set_locomotion(false)
