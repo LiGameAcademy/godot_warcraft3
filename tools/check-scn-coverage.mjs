@@ -20,6 +20,7 @@ import {
   readdirSync,
   statSync,
   writeFileSync,
+  readFileSync,
 } from "node:fs";
 import { resolve, join, relative, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, "..");
 const ASSET_CONVERTED = join(REPO_ROOT, "assets", "asset-converted");
+const NO_SCN_FILE = join(ASSET_CONVERTED, ".no-scn");
 
 const args = process.argv.slice(2);
 const mdOut = (() => {
@@ -35,6 +37,23 @@ const mdOut = (() => {
   return i >= 0 ? args[i + 1] : null;
 })();
 const failOnGap = args.includes("--fail");
+const thresholdArg = (() => {
+  const i = args.indexOf("--threshold");
+  return i >= 0 ? parseFloat(args[i + 1]) : null;
+})();
+
+/** 读 .no-scn 标记文件。返回 Set<posix 路径> */
+function readNoScnSet() {
+  /** @type {Set<string>} */
+  const s = new Set();
+  if (!existsSync(NO_SCN_FILE)) return s;
+  const text = readFileSync(NO_SCN_FILE, { encoding: "utf8" });
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (t && !t.startsWith("#")) s.add(t);
+  }
+  return s;
+}
 
 /** @param {string} dir @param {(p: string) => boolean} match */
 function walk(dir, match) {
@@ -90,8 +109,10 @@ function main() {
     if (n.endsWith(".pe2.tscn")) return false;
     return true;
   });
-  report.scnTotal = allScn.length;
-  console.log(`[check-scn] .scn 总数: ${report.scnTotal}`);
+  // scnTotal 在分类 loop 后用 category 汇总（排除已标 GLB 的 scn）
+  console.log(`[check-scn] .scn 总数（含已排除）: ${allScn.length}`);  // 读 .no-scn 标记（已标 GLB 排除统计）
+  const noScnSet = readNoScnSet();
+  report.excluded = noScnSet.size;
 
   // 按 stem 收集 scn（去掉 .scn 后缀）
   const scnStems = new Set();
@@ -101,16 +122,23 @@ function main() {
     scnStems.add(stem);
   }
 
-  // 找缺漏：glb 有但 scn 无
+  // 找缺漏：glb 有但 scn 无（且未被 .no-scn 标）
   for (const g of allGlb) {
     const rel = relative(ASSET_CONVERTED, g).replace(/\\/g, "/");
     const stem = rel.replace(/\.glb$/, "");
     const cat = classifyGlb(rel);
     if (!report.byCategory[cat]) {
-      report.byCategory[cat] = { glb: 0, scn: 0, missing: [] };
+      report.byCategory[cat] = { glb: 0, scn: 0, missing: [], excluded: 0 };
     }
     report.byCategory[cat].glb++;
-    if (!scnStems.has(stem)) {
+    if (noScnSet.has(rel)) {
+      report.byCategory[cat].excluded++;
+      continue;
+    }
+    // 未排除：算入 scn 计数（如果该 stem 有 scn）
+    if (scnStems.has(stem)) {
+      report.byCategory[cat].scn++;
+    } else {
       report.missingList.push(rel);
       report.byCategory[cat].missing.push(rel);
     }
@@ -130,32 +158,36 @@ function main() {
     }
   }
 
-  // 填 scn 计数（按 category）
+  // 汇总有效 scn 数（按 category 排除已标）
+  let effectiveScn = 0;
   for (const s of allScn) {
     const rel = relative(ASSET_CONVERTED, s).replace(/\\/g, "/");
-    const cat = classifyGlb(rel);
-    if (!report.byCategory[cat]) {
-      report.byCategory[cat] = { glb: 0, scn: 0, missing: [] };
+    const stem = rel.replace(/\.scn$/, "");
+    // scn 对应 glb 的路径 = stem + .glb
+    if (!noScnSet.has(stem + ".glb")) {
+      effectiveScn++;
     }
-    report.byCategory[cat].scn++;
   }
+  report.scnTotal = effectiveScn;
 
   // 按 category 输出
   const cats = Object.keys(report.byCategory).sort();
   console.log(`[check-scn] === 按分类 ===`);
   for (const c of cats) {
     const s = report.byCategory[c];
-    const ratio = s.glb > 0 ? ((s.scn / s.glb) * 100).toFixed(1) : "0.0";
+    const effective = s.glb - s.excluded;
+    const ratio = effective > 0 ? ((s.scn / effective) * 100).toFixed(1) : "100.0";
     console.log(
-      `[check-scn] ${c.padEnd(10)} glb=${String(s.glb).padStart(5)} scn=${String(s.scn).padStart(5)} 覆盖=${ratio}% 缺漏=${s.missing.length}`
+      `[check-scn] ${c.padEnd(10)} glb=${String(s.glb).padStart(5)} exc=${String(s.excluded).padStart(4)} 有效=${String(effective).padStart(4)} scn=${String(s.scn).padStart(4)} 覆盖=${ratio}% 缺漏=${s.missing.length}`
     );
   }
   console.log(`[check-scn] === 总计 ===`);
-  const totalRatio = report.glbTotal > 0
-    ? ((report.scnTotal / report.glbTotal) * 100).toFixed(1)
-    : "0.0";
+  const effectiveTotal = report.glbTotal - report.excluded;
+  const totalRatio = effectiveTotal > 0
+    ? ((report.scnTotal / effectiveTotal) * 100).toFixed(1)
+    : "100.0";
   console.log(
-    `[check-scn] glb=${report.glbTotal} scn=${report.scnTotal} 覆盖=${totalRatio}% 缺漏=${report.missingList.length} 孤儿=${report.orphanList.length}`
+    `[check-scn] glb=${report.glbTotal} exc=${report.excluded} 有效=${effectiveTotal} scn=${report.scnTotal} 覆盖=${totalRatio}% 缺漏=${report.missingList.length} 孤儿=${report.orphanList.length}`
   );
 
   // 列前 20 个缺漏（太多会刷屏）
@@ -173,9 +205,22 @@ function main() {
     writeMarkdownReport(mdOut);
   }
 
-  if (failOnGap && report.missingList.length > 0) {
-    console.error(`[check-scn] ❌ 缺漏 ${report.missingList.length} 个，CI 失败`);
-    process.exit(1);
+  // 守门：覆盖 < 阈值则 fail
+  //   --fail 等价 --threshold 100（任何缺漏都 fail）
+  //   --threshold N 覆盖 < N% 则 fail
+  const ratioTotal = report.glbTotal - report.excluded;
+  const ratio = ratioTotal > 0
+    ? (report.scnTotal / ratioTotal) * 100
+    : 100.0;
+  const effectiveThreshold = thresholdArg !== null ? thresholdArg : (failOnGap ? 100.0 : null);
+  if (effectiveThreshold !== null) {
+    if (ratio < effectiveThreshold) {
+      console.error(
+        `[check-scn] ❌ 覆盖 ${ratio.toFixed(1)}% < 阈值 ${effectiveThreshold}%，CI 失败（缺漏 ${report.missingList.length}）`
+      );
+      process.exit(1);
+    }
+    console.log(`[check-scn] ✅ 覆盖 ${ratio.toFixed(1)}% ≥ 阈值 ${effectiveThreshold}%`);
   }
   console.log(`[check-scn] ✅ done`);
 }
@@ -192,23 +237,27 @@ function writeMarkdownReport(outPath) {
   lines.push(`| 指标 | 数值 |`);
   lines.push(`|------|------|`);
   lines.push(`| .glb 总数 | ${report.glbTotal} |`);
+  lines.push(`| 已排除（.no-scn） | ${report.excluded} |`);
+  const effectiveTotal = report.glbTotal - report.excluded;
+  lines.push(`| 有效 .glb | ${effectiveTotal} |`);
   lines.push(`| .scn 总数 | ${report.scnTotal} |`);
-  const totalRatio = report.glbTotal > 0
-    ? ((report.scnTotal / report.glbTotal) * 100).toFixed(1)
+  const totalRatio = effectiveTotal > 0
+    ? ((report.scnTotal / effectiveTotal) * 100).toFixed(1)
     : "0.0";
-  lines.push(`| 覆盖率 | ${totalRatio}% |`);
+  lines.push(`| 有效覆盖率 | ${totalRatio}% |`);
   lines.push(`| 缺漏（glb 缺 scn） | ${report.missingList.length} |`);
   lines.push(`| 孤儿（scn 无 glb） | ${report.orphanList.length} |`);
   lines.push(``);
   lines.push(`## 按分类`);
   lines.push(``);
-  lines.push(`| 分类 | .glb | .scn | 覆盖率 | 缺漏 |`);
-  lines.push(`|------|------|------|--------|------|`);
+  lines.push(`| 分类 | .glb | 已排除 | 有效 | .scn | 有效覆盖率 | 缺漏 |`);
+  lines.push(`|------|------|-------|------|------|-----------|------|`);
   const cats = Object.keys(report.byCategory).sort();
   for (const c of cats) {
     const s = report.byCategory[c];
-    const ratio = s.glb > 0 ? ((s.scn / s.glb) * 100).toFixed(1) + "%" : "0.0%";
-    lines.push(`| ${c} | ${s.glb} | ${s.scn} | ${ratio} | ${s.missing.length} |`);
+    const eff = s.glb - s.excluded;
+    const ratio = eff > 0 ? ((s.scn / eff) * 100).toFixed(1) + "%" : "100.0%";
+    lines.push(`| ${c} | ${s.glb} | ${s.excluded} | ${eff} | ${s.scn} | ${ratio} | ${s.missing.length} |`);
   }
   lines.push(``);
   if (report.missingList.length > 0) {
