@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { decodeBLP, getBLPImageData } from "war3-model";
 import { blpLogicalToPng } from "./paths.js";
 import { walkFiles } from "./walk.js";
+import { atomicWriteBytesSync } from "./atomic-write.js";
 
 /**
  * @param {Buffer} blpBuffer
@@ -64,8 +65,8 @@ export function convertBlpBatch(options) {
 
     try {
       const png = blpBufferToPng(fs.readFileSync(file.absPath));
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, png);
+      // P3-10：PNG 写盘 atomic
+      atomicWriteBytesSync(dest, png);
       converted += 1;
     } catch (err) {
       console.error(`  失败 ${file.logicalPath}: ${err.message ?? err}`);
@@ -81,8 +82,8 @@ export function convertBlpBatch(options) {
 export function writePlaceholderPng(destPath, rgba = [255, 0, 255, 255]) {
   const png = new PNG({ width: 1, height: 1, inputHasAlpha: true });
   png.data = Buffer.from(rgba);
-  fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.writeFileSync(destPath, PNG.sync.write(png));
+  // P3-10：占位 PNG 也走 atomic，避免 placeholder 半成品被 cache 当成"已存在"误判
+  atomicWriteBytesSync(destPath, PNG.sync.write(png));
 }
 
 export function sha256File(filePath) {

@@ -5,7 +5,8 @@ extends RefCounted
 ## asset-converted/ 被 .gdignore 阻止 Godot auto-import，运行时直接 FileAccess 读 GLB/.scn。
 ## 地图代码请用 converted_path / load_*；勿再手写 res://assets/asset-converted/ 前缀。
 ##
-## 解析顺序（via resolve）：AssetProvider overlay → converted → .cache
+## 解析顺序（via resolve）：AssetProvider overlay → converted → slk-exported。
+## 不读 .cache/wc3-assets（extract 中间态；见 docs/architecture/ASSET_LANES.md）。
 
 const CONVERTED_RES_ROOT := "res://assets/asset-converted"
 const SLK_RES_ROOT := "res://assets/slk-exported"
@@ -222,7 +223,7 @@ static func save_packed_scene(root: Node, res_or_user_path: String) -> Error:
 	return ResourceSaver.save(packed, res_or_user_path)
 
 
-## 逻辑路径 → 绝对磁盘路径。优先 Autoload AssetProvider（含 converted + cache）。
+## 逻辑路径 → 绝对磁盘路径。优先 Autoload AssetProvider（converted + slk-exported）。
 static func resolve(logical_path: String) -> String:
 	var logical := logical_path.replace("\\", "/")
 	while logical.begins_with("/"):
@@ -236,15 +237,14 @@ static func resolve(logical_path: String) -> String:
 			if not from_ap.is_empty():
 				return from_ap
 
-	# 无 Autoload 或未命中：converted → .cache/wc3-assets
+	# 无 Autoload 或未命中：converted → slk-exported（不读 .cache）
 	var conv := converted_path(logical)
 	var disk_path := project_abs(conv)
 	if FileAccess.file_exists(disk_path):
 		return disk_path
-	var cache_guess := ProjectSettings.globalize_path("res://").path_join(".cache/wc3-assets").path_join(logical)
-	cache_guess = cache_guess.replace("\\", "/")
-	if FileAccess.file_exists(cache_guess):
-		return cache_guess
+	var data_disk := project_abs(slk_path(logical))
+	if FileAccess.file_exists(data_disk):
+		return data_disk
 	return ""
 
 ## 文件是否存在

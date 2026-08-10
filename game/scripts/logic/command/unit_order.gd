@@ -29,6 +29,8 @@ var goal_wc3: Vector2 = Vector2.INF
 var source: int = Source.UNKNOWN
 ## 目标单位 instance_id（金矿等）；0 = 无
 var target_id: int = 0
+## 建筑 id（仅 BUILD Order；其他 Kind 留空）。F2-3 引入。
+var building_id: String = ""
 
 
 static func move(goal: Vector2, src: int = Source.UNKNOWN) -> UnitOrder:
@@ -68,6 +70,26 @@ static func return_goods(src: int = Source.UNKNOWN) -> UnitOrder:
 	var o := UnitOrder.new()
 	o.kind = Kind.RETURN_GOODS
 	o.source = src
+	return o
+
+
+## 建造 Order。building_id + 工地 wc3_xy；具体逻辑在 BuildController。
+static func build(p_building_id: String, site_wc3: Vector2, src: int = Source.PANEL) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.BUILD
+	o.source = src
+	o.building_id = p_building_id
+	o.goal_wc3 = site_wc3
+	return o
+
+
+## 训练 Order。unit_id + 工地 wc3_xy（建筑门口）；具体逻辑在 TrainQueue。
+static func train(p_unit_id: String, site_wc3: Vector2, src: int = Source.PANEL) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.TRAIN
+	o.source = src
+	o.building_id = p_unit_id ## 复用：训的是哪类单位
+	o.goal_wc3 = site_wc3
 	return o
 
 

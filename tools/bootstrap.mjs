@@ -11,7 +11,8 @@
 //   5. asset-convert （按 config.skip.convert 跳过；默认含 eager bake 见下）
 //   6. map-parse     （按 config.maps.items 列表）
 //   7. slk-export    （按 config.skip.slk 跳过）
-//   8. 打印 "✅ 资源就绪"
+//   8. sync-data-assets（UnitFunc/UI → slk-exported；PathTextures → converted）
+//   9. 打印 "✅ 资源就绪"
 //
 // 关于 "asset-convert 是否含 bake"：m2g cli 默认 doScn=true（modelsOnly 模式下也跑 bake），
 // 所以 asset-convert 阶段已经 = MDX → GLB → SCN 一条龙（eager bake）。
@@ -41,7 +42,7 @@ import {
   mkdirSync,
   writeFileSync,
 } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -362,18 +363,30 @@ function main() {
   }
 
   // --- 7. map-parse ---
+  // maps.items[].w3x 相对 .cache/wc3-assets/（MPQ 解出的地图，与 ASSET_LANES 中间态一致）
   if (!skipParse) {
     log("--- map-parse ---");
     const items = config.maps?.items || [];
+    const cacheMapsRoot = join(REPO_ROOT, ".cache", "wc3-assets");
     if (items.length === 0) {
       log("  (no maps in config.maps.items, skip)");
     } else {
       for (const m of items) {
-        log(`  parsing ${m.name} (${m.w3x})`);
-        run("node", [
+        const absMap = isAbsolute(m.w3x)
+          ? m.w3x
+          : join(cacheMapsRoot, m.w3x);
+        if (!existsSync(absMap)) {
+          console.error(`❌ map not found: ${absMap}`);
+          console.error(`   (config.maps item: ${m.name} / ${m.w3x})`);
+          process.exit(1);
+        }
+        log(`  parsing ${m.name} (${absMap})`);
+        const parseArgs = [
           "tools/map-parse/src/cli.js",
-          m.w3x, m.out,
-        ], { shell: false });
+          "--map", absMap,
+          "--force",
+        ];
+        run("node", parseArgs, { shell: false });
       }
     }
   } else {
@@ -387,6 +400,11 @@ function main() {
   } else {
     log("--- skip slk-export ---");
   }
+
+  // --- 9. sync-data-assets（UnitFunc/UI txt → slk-exported；PathTextures → converted）---
+  // 运行时禁止读 .cache；本步把依赖面落到 assets/ 三车道。与 slk 是否跳过无关。
+  log("--- sync-data-assets ---");
+  run("node", ["tools/sync-data-assets.mjs"], { shell: false });
 
   log("=== ✅ 资源就绪 ===");
   log("下一步：godot --editor --path .");

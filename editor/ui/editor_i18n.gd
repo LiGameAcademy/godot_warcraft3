@@ -1,7 +1,7 @@
 extends Node
 ## 编辑器多语言门面：CSV（zh_CN / en）为主；中文下可用 WorldEditStrings 覆盖。
-## Strings 解析顺序同 AssetProvider：`assets/asset-converted/UI/` → `.cache/wc3-assets/UI/`。
-## 同步：`node tools/sync-editor-assets.mjs`
+## MPQ 文案：`assets/slk-exported/UI/`（经 AssetProvider：converted → slk-exported）。
+## 同步：`node tools/sync-data-assets.mjs`
 
 
 signal locale_changed(locale: String)
@@ -232,11 +232,8 @@ func _load_mpq_overlay() -> void:
 
 
 func _merge_mpq_file(logical: String) -> void:
+	# 仅 assets/slk-exported（或 converted）；不回退 .cache
 	var abs_path := RuntimeAssets.resolve(logical)
-	if abs_path.is_empty():
-		var guess := ProjectSettings.globalize_path("res://").path_join(".cache/wc3-assets").path_join(logical)
-		if FileAccess.file_exists(guess):
-			abs_path = guess
 	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
 		return
 	var f := FileAccess.open(abs_path, FileAccess.READ)

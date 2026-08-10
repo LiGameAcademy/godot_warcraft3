@@ -9,6 +9,7 @@
 | [WC3_ASSET_PATHS.md](WC3_ASSET_PATHS.md) | 经典 MPQ 解包后各目录放什么（按路径查单位/地形/UI/音效等） |
 | [LEGAL.md](LEGAL.md) | 合规说明（不提交暴雪资产；缓存进 `.cache/`，gitignore） |
 | [PIPELINE.md](PIPELINE.md) | 离线工具链（**优先** `node tools/dev-setup.mjs`；或分步 mpq → convert → slk → map-parse） |
+| [GDIGNORE_POLICY.md](GDIGNORE_POLICY.md) | `.gdignore` 政策：哪些目录需要 / 不需要 + 跨平台说明（已 P3-12 收尾） |
 
 ## 关键路径
 
