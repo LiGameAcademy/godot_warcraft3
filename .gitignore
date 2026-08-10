@@ -35,6 +35,8 @@ tools/mpq-extract/vendor/stormlib/**/*.pdb
 tools/mpq-extract/vendor/stormlib/**/*.lib
 tools/mpq-extract/tmp/
 tools/asset-convert/tmp/
+# asset-convert ad-hoc validation outputs (e.g. tmp-validate_Footman.png)
+tools/asset-convert/tmp-validate*
 
 # Mod content (keep mods/.gitkeep only)
 mods/**
