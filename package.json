@@ -1,0 +1,19 @@
+{
+  "name": "godot-warcraft3",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WC3 资产转换 / bake 工具入口转发（实际工具在各 tools/*/ 子 package.json）",
+  "scripts": {
+    "bake:scn": "npm --prefix tools/asset-convert run bake:scn",
+    "bake:scn:force": "npm --prefix tools/asset-convert run bake:scn -- --force",
+    "convert": "npm --prefix tools/asset-convert run convert",
+    "convert:lost-temple": "npm --prefix tools/asset-convert run convert:lost-temple",
+    "reconvert:additive": "npm --prefix tools/asset-convert run reconvert:additive",
+    "check:scn": "node tools/check-scn-coverage.mjs",
+    "check:pe2": "node tools/check-pe2-coverage.mjs",
+    "check:assets": "node tools/check-asset-integrity.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
