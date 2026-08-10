@@ -10,6 +10,9 @@
     "convert:lost-temple": "npm --prefix tools/asset-convert run convert:lost-temple",
     "reconvert:additive": "npm --prefix tools/asset-convert run reconvert:additive",
     "check:scn": "node tools/check-scn-coverage.mjs",
+    "check:scn:99": "node tools/check-scn-coverage.mjs --threshold 99",
+    "check:scn:100": "node tools/check-scn-coverage.mjs --threshold 100",
+    "check:scn:fail": "node tools/check-scn-coverage.mjs --fail",
     "check:pe2": "node tools/check-pe2-coverage.mjs",
     "check:assets": "node tools/check-asset-integrity.mjs"
   },
