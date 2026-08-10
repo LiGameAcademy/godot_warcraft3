@@ -16,8 +16,9 @@
 | # | 选题 | 状态 | 写作素材 |
 |---|------|------|----------|
 | **01** | [GDScript Shader 跨引擎对照：HiveWE GLSL → Godot gdshader](01-shader-porting-hivewe-to-godot.md) | ✅ draft | `docs/shader/README.md` 9.6KB + `WATER_DEEP_ANALYSIS.md` 27.8KB |
-| **02** | Pathing 模块：从 WPM 文件到 GPU 纹理 | 📋 待写 | `scripts/map/data/wc3_pathing_map.gd` + `wc3_pathing_textures.gd` + `wc3_tga.gd` + `map_pathing_layer.gd` |
+| **02** | [F-PATH 寻路模块：5 纯函数 + F3 队形 + F4 战斗起步](02-pathing-modules-hivewe-to-godot.md) | ✅ draft | `game/scripts/logic/pathing/{steering_behaviors,path_arc,slope_speed,formation_follow,combat_steering}.gd` + 8 selftest 40 项 |
 | **03** | 斜坡逻辑 4-phase：从 HivEWE side-ramp gate 到 Phase A/B/C/D | 📋 待写 | `wc3_ramp_paint.gd` + `HIVEWE_ALIGN.md` §3.1 |
+| **13** | Pathing data 层：从 WPM 文件到 GPU 纹理 | 📋 待写 | `scripts/map/data/wc3_pathing_map.gd` + `wc3_pathing_textures.gd` + `wc3_tga.gd` + `map_pathing_layer.gd` |
 
 ### 第二梯队
 
