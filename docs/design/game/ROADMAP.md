@@ -38,10 +38,11 @@ A  游戏场景壳          Echo Isles 加载 + 开发期栅格/路径显示
 B  会话与玩家          从 units(sloc)/info 建玩家槽、开始点相机
 C  Melee Bootstrap     对战初始化动作的原生实现（非 wtg）
 D  最小 RTS 交互       选中、移动（贴地路径）、镜头
+F  人族游玩竖切        采集→基建→英雄→训兵→科技→技能（当前主线）
 E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂接
 ```
 
-编号即推荐顺序；**A→D 可连续开发，E 单独开里程碑**。
+编号即推荐顺序；**A→D 已基本落地；F 竖切已完成 F0+F1，当前主线为 F2 建造**（详见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)）；E 仍单独开里程碑。
 
 ---
 
@@ -55,7 +56,7 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 - [x] `place_doodads / place_units / auto_load_on_ready = true`
 - [x] 开发期：`set_view_grid_level(3)`（32 最小栅格）+ `set_show_pathing_ground(true)`
 - [x] 无 MapDocument；路径图：有 `pathing.json` 则读，否则 `Wc3PathingMap.synthesize_from_heightfield`
-- [x] 简单 Orbit / RTS 相机（`game/scenes/rts_camera.tscn`；WASD/边缘滚/中键旋转；阶段 B 用 `focus_on_position`）
+- [x] RTS 相机（`game/scenes/rts_camera.tscn`；边缘滚/滚轮缩放；**默认关闭中键旋转**对齐 WC3；阶段 B 用 `focus_on_position`）
 
 **验收**：F6 跑 `game/scenes/game_main.tscn` 即见 Echo Isles；栅格与路径色块可见；单位/装饰与编辑器开图观感一致（允许分帧加载）。  
 **说明**：工程 `run/main_scene` 仍为编辑器；玩法开发用 F6 /「运行当前场景」。
@@ -98,11 +99,33 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 
 **验收**：能选中农民并命令移动到可走格子；不可走区域有反馈。
 
+### F. 人族游玩竖切（当前主线）
+
+按真实开局顺序推进采集、建造、英雄、训兵、科技与大法师技能。  
+**细项、ID 表、验收剧本、AbilitySystem 策略 → [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)**
+
+摘要：
+
+| 步 | 内容 | 状态 |
+|----|------|------|
+| F0 | 命令 / SmartTarget / Router；农民移动停止面板 | ✅ |
+| F1 | 采集金、木、送回；树 promote；CarrySlot | ✅ |
+| F2 | 祭坛、农场、兵营（建造 + 占位 + 人口） | ← **下一步** |
+| F3 | 召唤大法师 | |
+| F4 | 训练步兵 | |
+| F5 | 伐木场 | |
+| F6 | 铁匠铺 → 解锁火枪手 | |
+| F7 | 主城升 Keep | |
+| F8–F9 | 顶盾科技 + 切换 | |
+| F10 | 大法师技能（先原生，再评估插件） | |
+
+**Present 并行（不挡 F2）：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `MapUnitLayer` snap；同树桩管线）。
+
 ### E. 触发器运行时（远期 · 仅设计，本阶段不开发）
 
 见 [ARCHITECTURE.md §4](ARCHITECTURE.md)。里程碑条件建议：
 
-- D 已验收  
+- F 竖切已验收（至少到 F4）  
 - Melee Bootstrap 动作表稳定  
 - 再开 `feature/trigger-runtime`，引入 wtg/j 解析与 VM  
 
@@ -115,6 +138,7 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 - 联机 / 录像
 - 物体编辑器（自定义单位数值）
 - 把编辑器主场景改成游戏（编辑器保持独立）
+- 完整多族科技树（人族竖切范围见 GAMEPLAY_VERTICAL）
 
 ---
 
@@ -126,7 +150,11 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 | 2 | B：Session + 开始点相机 |
 | 3 | C：资源 + 初始单位 + 清野 |
 | 4 | D：选中 + 移动竖切 |
-| 5+ | 建造/训练或 E 触发器（二选一，评审后定） |
+| 5 | F0–F1：命令 + 采金伐木（✅） |
+| 6 | **F2：建造三件套 + Farm 人口**（当前） |
+| 7+ | F3–F10（见 GAMEPLAY_VERTICAL §7 G4–G7） |
+| 并行 | 单位/野怪尸体 Geoset 显隐（Present） |
+| 远期 | E：触发器 VM |
 
 ---
 

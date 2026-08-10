@@ -67,7 +67,7 @@ GameMain (Node3D)                         # 薄壳：环境光 / 灯光（无玩
 ├── GameDirector (Node)                   # @export map_root / rts_camera / game_hud
 ├── RtsCamera (instance rts_camera.tscn)
 ├── GameHud (instance game_hud.tscn)      # 人族 Console UI
-├── HumanCursor
+├── GameCursor                          # Wc3GameCursor：按种族切 *Cursor.png
 └── (可选) WorldEnvironment / Sun
 ```
 
@@ -223,3 +223,4 @@ MeleeBootstrap.run()    →      ActionExecutor 注册同一批 Handler
 | 2026-08-03 | 开发期默认显示最小栅格 + 路径-地面 |
 | 2026-08-03 | **暂缓**完整触发器 VM；先 MeleeBootstrap + 游戏场景壳 |
 | 2026-08-03 | 触发器与 Bootstrap 共用 Action Handler，避免双实现 |
+| 2026-08-05 | 玩法主线转入人族游玩竖切 F0–F10，见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) |

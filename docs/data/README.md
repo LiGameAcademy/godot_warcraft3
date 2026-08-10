@@ -8,7 +8,7 @@
 |------|------|
 | [WC3_ASSET_PATHS.md](WC3_ASSET_PATHS.md) | 经典 MPQ 解包后各目录放什么（按路径查单位/地形/UI/音效等） |
 | [LEGAL.md](LEGAL.md) | 合规说明（不提交暴雪资产；缓存进 `.cache/`，gitignore） |
-| [PIPELINE.md](PIPELINE.md) | 离线工具链（mpq-extract → asset-convert → slk-export → map-parse → AssetProvider） |
+| [PIPELINE.md](PIPELINE.md) | 离线工具链（**优先** `node tools/dev-setup.mjs`；或分步 mpq → convert → slk → map-parse） |
 
 ## 关键路径
 
@@ -31,7 +31,8 @@
 
 ## 何时查这里
 
+- **新电脑一次跑通**：仓库根 [README.md](../../README.md) → `node tools/dev-setup.mjs --game-dir "..."`（详见 [../tools/README.md](../../tools/README.md)）
 - 解包客户端：按 [WC3_ASSET_PATHS.md](WC3_ASSET_PATHS.md) 对路径
-- 跑工具链：按 [PIPELINE.md](PIPELINE.md) 推荐顺序（先贴图，再模型）
+- 跑工具链：按 [PIPELINE.md](PIPELINE.md)（先贴图，再模型；或一键脚本）
 - 上传资产前：[LEGAL.md](LEGAL.md)
 - 编辑器按路径查资源：`AssetProvider.exists("<logical_path>")`

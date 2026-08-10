@@ -1,5 +1,6 @@
 class_name MeleeRacePreview
 extends RefCounted
+
 ## 对战种族预览 API：主城 / 初始工人 typeId（竖切用，非完整 Melee 规则）。
 
 

@@ -17,12 +17,14 @@ const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slo
 const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
 const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_cell_reservation.gd")
 const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
+## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
 @export var game_hud: GameHud
 @export var unit_selector: Node
+@export var game_cursor: Node
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -63,14 +65,24 @@ var _cam_min := Vector2(-6912.0, -5376.0)
 var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
-var _session: RefCounted = null
+var _session: GameSession = null
 ## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
-var _path_query: RefCounted = null
+var _path_query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
 ## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
-var _crowd_query: RefCounted = null
-var _cell_reservation: RefCounted = null
-var _path_debug: Node3D = null
+var _crowd_query: UnitCrowdQuery = null
+var _cell_reservation: PathCellReservation = null
+var _path_debug: PathDebugDraw = null
+var _command_router: CommandRouter = null
+var _tree_registry: TreeRegistry = null
+## 点了行动面板「移动」或热键 M 后，等待左键指定落点
+var _move_targeting: bool = false
+## 点了「采集」或热键 G 后，等待左键点金矿/树
+var _harvest_targeting: bool = false
+var _card_supports_move: bool = false
+var _card_is_peasant: bool = false
+var _last_move_executing: bool = false
+var _last_harvest_ui: Dictionary = {}
 
 
 func _ready() -> void:
@@ -89,8 +101,18 @@ func _ready() -> void:
 		_on_map_loaded()
 
 
-func get_session() -> RefCounted:
+func get_session() -> GameSession:
 	return _session
+
+
+## 按本地玩家种族切换光标图集（human/orc/undead/nightelf）。
+func _apply_cursor_race(race_id: String) -> void:
+	if game_cursor == null:
+		_resolve_exports()
+	if game_cursor == null:
+		return
+	if game_cursor.has_method("set_race"):
+		game_cursor.call("set_race", race_id)
 
 
 func _resolve_exports() -> void:
@@ -114,9 +136,21 @@ func _resolve_exports() -> void:
 				unit_selector = parent_n.find_child("UnitSelector", true, false)
 		if unit_selector == null:
 			unit_selector = get_node_or_null("../UnitSelector")
+	if game_cursor == null:
+		game_cursor = get_node_or_null("../GameCursor")
+		if game_cursor == null and parent_n != null:
+			game_cursor = parent_n.get_node_or_null("GameCursor")
+			if game_cursor == null:
+				game_cursor = parent_n.get_node_or_null("HumanCursor")
 	print(
-		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s"
-		% [map_root != null, rts_camera != null, game_hud != null, unit_selector != null]
+		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s cursor=%s"
+		% [
+			map_root != null,
+			rts_camera != null,
+			game_hud != null,
+			unit_selector != null,
+			game_cursor != null,
+		]
 	)
 
 
@@ -173,6 +207,8 @@ func _wire_hud() -> void:
 		game_hud.minimap_clicked.connect(_on_minimap_clicked)
 	if not game_hud.command_pressed.is_connected(_on_command_pressed):
 		game_hud.command_pressed.connect(_on_command_pressed)
+	if game_hud.has_signal("command_action") and not game_hud.command_action.is_connected(_on_command_action):
+		game_hud.command_action.connect(_on_command_action)
 
 
 func _setup_selector() -> void:
@@ -184,21 +220,53 @@ func _setup_selector() -> void:
 	if cam == null or layer == null:
 		push_warning("GameDirector: UnitSelector.setup 跳过（camera=%s layer=%s）" % [cam, layer])
 		return
+	# 点选：中立金矿等仍可选；框选：仅己方（不可多选敌对/中立）
 	unit_selector.set("owner_filter", -1)
+	unit_selector.set("marquee_owner", local_player)
 	if unit_selector.has_method("setup"):
 		unit_selector.call("setup", cam, layer, null)
+	# 原作：树不可左键选中；伐木只走右键智能命令
+	unit_selector.pick_extra = Callable()
 	if unit_selector.has_signal("selection_changed"):
 		var sel_sig: Signal = unit_selector.selection_changed
 		if not sel_sig.is_connected(_on_selection_changed):
 			sel_sig.connect(_on_selection_changed)
 	if game_hud:
-		game_hud.set_status("点选就绪 · LMB 点选/框选 · RMB 移动")
+		game_hud.set_status("点选就绪 · LMB 单位/金矿 · RMB 矿/树/移动")
 
 
 func _input(event: InputEvent) -> void:
 	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
 	if unit_selector == null:
 		_resolve_exports()
+	# 移动瞄准：左键必须在 _input 里下发并 marked handled。
+	# UnitSelector 自带 _input / 全屏 gui 层，若不在此拦截，落点永远进不了 _unhandled_input。
+	if _move_targeting and event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# 瞄准态左键：必须在此下发（UnitSelector 会吃掉 _unhandled）。点完即退出瞄准。
+			if _issue_move_at_screen(mb.position, UnitOrder.Source.TARGETING):
+				_flash_cursor_move()
+			_set_move_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+			# 瞄准态右键：取消瞄准（不另下智能指令，避免与「点一下取消」预期冲突）
+			_set_move_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+	# 采集瞄准：左键点金矿
+	if _harvest_targeting and event is InputEventMouseButton:
+		var mb_h := event as InputEventMouseButton
+		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_LEFT:
+			_issue_harvest_at_screen(mb_h.position, UnitOrder.Source.TARGETING)
+			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_RIGHT:
+			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
 	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
 			get_viewport().set_input_as_handled()
@@ -242,6 +310,7 @@ func _on_map_loaded() -> void:
 	_bootstrap_melee()
 	_setup_selector()
 	_setup_pathing()
+	_setup_minimap()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -251,44 +320,81 @@ func _on_map_loaded() -> void:
 func _setup_pathing() -> void:
 	if map_root == null:
 		return
-	_path_query = PathQueryScr.new()
+	_path_query = PathQuery.new()
 	_path_query.bind_pathing(map_root.get_pathing_map())
-	_cell_reservation = PathCellReservationScr.new()
-	if _path_query.has_method("bind_reservation"):
-		_path_query.call("bind_reservation", _cell_reservation)
+	_cell_reservation = PathCellReservation.new()
+	_path_query.bind_reservation(_cell_reservation)
 	var hf_dict := map_root.get_heightfield_dict()
 	if not hf_dict.is_empty():
 		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
 	else:
 		_heightfield = null
-	_crowd_query = UnitCrowdQueryScr.new()
-	_crowd_query.call(
-		"configure",
+	_crowd_query = UnitCrowdQuery.new()
+	_crowd_query.configure(
 		map_root.get_unit_layer(),
 		map_root.get_id_catalog()
 	)
+	_command_router = CommandRouter.new()
+	_command_router.configure(
+		_path_query,
+		_crowd_query,
+		Callable(self, "_ensure_navigator"),
+		Callable(self, "_ensure_harvest_controller")
+	)
+	_setup_tree_registry()
 	_ensure_path_debug()
+
+
+func _setup_minimap() -> void:
+	if game_hud == null or map_root == null or rts_camera == null:
+		return
+	if not game_hud.has_method("configure_minimap"):
+		return
+	var cam := rts_camera.get_camera()
+	game_hud.configure_minimap(
+		map_dir,
+		_heightfield,
+		map_root.get_unit_layer(),
+		cam,
+		rts_camera,
+		local_player
+	)
+
+
+func _setup_tree_registry() -> void:
+	if map_root == null:
+		return
+	if _tree_registry == null or not is_instance_valid(_tree_registry):
+		_tree_registry = TreeRegistry.new()
+		_tree_registry.name = "TreeRegistry"
+		add_child(_tree_registry)
+	var cam: Camera3D = null
+	if rts_camera != null:
+		cam = rts_camera.get_camera()
+	_tree_registry.configure(map_root, map_root.get_id_catalog(), cam)
+	_tree_registry.rebuild_from_map()
+
+
+func _tree_registry_ref() -> TreeRegistry:
+	return _tree_registry
 
 
 func _ensure_path_debug() -> void:
 	if map_root == null:
 		return
 	if _path_debug != null and is_instance_valid(_path_debug):
-		if _path_debug.has_method("setup"):
-			_path_debug.call("setup", _heightfield)
-		if _path_debug.has_method("set_enabled"):
-			_path_debug.call("set_enabled", show_path_debug)
+		_path_debug.setup(_heightfield)
+		_path_debug.set_enabled(show_path_debug)
 		return
-	_path_debug = PathDebugDrawScr.new() as Node3D
+	_path_debug = PathDebugDraw.new()
 	_path_debug.name = "PathDebugDraw"
 	map_root.add_child(_path_debug)
-	if _path_debug.has_method("setup"):
-		_path_debug.call("setup", _heightfield)
-	if _path_debug.has_method("set_enabled"):
-		_path_debug.call("set_enabled", show_path_debug)
+	_path_debug.setup(_heightfield)
+	_path_debug.set_enabled(show_path_debug)
 
 
 func _process(_delta: float) -> void:
+	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
 
@@ -337,20 +443,21 @@ func _hide_start_locations() -> void:
 
 
 func _bootstrap_melee() -> void:
-	var race := MeleeRacePreviewScr.race_from_string(preview_race)
-	var preview := MeleeRacePreviewScr.preview_dict(race)
+	var race := MeleeRacePreview.race_from_string(preview_race)
+	var preview := MeleeRacePreview.preview_dict(race)
 	var worker_n: int = int(preview.get("worker_count", 5))
-	_session = GameSessionScr.from_melee_bootstrap(
+	_session = GameSession.from_melee_bootstrap(
 		map_dir,
 		local_player,
 		str(preview.get("race", "human")),
 		worker_n,
-		PlayerStockScr.MELEE_TOWN_HALL_FOOD
+		PlayerStock.MELEE_TOWN_HALL_FOOD
 	)
+	_apply_cursor_race(str(preview.get("race", "human")))
 	if game_hud:
 		game_hud.bind_stock(_session.local_stock())
 
-	var slocs := MeleeBootstrapScr.collect_slocs(map_dir)
+	var slocs := MeleeBootstrap.collect_slocs(map_dir)
 	if slocs.is_empty():
 		if game_hud:
 			game_hud.set_status("%s · 无 sloc，跳过开局刷兵" % str(preview.get("display_name", "")))
@@ -358,16 +465,16 @@ func _bootstrap_melee() -> void:
 
 	var sloc: Dictionary
 	if random_start_location:
-		sloc = MeleeBootstrapScr.pick_random_sloc(slocs, _rng)
+		sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
 	else:
 		sloc = _find_sloc_for_owner(slocs, local_player)
 		if sloc.is_empty():
-			sloc = MeleeBootstrapScr.pick_random_sloc(slocs, _rng)
+			sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
 
 	var hall_world := Vector3.ZERO
 	if spawn_melee_base:
 		var hf := map_root.get_heightfield_dict()
-		var result := MeleeBootstrapScr.spawn_at_sloc(map_root, sloc, race, local_player, hf)
+		var result := MeleeBootstrap.spawn_at_sloc(map_root, sloc, race, local_player, hf)
 		if result.get("ok", false):
 			hall_world = result.get("hall_world", Vector3.ZERO) as Vector3
 			if game_hud:
@@ -406,31 +513,48 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 右键移动优先于调试热键：RTS 主操作不应被 F 键分支挡住。
+	# 移动/采集瞄准：Esc 取消（落点已在 _input 处理）
+	if (_move_targeting or _harvest_targeting) and event is InputEventKey and event.pressed and not event.echo:
+		if (event as InputEventKey).keycode == KEY_ESCAPE:
+			_set_move_targeting(false)
+			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+	# 右键智能命令优先于调试热键：金矿→采集，空地→移动。
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			# Shift+RMB → 队形排开（F3）；RMB → 落点散开（经典）
+			# Shift+RMB → 队形排开（F3）；RMB → 智能（master 框架：移动或采集）
 			if mb.shift_pressed:
 				if _issue_group_move_command(mb.position, FormationFollowScr.FORMATION_RECT):
 					get_viewport().set_input_as_handled()
 					return
-			else:
-				if _issue_move_command(mb.position):
-					get_viewport().set_input_as_handled()
-					return
+			if _issue_smart_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
+				get_viewport().set_input_as_handled()
+				return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
-		# S = Stop：对齐原作停止命令（寻路分支导航指令，不是采集）
 		if key == KEY_S and enable_move_command:
-			if _issue_stop_command():
+			if _issue_stop(UnitOrder.Source.HOTKEY):
+				get_viewport().set_input_as_handled()
+				return
+		if key == KEY_M and enable_move_command and _card_supports_move:
+			_begin_move_targeting(UnitOrder.Source.HOTKEY)
+			get_viewport().set_input_as_handled()
+			return
+		if key == KEY_G and _card_is_peasant:
+			_begin_harvest_targeting(UnitOrder.Source.HOTKEY)
+			get_viewport().set_input_as_handled()
+			return
+		if key == KEY_R and _card_is_peasant:
+			if _issue_return_goods(UnitOrder.Source.HOTKEY):
 				get_viewport().set_input_as_handled()
 				return
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
-			if _path_debug != null and _path_debug.has_method("set_enabled"):
-				_path_debug.call("set_enabled", show_path_debug)
+			if _path_debug != null:
+				_path_debug.set_enabled(show_path_debug)
 			if game_hud:
 				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
 			get_viewport().set_input_as_handled()
@@ -441,13 +565,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var label := ""
 		match key:
 			KEY_F6:
-				phase = BuildingVisualScr.Phase.BIRTH
+				phase = BuildingVisual.Phase.BIRTH
 				label = "Birth（建造尘）"
 			KEY_F7:
-				phase = BuildingVisualScr.Phase.WORK
+				phase = BuildingVisual.Phase.WORK
 				label = "Stand Work（训练烟）"
 			KEY_F8:
-				phase = BuildingVisualScr.Phase.IDLE
+				phase = BuildingVisual.Phase.IDLE
 				label = "Stand"
 			_:
 				return
@@ -457,34 +581,131 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
-## 选中单位立即停步并回 Stand（不推动静止单位）。
-func _issue_stop_command() -> bool:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
+## 选中单位立即停步并回 Stand。
+func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var n_stop := _command_router.issue_stop(selected, source)
+	if n_stop > 0 and game_hud:
+		game_hud.set_status("停止 · %d 单位" % n_stop)
+	_refresh_command_card()
+	return n_stop > 0
+
+
+## 右键智能：识别 SmartTarget → CommandRouter.issue_smart（按单位能力匹配）。
+func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if unit_selector == null or _command_router == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
 		return false
 	var selected: Array = unit_selector.call("get_selected")
 	if selected.is_empty():
 		return false
-	var n_stop := 0
+	var target := _resolve_smart_target(screen_pos, selected)
+	if target == null:
+		if game_hud:
+			game_hud.set_status("命令：未点到有效目标")
+		return false
+	var result := _command_router.issue_smart(selected, target, source)
+	if not bool(result.get("ok", false)):
+		return false
+	_flash_cursor_move()
+	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
+	if int(result.get("moved", 0)) > 0 and goal != Vector2.INF:
+		_spawn_move_confirm(goal)
+	if game_hud:
+		game_hud.set_status(_format_smart_status(result))
+	_refresh_command_card()
+	return true
+
+
+## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
+func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
+	var ground_goal := _screen_to_goal_wc3(screen_pos)
+	if unit_selector != null and unit_selector.has_method("pick_at"):
+		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
+		if picked != null and _is_gold_mine(picked):
+			return SmartTarget.gold_mine(picked, _node_goal_wc3(picked, ground_goal))
+		if picked != null and _is_own_dropoff_building(picked, selected):
+			return SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
+	if _tree_registry != null:
+		var cn := _tree_registry.pick_cn_at_screen(screen_pos)
+		if cn >= 0:
+			var tree_goal := _tree_registry.get_pos_wc3(cn)
+			if tree_goal == Vector2.INF:
+				tree_goal = ground_goal
+			return SmartTarget.tree(cn, tree_goal)
+	if ground_goal == Vector2.INF:
+		return null
+	return SmartTarget.ground(ground_goal)
+
+
+func _screen_to_goal_wc3(screen_pos: Vector2) -> Vector2:
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		return Vector2.INF
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	return Vector2(hit.x * inv, -hit.z * inv)
+
+
+func _node_goal_wc3(node: Node3D, fallback: Vector2) -> Vector2:
+	if node == null or not is_instance_valid(node):
+		return fallback
+	return Wc3Coords.godot_to_wc3_xy(node.global_position)
+
+
+func _is_own_dropoff_building(building: Node3D, selected: Array) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	var bd: Dictionary = building.get_meta("unit_data", {})
+	var tid := str(bd.get("typeId", "")).strip_edges()
+	if ReceiveResources.capability_for_type(tid) == int(ReceiveResources.Kind.NONE):
+		return false
+	var b_owner := int(bd.get("owner", -1))
 	for n in selected:
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
-		var node := n as Node3D
-		var d: Dictionary = node.get_meta("unit_data", {})
-		if BuildingVisualScr.is_building(str(d.get("typeId", ""))):
-			continue
-		var nav := node.get_node_or_null("UnitNavigator")
-		if nav != null and nav.has_method("stop"):
-			nav.call("stop")
-			n_stop += 1
-	if n_stop > 0 and game_hud:
-		game_hud.set_status("停止 · %d 单位" % n_stop)
-	return n_stop > 0
+		var ud: Dictionary = (n as Node).get_meta("unit_data", {})
+		if int(ud.get("owner", -2)) == b_owner:
+			return true
+	return false
 
 
-## 对当前选中可移动单位下发 go_to。建筑跳过（主城不能走）。
-## 多单位：黄金角螺旋分配错开终点（对齐原作群体落点），再各自 A*；途中 soft push 防途中叠模。
-func _issue_move_command(screen_pos: Vector2) -> bool:
-	if unit_selector == null or _path_query == null:
+func _format_smart_status(result: Dictionary) -> String:
+	var harvested := int(result.get("harvested", 0))
+	var returned := int(result.get("returned", 0))
+	var moved := int(result.get("moved", 0))
+	var kind := str(result.get("kind", ""))
+	match kind:
+		"GoldMine":
+			if harvested > 0 and moved > 0:
+				return "智能 · 采金 %d · 移动 %d" % [harvested, moved]
+			if harvested > 0:
+				return "采集金币 · %d 单位" % harvested
+		"Tree":
+			if harvested > 0 and moved > 0:
+				return "智能 · 伐木 %d · 移动 %d" % [harvested, moved]
+			if harvested > 0:
+				return "采集木材 · %d 单位" % harvested
+		"Dropoff":
+			if returned > 0 and moved > 0:
+				return "智能 · 送回 %d · 移动 %d" % [returned, moved]
+			if returned > 0:
+				return "送回资源 · %d 单位" % returned
+	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
+	if moved > 0 and goal != Vector2.INF:
+		return "移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved]
+	if int(result.get("failed", 0)) > 0 and goal != Vector2.INF:
+		return "无法到达 (%.0f, %.0f)" % [goal.x, goal.y]
+	return "智能 · %s" % kind
+
+
+## 对当前选中可移动单位下发移动（经 CommandRouter）。
+func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null or _path_query == null:
 		return false
 	if not unit_selector.has_method("get_selected"):
 		return false
@@ -498,40 +719,9 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 		return true
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var movers: Array = []
-	var radii := PackedFloat32Array()
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var node := n as Node3D
-		var d: Dictionary = node.get_meta("unit_data", {})
-		var tid := str(d.get("typeId", ""))
-		if BuildingVisualScr.is_building(tid):
-			continue
-		movers.append(node)
-		var r := 16.0
-		if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
-			r = float(_crowd_query.call("radius_for_unit", node))
-		radii.append(r)
-	if movers.is_empty():
-		if game_hud:
-			game_hud.set_status("选中无可用移动单位（建筑？）")
-		return true
-	var goals: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
-		movers, radii, goal_center, _path_query
-	)
-	var moved := 0
-	var failed := 0
-	for i in range(movers.size()):
-		var node: Node3D = movers[i]
-		var nav := _ensure_navigator(node)
-		if nav == null:
-			continue
-		var slot: Vector2 = goals[i] if i < goals.size() else goal_center
-		if nav.go_to_wc3(slot):
-			moved += 1
-		else:
-			failed += 1
+	var result := _command_router.issue_move_to_wc3(selected, goal_center, source)
+	var moved: int = int(result.get("moved", 0))
+	var failed: int = int(result.get("failed", 0))
 	if moved > 0:
 		_spawn_move_confirm(goal_center)
 	if game_hud:
@@ -541,6 +731,9 @@ func _issue_move_command(screen_pos: Vector2) -> bool:
 			)
 		elif failed > 0:
 			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
+		elif _command_router.filter_movers(selected).is_empty():
+			game_hud.set_status("选中无可用移动单位（建筑？）")
+	_refresh_command_card()
 	return moved > 0 or failed > 0
 
 
@@ -624,6 +817,124 @@ func _issue_group_move_command(
 	return moved > 0 or failed > 0
 
 
+func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var peasants := _command_router.filter_peasants(selected)
+	if peasants.is_empty():
+		if game_hud:
+			game_hud.set_status("采集：无农民")
+		return false
+	if unit_selector.has_method("pick_at"):
+		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
+		if picked != null and _is_gold_mine(picked):
+			var n := _command_router.issue_harvest_gold(peasants, picked, source)
+			if n > 0 and game_hud:
+				game_hud.set_status("采集金币 · %d 农民" % n)
+			_refresh_command_card()
+			return n > 0
+		if picked != null and _is_harvestable_tree_node(picked):
+			var cn := _tree_cn_of(picked)
+			if cn >= 0:
+				var nl := _command_router.issue_harvest_lumber(peasants, cn, source)
+				if nl > 0 and game_hud:
+					game_hud.set_status("采集木材 · %d 农民" % nl)
+				_refresh_command_card()
+				return nl > 0
+	if _tree_registry != null:
+		var cn2 := _tree_registry.pick_cn_at_screen(screen_pos)
+		if cn2 >= 0:
+			var nl2 := _command_router.issue_harvest_lumber(peasants, cn2, source)
+			if nl2 > 0 and game_hud:
+				game_hud.set_status("采集木材 · %d 农民" % nl2)
+			_refresh_command_card()
+			return nl2 > 0
+	if game_hud:
+		game_hud.set_status("采集：请点金矿或树木")
+	return false
+
+
+func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var n := _command_router.issue_return_goods(selected, source)
+	if n > 0 and game_hud:
+		game_hud.set_status("送回资源 · %d 农民" % n)
+	elif game_hud:
+		game_hud.set_status("送回：无负重农民")
+	_refresh_command_card()
+	return n > 0
+
+
+func _begin_move_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_movers(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("移动：无可用单位")
+		return
+	_set_harvest_targeting(false)
+	_set_move_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
+		game_hud.set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
+
+
+func _begin_harvest_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_peasants(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("采集：无农民")
+		return
+	# 已有负金：面板若显示交回则不会进此；若空手瞄准
+	_set_move_targeting(false)
+	_set_harvest_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
+		game_hud.set_status("采集瞄准（%s）· 左键点金矿 · Esc 取消" % src)
+
+
+func _set_move_targeting(active: bool) -> void:
+	_move_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		game_cursor.call("set_move_targeting", active)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call(
+			"set_mode",
+			Wc3GameCursor.Mode.MOVE if active else Wc3GameCursor.Mode.IDLE
+		)
+
+
+func _set_harvest_targeting(active: bool) -> void:
+	_harvest_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		# 暂复用移动瞄准光标；后续可换采集专用
+		game_cursor.call("set_move_targeting", active)
+
+
+func _sync_selector_enabled_for_targeting() -> void:
+	if unit_selector == null:
+		return
+	# 任一瞄准态都关掉点选，避免抢左键
+	unit_selector.enabled = not (_move_targeting or _harvest_targeting)
+
+
+func _flash_cursor_move() -> void:
+	if game_cursor != null and game_cursor.has_method("flash_move"):
+		game_cursor.call("flash_move")
+
+
 func _spawn_move_confirm(goal_wc3: Vector2) -> void:
 	if map_root == null:
 		return
@@ -637,48 +948,169 @@ func _spawn_move_confirm(goal_wc3: Vector2) -> void:
 	fx.play_at_wc3(goal_wc3, _heightfield, MoveConfirmFx.Kind.MOVE)
 
 
-func _ensure_navigator(unit: Node3D) -> Node:
+func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	var visual := _ensure_unit_visual(unit)
-	var existing := unit.get_node_or_null("UnitNavigator")
+	var existing := unit.get_node_or_null("UnitNavigator") as UnitNavigator
 	if existing != null:
-		if existing.has_method("configure"):
-			existing.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
-		if existing.has_method("set_visual"):
-			existing.call("set_visual", visual)
+		existing.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
+		existing.set_visual(visual)
 		_apply_move_stats(unit, existing)
+		_wire_navigator_signals(existing)
 		return existing
-	var nav: Node = UnitNavigatorScr.new()
+	var nav := UnitNavigator.new()
 	nav.name = "UnitNavigator"
 	# 先 configure 再进树：即使 _ready 延后，query 也已就绪。
-	if nav.has_method("configure"):
-		nav.call("configure", _path_query, _heightfield, _crowd_query, _cell_reservation)
-	if nav.has_method("set_visual"):
-		nav.call("set_visual", visual)
+	nav.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
+	nav.set_visual(visual)
 	_apply_move_stats(unit, nav)
 	unit.add_child(nav)
+	_wire_navigator_signals(nav)
 	return nav
 
 
-func _ensure_unit_visual(unit: Node3D) -> Node:
-	var existing := unit.get_node_or_null("UnitVisual")
+func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
+	_ensure_unit_visual(unit)
+	var existing := unit.get_node_or_null("HarvestController") as HarvestController
+	if existing != null:
+		existing.configure(
+			Callable(self, "_ensure_navigator"),
+			Callable(self, "_local_stock"),
+			Callable(self, "_unit_host"),
+			Callable(self, "_path_query_ref"),
+			Callable(self, "_crowd_query_ref"),
+			Callable(self, "_tree_registry_ref")
+		)
+		_wire_harvest_signals(existing)
+		return existing
+	var hc := HarvestController.new()
+	hc.name = "HarvestController"
+	hc.configure(
+		Callable(self, "_ensure_navigator"),
+		Callable(self, "_local_stock"),
+		Callable(self, "_unit_host"),
+		Callable(self, "_path_query_ref"),
+		Callable(self, "_crowd_query_ref"),
+		Callable(self, "_tree_registry_ref")
+	)
+	unit.add_child(hc)
+	_wire_harvest_signals(hc)
+	return hc
+
+
+func _local_stock() -> PlayerStock:
+	if _session == null:
+		return null
+	return _session.local_stock()
+
+
+func _unit_host() -> Node:
+	if map_root == null:
+		return null
+	return map_root.get_unit_layer()
+
+
+func _path_query_ref() -> PathQuery:
+	return _path_query
+
+
+func _crowd_query_ref() -> UnitCrowdQuery:
+	return _crowd_query
+
+
+func _wire_harvest_signals(hc: HarvestController) -> void:
+	if hc == null:
+		return
+	if not hc.carry_changed.is_connected(_on_harvest_carry_changed):
+		hc.carry_changed.connect(_on_harvest_carry_changed)
+	if not hc.deposited.is_connected(_on_harvest_deposited):
+		hc.deposited.connect(_on_harvest_deposited)
+	if not hc.state_changed.is_connected(_on_harvest_state_changed):
+		hc.state_changed.connect(_on_harvest_state_changed)
+	if hc.has_signal("entered_unselectable") and not hc.entered_unselectable.is_connected(
+		_on_harvest_entered_unselectable
+	):
+		hc.entered_unselectable.connect(_on_harvest_entered_unselectable)
+
+
+func _on_harvest_carry_changed(_resource_id: String, _amount: int) -> void:
+	_refresh_command_card()
+
+
+func _on_harvest_deposited(gold: int, lumber: int) -> void:
+	if game_hud:
+		if gold > 0:
+			game_hud.set_status("交货 +%d 金" % gold)
+		elif lumber > 0:
+			game_hud.set_status("交货 +%d 木" % lumber)
+	_refresh_command_card()
+
+
+func _on_harvest_state_changed(_state: int) -> void:
+	_refresh_command_card()
+
+
+func _on_harvest_entered_unselectable(unit: Node3D) -> void:
+	if unit == null or unit_selector == null:
+		return
+	if unit_selector.has_method("deselect_unit"):
+		unit_selector.call("deselect_unit", unit)
+
+
+func _is_harvestable_tree_node(node: Node) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var dd: Dictionary = node.get_meta("doodad_data", {})
+	if dd.is_empty():
+		return false
+	var cn := int(dd.get("creationNumber", -1))
+	if cn < 0 or _tree_registry == null:
+		return false
+	return _tree_registry.is_alive(cn)
+
+
+func _tree_cn_of(node: Node) -> int:
+	if node == null:
+		return -1
+	var dd: Dictionary = node.get_meta("doodad_data", {})
+	return int(dd.get("creationNumber", -1))
+
+
+static func _is_gold_mine(node: Node) -> bool:
+	if node == null:
+		return false
+	var d: Dictionary = node.get_meta("unit_data", {})
+	return str(d.get("typeId", "")).strip_edges() == HarvestController.GOLD_MINE_TYPE
+
+
+func _wire_navigator_signals(nav: UnitNavigator) -> void:
+	if nav == null:
+		return
+	if not nav.locomotion_changed.is_connected(_on_unit_locomotion_changed):
+		nav.locomotion_changed.connect(_on_unit_locomotion_changed)
+
+
+func _on_unit_locomotion_changed(_moving: bool) -> void:
+	_refresh_move_executing_ui()
+
+
+func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
+	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
 	if existing != null:
 		return existing
-	# 用 preload 脚本实例化，避免 class_name 全局注册时序导致 Parser Error
-	var vis: Node = UnitVisualScr.new()
+	var vis := UnitVisual.new()
 	vis.name = "UnitVisual"
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
-	if vis.has_method("bind_cache"):
-		vis.call("bind_cache", cache)
+	vis.bind_cache(cache)
 	unit.add_child(vis)
 	return vis
 
 
 ## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
 ## 注意：UnitUI.walk 是动画侧速率，不是对象编辑器「移动速度」。
-func _apply_move_stats(unit: Node3D, nav: Node) -> void:
-	if unit == null or nav == null or not nav.has_method("apply_unit_stats"):
+func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
+	if unit == null or nav == null:
 		return
 	var d: Dictionary = unit.get_meta("unit_data", {})
 	var tid := str(d.get("typeId", "")).strip_edges()
@@ -695,10 +1127,12 @@ func _apply_move_stats(unit: Node3D, nav: Node) -> void:
 	var data := Wc3DefStore.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
 	if data != null and data.turn_rate > 0.0:
 		turn = data.turn_rate
-	if _crowd_query != null and _crowd_query.has_method("radius_for_unit"):
-		radius = float(_crowd_query.call("radius_for_unit", unit))
-	nav.call("apply_unit_stats", spd, turn, radius)
-
+	if _crowd_query != null:
+		radius = _crowd_query.radius_for_unit(unit)
+	nav.apply_unit_stats(spd, turn, radius)
+	# 农民 soft 分离略放大，减轻采金/伐木叠人（不改 UnitBalance.collision 权威值）
+	if tid == HarvestController.WORKER_PEASANT:
+		nav.separation_radius_mul = 1.45
 
 ## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。
 ## 为何不用物理射线：会先打到单位网格/选中环，目标变成「自己脚下」→ 表现为不移动。
@@ -790,7 +1224,7 @@ func _debug_apply_hall_phase(phase: int) -> bool:
 		if tid != "htow" and tid != "hkee" and tid != "hcas":
 			continue
 		if cache != null:
-			BuildingVisualScr.apply_phase(cache, c, tid, phase)
+			BuildingVisual.apply_phase(cache, c, tid, phase)
 		return true
 	return false
 
@@ -798,24 +1232,50 @@ func _debug_apply_hall_phase(phase: int) -> bool:
 func _on_minimap_clicked(uv: Vector2) -> void:
 	if rts_camera == null:
 		return
-	var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
-	# 小地图顶 = 北 = 较大 WC3.Y
-	var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
-	var world := Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
+	var world: Vector3
+	if _heightfield != null and _heightfield.is_valid():
+		world = MapMinimapUtils.minimap_uv_to_world(uv, _heightfield, 0.0)
+	else:
+		var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
+		var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
+		world = Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
 	rts_camera.focus_on_position(world)
 	if game_hud:
-		game_hud.set_status("镜头 → (%.0f, %.0f)" % [wx, wy])
+		var inv := 1.0 / Wc3Coords.WORLD_SCALE
+		game_hud.set_status(
+			"镜头 → (%.0f, %.0f)" % [world.x * inv, -world.z * inv]
+		)
 
 
 func _on_command_pressed(slot: int) -> void:
-	if game_hud:
-		game_hud.set_status("指令格 [%d]（训练/号召稍后接 Order）" % slot)
+	# 有 action_id 时由 _on_command_action 处理；纯文字占位格仍提示
+	if game_hud != null and game_hud.has_method("set_status"):
+		pass
+
+
+func _on_command_action(action_id: String) -> void:
+	match action_id:
+		CommandCard.ACTION_MOVE:
+			_begin_move_targeting(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_STOP:
+			_issue_stop(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_HARVEST_GOLD:
+			_begin_harvest_targeting(UnitOrder.Source.PANEL)
+		CommandCard.ACTION_RETURN_GOODS:
+			_issue_return_goods(UnitOrder.Source.PANEL)
+		_:
+			if game_hud:
+				game_hud.set_status("指令：%s（未实现）" % action_id)
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
+	_set_move_targeting(false)
+	_set_harvest_targeting(false)
 	if game_hud == null:
 		return
 	if primary == null or selected.is_empty():
+		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.set_unit_info("—", 0, 0)
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
@@ -826,11 +1286,114 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if selected.size() > 1:
 		label = "%s ×%d" % [tid, selected.size()]
 	game_hud.set_unit_info(label, 0, 0)
-	if BuildingVisualScr.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+	# 中立金矿：黄环 + 储量状态（树不可左键选中）
+	if tid == "ngol" or _is_gold_mine(primary):
+		_card_supports_move = false
+		_card_is_peasant = false
+		game_hud.clear_command_labels()
+		var gold_left := int(d.get("goldAmount", -1))
+		var rt := GoldMineRuntime.ensure(primary)
+		if rt != null:
+			gold_left = rt.remaining_gold
+		elif gold_left < 0:
+			gold_left = 12500
+		# Info 区无 HP 槽时只显示名称；储量走 status
+		game_hud.set_unit_info("金矿", 0, 0)
+		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
+		return
+	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.set_command_labels(
 			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
 		)
-		game_hud.set_status("主城已选 · 指令格为占位")
+		game_hud.set_status("主城已选 · 具备接收资源能力")
+	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
+		_card_supports_move = true
+		_refresh_command_card()
+		if _card_is_peasant:
+			game_hud.set_status("已选 %s · M移动 · S停止 · G采集 / R交回" % tid)
+		else:
+			game_hud.set_status("已选 %s · M 移动 · S 停止" % tid)
 	else:
+		_card_supports_move = false
+		_card_is_peasant = false
 		game_hud.clear_command_labels()
 		game_hud.set_status("已选 %s" % tid)
+
+
+func _refresh_command_card() -> void:
+	if game_hud == null or not _card_supports_move or unit_selector == null:
+		return
+	if not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	var moving := false
+	var carrying := false
+	var harvesting := false
+	var returning := false
+	if _command_router != null:
+		moving = _command_router.any_moving(selected)
+		var peasants := _command_router.filter_peasants(selected)
+		var movers := _command_router.filter_movers(selected)
+		_card_is_peasant = (
+			not peasants.is_empty() and peasants.size() == movers.size()
+		)
+		if _card_is_peasant:
+			carrying = _command_router.any_carrying(peasants)
+			harvesting = _command_router.any_harvesting(peasants)
+			returning = _command_router.any_returning(peasants)
+	else:
+		_card_is_peasant = false
+	_last_move_executing = moving
+	_last_harvest_ui = {
+		"peasant": _card_is_peasant,
+		"carrying": carrying,
+		"harvesting": harvesting,
+		"returning": returning,
+		"moving": moving,
+	}
+	if _card_is_peasant:
+		game_hud.set_command_card(
+			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+		)
+	else:
+		game_hud.set_command_card(CommandCard.basic_locomotion(moving))
+
+
+func _refresh_move_executing_ui() -> void:
+	if not _card_supports_move or game_hud == null or unit_selector == null:
+		return
+	if not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	var moving := false
+	var carrying := false
+	var harvesting := false
+	var returning := false
+	var is_peasant := _card_is_peasant
+	if _command_router != null:
+		moving = _command_router.any_moving(selected)
+		if is_peasant:
+			var peasants := _command_router.filter_peasants(selected)
+			carrying = _command_router.any_carrying(peasants)
+			harvesting = _command_router.any_harvesting(peasants)
+			returning = _command_router.any_returning(peasants)
+	var snap := {
+		"peasant": is_peasant,
+		"carrying": carrying,
+		"harvesting": harvesting,
+		"returning": returning,
+		"moving": moving,
+	}
+	if snap == _last_harvest_ui and moving == _last_move_executing:
+		return
+	_last_move_executing = moving
+	_last_harvest_ui = snap
+	# 互斥格可能从采集切到交回，需整卡刷新
+	if is_peasant:
+		game_hud.set_command_card(
+			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+		)
+	else:
+		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)

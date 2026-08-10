@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Yellow_Glow3.png" id="1_xoxtg"]
+
+[sub_resource type="Gradient" id="Gradient_lwlul"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(1, 0.870588, 0, 0.5921569, 1, 0.517647, 0, 0.6117647, 1, 0.0196078, 0.458824, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_ty7fx"]
+gradient = SubResource("Gradient_lwlul")
+
+[sub_resource type="Curve" id="Curve_2b0ka"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 0.60509557), 0.0, 0.0, 0, 0, Vector2(1, 0.26751593), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_kior6"]
+curve = SubResource("Curve_2b0ka")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_m8j0y"]
+emission_shape = 3
+emission_box_extents = Vector3(5, 0.5, 5)
+direction = Vector3(0, 1, 0)
+spread = 180.0
+flatness = 0.15
+initial_velocity_min = 35.8
+initial_velocity_max = 44.2
+gravity = Vector3(0, 0, 0)
+scale_min = 4.8195
+scale_max = 22.25475
+scale_curve = SubResource("CurveTexture_kior6")
+color_ramp = SubResource("GradientTexture1D_ty7fx")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jf2jj"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_xoxtg")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_oyxmu"]
+material = SubResource("StandardMaterial3D_jf2jj")
+
+[node name="Pe2Root" type="Node3D" unique_id=1041193709]
+
+[node name="BlizParticle02fire" type="GPUParticles3D" parent="." unique_id=564073708]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.0378, 22.4232, 230.996)
+cast_shadow = 0
+amount = 98
+lifetime = 1.2
+preprocess = 0.85
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_m8j0y")
+draw_pass_1 = SubResource("QuadMesh_oyxmu")
+metadata/pe2_always_on = true

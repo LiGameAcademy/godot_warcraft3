@@ -223,6 +223,7 @@
   旧转换物无 geosetvis 时需 `node src/cli.js --models-only --force --include "Units/**"` 后 bake。  
   验收 Peasant：`Stand` 仅身体；`Stand_Gold`/`Stand_Lumber` 出袋/木；`Death` 出尸体。
 
+<<<<<<< HEAD
 ---
 
 ## 死链清单（docs/ 拍平后，2026-08-10）
@@ -293,3 +294,14 @@ docs/ 拍平到 `design/<topic>/` 后，verify 扫出 9 个 dead link（文件�
 历史坏 link（错深度，已修）：
 - `docs/architecture/SCRIPTS_LAYOUT.md` `../LAYERED_ARCHITECTURE.md` → `LAYERED_ARCHITECTURE.md`（同目录）
 - `docs/architecture/SCRIPTS_LAYOUT.md` `../../ramp/RAMP_WE.md` → `../design/ramp/RAMP_WE.md`（ramp 已挪移）
+=======
+- [x] **树桩 Stand 藏 / Death 显**（2026-08-08）  
+  `MapDoodadLayer.ensure_promoted` → `snap_stand_geoset_visibility`；禁止 reveal_all。  
+  `MapModelCache`：有 Stand 即定格（勿因「非骨骼 Stand」跳过）；注入名大小写不敏感。
+
+- [x] **野怪 / 小动物尸体 Geoset**（2026-08-09）  
+  Present：`MapUnitLayer` 放置后 `snap_stand_geoset_visibility`。  
+  资产：`Units/Critters/**` + Echo Isles 常用 Creeps 已补 `geosetvis`；其余 Creeps 按需 `--include`。  
+  验收：开局羊/猪/豺狼人等脚下无尸体叠影；Death 后尸体片可见。  
+  详见 [GAMEPLAY_VERTICAL.md §5.1](../game/GAMEPLAY_VERTICAL.md)。
+>>>>>>> master

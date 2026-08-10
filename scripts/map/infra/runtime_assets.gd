@@ -1,7 +1,8 @@
 class_name RuntimeAssets
 extends RefCounted
 
-## 运行时资源 I/O：只从磁盘加载（asset-converted 被 .gdignore）。
+## 运行时资源 I/O：只从磁盘加载。
+## asset-converted/ 被 .gdignore 阻止 Godot auto-import，运行时直接 FileAccess 读 GLB/.scn。
 ## 地图代码请用 converted_path / load_*；勿再手写 res://assets/asset-converted/ 前缀。
 ##
 ## 解析顺序（via resolve）：AssetProvider overlay → converted → .cache

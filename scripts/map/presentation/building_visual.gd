@@ -1,5 +1,6 @@
 class_name BuildingVisual
 extends RefCounted
+
 ## 建筑模型视觉状态：按 typeId / 建造·升级阶段选 Sequence。
 ## 人族主城 htow/hkee/hcas 共用 TownHall.mdx，靠 Stand / Stand Upgrade First|Second 切换 geoset。
 ## 同步 PE2：`Wc3Pe2Particles.apply_sequence`（训练烟、建造尘、死亡爆等）。

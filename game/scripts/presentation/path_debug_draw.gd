@@ -1,3 +1,4 @@
+class_name PathDebugDraw
 extends Node3D
 ## 选中单位路径调试线（Present）：WC3 路点 → 贴地折线。
 ## F9 / GameDirector.show_path_debug 开关。

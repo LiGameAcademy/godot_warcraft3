@@ -16,13 +16,12 @@ const SeparationScr = preload("res://game/scripts/logic/pathing/unit_separation.
 const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_profile.gd")
 const SlopeSpeedScr = preload("res://game/scripts/logic/pathing/slope_speed.gd")
 const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
-
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
-@export var arrive_eps_wc3: float = 8.0
+@export var arrive_eps_wc3: float = 10.0
 ## 最终路点（常在不可走边缘）放宽阈值，避免贴墙永远差几单位到不了。
-@export var arrive_eps_last_wc3: float = 18.0
+@export var arrive_eps_last_wc3: float = 22.0
 @export var face_move_dir: bool = true
 ## WC3 UnitData.turnRate：圈/秒。0.6 ≈ 农民；角速度 = turn_rate * TAU。
 @export var turn_rate: float = 0.5
@@ -37,13 +36,17 @@ const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_f
 @export var slope_max_deg: float = 30.0
 ## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
 @export var stall_abort_sec: float = 0.4
+## 采矿幽灵模式：不占格、寻路忽略他人预约 → 固定走廊互不挡。
+## keep_separation=true：仍 soft 分离（伐木用；采金走廊通常关分离）。
+var harvest_ghost: bool = false
+## soft 分离半径倍率（农民略放大，减轻叠人）。
+@export var separation_radius_mul: float = 1.0
 
-var _query: RefCounted = null ## PathQuery
+var _query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
-var _crowd: RefCounted = null ## UnitCrowdQuery
-var _reservation: RefCounted = null ## PathCellReservation
-## UnitVisual 实例；用 Node 避免 class_name 全局注册时序导致 Parser Error
-var _visual: Node = null
+var _crowd: UnitCrowdQuery = null
+var _reservation: PathCellReservation = null
+var _visual: UnitVisual = null
 var _waypoints: Array[Vector2] = [] ## WC3 XY
 var _wp_i: int = 0
 var _moving: bool = false
@@ -57,11 +60,29 @@ var _formation_name: String = ""
 var _formation_spacing: float = 64.0
 
 
+func set_harvest_ghost(on: bool, keep_separation: bool = false) -> void:
+	if on == harvest_ghost:
+		if on:
+			_release_reservation()
+			if keep_separation:
+				enable_separation = true
+		return
+	if on:
+		_saved_separation = enable_separation
+		enable_separation = keep_separation
+		harvest_ghost = true
+		_release_reservation()
+	else:
+		harvest_ghost = false
+		enable_separation = _saved_separation
+		_release_reservation()
+
+
 func configure(
-	query: RefCounted,
+	query: PathQuery,
 	heightfield: Wc3Heightfield,
-	crowd: RefCounted = null,
-	reservation: RefCounted = null
+	crowd: UnitCrowdQuery = null,
+	reservation: PathCellReservation = null
 ) -> void:
 	_query = query
 	_heightfield = heightfield
@@ -69,7 +90,7 @@ func configure(
 	_reservation = reservation
 
 
-func set_visual(visual: Node) -> void:
+func set_visual(visual: UnitVisual) -> void:
 	_visual = visual
 
 
@@ -99,7 +120,7 @@ func apply_unit_stats(
 		turn_rate = turn_rate_rps
 	if radius_wc3 > 0.0:
 		collision_radius_wc3 = radius_wc3
-		clearance_cells = AgentProfileScr.clearance_from_radius(radius_wc3)
+		clearance_cells = PathAgentProfile.clearance_from_radius(radius_wc3)
 
 
 func is_moving() -> bool:
@@ -144,30 +165,49 @@ func go_to_wc3(goal_wc3: Vector2) -> bool:
 		return false
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var from := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
-	var agent_id := body.get_instance_id()
+	var agent_id := 0 if harvest_ghost else body.get_instance_id()
 	# 凹角口袋（建筑 pathTex 直角）先弹到开阔格，否则 A* 能走也会在墙缝里蹭。
-	from = _unstuck_if_pocket(body, from)
-	var result: Dictionary = _query.call("find_path", from, goal_wc3, clearance_cells, agent_id)
-	if not result.get("ok", false):
+	# 采矿幽灵模式：不弹位，避免每趟落脚点漂移破坏固定走廊。
+	if not harvest_ghost:
+		from = _unstuck_if_pocket(body, from)
+	var result: Dictionary = _query.call(
+		"find_path", from, goal_wc3, clearance_cells, agent_id, harvest_ghost
+	)
+	if not result.get("ok", false) and not harvest_ghost:
 		# 再试一次：强制弹开后再寻路
 		from = _unstuck_if_pocket(body, from, true)
-		result = _query.call("find_path", from, goal_wc3, clearance_cells, agent_id)
+		result = _query.call(
+			"find_path", from, goal_wc3, clearance_cells, agent_id, false
+		)
 	if not result.get("ok", false):
 		stop()
 		path_failed.emit(str(result.get("reason", "fail")))
 		return false
-	var wps: Array = result.get("waypoints", [])
+	return _begin_waypoints(result.get("waypoints", []), goal_wc3)
+
+
+## 跟随已算好的固定路点（采矿走廊：全员同一条，不再每趟 A*）。
+func go_waypoints_wc3(waypoints: Array, goal_hint_wc3: Vector2 = Vector2.INF) -> bool:
+	if waypoints.is_empty():
+		path_failed.emit("empty_waypoints")
+		return false
+	return _begin_waypoints(waypoints, goal_hint_wc3)
+
+
+func _begin_waypoints(waypoints: Array, goal_hint_wc3: Vector2 = Vector2.INF) -> bool:
+	var body := _body()
 	_waypoints.clear()
-	for p in wps:
+	for p in waypoints:
 		if p is Vector2:
 			_waypoints.append(p)
 	_wp_i = 0
 	_stall_time = 0.0
-	# 用路径实际终点（已 snap 到可走），不要用原始点击（可能在 NO_WALK 里）
 	if not _waypoints.is_empty():
 		_goal_wc3 = _waypoints[_waypoints.size() - 1]
+	elif goal_hint_wc3 != Vector2.INF:
+		_goal_wc3 = goal_hint_wc3
 	else:
-		_goal_wc3 = goal_wc3
+		_goal_wc3 = Vector2.INF
 	if _waypoints.is_empty():
 		_moving = false
 		set_process(false)
@@ -177,9 +217,10 @@ func go_to_wc3(goal_wc3: Vector2) -> bool:
 		return true
 	_moving = true
 	_set_locomotion(true)
-	_refresh_reservation(body)
-	# 用 _process 而非 _physics_process：本项目移动不依赖物理步进；
-	# 且避免「add_child 后本帧 go_to 开物理，下一帧 _ready 又关掉」的竞态（见 _ready 注释）。
+	if not harvest_ghost:
+		_refresh_reservation(body)
+	else:
+		_release_reservation()
 	set_process(true)
 	return true
 
@@ -281,7 +322,9 @@ func _with_separation(
 	dist_to_target: float = INF
 ) -> Vector2:
 	var next := desired_wc3
-	var near_last := is_last and dist_to_target <= arrive_eps_last_wc3 * 3.0
+	# 接近末点：关墙推并减弱 soft 分离，减轻「推开↔追目标」微抖
+	var near_last := is_last and dist_to_target <= arrive_eps_last_wc3 * 4.0
+	var sep_scale := 0.35 if near_last else 1.0
 	if not near_last and _query != null and _query.has_method("compute_wall_push_velocity"):
 		var wall_vel: Vector2 = _query.call("compute_wall_push_velocity", cur_wc3, 2)
 		next += wall_vel * delta
@@ -289,13 +332,14 @@ func _with_separation(
 		var query_r := maxf(collision_radius_wc3 * 5.0, 128.0)
 		var neighbors: Array = _crowd.call("neighbors_of", body, cur_wc3, query_r, false)
 		if not neighbors.is_empty():
-			var push_vel: Vector2 = SeparationScr.compute_push_velocity(
+			var sep_r := collision_radius_wc3 * maxf(separation_radius_mul, 1.0)
+			var push_vel: Vector2 = UnitSeparation.compute_push_velocity(
 				cur_wc3,
-				collision_radius_wc3,
+				sep_r,
 				neighbors,
 				body.get_instance_id()
 			)
-			next += push_vel * delta
+			next += push_vel * delta * sep_scale
 	return _clamp_walkable(next, desired_wc3, cur_wc3)
 
 
@@ -350,6 +394,8 @@ func _finish() -> void:
 
 
 func _refresh_reservation(body: Node3D) -> void:
+	if harvest_ghost:
+		return
 	if _reservation == null or not _reservation.has_method("set_owner_cells"):
 		return
 	if _query == null or body == null or not _query.has_method("world_to_cell"):
@@ -375,8 +421,8 @@ func _release_reservation() -> void:
 
 
 func _set_locomotion(moving: bool) -> void:
-	if _visual != null and _visual.has_method("set_locomotion"):
-		_visual.call("set_locomotion", moving)
+	if _visual != null:
+		_visual.set_locomotion(moving)
 	locomotion_changed.emit(moving)
 
 

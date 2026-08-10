@@ -4,7 +4,7 @@ extends SceneTree
 ##
 ## 用法:
 ##   godot --headless --path . -s res://tools/export_pe2_scenes.gd
-##   godot --headless --path . -s res://tools/export_pe2_scenes.gd -- --include Doodads/ --force
+##   godot --headless --path . -s res://tools/export_pe2_scenes.gd -- --include Buildings/Human/ --force
 ##
 ## 运行时 attach_to 优先实例化 pe2-prefabs；没有则回退动态读 pe2.json。
 
@@ -16,7 +16,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var include := ""
+	var includes: PackedStringArray = PackedStringArray()
 	var force := false
 	var args := OS.get_cmdline_user_args()
 	var i := 0
@@ -26,9 +26,9 @@ func _run() -> void:
 			force = true
 		elif s == "--include" and i + 1 < args.size():
 			i += 1
-			include = str(args[i]).replace("\\", "/")
+			includes.append(str(args[i]).replace("\\", "/"))
 		elif s.begins_with("--include="):
-			include = s.substr("--include=".length()).replace("\\", "/")
+			includes.append(s.substr("--include=".length()).replace("\\", "/"))
 		i += 1
 
 	var root_abs := RuntimeAssets.project_abs(RuntimeAssets.CONVERTED_RES_ROOT)
@@ -52,7 +52,7 @@ func _run() -> void:
 		if idx < 0:
 			continue
 		var logical_json := rel.substr(idx + marker.length())
-		if not include.is_empty() and logical_json.findn(include) < 0:
+		if not includes.is_empty() and not _matches_any_include(logical_json, includes):
 			continue
 		var logical_glb := logical_json
 		if logical_glb.ends_with(".pe2.json"):
@@ -88,9 +88,16 @@ func _run() -> void:
 
 	print(
 		"export_pe2: exported=%d skipped=%d failed=%d include='%s' out=%s"
-		% [exported, skipped, failed, include, RuntimeAssets.PE2_PREFABS_RES_ROOT]
+		% [exported, skipped, failed, ",".join(includes), RuntimeAssets.PE2_PREFABS_RES_ROOT]
 	)
-	quit(0 if failed == 0 else 1)
+	quit(0 if failed == 0 or exported > 0 else 1)
+
+
+func _matches_any_include(logical: String, includes: PackedStringArray) -> bool:
+	for inc in includes:
+		if logical.findn(inc) >= 0:
+			return true
+	return false
 
 
 func _collect_pe2_json(dir_abs: String, out: PackedStringArray) -> void:

@@ -1,13 +1,21 @@
-class_name Wc3HumanCursor
+class_name Wc3GameCursor
 extends Node
 
-## 人族鼠标光标（HumanCursor.png 图集）。
-## 32×32 格，8 列 × 4 行；第 1 行空白。
+## 对战鼠标光标（按种族切换图集）。
+## 四族 `*Cursor.png` 同为 32×32、8 列 × 4 行；第 0 行 IDLE 指向手。
 ## 用 Input.set_custom_mouse_cursor 逐帧切换，保证点击热区正确。
 
-const SHEET_PATH := "res://assets/asset-converted/UI/Cursor/HumanCursor.png"
 const CELL := 32
 const COLS := 8
+const CURSOR_DIR := "UI/Cursor"
+
+## race_id（与 MeleeRacePreview / GameSession.local_race 对齐）→ 图集文件名
+const RACE_SHEETS := {
+	"human": "HumanCursor.png",
+	"orc": "OrcCursor.png",
+	"undead": "UndeadCursor.png",
+	"nightelf": "NightElfCursor.png",
+}
 
 enum Mode {
 	IDLE, ## 默认指向手（8 帧循环）
@@ -23,6 +31,10 @@ enum Mode {
 @export var fps: float = 12.0
 @export var move_flash_loops: int = 2
 @export var enabled: bool = true
+## 初始种族；开局后可由 GameDirector.set_race() 覆盖
+@export var race: String = "human"
+## true：本节点自己吃右键闪 MOVE（开发期）；正式应由命令层调 flash_move
+@export var auto_flash_move_on_rmb: bool = true
 
 var _sheet: Texture2D
 var _atlas: AtlasTexture
@@ -31,38 +43,24 @@ var _frame: int = 0
 var _accum: float = 0.0
 var _move_frames_left: int = 0
 var _active: bool = false
+var _race_id: String = "human"
+## true：MOVE 动画循环直至取消（行动面板瞄准），不自动回 IDLE
+var _move_sticky: bool = false
 
 
 func _ready() -> void:
 	if not enabled:
 		return
-	var src := load(SHEET_PATH) as Texture2D
-	if src == null:
-		push_error("Wc3HumanCursor: 无法加载 %s" % SHEET_PATH)
-		return
-	# 转 ImageTexture，避免压缩贴图在系统光标上发糊
-	var img: Image = src.get_image()
-	if img == null:
-		push_error("Wc3HumanCursor: get_image() 失败")
-		return
-	_sheet = ImageTexture.create_from_image(img)
-	_atlas = AtlasTexture.new()
-	_atlas.atlas = _sheet
-	_atlas.filter_clip = true
-	_active = true
-	set_mode(Mode.IDLE)
-	set_process(true)
+	set_race(race)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _active or not enabled:
+	if not _active or not enabled or not auto_flash_move_on_rmb:
 		return
-	# 阶段 A：右键闪移动箭头（阶段 D 改由命令层调用 flash_move）
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			flash_move()
-
 
 
 func _exit_tree() -> void:
@@ -74,8 +72,31 @@ func _notification(what: int) -> void:
 		_apply_frame()
 
 
+func get_race() -> String:
+	return _race_id
+
+
 func get_mode() -> int:
 	return _mode
+
+
+## 按种族加载图集。未知种族回退 human。可重复调用。
+func set_race(race_id: String) -> void:
+	var key := _normalize_race(race_id)
+	if _active and key == _race_id and _sheet != null:
+		return
+	_race_id = key
+	race = key
+	if not enabled:
+		_active = false
+		return
+	if not _load_sheet(key):
+		_active = false
+		_restore_system_cursor()
+		return
+	_active = true
+	set_process(true)
+	set_mode(Mode.IDLE)
 
 
 func set_mode(mode: int) -> void:
@@ -85,14 +106,28 @@ func set_mode(mode: int) -> void:
 	_frame = 0
 	_accum = 0.0
 	if mode == Mode.MOVE:
-		_move_frames_left = maxi(move_flash_loops, 1) * _mode_frame_count(Mode.MOVE)
+		if _move_sticky:
+			_move_frames_left = 0
+		else:
+			_move_frames_left = maxi(move_flash_loops, 1) * _mode_frame_count(Mode.MOVE)
 	else:
+		_move_sticky = false
 		_move_frames_left = 0
 	_apply_frame()
 
 
+## 行动面板「移动」瞄准：箭头循环直到 cancel / 下发命令。
+func set_move_targeting(active: bool) -> void:
+	_move_sticky = active
+	if active:
+		set_mode(Mode.MOVE)
+	else:
+		set_mode(Mode.IDLE)
+
+
 ## 右键下移动令时闪一下蓝色箭头，然后回到 IDLE。
 func flash_move() -> void:
+	_move_sticky = false
 	set_mode(Mode.MOVE)
 
 
@@ -107,12 +142,55 @@ func _process(delta: float) -> void:
 	while _accum >= step:
 		_accum -= step
 		_frame = (_frame + 1) % n
-		if _mode == Mode.MOVE:
+		if _mode == Mode.MOVE and not _move_sticky:
 			_move_frames_left -= 1
 			if _move_frames_left <= 0:
 				set_mode(Mode.IDLE)
 				return
 		_apply_frame()
+
+
+func _load_sheet(race_id: String) -> bool:
+	var path := sheet_path_for_race(race_id)
+	if path.is_empty() or not RuntimeAssets.file_exists(path):
+		push_error("Wc3GameCursor: 缺少光标图集 %s（race=%s）" % [path, race_id])
+		return false
+	var src := load(path) as Texture2D
+	if src == null:
+		push_error("Wc3GameCursor: 无法加载 %s" % path)
+		return false
+	# 转 ImageTexture，避免压缩贴图在系统光标上发糊
+	var img: Image = src.get_image()
+	if img == null:
+		push_error("Wc3GameCursor: get_image() 失败 %s" % path)
+		return false
+	_sheet = ImageTexture.create_from_image(img)
+	if _atlas == null:
+		_atlas = AtlasTexture.new()
+		_atlas.filter_clip = true
+	_atlas.atlas = _sheet
+	return true
+
+
+static func sheet_path_for_race(race_id: String) -> String:
+	var key := _normalize_race(race_id)
+	var file := str(RACE_SHEETS.get(key, RACE_SHEETS["human"]))
+	return RuntimeAssets.converted_path("%s/%s" % [CURSOR_DIR, file])
+
+
+static func _normalize_race(race_id: String) -> String:
+	var key := race_id.strip_edges().to_lower()
+	match key:
+		"human", "h", "人族":
+			return "human"
+		"orc", "o", "兽族":
+			return "orc"
+		"undead", "u", "ud", "不死":
+			return "undead"
+		"nightelf", "night_elf", "ne", "e", "暗夜", "精灵":
+			return "nightelf"
+		_:
+			return "human"
 
 
 func _apply_frame() -> void:

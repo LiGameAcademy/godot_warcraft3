@@ -3,8 +3,6 @@ extends RefCounted
 ## 在起始点刷主城 + 初始工人（竖切）。
 ## 工人落点对齐 Blizzard.j MeleeStartingUnits*：朝最近金矿投影后再按 unitSpacing 排阵。
 
-const MeleeRacePreviewScr = preload("res://game/scripts/data/melee_race_preview.gd")
-
 ## bj_MELEE_MINE_SEARCH_RADIUS
 const MINE_SEARCH_RADIUS_WC3 := 2560.0
 ## MeleeStartingUnitsHuman：投影距离
@@ -40,9 +38,9 @@ static func spawn_at_sloc(
 	var hx := float(pos.get("x", 0.0))
 	var hy := float(pos.get("y", 0.0))
 	var hz := float(pos.get("z", 0.0))
-	var hall_id := MeleeRacePreviewScr.town_hall_id(race)
-	var worker_id := MeleeRacePreviewScr.worker_id(race)
-	var worker_n: int = mini(MeleeRacePreviewScr.default_worker_count(race), WORKER_SPACING_MULTS.size())
+	var hall_id := MeleeRacePreview.town_hall_id(race)
+	var worker_id := MeleeRacePreview.worker_id(race)
+	var worker_n: int = mini(MeleeRacePreview.default_worker_count(race), WORKER_SPACING_MULTS.size())
 	var angle := float(sloc.get("angle", UNIT_FACING_RAD))
 	var cn_base := 90000 + player_owner * 100
 	var map_dir := str(map_loader.map_dir)
@@ -73,7 +71,7 @@ static func spawn_at_sloc(
 		"worker_cluster_wc3": cluster_xy,
 		"mine_wc3": mine_xy,
 		"spawned": spawned,
-		"race": MeleeRacePreviewScr.race_id(race),
+		"race": MeleeRacePreview.race_id(race),
 		"town_hall": hall_id,
 		"worker": worker_id,
 	}

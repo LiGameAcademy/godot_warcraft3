@@ -929,9 +929,9 @@ particles_anim_loop = false
 [sub_resource type="QuadMesh" id="QuadMesh_bg4th"]
 material = SubResource("StandardMaterial3D_unp3e")
 
-[node name="Pe2Root" type="Node3D" unique_id=251173735]
+[node name="Pe2Root" type="Node3D" unique_id=1990069254]
 
-[node name="BlastFlareStreamersBig" type="GPUParticles3D" parent="." unique_id=352003334]
+[node name="BlastFlareStreamersBig" type="GPUParticles3D" parent="." unique_id=2061494041]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.7085, 101.163, 6.47865)
 cast_shadow = 0
 emitting = false
@@ -945,7 +945,7 @@ draw_pass_1 = SubResource("QuadMesh_hmgbv")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="BlastSmoke" type="GPUParticles3D" parent="." unique_id=832886790]
+[node name="BlastSmoke" type="GPUParticles3D" parent="." unique_id=2139316425]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.42221, 5.26686, 4.3061)
 cast_shadow = 0
 emitting = false
@@ -959,7 +959,7 @@ draw_pass_1 = SubResource("QuadMesh_pb4sa")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray()
 
-[node name="SmallBlastDebris" type="GPUParticles3D" parent="." unique_id=1318233588]
+[node name="SmallBlastDebris" type="GPUParticles3D" parent="." unique_id=1172256164]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.80747, 59.5507, -21.0877)
 cast_shadow = 0
 emitting = false
@@ -973,7 +973,7 @@ draw_pass_1 = SubResource("QuadMesh_8tgyo")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="SmallBlastSpinningBoard01" type="GPUParticles3D" parent="." unique_id=1555418708]
+[node name="SmallBlastSpinningBoard01" type="GPUParticles3D" parent="." unique_id=780586496]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.80748, 91.0663, -21.0877)
 cast_shadow = 0
 emitting = false
@@ -987,7 +987,7 @@ draw_pass_1 = SubResource("QuadMesh_e2dst")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="Birth DustParticles" type="GPUParticles3D" parent="." unique_id=358612616]
+[node name="Birth DustParticles" type="GPUParticles3D" parent="." unique_id=1284436655]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.58453, 42.125, 0.484458)
 cast_shadow = 0
 emitting = false
@@ -1001,7 +1001,7 @@ draw_pass_1 = SubResource("QuadMesh_4kttq")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Birth", "Birth Upgrade First", "Birth Upgrade Second")
 
-[node name="BlastFlareStreamers" type="GPUParticles3D" parent="." unique_id=831355208]
+[node name="BlastFlareStreamers" type="GPUParticles3D" parent="." unique_id=159227534]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.02396, 116.777, 3.39688)
 cast_shadow = 0
 emitting = false
@@ -1015,7 +1015,7 @@ draw_pass_1 = SubResource("QuadMesh_sy6qj")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="MushroomCap" type="GPUParticles3D" parent="." unique_id=1081926489]
+[node name="MushroomCap" type="GPUParticles3D" parent="." unique_id=1584545871]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.38007, 203.12, 3.51794)
 cast_shadow = 0
 emitting = false
@@ -1029,7 +1029,7 @@ draw_pass_1 = SubResource("QuadMesh_gfnhc")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="BlastFlare" type="GPUParticles3D" parent="." unique_id=1721174763]
+[node name="BlastFlare" type="GPUParticles3D" parent="." unique_id=1704372889]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.15258, 51.3476, 0.349358)
 cast_shadow = 0
 emitting = false
@@ -1043,7 +1043,7 @@ draw_pass_1 = SubResource("QuadMesh_mw3tb")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="BlizParticle01fire08" type="GPUParticles3D" parent="." unique_id=1860222139]
+[node name="BlizParticle01fire08" type="GPUParticles3D" parent="." unique_id=1106721461]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.7689, 91.1831, -3.16727)
 cast_shadow = 0
 emitting = false
@@ -1057,7 +1057,7 @@ draw_pass_1 = SubResource("QuadMesh_02r6m")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="BlizParticle01fire09" type="GPUParticles3D" parent="." unique_id=974086799]
+[node name="BlizParticle01fire09" type="GPUParticles3D" parent="." unique_id=1469517520]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.7689, 154.995, -3.16727)
 cast_shadow = 0
 emitting = false
@@ -1071,7 +1071,7 @@ draw_pass_1 = SubResource("QuadMesh_j5es7")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray()
 
-[node name="MushroomCap01Fire" type="GPUParticles3D" parent="." unique_id=92914033]
+[node name="MushroomCap01Fire" type="GPUParticles3D" parent="." unique_id=1786353888]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.38007, 177.849, 3.51793)
 cast_shadow = 0
 emitting = false
@@ -1085,7 +1085,7 @@ draw_pass_1 = SubResource("QuadMesh_pl3gl")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Death")
 
-[node name="BlizParticle04cedaysmoke" type="GPUParticles3D" parent="." unique_id=1101321617]
+[node name="BlizParticle04cedaysmoke" type="GPUParticles3D" parent="." unique_id=1599490701]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.8207, 24.4487, 3.46647)
 cast_shadow = 0
 emitting = false
@@ -1099,7 +1099,7 @@ draw_pass_1 = SubResource("QuadMesh_5fbki")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Decay")
 
-[node name="StandWorkBlizParticle01" type="GPUParticles3D" parent="." unique_id=1385524423]
+[node name="StandWorkBlizParticle01" type="GPUParticles3D" parent="." unique_id=391513470]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.37088, 75.3866, -103.457)
 cast_shadow = 0
 emitting = false
@@ -1112,7 +1112,7 @@ draw_pass_1 = SubResource("QuadMesh_4d6ma")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work")
 
-[node name="StandWorkBlizParticle02" type="GPUParticles3D" parent="." unique_id=1886116967]
+[node name="StandWorkBlizParticle02" type="GPUParticles3D" parent="." unique_id=1386412872]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 55.5298, 34.4865, 20.5471)
 cast_shadow = 0
 emitting = false
@@ -1125,7 +1125,7 @@ draw_pass_1 = SubResource("QuadMesh_qnl8h")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work")
 
-[node name="StandWorkUp1BlizParticle03" type="GPUParticles3D" parent="." unique_id=807425048]
+[node name="StandWorkUp1BlizParticle03" type="GPUParticles3D" parent="." unique_id=1994763316]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 68.4898, 156.053, -59.0331)
 cast_shadow = 0
 emitting = false
@@ -1138,7 +1138,7 @@ draw_pass_1 = SubResource("QuadMesh_0opgi")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade First")
 
-[node name="StandWorkUp1BlizParticle04" type="GPUParticles3D" parent="." unique_id=548558789]
+[node name="StandWorkUp1BlizParticle04" type="GPUParticles3D" parent="." unique_id=264183134]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 78.7911, 33.7915, 24.3072)
 cast_shadow = 0
 emitting = false
@@ -1151,7 +1151,7 @@ draw_pass_1 = SubResource("QuadMesh_6a81y")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade First")
 
-[node name="StandWorkUp1BlizParticle05" type="GPUParticles3D" parent="." unique_id=1293944079]
+[node name="StandWorkUp1BlizParticle05" type="GPUParticles3D" parent="." unique_id=1149740096]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 65.6239, 156.053, -54.7)
 cast_shadow = 0
 emitting = false
@@ -1164,7 +1164,7 @@ draw_pass_1 = SubResource("QuadMesh_4td72")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade First")
 
-[node name="StandWorkUp2BlizParticle01" type="GPUParticles3D" parent="." unique_id=836063022]
+[node name="StandWorkUp2BlizParticle01" type="GPUParticles3D" parent="." unique_id=579842575]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 68.4898, 156.053, -59.0331)
 cast_shadow = 0
 emitting = false
@@ -1177,7 +1177,7 @@ draw_pass_1 = SubResource("QuadMesh_448lf")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade Second")
 
-[node name="StandWorkUp2BlizParticle07" type="GPUParticles3D" parent="." unique_id=1184740959]
+[node name="StandWorkUp2BlizParticle07" type="GPUParticles3D" parent="." unique_id=1186914450]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 121.066, 46.8239, 49.9903)
 cast_shadow = 0
 emitting = false
@@ -1190,7 +1190,7 @@ draw_pass_1 = SubResource("QuadMesh_32ubb")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade Second")
 
-[node name="StandWorkUp2BlizParticle08" type="GPUParticles3D" parent="." unique_id=506415772]
+[node name="StandWorkUp2BlizParticle08" type="GPUParticles3D" parent="." unique_id=403669477]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 65.6239, 156.053, -54.7)
 cast_shadow = 0
 emitting = false
@@ -1203,7 +1203,7 @@ draw_pass_1 = SubResource("QuadMesh_46pfs")
 metadata/pe2_always_on = false
 metadata/pe2_active_sequences = PackedStringArray("Stand Work Upgrade Second")
 
-[node name="StandWorkUp2BlizParticle09" type="GPUParticles3D" parent="." unique_id=1321041525]
+[node name="StandWorkUp2BlizParticle09" type="GPUParticles3D" parent="." unique_id=1086419593]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 64.4772, 46.8239, 20.3355)
 cast_shadow = 0
 emitting = false

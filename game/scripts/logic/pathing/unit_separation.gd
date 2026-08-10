@@ -1,3 +1,4 @@
+class_name UnitSeparation
 extends RefCounted
 ## 单位 soft 分离（Logic）：纯数学，不碰场景树 / PathingMap。
 ##

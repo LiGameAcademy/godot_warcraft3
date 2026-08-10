@@ -1,0 +1,63 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Yellow_Star_Dim.png" id="1_gwwv3"]
+
+[sub_resource type="Gradient" id="Gradient_22fd8"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_i4lcu"]
+gradient = SubResource("Gradient_22fd8")
+
+[sub_resource type="Curve" id="Curve_efqvf"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_b521j"]
+curve = SubResource("Curve_efqvf")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_xaend"]
+emission_shape = 3
+emission_box_extents = Vector3(0.5, 0.5, 0.5)
+direction = Vector3(0, 1, 0)
+spread = 180.0
+flatness = 0.15
+initial_velocity_min = 217.8
+initial_velocity_max = 222.2
+gravity = Vector3(0, 0, 0)
+scale_min = 1.1475
+scale_max = 14.175
+scale_curve = SubResource("CurveTexture_b521j")
+color_ramp = SubResource("GradientTexture1D_i4lcu")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hs5hm"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_gwwv3")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_s0ur5"]
+material = SubResource("StandardMaterial3D_hs5hm")
+
+[node name="Pe2Root" type="Node3D" unique_id=126724038]
+
+[node name="BlizParticle01" type="GPUParticles3D" parent="." unique_id=639652474]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38.0977, 43.7274, 34.999)
+cast_shadow = 0
+emitting = false
+amount = 22
+lifetime = 0.45
+preprocess = 0.45
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_xaend")
+draw_pass_1 = SubResource("QuadMesh_s0ur5")
+metadata/pe2_always_on = false
+metadata/pe2_active_sequences = PackedStringArray("Spell", "Stand Channel")

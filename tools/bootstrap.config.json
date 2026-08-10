@@ -1,0 +1,53 @@
+{
+  "_comment": "WC3 资源 bootstrap 配置。老李 D3 决策 (2026-08-08)：任何 wc3 资源不入 git；本文件入 git 引导 bootstrap。",
+  "wc3": {
+    "_comment": "WC3 安装根目录（mpq-extract 读 MPQ 用的根）。可被 WC3_PATH 环境变量覆盖。",
+    "path": "D:/Program Files (x86)/Warcraft3"
+  },
+  "godot": {
+    "_comment": "Godot 4.x 可执行（asset-convert bake .scn 用）。可被 GODOT / GODOT_BIN 环境变量覆盖。",
+    "path": "C:/Users/Administrator/Desktop/Godot_v4.6.3-stable_win64_console.exe"
+  },
+  "maps": {
+    "_comment": "要解析的地图列表（map-parse 用）。每条 name=唯一标识 / w3x=相对 wc3.path 的路径 / out=输出目录名（落到 assets/map-parsed/ 下）。",
+    "items": [
+      {
+        "name": "LostTemple",
+        "w3x": "Maps/(2)LostTemple.w3x",
+        "out": "losttemple"
+      },
+      {
+        "name": "EchoIsles",
+        "w3x": "Maps/(4)EchoIsles.w3x",
+        "out": "echoisles"
+      }
+    ]
+  },
+  "convert": {
+    "_comment": "asset-convert (m2g) 配置",
+    "include": [
+      "Textures/**",
+      "Units/Human/**",
+      "Units/Orc/**",
+      "Units/NightElf/**",
+      "Units/Undead/**",
+      "Buildings/Human/**",
+      "Buildings/Orc/**",
+      "Buildings/NightElf/**",
+      "Buildings/Undead/**",
+      "Doodads/**"
+    ],
+    "exclude": [
+      "Custom_V0/**",
+      "Custom_V1/**",
+      "Melee_V0/**"
+    ]
+  },
+  "skip": {
+    "_comment": "跳过某些阶段（重复调试时用）。默认全 false = 跑完整流程。",
+    "extract": false,
+    "convert": false,
+    "parse": false,
+    "slk": false
+  }
+}

@@ -1,5 +1,6 @@
 class_name PlayerStock
 extends RefCounted
+
 ## 玩家库存（金/木/人口）。故意不用 Resource 基类，避免与 Godot Resource 混淆。
 
 signal changed(stock: PlayerStock)

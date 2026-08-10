@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/Zap1_Red.png" id="1_urkxl"]
+
+[sub_resource type="Gradient" id="Gradient_rnyg4"]
+offsets = PackedFloat32Array(0, 0.25, 1)
+colors = PackedColorArray(1, 1, 1, 0, 0.992157, 0.666667, 0.0980392, 1, 0.968628, 0.317647, 0, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_7achv"]
+gradient = SubResource("Gradient_rnyg4")
+
+[sub_resource type="Curve" id="Curve_nsg07"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.25, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.02), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_sc774"]
+curve = SubResource("Curve_nsg07")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_2bm8a"]
+emission_shape = 3
+emission_box_extents = Vector3(0.5, 0.5, 0.5)
+direction = Vector3(0, 1, 0)
+spread = 52.0
+flatness = 0.15
+initial_velocity_min = 80.0
+initial_velocity_max = 80.0
+gravity = Vector3(0, 0, 0)
+scale_min = 0.114750005
+scale_max = 14.175
+scale_curve = SubResource("CurveTexture_sc774")
+color_ramp = SubResource("GradientTexture1D_7achv")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_eg710"]
+blend_mode = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_urkxl")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_t2bag"]
+material = SubResource("StandardMaterial3D_eg710")
+
+[node name="Pe2Root" type="Node3D" unique_id=244673185]
+
+[node name="BlizParticle01" type="GPUParticles3D" parent="." unique_id=581975017]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.72604, 71.981, 33.3517)
+cast_shadow = 0
+amount = 19
+lifetime = 0.31
+preprocess = 0.31
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_2bm8a")
+draw_pass_1 = SubResource("QuadMesh_t2bag")
+metadata/pe2_always_on = true

@@ -3,40 +3,49 @@
 /android/
 
 # WC3 asset pipeline — never commit Blizzard assets or extract output
+# 老李 D3 决策 (2026-08-08)：任何 wc3 资源都不入 git
+# 仓库只装：源码 / 工具 / 文档 / 配置文件
+# 完整本地资源靠 tools/bootstrap.mjs 一键生成
 .cache/
 *.mpq
 *.MPQ
 
 # Converted Godot-ready assets (PNG/GLB/SCN + synced editor UI txt) — regenerate via tools
 # Do NOT commit Blizzard content (see docs/data/LEGAL.md)
+# .gdignore 例外：必须入库，否则 Godot 会 auto-import GLB 并在同目录生成重复 PNG 副产物
 assets/asset-converted/**
-!assets/asset-converted/.gitkeep
+!assets/asset-converted/.gdignore
 
 # Legacy model-scenes/ (deprecated: .scn now sits next to GLB under asset-converted/)
 assets/model-scenes/**
-!assets/model-scenes/.gitkeep
 
-# PE2 particle prefabs (*.pe2.tscn) — mirrored paths under pe2-prefabs/; OK to commit
-# (textures still reference asset-converted at runtime after local convert)
-# assets/pe2-prefabs/ is tracked
+# PE2 particle prefabs (*.pe2.tscn) — regenerated from tools/asset-convert
+# 老李 D3：之前 tracked (注释"OK to commit")，改 ignored
+assets/pe2-prefabs/**
+
+# Building visual scenes (Bake output) — regenerated from tools/export_visual_scenes
+# 老李 D3：改 ignored
+assets/visuals/**
 
 # Parsed map JSON — regenerate via tools/map-parse
 assets/map-parsed/**
-!assets/map-parsed/.gitkeep
 
-# Exported SLK tables (JSON/CSV) — regenerate via tools/slk-export
+# Exported SLK tables (JSON) — regenerate via tools/slk-export
+# 老李 D3：去 CSV（slk-export package.json 已只有 export JSON）
 assets/slk-exported/**
-!assets/slk-exported/.gitkeep
 
 # Node.js (tools/*)
 node_modules/
-tools/mpq-extract/vendor/stormlib/**/*.zip
-tools/mpq-extract/vendor/stormlib/**/*.pdb
-tools/mpq-extract/vendor/stormlib/**/*.lib
+# StormLib：npm postinstall / fetch-stormlib 下载，勿提交二进制与解压头文件
+tools/mpq-extract/vendor/stormlib/**
+!tools/mpq-extract/vendor/stormlib/.gitkeep
 tools/mpq-extract/tmp/
 tools/asset-convert/tmp/
 # asset-convert ad-hoc validation outputs (e.g. tmp-validate_Footman.png)
 tools/asset-convert/tmp-validate*
+tools/map-parse/tmp/
+# reconvert-additive-geosets 扫描缓存（本地生成）
+tools/asset-convert/scripts/_additive_geoset_hits.json
 
 # Mod content (keep mods/.gitkeep only)
 mods/**

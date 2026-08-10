@@ -403,17 +403,16 @@ func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true
 	_inject_geoset_vis_tracks(path, loaded)
 	var has_anim := _scene_has_skeletal_stand(loaded)
 	_anim_flags[path] = has_anim
-	# 静物：GeosetAnim 在 rest 可能 scale=0，强制可见
-	# 动画物：按 Stand / Stand - 1 等轨落到默认显隐（藏尸体、地精商店内嵌地精/Shadow 盘等）
-	if has_anim:
-		var stand_leaf := "Stand"
-		var ap_snap := _find_animation_player(loaded)
-		if ap_snap != null:
-			var picked := _pick_stand_name(ap_snap)
-			if not picked.is_empty():
-				stand_leaf = _anim_leaf_name(picked)
-		_snap_geoset_visibility_pose(loaded, stand_leaf)
-	else:
+	# 有 Stand 就按 :visible 定格（树=藏树桩）。勿用「是否骨骼 Stand」门闩：
+	# 树 Stand 常几乎无 pos/rot 轨，旧逻辑会走 reveal，桩与活树同亮。
+	var ap_snap := _find_animation_player(loaded)
+	var stand_full := ""
+	if ap_snap != null:
+		stand_full = _pick_stand_name(ap_snap)
+	if not stand_full.is_empty():
+		_snap_geoset_visibility_pose(loaded, _anim_leaf_name(stand_full))
+	elif not has_anim:
+		# 静物：GeosetAnim 在 rest 可能 scale=0，强制可见
 		_reveal_hidden_geosets(loaded)
 	_scene_cache[path] = loaded
 	var packed := PackedScene.new()
@@ -429,17 +428,7 @@ func _snap_geoset_visibility_pose(root: Node, anim_name: String) -> void:
 	var ap := _find_animation_player(root)
 	if ap == null:
 		return
-	var resolved := anim_name
-	if not ap.has_animation(resolved):
-		resolved = ""
-		for n in ap.get_animation_list():
-			var leaf := str(n)
-			var slash := leaf.rfind("/")
-			if slash >= 0:
-				leaf = leaf.substr(slash + 1)
-			if leaf == anim_name or leaf.to_lower() == anim_name.to_lower():
-				resolved = str(n)
-				break
+	var resolved := _resolve_animation_name(ap, anim_name)
 	if resolved.is_empty():
 		return
 	var anim := ap.get_animation(resolved)
@@ -450,6 +439,7 @@ func _snap_geoset_visibility_pose(root: Node, anim_name: String) -> void:
 		anim_root = ap.get_parent()
 	if anim_root == null:
 		return
+	var any_vis_track := false
 	for i in anim.get_track_count():
 		var tpath := anim.track_get_path(i)
 		var ps := str(tpath)
@@ -457,11 +447,43 @@ func _snap_geoset_visibility_pose(root: Node, anim_name: String) -> void:
 			continue
 		if anim.track_get_key_count(i) <= 0:
 			continue
+		any_vis_track = true
 		var vis: bool = bool(anim.track_get_key_value(i, 0))
 		var node_path := NodePath(ps.get_basename())
 		var target := anim_root.get_node_or_null(node_path)
 		if target is Node3D:
 			(target as Node3D).visible = vis
+	# 无 :visible 轨时仍尝试按 rest scale=0 藏（旧 GLB）；失败则保持原样
+	if not any_vis_track:
+		_hide_zero_scale_geosets(root)
+
+
+## AnimationPlayer 动画名解析：精确 → 叶名大小写不敏感 → 库前缀。
+func _resolve_animation_name(ap: AnimationPlayer, anim_name: String) -> String:
+	if ap == null or anim_name.is_empty():
+		return ""
+	if ap.has_animation(anim_name):
+		return anim_name
+	var want := _anim_leaf_name(anim_name).to_lower()
+	for n in ap.get_animation_list():
+		var full := str(n)
+		if _anim_leaf_name(full).to_lower() == want:
+			return full
+	return ""
+
+
+func _hide_zero_scale_geosets(root: Node) -> void:
+	if root == null:
+		return
+	for c in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi == null:
+			continue
+		var nm := str(mi.name)
+		if not nm.begins_with("Geoset_"):
+			continue
+		if mi.scale.length_squared() < 1e-8:
+			mi.visible = false
 
 
 func _enqueue_lazy_bake(glb_path: String) -> void:
@@ -542,9 +564,13 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 			continue
 		var seq: Dictionary = seq_v
 		var anim_name := str(seq.get("name", "")).strip_edges()
-		if anim_name.is_empty() or not ap.has_animation(anim_name):
+		if anim_name.is_empty():
 			continue
-		var anim := ap.get_animation(anim_name)
+		# geosetvis 与 Godot 动画名可能大小写不一致（stand vs Stand）
+		var resolved := _resolve_animation_name(ap, anim_name)
+		if resolved.is_empty():
+			continue
+		var anim := ap.get_animation(resolved)
 		if anim == null:
 			continue
 		_remove_geoset_visible_tracks(anim)
@@ -1163,10 +1189,39 @@ func _reveal_hidden_geosets(n: Node) -> void:
 		_reveal_hidden_geosets(c)
 
 
+## 供 MapDoodadLayer.ensure_promoted 等：GeosetAnim rest 全隐时强制可见。
+func reveal_hidden_geosets_public(root: Node) -> void:
+	if root == null:
+		return
+	_reveal_hidden_geosets(root)
+	for c in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi == null:
+			continue
+		mi.visible = true
+		if mi.scale.length_squared() < 1e-8:
+			mi.scale = Vector3.ONE
+
+
+## 按 Stand 的 :visible 轨定格（树=藏树桩 Geoset；主城=默认档）。
+## 树/可破坏物 promote 必须走这里，禁止 reveal_all（否则桩与活树同亮）。
+func snap_stand_geoset_visibility(root: Node) -> void:
+	if root == null:
+		return
+	var ap := _find_animation_player(root)
+	var leaf := "Stand"
+	if ap != null:
+		var picked := _pick_stand_name(ap)
+		if not picked.is_empty():
+			leaf = _anim_leaf_name(picked)
+	_snap_geoset_visibility_pose(root, leaf)
+
+
 func _collect_mesh_parts(n: Node, out: Array) -> void:
 	if n is MeshInstance3D:
 		var mi := n as MeshInstance3D
-		if mi.mesh != null:
+		# 跳过 Stand 下应隐藏的 Geoset（树桩）；否则 MultiMesh 会把桩和活树一起画
+		if mi.mesh != null and mi.visible:
 			out.append({
 				"mesh": mi.mesh,
 				"material": mi.get_active_material(0),

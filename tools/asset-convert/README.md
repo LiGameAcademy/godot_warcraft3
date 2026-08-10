@@ -20,6 +20,10 @@
 npm install
 # 贴图 + 模型 + 同目录 .scn
 npm run convert -- --include "Units/Human/Footman/**" --include "Textures/**"
+# Echo Isles / 人族 Melee 开发子集（推荐）
+npm run convert:echo-isles --
+# Lost Temple 子集
+npm run convert:lost-temple --
 # 只要贴图
 npm run convert:textures -- --include "Textures/**"
 # 只要模型（仍会自动 bake .scn；可加 --skip-scn）
@@ -45,26 +49,27 @@ node scripts/reconvert-additive-geosets.mjs --include "**/*"
 node scripts/reconvert-additive-geosets.mjs --list-only
 ```
 
-### 导出可编辑 PE2 预制（.pe2.tscn）
+### 导出可编辑 PE2 预制（.pe2.tscn）+ visuals
 
-输出到 **`assets/pe2-prefabs/`**（与 `asset-converted` 同级、逻辑子路径镜像），**可提交 git**。  
-`pe2.json` / 贴图仍在 `asset-converted`（不入库）。
+推荐统一入口（bake + PE2 + visuals）：
+
+```bash
+# 仓库根目录
+node tools/export-godot-assets.mjs --include Buildings/Human/ --force
+```
+
+或分步：
 
 ```bash
 godot --headless --path ../.. -s res://tools/export_pe2_scenes.gd -- --include Doodads/ --force
-```
-
-`Wc3Pe2Particles.attach_to` 优先 `res://assets/pe2-prefabs/.../*.pe2.tscn`，没有再回退 JSON。
-
-### 模型视觉封装（visuals）
-
-继承 bake `.scn` + 挂 PE2，输出 **`assets/visuals/`**（可提交，无游戏逻辑）：
-
-```bash
 godot --headless --path ../.. -s res://tools/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force
 ```
 
-`MapModelCache` 优先 `visuals/*.tscn` → `.scn` → GLB。根脚本 `ModelVisualSync` 在 `animation_started` 时同步 PE2。
+输出到 **`assets/pe2-prefabs/`** / **`assets/visuals/`**（可提交 git）。  
+`pe2.json` / 贴图仍在 `asset-converted`（不入库）。
+
+`Wc3Pe2Particles.attach_to` 优先 `res://assets/pe2-prefabs/.../*.pe2.tscn`，没有再回退 JSON。
+`MapModelCache` 优先 `visuals/*.tscn` → `.scn` → GLB。
 
 ## 已知问题与处理
 

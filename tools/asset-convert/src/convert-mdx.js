@@ -511,6 +511,11 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   /** @type {Map<number, import('@gltf-transform/core').Material>} */
   const materialCache = new Map();
 
+  // GLB 规范要求 image 必须是 embedded（bufferView），不允许外部 URI。
+  // glTF-Transform v4.4.1 写 GLB 时会丢弃 setURI；Godot 加载时也会要求 uri/bufferView 二选一。
+  // 因此贴图只能 embed。重复贴图问题改在 .gdignore 层解决（assets/asset-converted/.gdignore
+  // 阻止 Godot auto-import → 不再生成 <model>_<tex>.png 副产物）。所有模型共享
+  // assets/asset-converted/Textures/<name>.png 单一 canonical PNG。
   function getTexture(textureId) {
     if (textureCache.has(textureId)) return textureCache.get(textureId);
     const texInfo = model.Textures?.[textureId];

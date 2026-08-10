@@ -1,0 +1,117 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/asset-converted/Textures/WaterBlobs1.png" id="1_iwbd0"]
+
+[sub_resource type="Gradient" id="Gradient_nigh7"]
+offsets = PackedFloat32Array(0, 0.4, 1)
+colors = PackedColorArray(0.196078, 0.568627, 0.992157, 1, 0.764706, 0.901961, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_aemvx"]
+gradient = SubResource("Gradient_nigh7")
+
+[sub_resource type="Curve" id="Curve_0rttw"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.4, 0.73333335), 0.0, 0.0, 0, 0, Vector2(1, 0.53333336), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_tfotj"]
+curve = SubResource("Curve_0rttw")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_856mt"]
+emission_shape = 3
+emission_box_extents = Vector3(20, 0.5, 1)
+direction = Vector3(0, 1, 0)
+spread = 14.5
+flatness = 0.15
+initial_velocity_min = 96.8
+initial_velocity_max = 96.8
+gravity = Vector3(0, -195, 0)
+scale_min = 13.77
+scale_max = 31.89375
+scale_curve = SubResource("CurveTexture_tfotj")
+color_ramp = SubResource("GradientTexture1D_aemvx")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1xov0"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_iwbd0")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_wmbj6"]
+material = SubResource("StandardMaterial3D_1xov0")
+
+[sub_resource type="Gradient" id="Gradient_l22bw"]
+offsets = PackedFloat32Array(0, 0.4, 1)
+colors = PackedColorArray(0.172549, 0.556863, 0.992157, 0.81960785, 0.709804, 0.839216, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_2ib6l"]
+gradient = SubResource("Gradient_l22bw")
+
+[sub_resource type="Curve" id="Curve_myhjg"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.4, 0.7161804), 0.0, 0.0, 0, 0, Vector2(1, 0.43501323), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_xmeku"]
+curve = SubResource("Curve_myhjg")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_frw45"]
+emission_shape = 3
+emission_box_extents = Vector3(10, 0.5, 10)
+direction = Vector3(0, 1, 0)
+spread = 180.0
+flatness = 0.15
+initial_velocity_min = 104.5
+initial_velocity_max = 104.5
+gravity = Vector3(0, 105, 0)
+scale_min = 18.819
+scale_max = 53.43975
+scale_curve = SubResource("CurveTexture_xmeku")
+color_ramp = SubResource("GradientTexture1D_2ib6l")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_arska"]
+transparency = 1
+cull_mode = 2
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("1_iwbd0")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_7j51r"]
+material = SubResource("StandardMaterial3D_arska")
+
+[node name="Pe2Root" type="Node3D" unique_id=368063037]
+
+[node name="BlizParticle04" type="GPUParticles3D" parent="." unique_id=6294456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14.5953, 144.168, 0.196774)
+cast_shadow = 0
+amount = 39
+lifetime = 0.61
+preprocess = 0.61
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_856mt")
+draw_pass_1 = SubResource("QuadMesh_wmbj6")
+metadata/pe2_always_on = true
+
+[node name="BlizParticle03" type="GPUParticles3D" parent="." unique_id=1892678401]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.01182, 20.4286, 0.196772)
+cast_shadow = 0
+amount = 57
+lifetime = 0.605
+preprocess = 0.605
+visibility_aabb = AABB(-80, -20, -80, 160, 200, 160)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_frw45")
+draw_pass_1 = SubResource("QuadMesh_7j51r")
+metadata/pe2_always_on = true

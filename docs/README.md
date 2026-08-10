@@ -4,6 +4,7 @@
 >
 > 总纲：[architecture/LAYERED_ARCHITECTURE.md](architecture/LAYERED_ARCHITECTURE.md)  
 > 路线图：[roadmap/ROADMAP.md](roadmap/ROADMAP.md)  
+> **新电脑资源准备**：[../README.md](../README.md) · [../tools/README.md](../tools/README.md)（`node tools/dev-setup.mjs`）  
 > 最后更新：2026-08-10
 
 本文档按"类型 + 子系统"组织成二级目录：
