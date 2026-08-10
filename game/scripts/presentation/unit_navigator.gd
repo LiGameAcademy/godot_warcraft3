@@ -16,6 +16,8 @@ const SeparationScr = preload("res://game/scripts/logic/pathing/unit_separation.
 const AgentProfileScr = preload("res://game/scripts/logic/pathing/path_agent_profile.gd")
 const SlopeSpeedScr = preload("res://game/scripts/logic/pathing/slope_speed.gd")
 const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
+const SteeringScr = preload("res://game/scripts/logic/pathing/steering_behaviors.gd")
+const PathArcScr = preload("res://game/scripts/logic/pathing/path_arc.gd")
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
@@ -36,11 +38,17 @@ const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_f
 @export var slope_max_deg: float = 30.0
 ## 位移几乎为 0 超过该秒数 → 强制到达（点不可走区卡边缘时停 Walk）。
 @export var stall_abort_sec: float = 0.4
+## F-PATH-7: 是否允许外部 steering override（F4 战斗 pursue/evade 用；false = 走 waypoint 默认）。
+@export var enable_steering_override: bool = true
 ## 采矿幽灵模式：不占格、寻路忽略他人预约 → 固定走廊互不挡。
 ## keep_separation=true：仍 soft 分离（伐木用；采金走廊通常关分离）。
 var harvest_ghost: bool = false
 ## soft 分离半径倍率（农民略放大，减轻叠人）。
 @export var separation_radius_mul: float = 1.0
+## F-PATH-7: 外部 steering override Callable（F4 战斗 pursue/evade 用）。
+## 签名: (self_pos: Vector2, delta: float) -> Vector2（期望速度 WC3 单位/秒）。
+## 有效时，_process 末尾用其返回替换默认 waypoint 跟随。
+var _steering_override: Callable = Callable()
 
 var _query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
@@ -123,6 +131,25 @@ func apply_unit_stats(
 	if radius_wc3 > 0.0:
 		collision_radius_wc3 = radius_wc3
 		clearance_cells = PathAgentProfile.clearance_from_radius(radius_wc3)
+
+
+## F-PATH-7: 应用外部 steering override（F4 战斗 pursue/evade 用）。
+## fn 签名：(self_pos: Vector2, delta: float) -> Vector2（期望速度 WC3 单位/秒）。
+## 有效时，_process 末尾用其返回替换默认 waypoint 跟随。
+## 切 waypoint 时不重置 — override 持续到 clear_steering_override。
+func apply_steering_override(fn: Callable) -> void:
+	_steering_override = fn
+
+
+## F-PATH-7: 清掉 override（恢复 waypoint 跟随）。
+## 战斗结束/被命令移动时调用。
+func clear_steering_override() -> void:
+	_steering_override = Callable()
+
+
+## F-PATH-7: 是否有 override。
+func has_steering_override() -> bool:
+	return _steering_override.is_valid()
 
 
 func is_moving() -> bool:
@@ -289,6 +316,10 @@ func _process(delta: float) -> void:
 		desired = target_wc3
 	else:
 		desired = cur_wc3 + to * (step / dist)
+	# F-PATH-7: 外部 override 替换默认 waypoint 跟随（F4 战斗 pursue/evade 用）
+	if enable_steering_override and _steering_override.is_valid():
+		var override_vel: Vector2 = _steering_override.call(cur_wc3, delta)
+		desired = cur_wc3 + override_vel * delta
 	var next := _with_separation(body, cur_wc3, desired, delta, is_last, dist)
 	var moved := next.distance_to(cur_wc3)
 	_apply_wc3_pos(body, next)
