@@ -16,6 +16,7 @@ import {
 } from "./mat4.js";
 import {
   blpLogicalToPng,
+  mdxLogicalToAttachments,
   mdxLogicalToGeosetVis,
   mdxLogicalToGltf,
   mdxLogicalToPe2,
@@ -313,6 +314,132 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
 }
+
+
+/**
+ * 把 MDX 里没被 m2g 写进 .gltf 的"附加元素"导出成 sidecar JSON。
+ * 包含 2 部分：
+ * 1. attachments[]：4 类辅助元素（Attachment / ParticleEmitter2 / Light / RibbonEmitter）
+ * 2. geoset_expansions[]：每个 geoset 按 VertexGroup 拆分成 group
+ *    （每个 group 1 个 mesh 节点 + BoneAttachment3D，烘焙时由 Godot 端拼装）
+ *
+ * @param {object} model
+ * @param {string} logicalPath
+ * @returns {object} attachments sidecar
+ */
+export function extractAttachments(model, logicalPath) {
+	const boneNames = (model.Bones ?? []).map((b) => b.Name);
+
+	function boneNameById(id) {
+		if (id == null) return null;
+		for (let i = 0; i < model.Bones.length; i += 1) {
+			if (model.Bones[i].ObjectId === id) return model.Bones[i].Name;
+		}
+		return null;
+	}
+
+	const out = {
+		version: 1,
+		model: logicalPath,
+		skeleton_bone_count: boneNames.length,
+		attachments: [],
+		geoset_expansions: [],
+	};
+
+	// 4 类辅助 attachment
+	for (const a of model.Attachments ?? []) {
+		out.attachments.push({
+			name: a.Name,
+			type: "attachment",
+			bone: boneNameById(a.Parent),
+			source: `attachment_${a.AttachmentID ?? 0}`,
+			visibility_default: !(a.Flags & 0x4),
+		});
+	}
+	for (const p of model.ParticleEmitters2 ?? []) {
+		out.attachments.push({
+			name: p.Name,
+			type: "particle",
+			bone: boneNameById(p.Parent),
+			source: `pe2:${p.Name}`,
+		});
+	}
+	for (const l of model.Lights ?? []) {
+		out.attachments.push({
+			name: l.Name,
+			type: "light",
+			bone: boneNameById(l.Parent),
+			source: l.LightType === 0 ? "OmniLight" : "DirectionalLight",
+		});
+	}
+	for (const r of model.RibbonEmitters ?? []) {
+		out.attachments.push({
+			name: r.Name,
+			type: "ribbon",
+			bone: boneNameById(r.Parent),
+			source: "ribbon_emitter",
+		});
+	}
+
+	// geoset 顶点按 VertexGroup 拆分（每 group = 1 个 mesh 节点 + BoneAttachment3D）
+	for (let gi = 0; gi < (model.Geosets ?? []).length; gi += 1) {
+		const g = model.Geosets[gi];
+		const vg = g.VertexGroup;
+		if (!vg || vg.length === 0) {
+			out.geoset_expansions.push({
+				geoset_index: gi,
+				geoset_name: `Geoset_${gi}`,
+				groups: [],
+			});
+			continue;
+		}
+		// 按 group index 分组顶点
+		const groupMap = new Map(); // groupIdx -> [vertIdx]
+		for (let i = 0; i < vg.length; i += 1) {
+			const groupIdx = vg[i];
+			if (!groupMap.has(groupIdx)) groupMap.set(groupIdx, []);
+			groupMap.get(groupIdx).push(i);
+		}
+		const groups = [];
+		for (const [groupIdx, vertIdx] of groupMap) {
+			const boneIds = g.Groups?.[groupIdx] ?? [];
+			const bones = boneIds
+				.map((id) => boneNameById(id))
+				.filter((n) => n != null);
+			groups.push({
+				group_index: groupIdx,
+				bones: bones,
+				vertex_count: vertIdx.length,
+				vertex_indices: vertIdx, // 全部 vertex indices（烘焙时 subset 顶点）
+			});
+		}
+		out.geoset_expansions.push({
+			geoset_index: gi,
+			geoset_name: `Geoset_${gi}`,
+			groups: groups,
+		});
+	}
+
+	return out;
+}
+
+
+/**
+ * 写 attachments JSON sidecar 到 <model>.attachments.json
+ * @param {object} model
+ * @param {string} logicalPath
+ * @param {string} outDir
+ * @returns {string} 写出路径
+ */
+export function writeAttachmentsSidecar(model, logicalPath, outDir) {
+	const att = extractAttachments(model, logicalPath);
+	const logical = mdxLogicalToAttachments(logicalPath);
+	const dest = path.join(outDir, ...logical.split("/"));
+	fs.mkdirSync(path.dirname(dest), { recursive: true });
+	atomicWriteBytesSync(dest, `${JSON.stringify(att, null, 2)}\n`);
+	return dest;
+}
+
 
 /**
  * @param {ArrayBuffer | Buffer} data
@@ -950,6 +1077,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     outDir,
     ...mdxLogicalToGeosetVis(logicalPath).split("/"),
   );
+  const attDest = path.join(
+    outDir,
+    ...mdxLogicalToAttachments(logicalPath).split("/"),
+  );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
@@ -957,6 +1088,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   try {
     writePe2Sidecar(model, logicalPath, inDir, outDir);
     writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
+    writeAttachmentsSidecar(model, logicalPath, outDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
@@ -964,6 +1096,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(destBin);
     unlinkQuiet(pe2Dest);
     unlinkQuiet(geosetVisDest);
+    unlinkQuiet(attDest);
     throw err;
   }
   return dest;
