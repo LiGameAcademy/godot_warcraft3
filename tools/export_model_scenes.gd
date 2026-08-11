@@ -9,6 +9,9 @@ extends SceneTree
 ## 通常由 tools/asset-convert（npm run convert）在转完模型后自动调用。
 ## 若环境变量 PIPELINE_LOG 已设，进度/警告/错误会追加到该 Markdown 文档。
 
+# SplitMeshesByGroup 是 class_name，全局可用
+const SplitMeshesByGroupScript := preload("res://tools/split_meshes_by_group.gd")
+
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -100,6 +103,8 @@ func _run() -> void:
 		var att_data := _read_attachments(logical_glb)
 		var proto := cache.get_proto(glb_res)
 		if proto != null and not att_data.is_empty():
+			# C-3: 先按 VertexGroup 拆 mesh（修"小配件位置错乱"），再拼 attachment 节点
+			_split_meshes_by_group(proto, att_data)
 			_assemble_attachments(proto, att_data)
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
@@ -187,10 +192,18 @@ func _read_attachments(logical_glb: String) -> Dictionary:
 	return data
 
 
+## C-3: 按 VertexGroup 拆 geoset mesh（实现抽到 tools/split_meshes_by_group.gd）
+func _split_meshes_by_group(proto: Node, att_data: Dictionary) -> int:
+	var n: int = SplitMeshesByGroupScript.split(proto, att_data)
+	if n > 0:
+		_plog("INFO", "split_meshes_by_group: groups=%d" % n)
+	return n
+
+
 ## C-2: 拼装 attachments 到 proto（_scene_cache 里的 Node3D）。
 ## - attachments[]：4 类辅助（Attachment / ParticleEmitter2 / Light / RibbonEmitter）
 ##   → BoneAttachment3D（绑骨）+ 子节点（MeshInstance3D 占位 / GPUParticles3D / OmniLight3D）
-## - geoset_expansions[]：C-3 再做（本步仅占位骨架）
+## - geoset_expansions[]：C-3 在 _split_meshes_by_group 处理（先拆再拼 attachment 节点）
 ##
 ## 副作用：给 _plog 写拼装统计。owner 设为 proto（不是临时 inst）才能保存到 .scn。
 func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:

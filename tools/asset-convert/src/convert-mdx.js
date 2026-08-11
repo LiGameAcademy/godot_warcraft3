@@ -330,12 +330,26 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
 export function extractAttachments(model, logicalPath) {
 	const boneNames = (model.Bones ?? []).map((b) => b.Name);
 
+	// 查 ObjectId → bone name 映射。
+	// 修：war3-model 库只把 mesh-related bone (flag=256) 放进 model.Bones，
+	// 真正的骨架 bone（Bone_Root / Bone_Pelvis / Bone_Foot_L 等 flag=0 Helper）
+	// 只在 model.Nodes 里。attachment.Parent 可能引用任一边。
+	// 例：Footman attachment "Foot Left Ref" Parent=29 → Bone_Foot_L (Helper, in Nodes)
+	const _boneIdToName = (() => {
+		const m = new Map();
+		for (const b of model.Bones ?? []) {
+			if (b.ObjectId != null) m.set(b.ObjectId, b.Name);
+		}
+		for (const id of Object.keys(model.Nodes ?? {})) {
+			const n = model.Nodes[id];
+			if (!m.has(n.ObjectId)) m.set(n.ObjectId, n.Name);
+		}
+		return m;
+	})();
+
 	function boneNameById(id) {
 		if (id == null) return null;
-		for (let i = 0; i < model.Bones.length; i += 1) {
-			if (model.Bones[i].ObjectId === id) return model.Bones[i].Name;
-		}
-		return null;
+		return _boneIdToName.get(id) ?? null;
 	}
 
 	const out = {
