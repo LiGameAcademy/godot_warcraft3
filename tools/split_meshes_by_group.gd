@@ -142,6 +142,8 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 				{},
 				flags
 			)
+			# Godot 4.6 严格不允许 surface_set_material 传 null（之前的 .gltf geoset 无 material 时会触发）
+			# 防御：仅当 orig_material 非 null 时绑定；null 时新 mesh 走默认无材质
 			if orig_material != null:
 				new_mesh.surface_set_material(0, orig_material)
 			var ba := BoneAttachment3D.new()

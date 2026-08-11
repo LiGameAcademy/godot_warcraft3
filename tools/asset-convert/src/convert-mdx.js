@@ -396,13 +396,33 @@ export function extractAttachments(model, logicalPath) {
 	}
 
 	// geoset 顶点按 VertexGroup 拆分（每 group = 1 个 mesh 节点 + BoneAttachment3D）
+	// 同时识别 geoset_kind（normal / teamcolor / glow）— 用于 D-3 export_model_scenes 替换为 ShaderMaterial
+	// 识别逻辑：geoset.MaterialId → Materials[mid].Layers[] → 找 TextureId=1 (teamcolor) / 2 (team_glow)
+	function classifyGeosetKind(geoset) {
+		const matId = geoset.MaterialId;
+		if (matId == null) return "normal";
+		const mat = model.Materials?.[matId];
+		if (!mat || !mat.Layers) return "normal";
+		let has_teamcolor = false;
+		let has_teamglow = false;
+		for (const layer of mat.Layers) {
+			const tid = layer.TextureId;
+			if (tid === 1) has_teamcolor = true;
+			if (tid === 2) has_teamglow = true;
+		}
+		if (has_teamglow) return "glow";
+		if (has_teamcolor) return "teamcolor";
+		return "normal";
+	}
 	for (let gi = 0; gi < (model.Geosets ?? []).length; gi += 1) {
 		const g = model.Geosets[gi];
 		const vg = g.VertexGroup;
+		const kind = classifyGeosetKind(g);
 		if (!vg || vg.length === 0) {
 			out.geoset_expansions.push({
 				geoset_index: gi,
 				geoset_name: `Geoset_${gi}`,
+				kind: kind,
 				groups: [],
 			});
 			continue;
@@ -430,9 +450,31 @@ export function extractAttachments(model, logicalPath) {
 		out.geoset_expansions.push({
 			geoset_index: gi,
 			geoset_name: `Geoset_${gi}`,
+			kind: kind,
 			groups: groups,
 		});
 	}
+
+	// rep_materials[]：列出所有 model 级别的 replaceable texture 用法（TextureId=0/1/2）
+	// D-3 export_model_scenes 用此决定哪些 geoset 替换为 ShaderMaterial
+	const rep_materials = [];
+	for (let mi = 0; mi < (model.Materials ?? []).length; mi += 1) {
+		const mat = model.Materials[mi];
+		if (!mat || !mat.Layers) continue;
+		for (let li = 0; li < mat.Layers.length; li += 1) {
+			const layer = mat.Layers[li];
+			const tid = layer.TextureId;
+			if (tid == null || tid === 0) continue;
+			const kind = tid === 1 ? "teamcolor" : tid === 2 ? "teamglow" : `rep${tid}`;
+			rep_materials.push({
+				material_index: mi,
+				layer_index: li,
+				replaceable_id: tid,
+				kind: kind,
+			});
+		}
+	}
+	out.rep_materials = rep_materials;
 
 	return out;
 }

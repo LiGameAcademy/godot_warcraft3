@@ -233,7 +233,10 @@ func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:
 		# 找 bone index
 		var bone_idx := skeleton.find_bone(bone)
 		if bone_idx == -1:
-			_plog("WARN", "attachment bone missing: %s" % bone)
+			# 静默 skip：很多 attachment 的 bone 是 model.Nodes 里的 Helper（Bone_Root/Pelvis/Foot_L 等），
+			# m2g 写 .gltf 时只用 model.Bones 的 mesh-bone，所以 skeleton 里找不到。
+			# 这种 attachment 用 placeholder marker 替代即可（runtime 不影响功能）。
+			# 统计仍在 assemble_attachments placed/skipped 末尾汇总。
 			skipped += 1
 			continue
 		# BoneAttachment3D
