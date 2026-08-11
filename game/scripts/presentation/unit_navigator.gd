@@ -40,6 +40,10 @@ const PathArcScr = preload("res://game/scripts/logic/pathing/path_arc.gd")
 @export var stall_abort_sec: float = 0.4
 ## F-PATH-7: 是否允许外部 steering override（F4 战斗 pursue/evade 用；false = 走 waypoint 默认）。
 @export var enable_steering_override: bool = true
+## F-PATH-8: waypoint 转角弧线平滑（骑士 / 英雄 / 高速观感；false = 走直线切角）。
+@export var enable_path_arc: bool = true
+## F-PATH-8: 弧线每段采样数（值越大越平滑；调高耗 1 个 O(n_samples) per 转角）。
+@export var path_arc_samples: int = 8
 ## 采矿幽灵模式：不占格、寻路忽略他人预约 → 固定走廊互不挡。
 ## keep_separation=true：仍 soft 分离（伐木用；采金走廊通常关分离）。
 var harvest_ghost: bool = false
@@ -225,6 +229,10 @@ func go_waypoints_wc3(waypoints: Array, goal_hint_wc3: Vector2 = Vector2.INF) ->
 
 func _begin_waypoints(waypoints: Array, goal_hint_wc3: Vector2 = Vector2.INF) -> bool:
 	var body := _body()
+	# F-PATH-8: waypoint 转角弧线平滑（>30° 转弯画弧；<=30° 走直线切角）
+	# 走直线时返回原 waypoints 不变；>30° 时插入 n_samples 个中间点（O(n_samples) per 转角）
+	if enable_path_arc and waypoints.size() >= 2:
+		waypoints = PathArcScr.smooth_path(waypoints, path_arc_samples)
 	_waypoints.clear()
 	for p in waypoints:
 		if p is Vector2:

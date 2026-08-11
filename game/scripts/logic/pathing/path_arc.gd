@@ -95,3 +95,72 @@ static func arc_samples(
 		var pos: Vector2 = center + R * Vector2(cos(t_i), sin(t_i))
 		out2.append(pos)
 	return out2
+
+
+## 完整路径弧线平滑（F-PATH-8 集成层）。
+## 给定离散 waypoints（A* 输出 / 走廊固定路径），对每个连续 waypoint pair
+## (wp[i-1], wp[i], wp[i+1]) 算转角，> MIN_ARC_ANGLE 时沿弧线插值 n_samples 个中间点。
+##
+## 拼接：每段弧线返 n_samples+1 个点（首 wp[i-1] / 尾 wp[i]）。拼接时去重共享端点：
+## - 第 1 段加 samples[1..n_samples]（含 wp[1]）
+## - 中间段加 samples[1..n_samples-1]（不含端点，prev/cur 在相邻段共享）
+## - 最后一段直接加 wp[n-1]
+##
+## 输入：PackedVector2Array / Array[Vector2] / Array（每个元素 Vector2；size >= 2）
+## 输出：Array[Vector2]（>= 2 个点；含原 waypoints + 弧线中间点）
+##
+## WC3 复刻：低切角（农民）走直线；>30° 转弯画弧线（骑士 / 英雄 / 高速）。
+static func smooth_path(waypoints, n_samples: int = 8) -> Array:
+	var out: Array = []
+	var n: int = waypoints.size() if waypoints != null else 0
+	if n < 2:
+		for w in waypoints:
+			if w is Vector2:
+				out.append(w)
+		return out
+	# 转 Vector2 列表（容错）
+	var pts: Array[Vector2] = []
+	for w in waypoints:
+		if w is Vector2:
+			pts.append(w)
+	n = pts.size()
+	if n < 2:
+		return pts
+	# 第 1 段：samples[0] = wp[0]，samples[1..n_samples] = wp[0]→wp[1] 弧线（含 wp[1]）
+	out.append(pts[0])  # 起点（画弧 / 不画弧都要保留）
+	var incoming0: Vector2 = pts[1] - pts[0]
+	var outgoing0: Vector2 = incoming0  # 默认同方向（n = 2 时无 next）
+	if n >= 3:
+		outgoing0 = pts[2] - pts[1]
+	var theta0: float = turn_angle(incoming0, outgoing0)
+	if absf(theta0) >= MIN_ARC_ANGLE:
+		var samples0: PackedVector2Array = arc_samples(
+			pts[0], incoming0, outgoing0, incoming0.length(), n_samples
+		)
+		# samples0[0] = pts[0]（已加），samples0[1..n_samples] = 中间点 + pts[1]
+		for j in range(1, samples0.size()):
+			out.append(samples0[j])
+	else:
+		out.append(pts[1])
+	# 中间段：i = 2..n-2（如果有）
+	for i in range(2, n - 1):
+		var prev: Vector2 = pts[i - 1]
+		var cur: Vector2 = pts[i]
+		var nxt: Vector2 = pts[i + 1]
+		var incoming: Vector2 = cur - prev
+		var outgoing: Vector2 = nxt - cur
+		var theta: float = turn_angle(incoming, outgoing)
+		if absf(theta) >= MIN_ARC_ANGLE:
+			var samples: PackedVector2Array = arc_samples(
+				prev, incoming, outgoing, incoming.length(), n_samples
+			)
+			# samples[0] = prev，samples[1..n_samples-1] = 中间点，samples[n_samples] = cur
+			for j in range(1, samples.size() - 1):
+				out.append(samples[j])
+			out.append(cur)
+		else:
+			out.append(cur)
+	# 最后一段：直接加 wp[n-1]
+	if n >= 2:
+		out.append(pts[n - 1])
+	return out
