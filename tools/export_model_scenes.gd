@@ -95,6 +95,12 @@ func _run() -> void:
 			print("  ⚠ load failed %s" % logical_glb)
 			failed += 1
 			continue
+		# C-2: 拼装 attachments 到 _scene_cache 里的 proto（不是临时 inst）
+		# 这样 cache.bake_model_scene 烤出 .scn 时已含 attachment 节点
+		var att_data := _read_attachments(logical_glb)
+		var proto := cache.get_proto(glb_res)
+		if proto != null and not att_data.is_empty():
+			_assemble_attachments(proto, att_data)
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
@@ -152,6 +158,105 @@ func _matches_any_include(logical_glb: String, includes: PackedStringArray) -> b
 		if logical_glb.findn(str(inc)) >= 0:
 			return true
 	return false
+
+
+## C-2: 读 .attachments.json sidecar（路径同 .gltf）。
+## 读失败或文件不存在 → 返回空 Dictionary。
+func _read_attachments(logical_glb: String) -> Dictionary:
+	# logical_glb = "Buildings/Human/TownHall/TownHall.gltf"
+	# -> 替换 .gltf 为 .attachments.json
+	var att_path := logical_glb
+	if att_path.to_lower().ends_with(".gltf"):
+		att_path = att_path.substr(0, att_path.length() - 5) + ".attachments.json"
+	elif att_path.to_lower().ends_with(".glb"):
+		att_path = att_path.substr(0, att_path.length() - 4) + ".attachments.json"
+	else:
+		return {}
+	# 关键：必须含 res:// 前缀 + assets/asset-converted/，project_abs 才正确解析
+	var disk := RuntimeAssets.project_abs("res://assets/asset-converted/" + att_path)
+	if not FileAccess.file_exists(disk):
+		return {}
+	var f := FileAccess.open(disk, FileAccess.READ)
+	if f == null:
+		return {}
+	var text := f.get_as_text()
+	f.close()
+	var data: Variant = JSON.parse_string(text)
+	if typeof(data) != TYPE_DICTIONARY:
+		return {}
+	return data
+
+
+## C-2: 拼装 attachments 到 proto（_scene_cache 里的 Node3D）。
+## - attachments[]：4 类辅助（Attachment / ParticleEmitter2 / Light / RibbonEmitter）
+##   → BoneAttachment3D（绑骨）+ 子节点（MeshInstance3D 占位 / GPUParticles3D / OmniLight3D）
+## - geoset_expansions[]：C-3 再做（本步仅占位骨架）
+##
+## 副作用：给 _plog 写拼装统计。owner 设为 proto（不是临时 inst）才能保存到 .scn。
+func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:
+	if proto == null or att_data.is_empty():
+		return
+	# 找 Skeleton3D
+	var skeleton: Skeleton3D = null
+	for c in proto.find_children("*", "Skeleton3D", true, false):
+		if c is Skeleton3D:
+			skeleton = c
+			break
+	if skeleton == null:
+		_plog("WARN", "no Skeleton3D for attachments, skip")
+		return
+	var att_list: Array = att_data.get("attachments", [])
+	if att_list.is_empty():
+		return
+	var placed := 0
+	var skipped := 0
+	for item in att_list:
+		var name: String = str(item.get("name", ""))
+		var type: String = str(item.get("type", ""))
+		var bone: String = str(item.get("bone", ""))
+		if bone.is_empty():
+			skipped += 1
+			continue
+		# 找 bone index
+		var bone_idx := skeleton.find_bone(bone)
+		if bone_idx == -1:
+			_plog("WARN", "attachment bone missing: %s" % bone)
+			skipped += 1
+			continue
+		# BoneAttachment3D
+		var ba := BoneAttachment3D.new()
+		ba.name = name
+		ba.bone_name = bone
+		skeleton.add_child(ba)
+		ba.owner = proto  # 关键：owner = proto（不是临时 inst）才能保存到 .scn
+		# 子节点（按 type）
+		match type:
+			"attachment":
+				# WC3 attachment point：仅占位（后续运行时挂 UI / 血条 / 寻路点）
+				var marker := Node3D.new()
+				marker.name = name + "_marker"
+				ba.add_child(marker)
+				marker.owner = proto
+			"particle":
+				var particles := GPUParticles3D.new()
+				particles.name = name + "_particles"
+				particles.amount = 16
+				ba.add_child(particles)
+				particles.owner = proto
+			"light":
+				var light := OmniLight3D.new()
+				light.name = name + "_light"
+				light.light_color = Color(1.0, 0.8, 0.3)
+				light.light_energy = 1.5
+				ba.add_child(light)
+				light.owner = proto
+			"ribbon":
+				var ribbon := Node3D.new()
+				ribbon.name = name + "_ribbon"
+				ba.add_child(ribbon)
+				ribbon.owner = proto
+		placed += 1
+	_plog("INFO", "assemble_attachments placed=%d skipped=%d skeleton=%s" % [placed, skipped, skeleton.name])
 
 
 ## 读 assets/asset-converted/.no-scn 标记；命中 → true（跳过 bake）。

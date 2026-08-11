@@ -44,6 +44,13 @@ func has_cached(path: String) -> bool:
 	return not path.is_empty() and (_packed_cache.has(path) or _scene_cache.has(path))
 
 
+## 拿 _scene_cache 里的 proto（导出拼装时改 proto 再 bake；不暴露 Dict 内部）
+func get_proto(path: String) -> Node3D:
+	if _scene_cache.has(path):
+		return _scene_cache[path] as Node3D
+	return null
+
+
 ## 磁盘上是否已有旁路 .scn（与 GLB 同目录 / 旧 model-scenes / user 懒烘焙）。
 func has_model_scene(path: String) -> bool:
 	return not path.is_empty() and not RuntimeAssets.resolve_model_scene(path).is_empty()
