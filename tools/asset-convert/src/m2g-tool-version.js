@@ -72,6 +72,7 @@ export function reconcileM2gToolVersion(rootRepo, opts) {
     return { force: false, reason: "tool hash 一致（用现有 mtime 增量）", hash: newHash };
   }
   // 工具变了 → 强制 force 全量重转
+  fs.mkdirSync(path.dirname(hashFile), { recursive: true });
   fs.writeFileSync(hashFile, newHash, "utf8");
   return {
     force: true,

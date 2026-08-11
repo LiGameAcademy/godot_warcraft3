@@ -14,8 +14,8 @@ function printHelp() {
 
 选项:
   --game-dir <path>   经典 WC3 安装目录（必需，含 War3.mpq 等）
-  --out <path>        解包输出目录（默认: ../../.cache/wc3-assets）
-  --manifest <path>   manifest 路径（默认: ../../.cache/manifest.json）
+  --out <path>        解包输出目录（默认: ../../assets/.staging/wc3-assets）
+  --manifest <path>   manifest 路径（默认: ../../assets/.staging/manifest.json）
   --force             忽略增量缓存，全量重解
   --include <glob>    仅包含匹配的逻辑路径（可重复）
   --exclude <glob>    排除匹配的逻辑路径（可重复）
@@ -42,8 +42,8 @@ function parseArgs(argv) {
    * }} */
   const opts = {
     gameDir: null,
-    out: "../../.cache/wc3-assets",
-    manifest: "../../.cache/manifest.json",
+    out: "../../assets/.staging/wc3-assets",
+    manifest: "../../assets/.staging/manifest.json",
     force: false,
     include: [],
     exclude: [],

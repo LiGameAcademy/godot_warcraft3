@@ -7,12 +7,14 @@
 # 仓库只装：源码 / 工具 / 文档 / 配置文件
 # 完整本地资源靠 tools/bootstrap.mjs 一键生成
 .cache/
+assets/.staging/
+logs/
 *.mpq
 *.MPQ
 
-# Converted Godot-ready assets (PNG/GLB/SCN + synced editor UI txt) — regenerate via tools
+# Converted Godot-ready assets (PNG/GLTF/SCN + synced editor UI txt) — regenerate via tools
 # Do NOT commit Blizzard content (see docs/data/LEGAL.md)
-# .gdignore 例外：必须入库，否则 Godot 会 auto-import GLB 并在同目录生成重复 PNG 副产物
+# .gdignore 例外：必须入库，否则 Godot 会 auto-import 并生成 baseColor / .import 副产物
 assets/asset-converted/**
 !assets/asset-converted/.gdignore
 

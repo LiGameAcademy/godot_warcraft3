@@ -37,13 +37,14 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   readFileSync,
-  readdirSync,
   rmSync,
   mkdirSync,
   writeFileSync,
 } from "node:fs";
 import { resolve, join, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
+import { beginSession } from "./pipeline-log.mjs";
+import { PROGRESS_LOG } from "./pipeline-paths.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const TOOLS_DIR = dirname(__filename);
@@ -62,40 +63,81 @@ const clean = hasFlag("clean");
 const configPath = resolve(getArg("config", DEFAULT_CONFIG));
 
 // ===== log =====
-const log = (msg) => console.log(`[bootstrap] ${msg}`);
-const vlog = (msg) => verbose && console.log(`  ${msg}`);
+/** @type {import("./pipeline-log.mjs").PipelineLog | null} */
+let plog = null;
+const log = (msg) => {
+  const line = `[bootstrap] ${msg}`;
+  if (plog) plog.info(line);
+  else console.log(line);
+};
+const vlog = (msg) => {
+  if (!verbose) return;
+  if (plog) plog.info(`  ${msg}`);
+  else console.log(`  ${msg}`);
+};
+
+function fmtSec(ms) {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s - m * 60);
+  return `${m}m${String(r).padStart(2, "0")}s`;
+}
 
 // ===== run subprocess =====
-/** @param {{shell?: boolean, cwd?: string, env?: Record<string, string>}} [opts] */
+/** @param {{shell?: boolean, cwd?: string, env?: Record<string, string>, live?: boolean}} [opts] */
 //   opts.shell: 必须显式传；不靠推断。
 //     true  → 走 cmd.exe（用于 npm 这类 .ps1 脚本）
 //     false → 直接 exec（用于 node 这类真 .exe；避开 cmd.exe 对路径空格/括号的转义）
+//   opts.live: true → 实时透出子进程输出（长阶段默认开，不必加 --verbose）
 function run(cmd, cmdArgs, opts = {}) {
   const label = `${cmd} ${cmdArgs.join(" ")}`;
   vlog(`$ ${label}`);
   if (opts.shell === undefined) {
     throw new Error(`run("${cmd}", ...): opts.shell 必须显式传（true/false）`);
   }
+  const live = Boolean(opts.live) || verbose;
+  const t0 = Date.now();
   const result = spawnSync(cmd, cmdArgs, {
-    stdio: verbose ? "inherit" : "pipe",
+    stdio: live ? "inherit" : "pipe",
     cwd: opts.cwd || REPO_ROOT,
     env: { ...process.env, ...(opts.env || {}) },
     shell: opts.shell,
   });
+  const elapsed = fmtSec(Date.now() - t0);
   if (result.status !== 0) {
-    console.error(`❌ ${label} failed (exit ${result.status ?? "null"})`);
-    if (!verbose && result.stderr) {
-      console.error(result.stderr.toString());
+    const brief = `${label} failed (exit ${result.status ?? "null"}) after ${elapsed}`;
+    if (plog) plog.fatal(brief);
+    else console.error(`❌ ${brief}`);
+    if (!live) {
+      const detailParts = [];
+      if (result.stderr?.length) detailParts.push(result.stderr.toString());
+      if (result.stdout?.length) {
+        const out = result.stdout.toString().trim();
+        if (out) detailParts.push(out.slice(-4000));
+      }
+      if (detailParts.length) {
+        if (plog) plog.error("subprocess output (tail)", detailParts.join("\n"));
+        else {
+          for (const p of detailParts) console.error(p);
+        }
+      }
     }
+    if (plog) plog.endSession({ exit: result.status || 1 });
     process.exit(result.status || 1);
   }
+  log(`  ✓ 完成（${elapsed}）`);
 }
 
 // ===== checks =====
 function checkNodeMin(minMajor) {
   const major = parseInt(process.versions.node.split(".")[0], 10);
   if (Number.isNaN(major) || major < minMajor) {
-    console.error(`❌ Node ${process.versions.node}, need >= ${minMajor}`);
+    const brief = `Node ${process.versions.node}, need >= ${minMajor}`;
+    if (plog) {
+      plog.fatal(brief);
+      plog.endSession({ exit: 1 });
+    } else console.error(`❌ ${brief}`);
     process.exit(1);
   }
 }
@@ -126,42 +168,25 @@ const HELP_TEXT = `godot_warcraft3 bootstrap
     --no-bake         asset-convert 阶段不烤 .scn（m2g 加 --skip-scn）
     --no-parse        跳过 map-parse
     --no-slk          跳过 slk-export
+    --keep-staging    结束后保留 assets/.staging（默认删除）
     --clean           清掉本地缓存再跑（保留 .gdignore）
-    --clean-imports   只清 Godot auto-import 残留（*.import + GLB 旁重复 PNG）
+    --clean-imports   只清 Godot auto-import / GLB 残留（convert --clean-only）
     --verbose         详细日志（每个子命令完整 stdout）
     --config <path>   配置文件（默认 tools/bootstrap.config.json）
     -h, --help        显示本帮助
 
-配置：tools/bootstrap.config.json
-  wc3.path / godot.path / maps.items / convert.{include,exclude} / skip.*
-
-示例：
-  # 完整跑（首次 clone）— asset-convert 阶段已含 eager bake
-  node tools/bootstrap.mjs
-
-  # 只重做 slk-export（slk 表改了）
-  node tools/bootstrap.mjs --no-extract --no-convert --no-parse
-
-  # 改了 config.maps 后
-  node tools/bootstrap.mjs --no-extract --no-convert
-
-  # asset-convert 只产 GLB，不烤 .scn（后续手动 bake）
-  node tools/bootstrap.mjs --no-bake
-
-  # 清掉所有本地缓存重来
-  node tools/bootstrap.mjs --clean
-
-  # 只清 Godot auto-import 残留（不影响 GLB/.scn/canonical PNG）
-  node tools/bootstrap.mjs --clean-imports
+流程：MPQ → assets/.staging/wc3-assets → convert(转+复制+清理) → 删 staging → 只留 assets/ 三车道
 `;
 
 const CLEAN_TARGETS = [
   "assets/asset-converted",
+  "assets/.staging",
   "assets/model-scenes",
   "assets/pe2-prefabs",
   "assets/visuals",
   "assets/map-parsed",
   "assets/slk-exported",
+  ".cache",
   "tools/asset-convert/tmp",
   "tools/map-parse/tmp",
   "tools/mpq-extract/tmp",
@@ -169,14 +194,16 @@ const CLEAN_TARGETS = [
 ];
 
 const GDIGNORE_REL = "assets/asset-converted/.gdignore";
+const GDIGNORE_BODY = `## Godot: 忽略本目录，避免 auto-import .gltf/.png 生成 .import / baseColor 副产物。
+## 运行时走 RuntimeAssets 磁盘路径；方案 B 外链贴图后仍建议保留本文件以免扫几千模型卡顿。
+`;
 
 function ensureGdignore() {
-  // 阻止 Godot auto-import → 不在 GLB 旁生成 <model>_<tex>.png 重复副产物
   const target = join(REPO_ROOT, GDIGNORE_REL);
   if (!existsSync(target)) {
     log(`ensure ${GDIGNORE_REL}`);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, "");
+    writeFileSync(target, GDIGNORE_BODY);
   }
 }
 
@@ -199,72 +226,28 @@ function cleanLocal() {
   if (hadGdignore && saved !== null) writeFileSync(gdignore, saved);
 }
 
-/** 只清 Godot auto-import 残留：*.import + GLB 旁的 <model>_<tex>.png。GLB/.scn/canonical PNG 不动。 */
+/** 委托 convert --clean-only（清 baseColor / .import / 旁路 PNG / 旧 glb）。 */
 function cleanImports() {
-  const root = join(REPO_ROOT, "assets/asset-converted");
-  if (!existsSync(root)) {
-    log("  (assets/asset-converted 不存在，跳过)");
-    return;
-  }
-  let importFiles = 0;
-  let dupPngs = 0;
-  // 1. 全删 *.import
-  const importList = walk(root, (p) => p.endsWith(".import"));
-  for (const p of importList) {
-    rmSync(p, { force: true });
-    importFiles += 1;
-  }
-  // 2. GLB 旁的 <model>_<tex>.png：副产物命名形如 <glbStem>_<texStem>.png。
-  //    规则：与同目录 GLB/.scn 同 stem、且文件名含 _ → 删（占位符与 canonical 不含 _，保留）。
-  const pngFiles = walk(root, (p) => p.endsWith(".png"));
-  for (const p of pngFiles) {
-    const rel = p.slice(root.length + 1).replace(/\\/g, "/");
-    if (rel.includes("_placeholders/")) continue;  // 占位符，保留
-    const name = p.split(/[\\/]/).pop();
-    if (!name.includes("_")) continue;  // 纯名字 PNG（canonical），保留
-    const stem = name.split("_")[0];
-    const dir = p.slice(0, p.length - name.length - 1);
-    if (
-      existsSync(join(dir, `${stem}.glb`)) ||
-      existsSync(join(dir, `${stem}.scn`))
-    ) {
-      rmSync(p, { force: true });
-      dupPngs += 1;
-    }
-  }
-  log(`  删除 *.import：${importFiles}`);
-  log(`  删除 GLB 旁重复 PNG：${dupPngs}`);
-}
-
-/** @param {(p: string) => boolean} match */
-function walk(dir, match) {
-  /** @type {string[]} */
-  const out = [];
-  function rec(d) {
-    let entries;
-    try { entries = readdirSync(d, { withFileTypes: true }); }
-    catch { return; }
-    for (const e of entries) {
-      const p = join(d, e.name);
-      if (e.isDirectory()) rec(p);
-      else if (e.isFile() && match(p)) out.push(p);
-    }
-  }
-  rec(dir);
-  return out;
+  run("node", ["tools/asset-convert/src/cli.js", "--clean-only"], {
+    shell: false,
+    live: true,
+  });
 }
 
 // ===== main =====
 function main() {
-  log("=== godot_warcraft3 bootstrap ===");
-  log(`node ${process.versions.node}`);
-  checkNodeMin(18);
-
-  // --help
+  // --help（不写进度文档）
   if (hasFlag("help") || hasFlag("h")) {
     console.log(HELP_TEXT);
     process.exit(0);
   }
+
+  plog = beginSession("bootstrap", { logPath: PROGRESS_LOG });
+  process.env.PIPELINE_LOG = plog.logPath;
+
+  log("=== godot_warcraft3 bootstrap ===");
+  log(`node ${process.versions.node}`);
+  checkNodeMin(18);
 
   const config = loadConfig();
   log(`config: ${configPath}`);
@@ -288,15 +271,20 @@ function main() {
   {
     const r = spawnSync(godotBin, ["--version"], { shell: !godotIsExe });
     if (r.status !== 0) {
-      console.error(`❌ Missing dependency: godot`);
-      console.error(`   See docs/tools/ASSET_LAYOUT.md §6`);
+      if (plog) plog.fatal("Missing dependency: godot", "See docs/tools/ASSET_LAYOUT.md §6");
+      else {
+        console.error(`❌ Missing dependency: godot`);
+        console.error(`   See docs/tools/ASSET_LAYOUT.md §6`);
+      }
+      plog?.endSession({ exit: 1 });
       process.exit(1);
     }
   }
   if (wc3Path) {
     log(`WC3: ${wc3Path}`);
     if (!existsSync(join(wc3Path, "war3.mpq"))) {
-      console.error(`❌ war3.mpq not found in ${wc3Path}`);
+      plog?.fatal(`war3.mpq not found in ${wc3Path}`);
+      plog?.endSession({ exit: 1 });
       process.exit(1);
     }
   } else {
@@ -315,13 +303,17 @@ function main() {
     cleanImports();
     // 纯清理操作：跑完直接退出，不再继续 npm install / 资源生成
     log("=== ✅ 清理完成（请重跑 `node tools/bootstrap.mjs` 重新生成资源）===");
+    plog.endSession({ mode: "clean-imports" });
     process.exit(0);
   }
 
   // --- 4. npm install (workspaces) ---
   // npm 是 npm.ps1，shell:true 让 Windows 能 exec
   log("--- npm install (workspaces) ---");
-  run("npm", ["install", "--workspaces", "--include-workspace-root"], { shell: true });
+  run("npm", ["install", "--workspaces", "--include-workspace-root"], {
+    shell: true,
+    live: true,
+  });
 
   // --- 5/6/7/8. 工具调用全部直跑 node（避开 cmd.exe wrap 路径转义） ---
   // node 是真 .exe，shell:false 也能 exec；不走 npm run 意味着路径里的空格/括号不会被 cmd.exe 转义
@@ -333,41 +325,51 @@ function main() {
   const skipParse   = hasFlag("no-parse")   || skip.parse;
   const skipSlk     = hasFlag("no-slk")     || skip.slk;
 
-  // --- 5. mpq-extract ---
+  // --- 5. mpq-extract → assets/.staging/wc3-assets ---
+  const stagingRoot = join(REPO_ROOT, "assets/.staging/wc3-assets");
+  const stagingManifest = join(REPO_ROOT, "assets/.staging/manifest.json");
   if (!skipExtract && wc3Path) {
-    log("--- mpq-extract ---");
-    run("node", ["tools/mpq-extract/src/cli.js", "--game-dir", wc3Path], { shell: false });
+    log("--- mpq-extract → assets/.staging ---");
+    log("  （解包 MPQ，通常数分钟；下方为子进程实时输出）");
+    mkdirSync(join(REPO_ROOT, "assets/.staging"), { recursive: true });
+    run("node", [
+      "tools/mpq-extract/src/cli.js",
+      "--game-dir", wc3Path,
+      "--out", stagingRoot,
+      "--manifest", stagingManifest,
+    ], { shell: false, live: true });
   } else {
     log("--- skip mpq-extract ---");
   }
 
-  // --- 6. asset-convert（默认含 eager bake：MDX → GLB → .scn） ---
-  // m2g cli 默认 doScn=true（modelsOnly 模式也跑 bake），所以这一阶段
-  // 一次性把 .glb 和 .scn 都烤出来。--no-bake 跳过 .scn 部分。
+  // --- 6. asset-convert（清理 + BLP/MDX + passthrough + bake） ---
   if (!skipConvert) {
     if (skipBake) {
-      log("--- asset-convert (m2g, --skip-scn) ---");
+      log("--- asset-convert (含 clean/passthrough, --skip-scn) ---");
     } else {
-      log("--- asset-convert (m2g, 含 eager bake .scn) ---");
+      log("--- asset-convert (含 clean/passthrough + eager bake .scn) ---");
     }
+    log("  （本阶段最久：贴图→模型→烘焙；下方会刷 [textures]/[models]/export_model_scenes 进度）");
     const include = (config.convert?.include || []).flatMap((g) => ["--include", g]);
     const exclude = (config.convert?.exclude || []).flatMap((g) => ["--exclude", g]);
     const skipScnFlag = skipBake ? ["--skip-scn"] : [];
     run("node", [
       "tools/asset-convert/src/cli.js",
+      "--in", stagingRoot,
       ...include, ...exclude,
       ...skipScnFlag,
-    ], { shell: false });
+    ], { shell: false, live: true });
   } else {
     log("--- skip asset-convert ---");
   }
 
-  // --- 7. map-parse ---
-  // maps.items[].w3x 相对 .cache/wc3-assets/（MPQ 解出的地图，与 ASSET_LANES 中间态一致）
+  // --- 7. map-parse（地图从 staging 读） ---
   if (!skipParse) {
     log("--- map-parse ---");
     const items = config.maps?.items || [];
-    const cacheMapsRoot = join(REPO_ROOT, ".cache", "wc3-assets");
+    const cacheMapsRoot = existsSync(stagingRoot)
+      ? stagingRoot
+      : join(REPO_ROOT, ".cache", "wc3-assets");
     if (items.length === 0) {
       log("  (no maps in config.maps.items, skip)");
     } else {
@@ -376,8 +378,8 @@ function main() {
           ? m.w3x
           : join(cacheMapsRoot, m.w3x);
         if (!existsSync(absMap)) {
-          console.error(`❌ map not found: ${absMap}`);
-          console.error(`   (config.maps item: ${m.name} / ${m.w3x})`);
+          plog.fatal(`map not found: ${absMap}`, `config.maps item: ${m.name} / ${m.w3x}`);
+          plog.endSession({ exit: 1 });
           process.exit(1);
         }
         log(`  parsing ${m.name} (${absMap})`);
@@ -386,28 +388,42 @@ function main() {
           "--map", absMap,
           "--force",
         ];
-        run("node", parseArgs, { shell: false });
+        run("node", parseArgs, { shell: false, live: true });
       }
     }
   } else {
     log("--- skip map-parse ---");
   }
 
-  // --- 8. slk-export ---
+  // --- 8. slk-export（默认读 staging） ---
   if (!skipSlk) {
     log("--- slk-export ---");
-    run("node", ["tools/slk-export/src/cli.js"], { shell: false });
+    const slkArgs = ["tools/slk-export/src/cli.js"];
+    if (existsSync(stagingRoot)) {
+      slkArgs.push("--in", stagingRoot);
+    }
+    run("node", slkArgs, { shell: false, live: true });
   } else {
     log("--- skip slk-export ---");
   }
 
-  // --- 9. sync-data-assets（UnitFunc/UI txt → slk-exported；PathTextures → converted）---
-  // 运行时禁止读 .cache；本步把依赖面落到 assets/ 三车道。与 slk 是否跳过无关。
-  log("--- sync-data-assets ---");
-  run("node", ["tools/sync-data-assets.mjs"], { shell: false });
+  // --- 9. passthrough 已并入 convert；此处仅在跳过 convert 时补跑 ---
+  if (skipConvert) {
+    log("--- sync-data-assets（convert 已跳过，补跑 passthrough）---");
+    run("node", ["tools/sync-data-assets.mjs"], { shell: false, live: true });
+  } else {
+    log("--- skip sync-data-assets（已由 convert passthrough 完成）---");
+  }
+
+  // --- 10. 删除 staging（默认）；--keep-staging 保留 ---
+  if (!hasFlag("keep-staging") && existsSync(join(REPO_ROOT, "assets/.staging"))) {
+    log("--- remove assets/.staging ---");
+    rmSync(join(REPO_ROOT, "assets/.staging"), { recursive: true, force: true });
+  }
 
   log("=== ✅ 资源就绪 ===");
   log("下一步：godot --editor --path .");
+  plog.endSession({ ok: true });
 }
 
 main();

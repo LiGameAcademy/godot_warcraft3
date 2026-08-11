@@ -24,6 +24,7 @@ import {
 } from "./paths.js";
 import { walkFiles } from "./walk.js";
 import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
+import { getLog } from "../../pipeline-log.mjs";
 
 const MODEL_SCALE = 0.01;
 
@@ -406,7 +407,11 @@ function resolveTexturePng(
 
 	const blpSrc = findBlpOnDisk(raw, inDir);
 	if (!blpSrc) {
-		console.warn(`  缺少贴图: ${raw} → 占位`);
+		getLog().warnOnce(
+			`miss-tex:${raw}`,
+			`缺少贴图: ${raw} → 占位`,
+			`BLP not found under extract root; using _placeholders/missing.png`,
+		);
 		const pngLogicalPh = "_placeholders/missing.png";
 		const dest = path.join(outDir, ...pngLogicalPh.split("/"));
 		if (!fs.existsSync(dest)) writePlaceholderPng(dest, [255, 0, 0, 255]);
@@ -972,8 +977,11 @@ export async function convertMdxBatch(options) {
   let skipped = 0;
   let errors = 0;
 
-  console.log(`\n[models] 发现 ${files.length} 个 .mdx/.mdl`);
+  const log = getLog();
+  log.info(`\n[models] 发现 ${files.length} 个 .mdx/.mdl`);
 
+  const t0 = Date.now();
+  let processed = 0;
   for (const file of files) {
     const gltfLogical = mdxLogicalToGltf(file.logicalPath);
     const dest = path.join(outDir, ...gltfLogical.split("/"));
@@ -1002,6 +1010,13 @@ export async function convertMdxBatch(options) {
         visStat.mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
+        processed += 1;
+        if (processed % 50 === 0 || processed === files.length) {
+          const sec = ((Date.now() - t0) / 1000).toFixed(1);
+          log.progress(
+            `[models] progress ${processed}/${files.length} converted=${converted} skipped=${skipped} errors=${errors} (${sec}s)`,
+          );
+        }
         continue;
       }
       if (!valid && dstStat.size > 0) {
@@ -1014,11 +1029,19 @@ export async function convertMdxBatch(options) {
       await convertOneMdx(file.absPath, file.logicalPath, inDir, outDir);
       converted += 1;
     } catch (err) {
-      console.error(`  失败 ${file.logicalPath}: ${err.stack ?? err.message ?? err}`);
+      const brief = `失败 ${file.logicalPath}: ${err instanceof Error ? err.message : err}`;
+      log.error(brief, err);
       errors += 1;
+    }
+    processed += 1;
+    if (processed % 50 === 0 || processed === files.length) {
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
+      log.progress(
+        `[models] progress ${processed}/${files.length} converted=${converted} skipped=${skipped} errors=${errors} (${sec}s)`,
+      );
     }
   }
 
-  console.log(`[models] 完成: 转换 ${converted}, 跳过 ${skipped}, 错误 ${errors}`);
+  log.info(`[models] 完成: 转换 ${converted}, 跳过 ${skipped}, 错误 ${errors}`);
   return { converted, skipped, errors, fileCount: files.length };
 }

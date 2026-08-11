@@ -18,6 +18,7 @@ import {
   runGodotScript,
   PROJECT_ROOT,
 } from "../../lib/godot-cli.mjs";
+import { getLog } from "../../pipeline-log.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -85,9 +86,9 @@ export { findGodotExecutable };
 export function bakeModelScenes(opts = {}) {
   const godot = findGodotExecutable(opts.godot || "");
   if (!godot) {
-    console.warn(
-      "bake:scn: 未找到 Godot。请设置环境变量 GODOT，或安装后重试。\n" +
-        "  已跳过 .scn 烘焙；运行时仍可从 GLB 解析，或稍后: npm run bake:scn",
+    getLog().warn(
+      "bake:scn: 未找到 Godot，已跳过 .scn 烘焙",
+      "设置 GODOT / GODOT_BIN 后可 npm run bake:scn；运行时仍可从 .gltf 解析",
     );
     return 0;
   }
@@ -101,7 +102,7 @@ export function bakeModelScenes(opts = {}) {
   if (opts.force) baseUserArgs.push("--force");
   if (opts.limit > 0) baseUserArgs.push("--limit", String(opts.limit));
 
-  console.log(`bake:scn: project=${PROJECT_ROOT} workers=${workers}`);
+  getLog().info(`bake:scn: project=${PROJECT_ROOT} workers=${workers}`);
 
   if (workers === 1) {
     return runGodotScript({
@@ -129,12 +130,13 @@ export function bakeModelScenes(opts = {}) {
       "--shard", String(workers),
       "--shard-id", String(k),
     ];
-    console.log(`  worker ${k + 1}/${workers}: ${path.basename(godot)} ${args.join(" ")}`);
+    getLog().info(`  worker ${k + 1}/${workers}: ${path.basename(godot)}`);
     const p = spawn(godot, args, {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       shell: false,
       windowsHide: true,
+      env: process.env,
     });
     procs.push(p);
   }
@@ -146,12 +148,12 @@ export function bakeModelScenes(opts = {}) {
         new Promise((resolveP) => {
           p.on("close", (code, signal) => {
             if (code !== 0) {
-              console.error(`  worker ${k + 1} failed: code=${code} signal=${signal}`);
+              getLog().error(`worker ${k + 1} failed: code=${code} signal=${signal}`);
             }
             resolveP(code);
           });
           p.on("error", (err) => {
-            console.error(`  worker ${k + 1} spawn error: ${err.message}`);
+            getLog().error(`worker ${k + 1} spawn error: ${err.message}`, err);
             resolveP(1);
           });
         }),

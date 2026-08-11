@@ -83,6 +83,7 @@ export function runGodotScript(opts) {
     cwd: PROJECT_ROOT,
     stdio: "inherit",
     shell: false,
+    env: process.env,
   });
   if (r.error) {
     console.error("启动 Godot 失败:", r.error.message);

@@ -2,6 +2,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportSlkBatch } from "./export-slk.js";
+import { resolveExtractRoot, LEGACY_CACHE_ROOT } from "../../pipeline-paths.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
@@ -20,10 +21,10 @@ function printHelp() {
   npm run export -- [选项]
 
 将经典 WC3 .slk（SYLK 表）解析为 JSON。
-默认读取 .cache/wc3-assets，写出到 assets/slk-exported。
+默认读取 assets/.staging/wc3-assets（回退 .cache/wc3-assets），写出到 assets/slk-exported。
 
 选项:
-  --in <path>           解包资产根目录（默认: ../../.cache/wc3-assets）
+  --in <path>           解包资产根目录（默认: staging / 遗留 cache）
   --out <path>          输出根目录（默认: ../../assets/slk-exported）
   --overwrite           覆盖已有导出（并删除同名历史 .csv）
   --force               同 --overwrite（注意：经 npm 调用时可能被 npm 吞掉，请优先用 --overwrite）
@@ -42,8 +43,14 @@ function printHelp() {
 }
 
 function parseArgs(argv) {
+  const extracted = resolveExtractRoot();
+  if (extracted.kind === "legacy-cache") {
+    console.warn(
+      `[slk-export] staging 不存在，回退 ${path.relative(REPO_ROOT, LEGACY_CACHE_ROOT)}`,
+    );
+  }
   const opts = {
-    inDir: path.join(REPO_ROOT, ".cache", "wc3-assets"),
+    inDir: extracted.root,
     outDir: path.join(REPO_ROOT, "assets", "slk-exported"),
     force: false,
     include: /** @type {string[]} */ ([]),

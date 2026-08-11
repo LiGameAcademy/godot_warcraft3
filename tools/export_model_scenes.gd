@@ -1,12 +1,13 @@
 extends SceneTree
-## 批量：asset-converted 下 *.glb → 同目录 *.scn（最终运行时优先格式）。
-## .scn 与 GLB 同属 gitignore 的 asset-converted；免主线程 GLTF 解析。
+## 批量：asset-converted 下 *.gltf/.glb → 同目录 *.scn（最终运行时优先格式）。
+## .scn 与模型同属 gitignore 的 asset-converted；免主线程 GLTF 解析。
 ##
 ## 用法:
 ##   godot --headless --path . -s res://tools/export_model_scenes.gd
 ##   godot --headless --path . -s res://tools/export_model_scenes.gd -- --include Units/Human/ --force
 ##
 ## 通常由 tools/asset-convert（npm run convert）在转完模型后自动调用。
+## 若环境变量 PIPELINE_LOG 已设，进度/警告/错误会追加到该 Markdown 文档。
 
 
 func _initialize() -> void:
@@ -37,17 +38,22 @@ func _run() -> void:
 
 	var root_abs := RuntimeAssets.project_abs(RuntimeAssets.CONVERTED_RES_ROOT)
 	if not DirAccess.dir_exists_absolute(root_abs):
+		_plog("FATAL", "export_model_scenes: missing %s" % root_abs)
 		push_error("export_model_scenes: missing %s" % root_abs)
 		quit(1)
 		return
 
 	var glb_files: PackedStringArray = []
 	_collect_glb(root_abs, glb_files)
+	var found_msg := "export_model_scenes: found %d model files under asset-converted" % glb_files.size()
+	print(found_msg)
+	_plog("INFO", found_msg)
 	var cache := MapModelCache.new()
 	var exported := 0
 	var skipped := 0
 	var failed := 0
 	var done := 0
+	var considered := 0
 	for disk_glb in glb_files:
 		if limit > 0 and done >= limit:
 			break
@@ -62,8 +68,12 @@ func _run() -> void:
 		# 已标 .no-scn 的 GLB 跳过（粒子/装饰/水相关/Portrait 等不需要 scn）
 		if _is_no_scn(logical_glb):
 			skipped += 1
+			considered += 1
+			if considered % 50 == 0:
+				_progress_line(considered, exported, skipped, failed)
 			continue
 		done += 1
+		considered += 1
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
 		var disk_scn := RuntimeAssets.project_abs(scn_res)
@@ -75,32 +85,66 @@ func _run() -> void:
 			var sstat := FileAccess.get_modified_time(disk_scn)
 			if sstat >= gstat:
 				skipped += 1
+				if considered % 50 == 0:
+					_progress_line(considered, exported, skipped, failed)
 				continue
 		# 烤基座时跳过 visuals（避免套娃 / 基座已删时 ExtResource 失败）
 		var root: Node3D = cache.instance_glb_preview(glb_res, false)
 		if root == null:
-			push_warning("export_model_scenes: load failed %s" % logical_glb)
+			_plog("WARN", "export_model_scenes: load failed %s" % logical_glb)
+			print("  ⚠ load failed %s" % logical_glb)
 			failed += 1
 			continue
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
-			push_warning("export_model_scenes: bake failed %s" % logical_glb)
+			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
+			print("  ⚠ bake failed %s" % logical_glb)
 			failed += 1
 			continue
 		# 释放原型，避免 headless 退出泄漏（下一文件再 ensure）
 		if cache.has_cached(glb_res):
 			cache.evict(glb_res)
 		exported += 1
-		if exported % 25 == 0:
-			print("export_model_scenes: progress exported=%d ..." % exported)
+		if considered % 25 == 0:
+			_progress_line(considered, exported, skipped, failed)
 
 	var include_desc := ",".join(includes) if not includes.is_empty() else ""
-	print(
+	var done_msg := (
 		"export_model_scenes: exported=%d skipped=%d failed=%d include='%s' out=同目录 .scn"
 		% [exported, skipped, failed, include_desc]
 	)
+	print(done_msg)
+	_plog("INFO", done_msg)
 	# 部分模型（DNC/UI 等）headless 加载失败属可预期；有成功导出则视为通过
 	quit(0 if failed == 0 or exported > 0 or skipped > 0 else 1)
+
+
+func _progress_line(considered: int, exported: int, skipped: int, failed: int) -> void:
+	var msg := (
+		"export_model_scenes: progress considered=%d exported=%d skipped=%d failed=%d ..."
+		% [considered, exported, skipped, failed]
+	)
+	print(msg)
+	_plog("PROGRESS", msg)
+
+
+## 追加到 PIPELINE_LOG（gitignore 的进度文档）；未设置则静默。
+func _plog(level: String, message: String, detail: String = "") -> void:
+	var log_path := OS.get_environment("PIPELINE_LOG")
+	if log_path.is_empty():
+		return
+	var f := FileAccess.open(log_path, FileAccess.READ_WRITE)
+	if f == null:
+		f = FileAccess.open(log_path, FileAccess.WRITE_READ)
+	if f == null:
+		return
+	f.seek_end()
+	var t := Time.get_time_string_from_system()
+	f.store_string("- **%s** `%s` %s\n" % [t, level, message])
+	if not detail.is_empty():
+		f.store_string("  ```\n%s\n  ```\n" % detail)
+	f.store_string("\n")
+	f.close()
 
 
 func _matches_any_include(logical_glb: String, includes: PackedStringArray) -> bool:

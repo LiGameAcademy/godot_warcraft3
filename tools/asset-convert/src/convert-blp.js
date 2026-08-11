@@ -6,6 +6,7 @@ import { decodeBLP, getBLPImageData } from "war3-model";
 import { blpLogicalToPng } from "./paths.js";
 import { walkFiles } from "./walk.js";
 import { atomicWriteBytesSync } from "./atomic-write.js";
+import { getLog } from "../../pipeline-log.mjs";
 
 /**
  * @param {Buffer} blpBuffer
@@ -48,8 +49,11 @@ export function convertBlpBatch(options) {
   let skipped = 0;
   let errors = 0;
 
-  console.log(`\n[textures] 发现 ${files.length} 个 .blp`);
+  const log = getLog();
+  log.info(`\n[textures] 发现 ${files.length} 个 .blp`);
 
+  const t0 = Date.now();
+  let processed = 0;
   for (const file of files) {
     const pngLogical = blpLogicalToPng(file.logicalPath);
     const dest = path.join(outDir, ...pngLogical.split("/"));
@@ -59,6 +63,13 @@ export function convertBlpBatch(options) {
       const dstStat = fs.statSync(dest);
       if (dstStat.mtimeMs >= srcStat.mtimeMs && dstStat.size > 0) {
         skipped += 1;
+        processed += 1;
+        if (processed % 200 === 0 || processed === files.length) {
+          const sec = ((Date.now() - t0) / 1000).toFixed(1);
+          log.progress(
+            `[textures] progress ${processed}/${files.length} converted=${converted} skipped=${skipped} (${sec}s)`,
+          );
+        }
         continue;
       }
     }
@@ -69,12 +80,19 @@ export function convertBlpBatch(options) {
       atomicWriteBytesSync(dest, png);
       converted += 1;
     } catch (err) {
-      console.error(`  失败 ${file.logicalPath}: ${err.message ?? err}`);
+      log.error(`失败 ${file.logicalPath}: ${err.message ?? err}`, err);
       errors += 1;
+    }
+    processed += 1;
+    if (processed % 200 === 0 || processed === files.length) {
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
+      log.progress(
+        `[textures] progress ${processed}/${files.length} converted=${converted} skipped=${skipped} (${sec}s)`,
+      );
     }
   }
 
-  console.log(`[textures] 完成: 转换 ${converted}, 跳过 ${skipped}, 错误 ${errors}`);
+  log.info(`[textures] 完成: 转换 ${converted}, 跳过 ${skipped}, 错误 ${errors}`);
   return { converted, skipped, errors, fileCount: files.length };
 }
 
