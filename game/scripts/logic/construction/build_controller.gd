@@ -19,6 +19,8 @@ signal build_started(order: BuildOrder)
 signal build_cancelled(order: BuildOrder)
 ## F2-5 新增：工地 timer 跑完；Director 刷建筑 + 人口
 signal build_completed(order: BuildOrder, site_wc3: Vector2, owner: int)
+## F2-C 多工：第二农民 Repair 加入工地
+signal build_joined(site: BuildSite, builder: Node3D)
 
 
 const STATE_IDLE := 0
@@ -28,8 +30,9 @@ const STATE_CANCELLED := 3
 
 ## 距工地中心 < 该阈值视为到达（WC3 单位；≈ 1 pathing cell）
 const ARRIVE_DIST_WC3 := 32.0
-## 取消退款比例（WC3 行为：50% 退）
-const CANCEL_REFUND_RATIO := 0.5
+## F2-B Human：取消退款比例 0.75（与 BUILD_SYSTEM.md §4.2 一致；CANCEL_REFUND_RATIO
+## 旧值 0.5 是 F2-5 占位，正式按 Profile）
+const CANCEL_REFUND_RATIO := 0.75
 
 
 var _order: BuildOrder = null
@@ -41,13 +44,29 @@ var _pathing: Wc3PathingMap = null
 var _peasant: Node3D = null
 ## F2-5：建造期间持有的 BuildSite（timer 推进）
 var _site: BuildSite = null
+## F2-A：当前 profile（按 peasant race 选）
+var _profile: ConstructionProfile = null
+## F2-A：当前 strategy
+var _strategy: IConstructionStrategy = null
+## F2-B：profile catalog
+var _profile_catalog: ConstructionProfileCatalog = null
 ## cancel 时记录的最近被取消 order（供 build_cancelled signal 透传）
 var _last_cancelled: BuildOrder = null
 
 
 func _ready() -> void:
 	_peasant = get_parent() as Node3D
+	_profile_catalog = ConstructionProfileCatalog.new()
+	_profile = _profile_catalog.for_race(_peasant_race())
+	_strategy = HumanConstructionStrategy.new()
 	set_process(false)
+
+
+func _peasant_race() -> String:
+	if _peasant == null:
+		return "human"
+	var d: Dictionary = _peasant.get_meta("unit_data", {})
+	return str(d.get("race", "human")).to_lower()
 
 
 func configure(session: GameSession, pathing: Wc3PathingMap) -> void:
@@ -62,6 +81,27 @@ func is_active() -> bool:
 
 func current_order() -> BuildOrder:
 	return _order
+
+
+## 当前工地（外部 join / 状态查询用）
+func current_site() -> BuildSite:
+	return _site
+
+
+## F2-C：第二农民 Repair 加入工地（仅人 MANY_VISIBLE）
+## _site == null 时返 false（人还没到位 / 工地已被释放）
+func try_join_build(site: BuildSite, other_builder: Node3D) -> bool:
+	if site == null or other_builder == null:
+		return false
+	if not _profile.supports_multi_builder():
+		return false
+	if site != _site:
+		return false  # 只能 join 自己正造的工地
+	if _strategy.try_join(site, other_builder):
+		if site.add_builder(other_builder):
+			build_joined.emit(site, other_builder)
+			return true
+	return false
 
 
 ## 接受 BUILD Order。返回 true = 资源已扣 + 已开始走位。
@@ -86,14 +126,17 @@ func start_build(order: BuildOrder) -> bool:
 	return true
 
 
-## 取消建造：退款 50%，peasant 释放；同步取消 BuildSite。
+## 取消建造：退款（按 profile.cancel_refund_ratio），peasant 释放；同步取消 BuildSite。
 func cancel() -> bool:
 	if _order == null or _state == STATE_CANCELLED:
 		return false
 	if _state != STATE_MOVING and _state != STATE_BUILDING:
 		return false
-	var refund_g: int = int(round(float(_order.gold_spent) * CANCEL_REFUND_RATIO))
-	var refund_l: int = int(round(float(_order.lumber_spent) * CANCEL_REFUND_RATIO))
+	var ratio: float = CANCEL_REFUND_RATIO
+	if _profile != null:
+		ratio = _profile.cancel_refund_ratio
+	var refund_g: int = int(round(float(_order.gold_spent) * ratio))
+	var refund_l: int = int(round(float(_order.lumber_spent) * ratio))
 	if _session != null:
 		var stock: PlayerStock = _session.local_stock()
 		if stock != null:
@@ -126,14 +169,19 @@ func _on_arrived() -> void:
 	_state = STATE_BUILDING
 	_order.state = BuildOrder.STATE_BUILDING
 	set_process(false)
-	# 隐藏 peasant（工地幼体模型后续接；F2-5 简化：直接隐藏）
-	if _peasant != null:
+	# F2-B Human：peasant 保持可见施工（兽灵隐藏；人/MANY_VISIBLE 显隐=false）
+	if _peasant != null and _profile != null and _profile.hides_builder():
 		_peasant.visible = false
 	# 启动 BuildSite 接管 timer
 	_site = BuildSite.new()
 	add_child(_site)
 	_site.start(_order, _owner_of_peasant())
 	_site.build_completed.connect(_on_site_completed)
+	# F2-B strategy hook
+	_strategy.on_order_accepted(_site, _peasant)
+	_strategy.on_builder_arrived(_site, _peasant)
+	# primary builder 加入
+	_site.add_builder(_peasant)
 	state_changed.emit(_state)
 	# 旧 signal 保留（外部用：F2-7 验收剧本 / HUD 进度条订阅）
 	build_started.emit(_order)
@@ -147,6 +195,8 @@ func _on_site_completed(order: BuildOrder, site_wc3: Vector2, owner: int) -> voi
 			var fmade: int = BuildingCatalog.get_food_made(order.building_id)
 			if fmade > 0:
 				stock.add_food_cap(fmade)
+	# F2-A strategy hook
+	_strategy.on_complete(_site)
 	# 完工后：清 BuildSite + 保留 peasant（Director 决定删 / 变工地 / 后续）
 	_dispose_site()
 	_order = null
@@ -191,8 +241,15 @@ func _owner_of_peasant() -> int:
 
 func _dispose_site() -> void:
 	if _site != null:
+		_strategy.on_cancel(_site)
 		if _site.build_completed.is_connected(_on_site_completed):
 			_site.build_completed.disconnect(_on_site_completed)
+		# F2-C：释放所有 active builders
+		for b in _site._active_builders.duplicate():
+			_site.remove_builder(b)
 		_site.cancel()
 		_site.queue_free()
 		_site = null
+	# F2-B：peasant 重新可见（兽灵 hidden 取消时也恢复）
+	if _peasant != null and not _peasant.visible and _profile != null and _profile.hides_builder():
+		_peasant.visible = true
