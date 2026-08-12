@@ -9,6 +9,13 @@ extends Node
 ## 查询：
 ##   var d: CliffTypeDef = Wc3DefStore.get_row("CliffTypes", "CLdi") as CliffTypeDef
 ##   var ids: Array[String] = Wc3DefStore.get_ids("CliffTypes")
+##
+## 注意：autoload 名 "Wc3DefStore" 与 GDScript class_name 互斥，本脚本不写
+## class_name。building_visual.gd 等静态调用 Wc3DefStore 在 GDScript 4 编译
+## 阶段通过 autoload 全局变量注册解析，**前提是 editor 启动时已 import**。
+## 单元测试（--headless 启动）若报 "Identifier not found: Wc3DefStore"，
+## 通常是 .godot/global_script_class_cache.cfg 缺失导致 autoload 全局
+## 注册延迟，触发首次 selftest 跑 import 后再跑即恢复。
 
 ## table_name → { path, key_field, factory: Callable }
 var _registry: Dictionary[String, Dictionary] = {}

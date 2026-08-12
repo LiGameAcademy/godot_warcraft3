@@ -23,13 +23,30 @@ const TOWN_HALL_TIER := {
 }
 
 
+## 静态函数不能直接调 autoload Wc3DefStore（GDScript 编译时序问题，
+## autoload 全局变量需 editor 完整 import 后才注册；--headless selftest 跑
+## import 阶段可能未完成）。改用 Engine.get_main_loop() 运行时查找。
+## 返回 null 表示 autoload 未就绪（selftest 阶段预期）。
+static func _wc3_def_store() -> Node:
+	var ml := Engine.get_main_loop()
+	if ml == null:
+		return null
+	var root: Node = ml.root if ml.has_method("root") else null
+	if root == null:
+		return null
+	return root.get_node_or_null("Wc3DefStore")
+
+
 static func is_building(type_id: String) -> bool:
 	if type_id.is_empty() or type_id == "sloc":
 		return false
 	if TOWN_HALL_TIER.has(type_id):
 		return true
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var row: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, type_id)
+	var store: Node = _wc3_def_store()
+	if store == null or not store.has_method("ensure_table"):
+		return false
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	var row: Resource = store.get_row(UnitBalanceDef.TABLE_NAME, type_id)
 	if row is UnitBalanceDef:
 		return (row as UnitBalanceDef).isbldg
 	return false
