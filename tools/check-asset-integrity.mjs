@@ -119,12 +119,13 @@ function checkGlbAndScn() {
     log("  (skip: .cache/wc3-assets 不存在；先跑 bootstrap 抽 MPQ)");
     return;
   }
-  log("--- check MDX → GLB → SCN ---");
+  log("--- check MDX → GLB/Gltf → SCN ---");
   const allMdx = walk(WC3_ASSETS, (p) => p.toLowerCase().endsWith(".mdx") || p.toLowerCase().endsWith(".mdl"));
   report.mdxTotal = allMdx.length;
   for (const mdx of allMdx) {
     const rel = relative(WC3_ASSETS, mdx).replace(/\\/g, "/");
-    const glbRel = rel.replace(/\.(mdx|mdl)$/i, ".glb");
+    // 1f012ac 切流 .glb → .gltf（外链 Textures 共享贴图）
+    const glbRel = rel.replace(/\.(mdx|mdl)$/i, ".gltf");
     const scnRel = glbRel;
     const glbPath = join(ASSET_CONVERTED, glbRel);
     const scnPath = join(ASSET_CONVERTED, scnRel);
@@ -136,7 +137,7 @@ function checkGlbAndScn() {
       if (report.scnMissingList.length < 20) report.scnMissingList.push(rel);
     }
   }
-  log(`  MDX: ${report.mdxTotal}  GLB 缺: ${report.glbMissing}  SCN 缺: ${report.scnMissing}`);
+  log(`  MDX: ${report.mdxTotal}  Gltf 缺: ${report.glbMissing}  SCN 缺: ${report.scnMissing}`);
 }
 
 function checkMaps(config) {
