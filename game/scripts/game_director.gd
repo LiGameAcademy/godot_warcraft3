@@ -68,6 +68,7 @@ var _bootstrapped: bool = false
 var _session: GameSession = null
 ## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
 var _path_query: PathQuery = null
+var _pathing: Wc3PathingMap = null
 var _heightfield: Wc3Heightfield = null
 ## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
 var _crowd_query: UnitCrowdQuery = null
@@ -83,6 +84,12 @@ var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
 var _last_harvest_ui: Dictionary = {}
+
+## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
+var _build_placement: BuildPlacementController = null
+var _build_ghost: BuildPlacementGhost = null
+## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
+var _last_screen_pos: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -267,6 +274,23 @@ func _input(event: InputEvent) -> void:
 			_set_harvest_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
+	# F2-4：建造瞄准 → 左键 commit / 右键 cancel / mousemove 跟手 ghost
+	# 任何鼠标事件都记录最新位置，给 build_placement 跟手用
+	if event is InputEventMouseMotion:
+		_last_screen_pos = (event as InputEventMouseMotion).position
+		if _build_placement != null and _build_placement.is_active():
+			_build_placement.update_screen(_last_screen_pos)
+			_apply_ghost_to_screen()
+	if _build_placement != null and _build_placement.is_active() and event is InputEventMouseButton:
+		var mb_b := event as InputEventMouseButton
+		if mb_b.pressed and mb_b.button_index == MOUSE_BUTTON_LEFT:
+			_commit_build_targeting(mb_b.position)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_b.pressed and mb_b.button_index == MOUSE_BUTTON_RIGHT:
+			_cancel_build_targeting()
+			get_viewport().set_input_as_handled()
+			return
 	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
 			get_viewport().set_input_as_handled()
@@ -329,6 +353,7 @@ func _setup_pathing() -> void:
 		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
 	else:
 		_heightfield = null
+	_pathing = map_root.get_pathing_map() if map_root != null else null
 	_crowd_query = UnitCrowdQuery.new()
 	_crowd_query.configure(
 		map_root.get_unit_layer(),
@@ -339,7 +364,9 @@ func _setup_pathing() -> void:
 		_path_query,
 		_crowd_query,
 		Callable(self, "_ensure_navigator"),
-		Callable(self, "_ensure_harvest_controller")
+		Callable(self, "_ensure_harvest_controller"),
+		Callable(self, "_ensure_build_controller"),
+		_session
 	)
 	_setup_tree_registry()
 	_ensure_path_debug()
@@ -513,11 +540,13 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 移动/采集瞄准：Esc 取消（落点已在 _input 处理）
-	if (_move_targeting or _harvest_targeting) and event is InputEventKey and event.pressed and not event.echo:
+	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
+	if (_move_targeting or _harvest_targeting or _is_build_targeting()) and event is InputEventKey and event.pressed and not event.echo:
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_set_move_targeting(false)
 			_set_harvest_targeting(false)
+			if _is_build_targeting():
+				_cancel_build_targeting()
 			get_viewport().set_input_as_handled()
 			return
 	# 右键智能命令优先于调试热键：金矿→采集，空地→移动。
@@ -550,6 +579,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _issue_return_goods(UnitOrder.Source.HOTKEY):
 				get_viewport().set_input_as_handled()
 				return
+		# F2-4：F / A / B 直接进建造瞄准
+		if _card_is_peasant:
+			match key:
+				KEY_F:
+					_begin_build_targeting("hhou", UnitOrder.Source.HOTKEY)
+					get_viewport().set_input_as_handled()
+					return
+				KEY_A:
+					_begin_build_targeting("halt", UnitOrder.Source.HOTKEY)
+					get_viewport().set_input_as_handled()
+					return
+				KEY_B:
+					_begin_build_targeting("hbar", UnitOrder.Source.HOTKEY)
+					get_viewport().set_input_as_handled()
+					return
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
@@ -927,7 +971,7 @@ func _sync_selector_enabled_for_targeting() -> void:
 	if unit_selector == null:
 		return
 	# 任一瞄准态都关掉点选，避免抢左键
-	unit_selector.enabled = not (_move_targeting or _harvest_targeting)
+	unit_selector.enabled = not (_move_targeting or _harvest_targeting or _is_build_targeting())
 
 
 func _flash_cursor_move() -> void:
@@ -997,6 +1041,234 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	return hc
 
 
+func _is_build_targeting() -> bool:
+	return _build_placement != null and _build_placement.is_active()
+
+
+## F2-4：玩家按下"建造 <something>"按钮 → 进入瞄准态。
+func _begin_build_targeting(building_id: String, source: int) -> void:
+	if not BuildingCatalog.is_building(building_id):
+		if game_hud:
+			game_hud.set_status("未知建筑 %s" % building_id)
+		return
+	if _command_router == null:
+		return
+	var peasants: Array = _command_router.filter_peasants(_get_selected_safe())
+	if peasants.is_empty():
+		if game_hud:
+			game_hud.set_status("建造：无农民")
+		return
+	# 资源检查
+	if not _can_afford(building_id):
+		if game_hud:
+			game_hud.set_status("资源不足，无法建造 %s" % building_id)
+		return
+	# 中断其他瞄准态
+	_set_move_targeting(false)
+	_set_harvest_targeting(false)
+	_ensure_build_placement_objects()
+	_build_placement.begin(building_id)
+	_ensure_ghost_node(building_id)
+	_build_ghost.set_visible_preview(true)
+	_sync_selector_enabled_for_targeting()
+	# 接 first mouse update
+	if not _last_screen_pos.is_equal_approx(Vector2.ZERO):
+		_build_placement.update_screen(_last_screen_pos)
+		_apply_ghost_to_screen()
+	if game_hud:
+		var name := CommandCard._building_display_name(building_id)
+		game_hud.set_status("建造瞄准：%s · 左键指定地点 · 右键/Esc 取消" % name)
+
+
+func _cancel_build_targeting() -> void:
+	if _build_placement == null:
+		return
+	_build_placement.cancel()
+	if _build_ghost != null:
+		_build_ghost.set_visible_preview(false)
+	_sync_selector_enabled_for_targeting()
+	if game_hud:
+		game_hud.set_status("建造取消")
+
+
+func _commit_build_targeting(screen_pos: Vector2) -> void:
+	if _build_placement == null or not _build_placement.is_active():
+		return
+	_last_screen_pos = screen_pos
+	_build_placement.update_screen(screen_pos)
+	if not _build_placement.is_valid():
+		if game_hud:
+			game_hud.set_status("无法在此处建造（合法位置？）")
+		return
+	var bid := _build_placement.current_building_id()
+	var site := _build_placement.current_site_wc3()
+	# 资源复检（资源可能在瞄准中被花掉）
+	if not _can_afford(bid):
+		if game_hud:
+			game_hud.set_status("资源不足，无法建造")
+		_cancel_build_targeting()
+		return
+	if not _build_placement.commit():
+		return
+	# 接 peasant 列表后下 issue_build
+	var peasants: Array = _command_router.filter_peasants(_get_selected_safe())
+	_command_router.issue_build(peasants, bid, site, UnitOrder.Source.TARGETING)
+	if _build_ghost != null:
+		_build_ghost.set_visible_preview(false)
+	_sync_selector_enabled_for_targeting()
+	_refresh_command_card()
+
+
+func _apply_ghost_to_screen() -> void:
+	if _build_placement == null or _build_ghost == null:
+		return
+	if not _build_placement.is_active():
+		return
+	var hit := _ground_at_screen(_last_screen_pos)
+	if hit == Vector3.INF:
+		_build_ghost.visible = false
+		return
+	_build_ghost.visible = true
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var wx := hit.x * inv
+	var wy := -hit.z * inv
+	var ty := hit.y
+	_build_ghost.set_position_wc3(wx, wy, ty)
+	_build_ghost.set_valid(_build_placement.is_valid())
+
+
+func _on_build_placement_changed(_bid: String, _site: Vector2, valid: bool) -> void:
+	if _build_ghost != null and _build_placement != null and _build_placement.is_active():
+		_build_ghost.set_valid(valid)
+
+
+func _on_build_placement_cancelled() -> void:
+	if _build_ghost != null:
+		_build_ghost.set_visible_preview(false)
+	_sync_selector_enabled_for_targeting()
+
+
+func _on_build_placement_committed(_bid: String, _site: Vector2) -> void:
+	pass
+
+
+func _ensure_build_placement_objects() -> void:
+	if _build_placement == null:
+		_build_placement = BuildPlacementController.new()
+		_build_placement.configure(
+			Callable(self, "_ground_at_screen"),
+			Callable(self, "_heightfield_ref"),
+			Callable(self, "_pathing_ref"),
+			Callable(self, "_cell_reservation_ref")
+		)
+		_build_placement.placement_changed.connect(_on_build_placement_changed)
+		_build_placement.placement_cancelled.connect(_on_build_placement_cancelled)
+		_build_placement.placement_committed.connect(_on_build_placement_committed)
+
+
+func _ensure_ghost_node(building_id: String) -> void:
+	if _build_ghost == null:
+		_build_ghost = BuildPlacementGhost.new()
+		_build_ghost.name = "BuildPlacementGhost"
+		if map_root != null:
+			map_root.add_child(_build_ghost)
+		else:
+			add_child(_build_ghost)
+	_build_ghost.set_building(building_id)
+
+
+func _heightfield_ref() -> Wc3Heightfield:
+	return _heightfield
+
+
+func _pathing_ref() -> Wc3PathingMap:
+	return _pathing
+
+
+func _cell_reservation_ref() -> PathCellReservation:
+	return _cell_reservation
+
+
+func _can_afford(building_id: String) -> bool:
+	if _session == null:
+		return false
+	var stock: PlayerStock = _session.local_stock()
+	if stock == null:
+		return false
+	var g: int = BuildingCatalog.get_gold_cost(building_id)
+	var l: int = BuildingCatalog.get_lumber_cost(building_id)
+	return stock.gold >= g and stock.lumber >= l
+
+
+func _get_selected_safe() -> Array:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return []
+	return unit_selector.call("get_selected")
+
+
+## F2-4：每个 peasant 挂一个 BuildController；首次创建时连 build_completed 信号。
+func _ensure_build_controller(unit: Node3D) -> BuildController:
+	_ensure_unit_visual(unit)
+	var existing := unit.get_node_or_null("BuildController") as BuildController
+	if existing != null:
+		existing.configure(_session, _pathing, _cell_reservation)
+		_wire_build_signals(existing)
+		return existing
+	var bc := BuildController.new()
+	bc.name = "BuildController"
+	bc.configure(_session, _pathing, _cell_reservation)
+	unit.add_child(bc)
+	_wire_build_signals(bc)
+	return bc
+
+
+func _wire_build_signals(bc: BuildController) -> void:
+	if bc == null:
+		return
+	if not bc.build_completed.is_connected(_on_build_completed):
+		bc.build_completed.connect(_on_build_completed)
+	if not bc.build_cancelled.is_connected(_on_build_cancelled):
+		bc.build_cancelled.connect(_on_build_cancelled)
+
+
+## F2-5：工地 timer 跑完 → 刷建筑（MapUnitLayer + pathing dynamic blit）。
+func _on_build_completed(order: BuildOrder, site_wc3: Vector2, owner: int) -> void:
+	if order == null:
+		return
+	var entry := _build_entry_for(order.building_id, site_wc3, owner)
+	# MapUnitLayer.add_one 写可见模型（MapLoader 内部把 entry push 到 _pathing_unit_entries）
+	if map_root != null and _heightfield != null:
+		map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+		# 触发 pathing dynamic 重新 blit：新建筑的 footprint 进入动态寻路面，A* 永久绕开
+		if map_root.has_method("_apply_dynamic_pathing"):
+			map_root.call("_apply_dynamic_pathing")
+		elif map_root.has_method("set_pathing_map") and _pathing != null:
+			map_root.set_pathing_map(_pathing)
+	if game_hud != null:
+		game_hud.set_status("完工：%s @ (%.0f, %.0f)" % [order.building_id, site_wc3.x, site_wc3.y])
+	_refresh_command_card()
+
+
+func _on_build_cancelled(_order: BuildOrder) -> void:
+	_refresh_command_card()
+
+
+## 完工后入图的 unit entry dict（MapUnitLayer 期望的字段）。
+func _build_entry_for(building_id: String, site_wc3: Vector2, owner: int) -> Dictionary:
+	return {
+		"typeId": building_id,
+		"position": {"x": site_wc3.x, "y": site_wc3.y},
+		"owner": owner,
+		"creationNumber": -1, ## MapUnitLayer 会按 typeId_creationNumber 起名；-1 → 自增
+		"variation": 0,
+		"isBuilding": true,
+	}
+
+
+## 建筑 path_tex → 1-bit Image（占位；F2-5 由 MapLoader._apply_dynamic_pathing 接管）。
+var _id_catalog: Wc3IdCatalog = null
+
+
 func _local_stock() -> PlayerStock:
 	if _session == null:
 		return null
@@ -1026,10 +1298,6 @@ func _wire_harvest_signals(hc: HarvestController) -> void:
 		hc.deposited.connect(_on_harvest_deposited)
 	if not hc.state_changed.is_connected(_on_harvest_state_changed):
 		hc.state_changed.connect(_on_harvest_state_changed)
-	if hc.has_signal("entered_unselectable") and not hc.entered_unselectable.is_connected(
-		_on_harvest_entered_unselectable
-	):
-		hc.entered_unselectable.connect(_on_harvest_entered_unselectable)
 
 
 func _on_harvest_carry_changed(_resource_id: String, _amount: int) -> void:
@@ -1047,13 +1315,6 @@ func _on_harvest_deposited(gold: int, lumber: int) -> void:
 
 func _on_harvest_state_changed(_state: int) -> void:
 	_refresh_command_card()
-
-
-func _on_harvest_entered_unselectable(unit: Node3D) -> void:
-	if unit == null or unit_selector == null:
-		return
-	if unit_selector.has_method("deselect_unit"):
-		unit_selector.call("deselect_unit", unit)
 
 
 func _is_harvestable_tree_node(node: Node) -> bool:
@@ -1264,6 +1525,10 @@ func _on_command_action(action_id: String) -> void:
 		CommandCard.ACTION_RETURN_GOODS:
 			_issue_return_goods(UnitOrder.Source.PANEL)
 		_:
+			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
+				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())
+				_begin_build_targeting(bid, UnitOrder.Source.PANEL)
+				return
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
 
@@ -1322,6 +1587,28 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		game_hud.set_status("已选 %s" % tid)
 
 
+## F2-4：可建造列表（F2 锁死 3 建筑；未来按 race/tech 过滤）。
+func _build_building_ids() -> PackedStringArray:
+	var arr := PackedStringArray()
+	for bid in BuildingCatalog.F2_BUILDING_IDS:
+		arr.append(str(bid))
+	return arr
+
+
+func _build_can_afford_flags() -> PackedInt32Array:
+	var arr := PackedInt32Array()
+	for bid in BuildingCatalog.F2_BUILDING_IDS:
+		arr.append(1 if _can_afford(str(bid)) else 0)
+	return arr
+
+
+func _build_executing_flags() -> PackedInt32Array:
+	var arr := PackedInt32Array()
+	for _bid in BuildingCatalog.F2_BUILDING_IDS:
+		arr.append(0) ## F2-4 简化：未来接 _is_any_peasant_building(_bid) 再开
+	return arr
+
+
 func _refresh_command_card() -> void:
 	if game_hud == null or not _card_supports_move or unit_selector == null:
 		return
@@ -1355,7 +1642,15 @@ func _refresh_command_card() -> void:
 	}
 	if _card_is_peasant:
 		game_hud.set_command_card(
-			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+			CommandCard.peasant_with_build(
+				moving,
+				carrying,
+				harvesting and not carrying,
+				returning,
+				_build_building_ids(),
+				_build_can_afford_flags(),
+				_build_executing_flags()
+			)
 		)
 	else:
 		game_hud.set_command_card(CommandCard.basic_locomotion(moving))
@@ -1393,7 +1688,15 @@ func _refresh_move_executing_ui() -> void:
 	# 互斥格可能从采集切到交回，需整卡刷新
 	if is_peasant:
 		game_hud.set_command_card(
-			CommandCard.peasant(moving, carrying, harvesting and not carrying, returning)
+			CommandCard.peasant_with_build(
+				moving,
+				carrying,
+				harvesting and not carrying,
+				returning,
+				_build_building_ids(),
+				_build_can_afford_flags(),
+				_build_executing_flags()
+			)
 		)
 	else:
 		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)

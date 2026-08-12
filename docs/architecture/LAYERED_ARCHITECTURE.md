@@ -2,8 +2,8 @@
 
 > 目标：用 **WC3 数据 + 资产** 建映射，再在其上写逻辑，最后在逻辑正确的前提下做渲染。  
 > 难点与终点都在「映射正确」；表现层只消费映射结果。  
-> 相关：[MAP_DATA.md](MAP_DATA.md) · [ROADMAP.md](../roadmap/ROADMAP.md) · [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) · [EDITOR.md](../design/editor/EDITOR.md) · [HEX_MAP_LESSONS.md](../design/terrain/HEX_MAP_LESSONS.md)  
-> 最后更新：2026-07-27
+> 相关：[MAP_DATA.md](docs/architecture/MAP_DATA.md) · [ROADMAP.md](docs/roadmap/ROADMAP.md) · [MAP_ARCHITECTURE.md](docs/architecture/MAP_ARCHITECTURE.md) · [EDITOR.md](docs/editor/EDITOR.md) · [HEX_MAP_LESSONS.md](docs/terrain/HEX_MAP_LESSONS.md)  
+> 最后更新：2026-08-10（新增 WorldMembership 在场性抽象；F2 已落地进矿 / 工地）
 
 ---
 
@@ -74,7 +74,7 @@ EditorMain (Node3D)                    ← 场景壳：环境光、挂载子节�
 
 现状：`EditorMain` 根节点挂 `editor_app.gd`（`Node3D`）并用 `$MapRoot`。迁徙时把编排迁入子节点 `Editor`，根只保留 3D 世界壳；`editor_app.gd` 可改名/瘦身为兼容层后删除。
 
-细节见 [EDITOR.md](../design/editor/EDITOR.md)。
+细节见 [EDITOR.md](docs/editor/EDITOR.md)。
 
 ### 2.2 命名与目录（摘要）
 
@@ -143,7 +143,7 @@ EditorMain (Node3D)                    ← 场景壳：环境光、挂载子节�
 ## 4. 目标目录拆分（可读性）
 
 原则：**一层一目录**；逻辑/表现内再按 **子系统**（terrain / cliff / ramp / water / doodad / unit）分子目录。  
-搬迁服从 [ROADMAP.md](../roadmap/ROADMAP.md)：先契约与 Ground 管线，再机械 `git mv`，避免大爆改。
+搬迁服从 [ROADMAP.md](docs/roadmap/ROADMAP.md)：先契约与 Ground 管线，再机械 `git mv`，避免大爆改。
 
 ### 4.1 `scripts/map/`（运行时地图）
 
@@ -283,9 +283,10 @@ editor/
 | 文档 | 角色 |
 |------|------|
 | 本文 | **架构总纲与 vibecoding 门禁来源** |
-| [MAP_DATA.md](MAP_DATA.md) | 数据层细节 |
-| [EDITOR.md](../design/editor/EDITOR.md) | 编辑层总管、场景树、与 MapRoot 接线 |
-| [TERRAIN_TILES.md](../design/terrain/TERRAIN_TILES.md) | 地表贴图 / Autotile |
-| [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | 现 MapRoot 节点树与历史职责表（逐步对齐本文） |
-| [ROADMAP.md](../roadmap/ROADMAP.md) | 实施顺序 |
+| [MAP_DATA.md](docs/architecture/MAP_DATA.md) | 数据层细节 |
+| [EDITOR.md](docs/editor/EDITOR.md) | 编辑层总管、场景树、与 MapRoot 接线 |
+| [TERRAIN_TILES.md](docs/terrain/TERRAIN_TILES.md) | 地表贴图 / Autotile |
+| [MAP_ARCHITECTURE.md](docs/architecture/MAP_ARCHITECTURE.md) | 现 MapRoot 节点树与历史职责表（逐步对齐本文） |
+| [WORLD_MEMBERSHIP.md](docs/architecture/WORLD_MEMBERSHIP.md) | 「在世界成员资格」抽象：进矿 / 工地 / 训练 / 死亡统一切换 |
+| [ROADMAP.md](docs/roadmap/ROADMAP.md) | 实施顺序 |
 | CLIFF / RAMP / WATER | 单模块规则；服从本文分层，不另起一套架构 |

@@ -40,6 +40,8 @@ var _state: int = STATE_IDLE
 ## 配置（Director 在 _setup_build_router 时注入；运行时可能为空，需 fallback）
 var _session: GameSession = null
 var _pathing: Wc3PathingMap = null
+## F2-merge：pathing footprint 预约（人/兽/灵/亡工地占用；cancel 回滚）
+var _cell_reservation: PathCellReservation = null
 ## 父节点：peasant Node3D
 var _peasant: Node3D = null
 ## F2-5：建造期间持有的 BuildSite（timer 推进）
@@ -69,9 +71,10 @@ func _peasant_race() -> String:
 	return str(d.get("race", "human")).to_lower()
 
 
-func configure(session: GameSession, pathing: Wc3PathingMap) -> void:
+func configure(session: GameSession, pathing: Wc3PathingMap, cell_reservation: PathCellReservation = null) -> void:
 	_session = session
 	_pathing = pathing
+	_cell_reservation = cell_reservation
 
 
 ## 当前是否正在建造（防止重入）。

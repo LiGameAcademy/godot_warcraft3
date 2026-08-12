@@ -8,8 +8,6 @@ signal state_changed(state: int)
 ## 负重变化：resource_id 见 CarrySlot（""=空）。
 signal carry_changed(resource_id: String, amount: int)
 signal deposited(gold: int, lumber: int)
-## 进矿隐藏：导演侧取消选中（对齐原作不可框选）。
-signal entered_unselectable(unit: Node3D)
 
 enum State {
 	IDLE = 0,
@@ -100,7 +98,6 @@ var _get_unit_host: Callable = Callable()
 var _get_path_query: Callable = Callable()
 var _get_crowd: Callable = Callable()
 var _get_tree_registry: Callable = Callable()
-var _was_visible: bool = true
 var _active: bool = false
 var _mine_repath_cooldown: float = 0.0
 
@@ -276,7 +273,7 @@ func abort() -> void:
 	_wire_nav_path_failed(false)
 	_release_tree_claim()
 	if not _active and _state == State.IDLE:
-		_restore_visible()
+		_enter_world()
 		return
 	_active = false
 	_dwell_left = 0.0
@@ -295,7 +292,7 @@ func abort() -> void:
 	_mine_repath = 0
 	_mine_repath_cooldown = 0.0
 	_use_scatter_approach = true
-	_restore_visible()
+	_enter_world()
 	_set_state(State.IDLE)
 	set_process(false)
 
@@ -504,12 +501,9 @@ func _begin_inside_mine() -> void:
 	var nav := _nav()
 	if nav != null:
 		nav.stop()
-	# 进矿：隐藏=暂时移出可选世界（无敌/不可框选，对齐原作）
+	# 进矿：暂时移出游戏世界（不可见 / 不参与选择 / 不占寻路）
 	if body != null:
-		_was_visible = body.visible
-		body.visible = false
-		body.set_meta("selection_blocked", true)
-		entered_unselectable.emit(body)
+		WorldMembership.exit(body)
 	var dwell := GoldMineRuntime.DEFAULT_DWELL_SEC
 	if _mine_rt != null:
 		dwell = _mine_rt.dwell_sec
@@ -531,7 +525,7 @@ func _exit_mine_with_gold() -> void:
 		_apply_carry_visual(true)
 	# 出矿：选朝主城、可贴矿、无占用的落点，再显示并去交货
 	_place_at_free_mine_exit(body)
-	_restore_visible()
+	_enter_world()
 	_apply_carry_visual(true)
 	_emit_carry_changed()
 	if taken <= 0:
@@ -1097,11 +1091,8 @@ func _mine_valid() -> bool:
 	return _mine != null and is_instance_valid(_mine) and _mine_rt != null and is_instance_valid(_mine_rt)
 
 
-func _restore_visible() -> void:
-	var body := _body()
-	if body != null:
-		body.visible = true
-		body.set_meta("selection_blocked", false)
+func _enter_world() -> void:
+	WorldMembership.enter(_body())
 
 
 func _emit_carry_changed() -> void:

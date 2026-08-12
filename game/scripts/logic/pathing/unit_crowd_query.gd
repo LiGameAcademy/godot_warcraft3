@@ -62,7 +62,8 @@ func neighbors_of(
 		if c == self_unit or not (c is Node3D):
 			continue
 		var n := c as Node3D
-		if not n.visible:
+		# 离场单位（进矿 / 工地 / 训练中）不参与 soft 分离与网格占位
+		if not WorldMembership.is_in_world(n):
 			continue
 		if not n.has_meta("unit_data"):
 			continue

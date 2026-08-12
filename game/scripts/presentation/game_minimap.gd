@@ -182,7 +182,7 @@ func _draw_unit_dots() -> void:
 		if not (c is Node3D) or not is_instance_valid(c):
 			continue
 		var n := c as Node3D
-		if not n.visible or bool(n.get_meta("selection_blocked", false)):
+		if not WorldMembership.is_in_world(n):
 			continue
 		if not n.has_meta("unit_data"):
 			continue

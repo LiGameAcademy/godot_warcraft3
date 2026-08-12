@@ -163,19 +163,6 @@ func select_node(node: Node3D) -> void:
 	_set_selection([node])
 
 
-## 进矿等：从当前选中移除（对齐 WC3 进矿不可选）。
-func deselect_unit(node: Node3D) -> void:
-	if node == null or _selected.is_empty():
-		return
-	var next: Array[Node3D] = []
-	for n in _selected:
-		if n != node and is_instance_valid(n):
-			next.append(n)
-	if next.size() == _selected.size():
-		return
-	_set_selection(next)
-
-
 ## 主输入：全屏层 gui_input（可靠）。`_unhandled_input` 仅作无层时的兜底。
 func _on_world_gui_input(event: InputEvent) -> void:
 	_try_autobind()
@@ -447,8 +434,8 @@ func _iter_unit_nodes() -> Array[Node3D]:
 		if not (c is Node3D):
 			continue
 		var n := c as Node3D
-		# 进矿隐藏 / 显式封锁：不可点选、不可框选（对齐原作）
-		if not n.visible or bool(n.get_meta("selection_blocked", false)):
+		# 离场单位（进矿 / 工地 / 训练中）不可点选、不可框选
+		if not WorldMembership.is_in_world(n):
 			continue
 		if not n.has_meta("unit_data"):
 			continue

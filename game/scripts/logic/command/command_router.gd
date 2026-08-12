@@ -479,7 +479,8 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 
 ## F2-3：选中农民对工地 wc3_xy 发起 BUILD 令。
 ## peasant 已在 CommandRouter.filter_peasants 过滤（仅 hpea）。
-## 返回实际开工的 peasant 数。
+## 关键契约：BuildController 持 BuildOrder；扣费由 BuildController.start_build 内部执行（一次），
+## 不在 router 这层按农民数倍扣。多农民同时开工只接一单，剩余改 Move。
 func issue_build(
 	peasants: Array,
 	building_id: String,
@@ -490,20 +491,29 @@ func issue_build(
 		return 0
 	if not BuildingCatalog.is_building(building_id):
 		return 0
-	var n: int = 0
+	var primary: Node3D = null
+	var bc: BuildController = null
 	for node in peasants:
-		var candidate: Node3D = node as Node3D
-		if candidate == null:
+		var candidate: BuildController = _ensure_build.call(node) as BuildController
+		if candidate != null:
+			primary = node as Node3D
+			bc = candidate
+			break
+	if bc == null or primary == null:
+		return 0
+	var order: BuildOrder = BuildOrder.create(building_id, site_wc3, primary)
+	if not bc.start_build(order):
+		return 0
+	# 余下农民：派去工地附近（人类多工加速在 BuildSite/P2 实现）
+	var followers: Array[Node3D] = []
+	for node in peasants:
+		if node == primary:
 			continue
-		var bc: BuildController = _ensure_build.call(candidate) as BuildController
-		if bc == null:
-			continue
-		var order: BuildOrder = BuildOrder.create(building_id, site_wc3, candidate)
-		if bc.start_build(order):
-			n += 1
-	if n > 0:
-		build_issued.emit(n)
-	return n
+		followers.append(node as Node3D)
+	if not followers.is_empty():
+		issue_move_to_wc3(followers, site_wc3, source)
+	build_issued.emit(1)
+	return 1
 
 
 ## F2-3：取消指定 peasant 的当前建造（一般用于右键取消或死亡）。

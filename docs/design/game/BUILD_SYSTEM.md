@@ -366,7 +366,80 @@ game/scripts/
 ## 12. 下一步（实现侧）
 
 1. 落地 `ConstructionProfileCatalog`（四族表数据 + Human 行为）。  
-2. 重构 `BuildSite` 为共享真相；`BuildController` 只负责走位/加入。  
+2. 重构 `BuildSite` 为共享真相；`BuildController` 只负责走位/加入。
+
+---
+
+## 13. F2-3/4/5 落地闭环（2026-08-10）
+
+实现侧最小闭环已跑通，下面是当前竖切状态（与分层重构主线并列，不冲斜坡）。
+
+### 13.1 文件落点
+
+| 层 | 文件 | 角色 |
+|----|------|------|
+| Data | `game/scripts/data/building_catalog.gd` | 造价/时间/footprint/fmade（已有） |
+| Logic | `game/scripts/logic/construction/build_order.gd` | 订单 + 资源快照 |
+| Logic | `game/scripts/logic/construction/build_controller.gd` | peasant 侧走位 + 扣费 + 释放预约 |
+| Logic | `game/scripts/logic/construction/build_site.gd` | timer 推进 |
+| Logic | `game/scripts/logic/construction/placement_rules.gd` | can_build_at + footprint |
+| Logic | `game/scripts/logic/construction/build_placement_controller.gd` | 鼠标跟手 + 合法性 |
+| Logic | `game/scripts/logic/command/command_router.gd` | issue_build 资源扣 + 多农民派位 |
+| Logic | `game/scripts/logic/command/command_card.gd` | peasant 卡新增 3-5 建造槽 |
+| Present | `game/scripts/presentation/build_placement_ghost.gd` | footprint 矩形预览 |
+| Present | `game/scripts/game_director.gd` | 选中态 + 瞄准 + 完工刷建筑 |
+
+### 13.2 流程（一帧视角）
+
+```text
+选中农民 → CommandCard 渲染 3 个建造按钮 (F=A=B 也可)
+点击按钮 → _begin_build_targeting(id)
+  · _BuildPlacementController.begin(id)
+  · _BuildPlacementGhost.set_building(id) → footprint QuadMesh
+  · 资源复检 / 选中内农民过滤
+鼠标移动 → InputEventMouseMotion
+  · BuildPlacement.update_screen(pos) → PlacementRules.can_build_at(id, site_wc3, pathing)
+  · _apply_ghost_to_screen() → ghost 跟手、set_valid(ok / bad)
+左键 → _commit_build_targeting()
+  · 资源复检 → BuildPlacement.commit() → issue_build(peasants, id, site_wc3)
+  · CommandRouter.issue_build → primary peasant BuildController.start_build(BuildOrder)
+    · _validate_and_spend (PlacementRules + try_spend)
+    · UnitNavigator.go_to_wc3(site)
+  · 跟随农民：issue_move_to_wc3 (人类多工加速留 P1)
+右键 / Esc → _cancel_build_targeting()
+BuildController 到位 → _on_arrived
+  · WorldMembership.exit(peasant)
+  · BuildSite.start(order, owner) → 接管 timer
+  · _reserve_footprint → PathCellReservation.set_owner_cells(site.instance_id, cells)
+    · 其他单位 A* 经 path_query.can_walk_cell_clear 自动绕开工地
+BuildSite timer 跑完 → _on_site_completed → build_completed
+  · Director._on_build_completed → MapLoader.add_unit_instance(entry, hf)
+    · MapUnitLayer 同步落盘 + _pathing_unit_entries.append(entry)
+    · MapLoader._apply_dynamic_pathing → 全部 entity 重新 blit 进 dynamic 层
+      （完工建筑 footprint 永久进寻路；reservation 由 clear_owner 释放）
+  · WorldMembership.enter(peasant)
+取消 → BuildController.cancel → 50% 退款 + _release_footprint
+```
+
+### 13.3 与设计文档（1–11 节）的差距
+
+- 仅 Human 竖切；Orc / Night Elf / Undead 的 Strategy 仅留位置（不出错即可），后续按本节接口补。
+- 多工加速（Ahrp Repair）：`CommandRouter.issue_build` 已将多余 peasant 派到工地附近；BuildSite 仍未消费他们的「加速」（P1）。
+- ConstructionProfileCatalog 暂未提为 Resource；F2 锁死 3 建筑 ID + Human 策略写死在 BuildController 路径（不影响扩展性验证）。
+- 亡灵 `requirePlace=blighted` 谓词：PlacementRules.can_build_at 还没接 UnitBalanceDef.requirePlace/preventPlace 解析（F3 接入）。
+- 取消退款 50%（当前）；与 WC3 实际 75% 不一致，等 Profile Catalog 一起调整。
+
+### 13.4 验收脚本（人测）
+
+```text
+1. 启动项目（已在 win32 / Godot 4.6.3 跑通，无新增 Error）。
+2. 选 1 个农民（HUMAN）→ 命令格槽 3 / 4 / 5 显示农场 / 祭坛 / 兵营。
+3. F（农场）/A（祭坛）/B（兵营）热键可代替点击。
+4. 鼠标在地面移动 → ghost 跟手；非法位置（如水面 / 悬崖）变红。
+5. 左键合法位置 → 扣资源 → peasant 走位 → 到位后农民变 ghost；
+   其他农民会主动绕开工地（PathCellReservation 写入）。
+6. timer 跑完 → 建筑入图（MapUnitLayer） + pathing dynamic 自动 rebuild。
+```  
 3. 修 Router：单次扣费 + `BuildOrder` 映射；Director 接线。  
 4. 改 F2 验收：人族不隐藏；再开多工。  
 5. 兽灵亡 Strategy 保持 stub，直到对应种族里程碑。
