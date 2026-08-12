@@ -488,6 +488,7 @@ func _resolve_animation_name(ap: AnimationPlayer, anim_name: String) -> String:
 func _hide_zero_scale_geosets(root: Node) -> void:
 	if root == null:
 		return
+	# 旧路径：Geoset_N MeshInstance scale=0
 	for c in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := c as MeshInstance3D
 		if mi == null:
@@ -497,6 +498,16 @@ func _hide_zero_scale_geosets(root: Node) -> void:
 			continue
 		if mi.scale.length_squared() < 1e-8:
 			mi.visible = false
+	# C-3：Geoset_N_Group_* BoneAttachment（无 scale 轨，靠 visible）
+	for c in root.find_children("*", "BoneAttachment3D", true, false):
+		var ba := c as BoneAttachment3D
+		if ba == null:
+			continue
+		var nm2 := str(ba.name)
+		if not nm2.begins_with("Geoset_") or not nm2.contains("_Group_"):
+			continue
+		if ba.scale.length_squared() < 1e-8:
+			ba.visible = false
 
 
 func _enqueue_lazy_bake(glb_path: String) -> void:
@@ -591,30 +602,60 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 		if typeof(geosets) != TYPE_DICTIONARY:
 			continue
 		for gi_key in (geosets as Dictionary).keys():
-			var mesh_n: Node = geoset_nodes.get(str(gi_key)) as Node
-			if mesh_n == null:
+			var nodes_v: Variant = geoset_nodes.get(str(gi_key), [])
+			var targets: Array = []
+			if typeof(nodes_v) == TYPE_ARRAY:
+				targets = nodes_v as Array
+			elif nodes_v is Node:
+				targets = [nodes_v]
+			if targets.is_empty():
 				continue
 			var keys_v: Variant = (geosets as Dictionary)[gi_key]
 			if typeof(keys_v) != TYPE_ARRAY or (keys_v as Array).is_empty():
 				continue
-			# 轨路径相对 AnimationPlayer.root_node（默认 ..），不是相对 AP 自身
-			var rel := anim_root.get_path_to(mesh_n)
-			if str(rel).is_empty() or str(rel) == ".":
-				continue
-			var track_path := NodePath("%s:visible" % str(rel))
-			var ti := anim.add_track(Animation.TYPE_VALUE)
-			anim.track_set_path(ti, track_path)
-			anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
-			anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
-			for key_v in keys_v as Array:
-				if typeof(key_v) != TYPE_DICTIONARY:
+			for mesh_n_v in targets:
+				if not (mesh_n_v is Node):
 					continue
-				var kd: Dictionary = key_v
-				var t := float(kd.get("t", 0.0))
-				var vis := int(kd.get("v", 1)) != 0
-				anim.track_insert_key(ti, t, vis)
-			injected = true
+				var mesh_n: Node = mesh_n_v
+				# 轨路径相对 AnimationPlayer.root_node（默认 ..），不是相对 AP 自身
+				var rel := anim_root.get_path_to(mesh_n)
+				if str(rel).is_empty() or str(rel) == ".":
+					continue
+				var track_path := NodePath("%s:visible" % str(rel))
+				var ti := anim.add_track(Animation.TYPE_VALUE)
+				anim.track_set_path(ti, track_path)
+				anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
+				anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
+				for key_v in keys_v as Array:
+					if typeof(key_v) != TYPE_DICTIONARY:
+						continue
+					var kd: Dictionary = key_v
+					var t := float(kd.get("t", 0.0))
+					var vis := int(kd.get("v", 1)) != 0
+					anim.track_insert_key(ti, t, vis)
+				injected = true
 	return injected
+
+
+## bake 在 split Geoset→Group 之后调用：清掉旧 Geoset_N 轨，按 Group 节点重注。
+func reinject_geoset_vis_tracks(glb_path: String) -> bool:
+	if glb_path.is_empty() or not _scene_cache.has(glb_path):
+		return false
+	var root := _scene_cache[glb_path] as Node
+	if root == null:
+		return false
+	var ok := _inject_geoset_vis_tracks(glb_path, root)
+	if ok:
+		var ap := _find_animation_player(root)
+		if ap != null:
+			var stand_full := _pick_stand_name(ap)
+			if not stand_full.is_empty():
+				_snap_geoset_visibility_pose(root, _anim_leaf_name(stand_full))
+		# 拆组后重注，需重 pack
+		var packed := PackedScene.new()
+		if packed.pack(root) == OK:
+			_packed_cache[glb_path] = packed
+	return ok
 
 
 func _geoset_vis_json_path(glb_path: String) -> String:
@@ -631,6 +672,9 @@ func _geoset_vis_json_path(glb_path: String) -> String:
 	return RuntimeAssets.converted_path(logical)
 
 
+## 索引 geoset 显隐目标：gi → Array[Node]
+## - 旧：MeshInstance3D 名 `Geoset_N`
+## - C-3 拆分后：BoneAttachment3D 名 `Geoset_N_Group_M`（对 BA 设 visible，子 Mesh 一并隐）
 func _index_geoset_meshes(root: Node) -> Dictionary:
 	var out: Dictionary = {}
 	var stack: Array[Node] = [root]
@@ -638,20 +682,35 @@ func _index_geoset_meshes(root: Node) -> Dictionary:
 		var n: Node = stack.pop_back()
 		for c in n.get_children():
 			stack.append(c)
-		if not (n is MeshInstance3D):
-			continue
 		var nm := str(n.name)
 		if not nm.begins_with("Geoset_"):
 			continue
-		var id_str := nm.substr("Geoset_".length())
-		if id_str.is_valid_int():
-			out[id_str] = n
+		var rest := nm.substr("Geoset_".length())
+		var gi_str := ""
+		if rest.is_valid_int():
+			# Geoset_12
+			gi_str = rest
+		else:
+			# Geoset_12_Group_0
+			var gpos := rest.find("_Group_")
+			if gpos > 0:
+				var head := rest.substr(0, gpos)
+				if head.is_valid_int():
+					gi_str = head
+		if gi_str.is_empty():
+			continue
+		# 优先绑 BoneAttachment；纯 MeshInstance Geoset_N 也收
+		if n is BoneAttachment3D or (n is MeshInstance3D and rest.is_valid_int()):
+			if not out.has(gi_str):
+				out[gi_str] = []
+			(out[gi_str] as Array).append(n)
 	return out
 
 
 func _remove_geoset_visible_tracks(anim: Animation) -> void:
 	for i in range(anim.get_track_count() - 1, -1, -1):
 		var p := str(anim.track_get_path(i))
+		# 含 Geoset_12 与 Geoset_12_Group_0
 		if p.contains("Geoset_") and p.ends_with(":visible"):
 			anim.remove_track(i)
 

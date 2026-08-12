@@ -116,7 +116,9 @@ func _test_bone_name_correct() -> void:
 		passed += 1
 
 
-# Test 3: 新 mesh 单 joint skin（BONES=[j,0,0,0] / WEIGHTS=[1,0,0,0]）
+# Test 3: 新 mesh 是 bone-local 空间顶点（无 skin 数组；BoneAttachment 跟骨）
+## 老李修法：把顶点 transform 到 bone-local，避免空 skin 时 Godot 不渲染；
+## 也不再写 ARRAY_BONES / ARRAY_WEIGHTS，纯静态 mesh 跟骨。
 func _test_single_joint_skin() -> void:
 	var s := _setup_split_footman()
 	if s.is_empty():
@@ -137,32 +139,25 @@ func _test_single_joint_skin() -> void:
 			errors += 1
 			continue
 		var arrays: Array = mesh.surface_get_arrays(0)
-		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
-		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
-		# 4 slot per vertex
-		var n_verts: int = bones.size() / 4
+		var n_verts: int = arrays[Mesh.ARRAY_VERTEX].size() if arrays[Mesh.ARRAY_VERTEX] != null else 0
 		if n_verts == 0:
 			push_error("test_3 FAIL: %s 0 verts" % ba.name)
 			errors += 1
 			continue
-		# 取一个 sample 顶点验证
-		var joint_idx := skeleton.find_bone(ba.bone_name)
-		if joint_idx == -1:
-			push_error("test_3 FAIL: %s bone %s not in skeleton" % [ba.name, ba.bone_name])
+		# 验：不写 ARRAY_BONES / ARRAY_WEIGHTS（避免空 skin 时 Godot 不渲染）
+		if arrays[Mesh.ARRAY_BONES] != null and arrays[Mesh.ARRAY_BONES].size() > 0:
+			push_error("test_3 FAIL: %s should not have ARRAY_BONES (bone-local static mesh)" % ba.name)
 			errors += 1
-			continue
-		# 验证所有顶点都是 [joint_idx, 0, 0, 0] / [1, 0, 0, 0]
-		var wrong := 0
-		for vi in n_verts:
-			if bones[vi * 4] != joint_idx or bones[vi * 4 + 1] != 0 or bones[vi * 4 + 2] != 0 or bones[vi * 4 + 3] != 0:
-				wrong += 1
-			if not is_equal_approx(weights[vi * 4], 1.0) or not is_equal_approx(weights[vi * 4 + 1], 0.0) or not is_equal_approx(weights[vi * 4 + 2], 0.0) or not is_equal_approx(weights[vi * 4 + 3], 0.0):
-				wrong += 1
-		if wrong > 0:
-			push_error("test_3 FAIL: %s %d/%d bones/weights wrong" % [ba.name, wrong, n_verts * 2])
+		if arrays[Mesh.ARRAY_WEIGHTS] != null and arrays[Mesh.ARRAY_WEIGHTS].size() > 0:
+			push_error("test_3 FAIL: %s should not have ARRAY_WEIGHTS (bone-local static mesh)" % ba.name)
+			errors += 1
+		# 验：顶点不是 NaN / 0 长度（空数组也 PASS）
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		if verts == null:
+			push_error("test_3 FAIL: %s null verts" % ba.name)
 			errors += 1
 	if errors == 0:
-		print("  Footman single-joint skin: %d BoneAttachment3D all single joint" % bas.size())
+		print("  Footman bone-local mesh: %d BoneAttachment3D all static (no skin array)" % bas.size())
 		passed += 1
 
 

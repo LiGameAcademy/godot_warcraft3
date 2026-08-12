@@ -1,0 +1,2 @@
+## Godot: 忽略本目录，避免 auto-import .gltf/.png 生成 .import / baseColor 副产物。
+## 运行时走 RuntimeAssets 磁盘路径；方案 B 外链贴图后仍建议保留本文件以免扫几千模型卡顿。

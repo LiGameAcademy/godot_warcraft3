@@ -106,6 +106,9 @@ func _run() -> void:
 			# C-3: 先按 VertexGroup 拆 mesh（修"小配件位置错乱"），再拼 attachment 节点
 			_split_meshes_by_group(proto, att_data)
 			_assemble_attachments(proto, att_data)
+			# 拆组后原 Geoset_N 节点已删；必须重注 :visible → Geoset_N_Group_*
+			if cache.has_method("reinject_geoset_vis_tracks"):
+				cache.reinject_geoset_vis_tracks(glb_res)
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)

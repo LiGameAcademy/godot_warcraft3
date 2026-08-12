@@ -85,8 +85,6 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 			var new_normals := PackedVector3Array()
 			var new_tangents := PackedFloat32Array()
 			var new_uvs := PackedVector2Array()
-			var new_bones := PackedInt32Array()
-			var new_weights := PackedFloat32Array()
 			var old_to_new := {}
 			for old_idx in vert_indices:
 				if old_to_new.has(old_idx):
@@ -100,14 +98,6 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 						new_tangents.append(src_tangents[old_idx * 4 + t])
 				if src_uvs.size() > old_idx:
 					new_uvs.append(src_uvs[old_idx])
-				new_bones.append(joint_idx)
-				new_bones.append(0)
-				new_bones.append(0)
-				new_bones.append(0)
-				new_weights.append(1.0)
-				new_weights.append(0.0)
-				new_weights.append(0.0)
-				new_weights.append(0.0)
 			var new_indices := PackedInt32Array()
 			if has_indices:
 				for i in range(0, src_indices.size(), 3):
@@ -121,20 +111,43 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 			var new_mesh := ArrayMesh.new()
 			var new_arrays := []
 			new_arrays.resize(Mesh.ARRAY_MAX)
-			new_arrays[Mesh.ARRAY_VERTEX] = new_verts
+			# 顶点变到 bone-local：BoneAttachment 会再乘骨变换；切勿再带 skin 权重
+			# （有 ARRAY_BONES 但 skeleton 为空时 Godot 常直接不画 → 步兵“身体消失”）
+			var bone_rest := skeleton.get_bone_global_rest(joint_idx)
+			var to_bone := bone_rest.affine_inverse()
+			var bone_basis_inv := bone_rest.basis.inverse()
+			var local_verts := PackedVector3Array()
+			local_verts.resize(new_verts.size())
+			for vi in range(new_verts.size()):
+				local_verts[vi] = to_bone * new_verts[vi]
+			new_arrays[Mesh.ARRAY_VERTEX] = local_verts
 			if new_normals.size() == new_verts.size():
-				new_arrays[Mesh.ARRAY_NORMAL] = new_normals
+				var local_normals := PackedVector3Array()
+				local_normals.resize(new_normals.size())
+				for vi in range(new_normals.size()):
+					local_normals[vi] = (bone_basis_inv * new_normals[vi]).normalized()
+				new_arrays[Mesh.ARRAY_NORMAL] = local_normals
 			if new_tangents.size() == new_verts.size() * 4:
-				new_arrays[Mesh.ARRAY_TANGENT] = new_tangents
+				var local_tangents := PackedFloat32Array()
+				local_tangents.resize(new_tangents.size())
+				for vi in range(new_verts.size()):
+					var t := Vector3(
+						new_tangents[vi * 4],
+						new_tangents[vi * 4 + 1],
+						new_tangents[vi * 4 + 2]
+					)
+					t = bone_basis_inv * t
+					local_tangents[vi * 4] = t.x
+					local_tangents[vi * 4 + 1] = t.y
+					local_tangents[vi * 4 + 2] = t.z
+					local_tangents[vi * 4 + 3] = new_tangents[vi * 4 + 3]
+				new_arrays[Mesh.ARRAY_TANGENT] = local_tangents
 			if new_uvs.size() == new_verts.size():
 				new_arrays[Mesh.ARRAY_TEX_UV] = new_uvs
-			new_arrays[Mesh.ARRAY_BONES] = new_bones
-			new_arrays[Mesh.ARRAY_WEIGHTS] = new_weights
+			# 故意不写 ARRAY_BONES / ARRAY_WEIGHTS：由 BoneAttachment 刚性跟骨
 			if has_indices and new_indices.size() > 0:
 				new_arrays[Mesh.ARRAY_INDEX] = new_indices
 			var flags := 0
-			if orig_material != null:
-				flags |= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if (false) else 0  # 占位，留 hook
 			new_mesh.add_surface_from_arrays(
 				Mesh.PRIMITIVE_TRIANGLES,
 				new_arrays,
@@ -154,9 +167,12 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 			var mi := MeshInstance3D.new()
 			mi.name = "Mesh"
 			mi.mesh = new_mesh
+			# 静态网格 + BoneAttachment，不挂 Skeleton
 			mi.skeleton = NodePath()
 			ba.add_child(mi)
 			mi.owner = proto
+			# 继承原 geoset 显隐（Stand rest 可能 scale=0 / visible=false）
+			ba.visible = orig_mesh_node.visible and orig_mesh_node.scale.length_squared() > 1e-8
 			split_count += 1
 		if split_count > 0:
 			orig_parent.remove_child(orig_mesh_node)

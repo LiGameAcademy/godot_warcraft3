@@ -19,6 +19,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, "../..");
 
+const GDIGNORE_BODY = `## Godot: 忽略本目录，避免 auto-import .gltf/.png 生成 .import / baseColor 副产物。
+## 运行时走 RuntimeAssets 磁盘路径；方案 B 外链贴图后仍建议保留本文件以免扫几千模型卡顿。
+`;
+
+function ensureGdignore(outDir) {
+  const target = path.join(outDir, ".gdignore");
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(target, GDIGNORE_BODY, "utf8");
+    getLog().info(`[convert] 已补写 ${path.relative(REPO_ROOT, target)}`);
+  }
+}
+
 function defaultInDir() {
   const r = resolveExtractRoot();
   // 相对 package 根，供 resolveFromPackage
@@ -218,6 +231,8 @@ async function main() {
   log.info(`  steps:   ${steps}`);
   if (opts.include.length) log.info(`  include: ${opts.include.join(", ")}`);
   if (opts.exclude.length) log.info(`  exclude: ${opts.exclude.join(", ")}`);
+
+  ensureGdignore(outDir);
 
   let errors = 0;
 
