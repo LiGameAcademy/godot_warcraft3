@@ -665,9 +665,10 @@ func _load_all() -> void:
 			ctx.units.get("units", []) as Array if typeof(ctx.units) == TYPE_DICTIONARY else []
 		)
 		_pathing_unit_entries = unit_entries
-		# 分帧 + 后台预载：避免缺 .scn 时同步 GLTF 卡死主线程 ~100s+
-		_units.gltf_parse_per_frame = 2
-		_units.batch_budget_ms = 10
+		# 大 .scn 已跳过改走 glTF：提高每帧解析数，避免又卡回分钟级
+		_units.gltf_parse_per_frame = 8
+		_units.batch_budget_ms = 32
+		_units.batch_max_per_frame = 64
 		_units.rebuild_from_list_batched(ctx.heightfield as Wc3Heightfield, unit_entries)
 		while _units.is_batch_loading():
 			var done_u := _units.batch_done()
@@ -694,6 +695,8 @@ func _load_all() -> void:
 		_pathing_doodad_entries = (
 			ctx.doodads.get("doodads", []) as Array if typeof(ctx.doodads) == TYPE_DICTIONARY else []
 		)
+		# 装饰物唯一模型后台预载 .scn，避免 build 里同步解析拖到 10s+
+		await _preload_unique_doodad_models(_pathing_doodad_entries)
 		_doodads.build(ctx)
 		await get_tree().process_frame
 		timing["doodads"] = Time.get_ticks_msec() - t0
@@ -762,6 +765,45 @@ func _load_all() -> void:
 	)
 	_map_ready = true
 	map_loaded.emit()
+
+
+## 收集装饰物唯一 glb，线程预载旁路 .scn / 主线程解析 glTF，再进入 build。
+func _preload_unique_doodad_models(entries: Array) -> void:
+	if _cache == null or _catalog == null or entries.is_empty():
+		return
+	var paths := PackedStringArray()
+	var seen: Dictionary = {}
+	for d in entries:
+		if typeof(d) != TYPE_DICTIONARY:
+			continue
+		var tid := str((d as Dictionary).get("id", ""))
+		var variation := int((d as Dictionary).get("variation", 0))
+		var glb := _catalog.converted_glb_path(tid, variation)
+		if glb.is_empty() or seen.has(glb):
+			continue
+		seen[glb] = true
+		paths.append(glb)
+	if paths.is_empty():
+		return
+	_set_status("预载装饰物模型… 0/%d" % paths.size(), 0.70)
+	await get_tree().process_frame
+	_cache.request_preload_many(paths)
+	var guard := 0
+	var max_frames := maxi(paths.size() * 3, 60)
+	while _cache.preload_pending_count() > 0 and guard < max_frames:
+		_cache.poll_preloads(6)
+		var left := _cache.preload_pending_count()
+		var done := paths.size() - left
+		_set_status("预载装饰物模型… %d/%d" % [clampi(done, 0, paths.size()), paths.size()], 0.70)
+		await get_tree().process_frame
+		guard += 1
+	# 仍未进缓存的：主线程同步补一次（避免 build 里首次解析）
+	for p in paths:
+		if _cache.has_cached(str(p)):
+			continue
+		var warm := _cache.instance_glb(str(p))
+		if warm != null:
+			warm.free()
 
 
 func _ensure_terrain_collision() -> void:

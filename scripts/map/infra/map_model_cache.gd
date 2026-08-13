@@ -86,17 +86,13 @@ func evict(path: String) -> void:
 
 
 ## 外部加载的 PackedScene（如 ResourceLoader 线程结果）写入缓存。
-## 走一遍材质/geosetvis 修正，避免裸 .scn 实例化后贴图/可见轨异常。
+## 开图热路径：直接缓存，避免 instantiate→修材质→再 pack（大 .scn 可达数秒/个）。
+## 材质修正仍在 instance_glb 时对实例做；geosetvis 依赖 bake 时已写入旁路 .scn。
 func register_external_packed(glb_path: String, packed: PackedScene) -> void:
 	if glb_path.is_empty() or packed == null:
 		return
-	var inst := packed.instantiate()
-	if inst is Node3D:
-		_register_loaded_scene(glb_path, inst as Node3D, false)
-	else:
-		if inst != null:
-			inst.free()
-		_packed_cache[glb_path] = packed
+	_packed_cache[glb_path] = packed
+	last_scn_hits += 1
 	_preload.erase(glb_path)
 
 

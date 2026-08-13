@@ -21,6 +21,8 @@ const MODEL_SCENES_USER_ROOT := "user://model-scenes"
 
 ## 解析失败的 GLB 绝对路径 → 跳过重试（避免装饰扫描刷引擎 ERROR）。
 static var _gltf_fail_cache: Dictionary = {}
+## 磁盘绝对路径 → 是否 unsafe（避免反复读盘扫描）。
+static var _scn_unsafe_cache: Dictionary = {}
 
 
 static func project_abs(res_or_abs: String) -> String:
@@ -241,6 +243,7 @@ static func model_scene_user_path(relative_or_glb: String) -> String:
 
 ## 优先与 GLB 同目录 .scn → 旧 model-scenes/ → user:// 懒烘焙。
 ## 含 gdignore 外链贴图的坏 .scn 视为不存在，便于改走 glTF / 懒烘焙覆盖。
+## 注意：大体积嵌入贴图 .scn 仍优先（实测 ResourceLoader ~0.4s，同模型 glTF 常 10s+）。
 static func resolve_model_scene(relative_or_glb: String) -> String:
 	for p in [
 		model_scene_path(relative_or_glb),
@@ -284,17 +287,24 @@ static func is_packed_scene_unsafe_for_resource_loader(res_or_abs: String) -> bo
 	var disk := project_abs(res_or_abs)
 	if disk.is_empty() or not FileAccess.file_exists(disk):
 		return false
-	var bytes := FileAccess.get_file_as_bytes(disk)
-	if bytes.is_empty():
+	if _scn_unsafe_cache.has(disk):
+		return bool(_scn_unsafe_cache[disk])
+	# 只读文件头：ExtResource 路径通常在前部；切勿全文件 GDScript 扫描（10MB 级可达数秒）
+	var f := FileAccess.open(disk, FileAccess.READ)
+	if f == null:
+		_scn_unsafe_cache[disk] = false
 		return false
-	# 仅匹配会触发 ResourceLoader 依赖解析的路径；纯嵌入贴图的 .scn 无 res://assets/asset-converted
-	if (
-		_bytes_has_ascii(bytes, "res://assets/asset-converted/")
-		or _bytes_has_ascii(bytes, "res://assets/asset-converted\\")
-		or _bytes_has_ascii(bytes, "pe2.tscn")
-	):
-		return true
-	return false
+	var probe_len := mini(int(f.get_length()), 65536)
+	var bytes := f.get_buffer(probe_len)
+	f.close()
+	var unsafe := false
+	if not bytes.is_empty():
+		unsafe = (
+			_bytes_has_ascii(bytes, "res://assets/asset-converted/")
+			or _bytes_has_ascii(bytes, "pe2.tscn")
+		)
+	_scn_unsafe_cache[disk] = unsafe
+	return unsafe
 
 
 ## 兼容旧名
@@ -309,20 +319,12 @@ static func _packed_scene_refs_gdignored_converted(res_or_abs: String) -> bool:
 static func _bytes_has_ascii(bytes: PackedByteArray, needle: String) -> bool:
 	if needle.is_empty() or bytes.is_empty():
 		return false
-	var n := needle.to_utf8_buffer()
-	var nlen := n.size()
-	var lim := bytes.size() - nlen
-	if lim < 0:
-		return false
-	for i in range(lim + 1):
-		var ok := true
-		for j in range(nlen):
-			if bytes[i + j] != n[j]:
-				ok = false
-				break
-		if ok:
-			return true
-	return false
+	# 用 String.find 比双重 GDScript 循环快一个数量级（仅用于小 probe）
+	var hay := bytes.get_string_from_utf8()
+	if hay.is_empty():
+		# 含 NUL 时 utf8 可能失败：退回 ascii 宽松解码
+		hay = bytes.get_string_from_ascii()
+	return hay.find(needle) >= 0
 
 
 ## 将根节点打包存为 .scn（目录自动创建）。

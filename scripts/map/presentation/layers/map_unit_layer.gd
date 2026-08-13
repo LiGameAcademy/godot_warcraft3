@@ -9,10 +9,10 @@ signal batch_finished(placed: int, placeholders: int)
 
 @export var try_load_glb: bool = true
 ## 每帧放置预算（毫秒）；模型已缓存时 instantiate 很快。
-@export var batch_budget_ms: int = 8
-@export var batch_max_per_frame: int = 24
+@export var batch_budget_ms: int = 28
+@export var batch_max_per_frame: int = 64
 ## 每帧最多在主线程解析几个尚无 .scn 的 GLB（GLTFDocument 非线程安全）。
-@export var gltf_parse_per_frame: int = 4
+@export var gltf_parse_per_frame: int = 6
 ## false：不放置 sloc（游戏内隐藏开始点；编辑器保持 true）
 @export var show_start_locations: bool = true
 ## false：不显示死亡掉落提示环（游戏内隐藏；编辑器对齐 WE 可开）
@@ -153,7 +153,7 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 		MapLog.warn(
 			MapLog.Layer.LOAD,
 			"Units",
-			"缺可用旁路 .scn（%d/%d，将分帧 GLTF；含外链贴图的坏scn已跳过）：%s"
+			"缺可用旁路 .scn（%d/%d，将分帧 GLTF）：%s"
 			% [missing_scn.size(), unique_paths.size(), ", ".join(missing_scn)]
 		)
 		print("Units missing .scn files: %s" % ", ".join(missing_scn))
