@@ -60,3 +60,5 @@ user_settings.local.json
 # Local reference clones (e.g. HiveWE for analysis)
 _ref/
 .claude/settings.json
+
+tmp/

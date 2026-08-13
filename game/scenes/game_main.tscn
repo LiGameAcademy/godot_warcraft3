@@ -30,6 +30,7 @@ map_dir = "res://assets/map-parsed/echoisles"
 place_units = true
 show_start_locations = false
 show_drop_rings = false
+show_editor_helpers = false
 status_path = NodePath("")
 show_ramp_debug = false
 show_pathing_ground = true

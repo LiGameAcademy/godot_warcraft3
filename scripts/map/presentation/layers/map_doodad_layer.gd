@@ -7,6 +7,8 @@ const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.
 
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
+## WE Click Helper 粉黑盒：编辑器 true；正式游戏 false（只留 PE2 / 粒子）
+@export var show_editor_helpers: bool = true
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
@@ -346,7 +348,9 @@ func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_an
 	var info: Dictionary = _catalog.lookup(type_id) if _catalog != null else {}
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
 	_Pe2.attach_to(node, glb)
-	var helpers := MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
+	var helpers := MapPlaceholders.attach_editor_helpers(
+		node, info, has_mesh, show_editor_helpers
+	)
 	add_child(node)
 	if play_anim:
 		_cache.autoplay_stand(node, true)
@@ -358,12 +362,13 @@ func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_an
 
 func _place_doodad_placeholder(type_id: String, d: Dictionary) -> void:
 	var info: Dictionary = _catalog.lookup(type_id) if _catalog != null else {}
-	# 有 useClickHelper / 缺模：用 WE 粉黑棋盘盒，而不是绿圆柱
+	# 有 useClickHelper / 缺模：编辑器挂粉黑盒；游戏只留粒子
 	var node: Node3D
 	if bool(info.get("use_click_helper", false)):
 		node = Node3D.new()
 		node.name = "%s_%s" % [type_id, str(d.get("creationNumber", 0))]
-		node.add_child(MapPlaceholders.make_click_helper(float(info.get("sel_size", 0.0))))
+		if show_editor_helpers:
+			node.add_child(MapPlaceholders.make_click_helper(float(info.get("sel_size", 0.0))))
 		node.add_child(MapPlaceholders.make_effect_particles())
 		_apply_doodad_xform(node, d, true)
 	else:

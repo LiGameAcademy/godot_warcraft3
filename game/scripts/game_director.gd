@@ -189,6 +189,7 @@ func _configure_map_root() -> void:
 	map_root.place_units = true
 	map_root.show_start_locations = false
 	map_root.show_drop_rings = false
+	map_root.show_editor_helpers = false
 	map_root.show_pathing_debug_grid = true
 	map_root.show_ramp_debug = show_ramp_debug
 	map_root.show_pathing_ground = show_pathing_ground

@@ -121,25 +121,26 @@ static func make_effect_particles() -> GPUParticles3D:
 	return p
 
 
-## 按 SLK / 网格情况给实例挂 Click Helper（及空模粒子）。
-## 返回是否挂了 helper。
+## 按 SLK / 网格情况给实例挂编辑器辅助体（及空模粒子回退）。
+## [param attach_click_helper] false=正式游戏：只保留特效，不挂粉黑 Box。
+## 返回是否挂了 ClickHelper。
 static func attach_editor_helpers(
 	root: Node3D,
 	info: Dictionary,
 	has_visible_mesh: bool,
+	attach_click_helper: bool = true,
 ) -> bool:
 	if root == null:
 		return false
-	if root.get_node_or_null("ClickHelper") != null:
-		return true
-	var use_helper: bool = bool(info.get("use_click_helper", false)) or not has_visible_mesh
-	if not use_helper:
-		return false
-	var sel: float = float(info.get("sel_size", 0.0))
-	var helper := make_click_helper(sel)
-	root.add_child(helper)
-	_counter_parent_scale(helper, root)
-	# 无网格：补简易粒子（已有 PE2 旁路则跳过）
+	var hung_helper := false
+	var want_helper: bool = bool(info.get("use_click_helper", false)) or not has_visible_mesh
+	if attach_click_helper and want_helper and root.get_node_or_null("ClickHelper") == null:
+		var sel: float = float(info.get("sel_size", 0.0))
+		var helper := make_click_helper(sel)
+		root.add_child(helper)
+		_counter_parent_scale(helper, root)
+		hung_helper = true
+	# 无网格：补简易粒子（已有 PE2 旁路则跳过）——游戏与编辑器都需要可见特效
 	if (
 		not has_visible_mesh
 		and root.get_node_or_null("EffectParticles") == null
@@ -148,7 +149,7 @@ static func attach_editor_helpers(
 		var parts := make_effect_particles()
 		root.add_child(parts)
 		_counter_parent_scale(parts, root)
-	return true
+	return hung_helper
 
 
 ## GLB 根常含 MODEL_SCALE=0.01；子节点需反向放大才能保持世界尺寸。
