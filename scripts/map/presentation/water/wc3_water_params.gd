@@ -8,6 +8,9 @@ const MIN_DEPTH := 10.0 / 128.0
 const DEEP_LEVEL := 64.0 / 128.0
 const MAX_DEPTH := 72.0 / 128.0
 
+## water_id → Texture2DArray（同 tileset 重复进局 / 笔刷重建复用）
+static var _tex_array_cache: Dictionary = {}
+
 var water_id: String = ""
 var height_offset_tiles: float = 0.0 ## Water.slk height（tile 单位）
 var num_tex: int = 0
@@ -95,6 +98,20 @@ func _resolve_frames() -> void:
 			push_warning("Wc3WaterParams: 缺水面帧 %s" % RuntimeAssets.converted_path(candidates[0]))
 			continue
 		frame_pngs.append(found)
+
+
+## 组装 / 复用水面帧 Texture2DArray；命中缓存时不再读盘。
+## 返回 { tex, cache_hit }
+func build_texture_array_cached() -> Dictionary:
+	if water_id.is_empty() or frame_pngs.is_empty():
+		return {"tex": null, "cache_hit": false}
+	if _tex_array_cache.has(water_id):
+		return {"tex": _tex_array_cache[water_id] as Texture2DArray, "cache_hit": true}
+	var tex := build_texture_array()
+	if tex != null:
+		_tex_array_cache[water_id] = tex
+	return {"tex": tex, "cache_hit": false}
+
 
 func build_texture_array() -> Texture2DArray:
 	if frame_pngs.is_empty():

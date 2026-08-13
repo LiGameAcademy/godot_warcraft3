@@ -16,6 +16,8 @@ signal load_progress(stage: String, progress: float)
 @export var show_start_locations: bool = true
 ## 游戏内应关闭：单位死亡掉落提示环仅编辑器可见
 @export var show_drop_rings: bool = true
+## 游戏内应关闭：WE Click Helper 粉黑盒仅编辑器可见（特效 / PE2 仍保留）
+@export var show_editor_helpers: bool = true
 @export var try_load_glb: bool = true
 @export var multimesh_threshold: int = 8
 @export var status_path: NodePath = ^"../UI/Status"
@@ -125,6 +127,7 @@ func _ready() -> void:
 		_status = get_node_or_null(status_path) as Label
 	_doodads.try_load_glb = try_load_glb
 	_doodads.multimesh_threshold = multimesh_threshold
+	_doodads.show_editor_helpers = show_editor_helpers
 	_units.try_load_glb = try_load_glb
 	_units.show_start_locations = show_start_locations
 	_units.show_drop_rings = show_drop_rings
@@ -138,6 +141,10 @@ func _ready() -> void:
 	if place_units or place_doodads or show_pathing_debug_grid:
 		_catalog.load_default()
 	await get_tree().process_frame
+	# GameDirector 等可能在首帧改 export；装载前再同步给子层
+	_doodads.show_editor_helpers = show_editor_helpers
+	_units.show_start_locations = show_start_locations
+	_units.show_drop_rings = show_drop_rings
 	if auto_load_on_ready:
 		await _load_all()
 
@@ -337,6 +344,7 @@ func rebuild_doodads_from_list(hf: Dictionary, doodads_src: Variant) -> void:
 	_doodads.setup(get_id_catalog(), _cache)
 	_doodads.try_load_glb = try_load_glb
 	_doodads.multimesh_threshold = multimesh_threshold
+	_doodads.show_editor_helpers = show_editor_helpers
 	var entries: Array = _coerce_doodad_entries(doodads_src)
 	_pathing_doodad_entries = entries
 	var heightfield: Wc3Heightfield = null
@@ -619,7 +627,7 @@ func _load_all() -> void:
 		_water.foam_cliff_out_extra = foam_cliff_out_extra
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
-		_water.build(ctx)
+		await _water.build(ctx)
 		await get_tree().process_frame
 	# Doodad/Unit：SoA 加载后再 to_dict 填 ctx（Layer 仍吃 AoS）
 	if place_units:

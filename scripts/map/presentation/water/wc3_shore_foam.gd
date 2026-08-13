@@ -14,6 +14,8 @@ const RAMP_OUT_TILES := 0.0
 const SCALE_VISUAL := 1.45
 const TWIST_DEG := 55.0
 
+static var _foam_tex_cache: Texture2D = null
+
 ## war3-model 解析 Shoreline0 / OutsideCorner0 / InsideCorner0 主 PE2
 ## yaw：HiveWE 非 line 发射器 rotZ∈±π，岸浪保留朝岸主方向，放宽锥角
 const _KIND_PARAMS := {
@@ -77,12 +79,15 @@ static func build_systems(parent: Node3D, placements: Array) -> int:
 
 
 static func _load_foam_texture() -> Texture2D:
+	if _foam_tex_cache != null and is_instance_valid(_foam_tex_cache):
+		return _foam_tex_cache
 	var img := RuntimeAssets.load_image(RuntimeAssets.converted_path(TEX_FOAM))
 	if img == null:
 		return null
 	if img.get_format() != Image.FORMAT_RGBA8:
 		img.convert(Image.FORMAT_RGBA8)
-	return ImageTexture.create_from_image(img)
+	_foam_tex_cache = ImageTexture.create_from_image(img)
+	return _foam_tex_cache
 
 
 static func _add_kind(
