@@ -1,32 +1,37 @@
 class_name CommandCard
 extends RefCounted
 
-## 行动面板条目构建（HUD 命令格）。
-## 图标 / 槽位 / 热键 / Tip 来自 CommandButtonCatalog（WC3 Func+Strings）；
-## action_id 与运行时态（执行中、买不起）仍由本类组装。
+## 行动面板组装（HUD 命令格）——数据驱动。
+## - 图标 / 槽位 / 热键 / Tip ← CommandButtonCatalog（Func+Strings）
+## - 技能列表 ← UnitAbilities.abilList
+## - 训练 / 建造列表 ← UnitFunc Trains / Builds
+## - action_id 与运行时态（执行中、买不起）仍由本类按 Order 映射组装
+##
+## F2 竖切：建造不走完整 AHbu 子菜单，而把 allowlist ∩ Builds 摊平到槽 3–5。
 
 const ACTION_MOVE := "move"
 const ACTION_STOP := "stop"
 const ACTION_HARVEST_GOLD := "harvest_gold"
 const ACTION_RETURN_GOODS := "return_goods"
-const ACTION_BUILD_PREFIX := "build:" ## F2-4：建造按钮 action_id 前缀
+const ACTION_BUILD_PREFIX := "build:" ## 建造按钮 action_id 前缀
 const ACTION_TRAIN_PREFIX := "train:" ## 训练单位：train:hpea
 const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
 
-## 采集 / 交回：官方 Ahar Buttonpos=3,1；无 Catalog 时回退槽
-const SLOT_HARVEST_FALLBACK := 7
-
-## 建造按钮槽位（F2 竖切：主卡摊平 3 建筑，非完整 AHbu 子菜单）
-const SLOT_BUILD_FIRST := 3
-const SLOT_BUILD_COUNT := 3
-
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
 const CMD_RALLY := "CmdRally"
-const ABIL_HARVEST := "Ahar"
-const ABIL_CALL_TO_ARMS := "Amic"
-const TOWN_HALL_ID := "htow"
+
+## F2：主卡摊平建造槽（非完整 AHbu 子菜单）
+const SLOT_BUILD_FIRST := 3
+const SLOT_BUILD_COUNT := 3
+
+## Order → 本竖切已接线的 action（未列出的技能有 Art 也不上卡，避免空按钮）
+## use_un：携带资源时切 Unart（仅 harvest）
+const _ORDER_SPEC := {
+	"harvest": {"action": ACTION_HARVEST_GOLD, "un_action": ACTION_RETURN_GOODS},
+	"townbellon": {"action": ACTION_CALL_TO_ARMS},
+}
 
 
 static func _cat() -> CommandButtonCatalog:
@@ -50,14 +55,25 @@ static func _place(card: Array[Dictionary], entry: Dictionary) -> void:
 	card[slot] = entry
 
 
-## 人族主城卡：Trains + Amic + CmdRally（位姿/文案/图标读 Catalog）
-static func town_hall() -> Array[Dictionary]:
+## 通用入口：按单位 typeId + 运行时态组装 12 格。
+## state 键：
+##   move_executing / carrying / harvest_executing / return_executing
+##   include_locomotion（默认：非建筑 true）
+##   build_allowlist（PackedStringArray；空=不上建造摊平）
+##   can_afford / building_executing（与摊平后 building_ids 等长的 PackedInt32Array）
+static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionary]:
+	var uid := unit_id.strip_edges()
 	var cat := _cat()
 	var card := _empty_card()
-	var trains := cat.get_trains(TOWN_HALL_ID)
-	if trains.is_empty():
-		trains = PackedStringArray(["hpea"])
-	for tid in trains:
+	if uid.is_empty():
+		return card
+
+	var is_bldg := BuildingCatalog.is_building(uid)
+	var include_loco := bool(state.get("include_locomotion", not is_bldg))
+	if include_loco:
+		_place_locomotion(card, cat, bool(state.get("move_executing", false)))
+
+	for tid in cat.get_trains(uid):
 		_place(
 			card,
 			cat.unit_hud_entry(
@@ -66,29 +82,37 @@ static func town_hall() -> Array[Dictionary]:
 				{"enabled": true, "executing": false}
 			)
 		)
-	_place(
-		card,
-		cat.ability_hud_entry(
-			ABIL_CALL_TO_ARMS,
-			ACTION_CALL_TO_ARMS,
-			{"enabled": true, "executing": false}
+
+	var carrying := bool(state.get("carrying", false))
+	for abil_id in cat.get_abil_list(uid):
+		_place_supported_ability(card, cat, str(abil_id), state, carrying)
+
+	var allow: PackedStringArray = state.get("build_allowlist", PackedStringArray()) as PackedStringArray
+	if allow == null:
+		allow = PackedStringArray()
+	var building_ids: PackedStringArray = state.get("building_ids", PackedStringArray()) as PackedStringArray
+	if building_ids == null:
+		building_ids = PackedStringArray()
+	if building_ids.is_empty() and not allow.is_empty():
+		building_ids = cat.filter_builds(uid, allow)
+	if not building_ids.is_empty():
+		_place_builds_flat(card, cat, building_ids, state)
+
+	# 可训练建筑：集结点（CmdRally）
+	if not cat.get_trains(uid).is_empty():
+		_place(
+			card,
+			cat.command_hud_entry(
+				CMD_RALLY,
+				ACTION_SET_RALLY,
+				{"enabled": true, "executing": false}
+			)
 		)
-	)
-	_place(
-		card,
-		cat.command_hud_entry(
-			CMD_RALLY,
-			ACTION_SET_RALLY,
-			{"enabled": true, "executing": false}
-		)
-	)
+
 	return card
 
 
-## WC3 基础单位卡：CmdMove / CmdStop
-static func basic_locomotion(move_executing: bool = false) -> Array[Dictionary]:
-	var cat := _cat()
-	var card := _empty_card()
+static func _place_locomotion(card: Array[Dictionary], cat: CommandButtonCatalog, move_executing: bool) -> void:
 	_place(
 		card,
 		cat.command_hud_entry(
@@ -105,71 +129,101 @@ static func basic_locomotion(move_executing: bool = false) -> Array[Dictionary]:
 			{"executing": false, "enabled": true}
 		)
 	)
+
+
+static func _place_supported_ability(
+	card: Array[Dictionary],
+	cat: CommandButtonCatalog,
+	abil_id: String,
+	state: Dictionary,
+	carrying: bool
+) -> void:
+	var order := cat.get_ability_order(abil_id)
+	if order.is_empty() or not _ORDER_SPEC.has(order):
+		return
+	var spec: Dictionary = _ORDER_SPEC[order]
+	var use_un := false
+	var action_id := str(spec.get("action", ""))
+	var opts := {"enabled": true, "executing": false}
+	if order == "harvest":
+		use_un = carrying
+		action_id = str(spec.get("un_action" if use_un else "action", action_id))
+		if use_un:
+			opts["executing"] = bool(state.get("return_executing", false))
+		else:
+			opts["executing"] = bool(state.get("harvest_executing", false))
+		opts["use_un"] = use_un
+	var entry := cat.ability_hud_entry(abil_id, action_id, opts)
+	_place(card, entry)
+
+
+static func _place_builds_flat(
+	card: Array[Dictionary],
+	cat: CommandButtonCatalog,
+	building_ids: PackedStringArray,
+	state: Dictionary
+) -> void:
+	var can_afford: PackedInt32Array = state.get("can_afford", PackedInt32Array()) as PackedInt32Array
+	var building_executing: PackedInt32Array = state.get("building_executing", PackedInt32Array()) as PackedInt32Array
+	if can_afford == null:
+		can_afford = PackedInt32Array()
+	if building_executing == null:
+		building_executing = PackedInt32Array()
+	for i in range(SLOT_BUILD_COUNT):
+		var slot := SLOT_BUILD_FIRST + i
+		if i >= building_ids.size():
+			card[slot] = {}
+			continue
+		var bid := str(building_ids[i])
+		var ok := i < can_afford.size() and int(can_afford[i]) != 0
+		var exec := i < building_executing.size() and int(building_executing[i]) != 0
+		var entry := cat.unit_hud_entry(
+			bid,
+			ACTION_BUILD_PREFIX + bid,
+			{
+				"slot_override": slot,
+				"enabled": ok,
+				"executing": exec,
+				"cost_line": _building_cost_line(bid),
+			}
+		)
+		if entry.is_empty():
+			entry = _build_button_fallback(bid, ok, exec, slot)
+		card[slot] = entry
+
+
+## —— 兼容旧调用（Director / 文档）；内部转 for_unit ——
+
+static func town_hall(unit_id: String = "htow") -> Array[Dictionary]:
+	return for_unit(unit_id, {"include_locomotion": false})
+
+
+static func basic_locomotion(move_executing: bool = false) -> Array[Dictionary]:
+	var card := _empty_card()
+	_place_locomotion(card, _cat(), move_executing)
 	return card
 
 
-## 农民卡：移动/停止 + Ahar 采集↔交回（Unart / Unhotkey）
 static func peasant(
 	move_executing: bool = false,
 	carrying: bool = false,
 	harvest_executing: bool = false,
-	return_executing: bool = false
+	return_executing: bool = false,
+	unit_id: String = "hpea"
 ) -> Array[Dictionary]:
-	var cat := _cat()
-	var card := basic_locomotion(move_executing)
-	var har := cat.get_ability(ABIL_HARVEST)
-	if har.is_empty():
-		# Catalog 未同步时极简回退
-		var fallback_slot := SLOT_HARVEST_FALLBACK
-		if carrying:
-			card[fallback_slot] = {
-				"id": ACTION_RETURN_GOODS,
-				"text": "",
-				"tooltip": "送回资源",
-				"hotkey": KEY_E,
-				"hotkey_label": "E",
-				"icon": "ReplaceableTextures/CommandButtons/BTNReturnGoods.png",
-				"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNReturnGoods.png",
-				"executing": return_executing,
-				"enabled": true,
-				"slot": fallback_slot,
-			}
-		else:
-			card[fallback_slot] = {
-				"id": ACTION_HARVEST_GOLD,
-				"text": "",
-				"tooltip": "采集",
-				"hotkey": KEY_G,
-				"hotkey_label": "G",
-				"icon": "ReplaceableTextures/CommandButtons/BTNGatherGold.png",
-				"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNGatherGold.png",
-				"executing": harvest_executing,
-				"enabled": true,
-				"slot": fallback_slot,
-			}
-		return card
-	if carrying:
-		_place(
-			card,
-			cat.ability_hud_entry(
-				ABIL_HARVEST,
-				ACTION_RETURN_GOODS,
-				{"use_un": true, "executing": return_executing, "enabled": true}
-			)
-		)
-	else:
-		_place(
-			card,
-			cat.ability_hud_entry(
-				ABIL_HARVEST,
-				ACTION_HARVEST_GOLD,
-				{"use_un": false, "executing": harvest_executing, "enabled": true}
-			)
-		)
-	return card
+	return for_unit(
+		unit_id,
+		{
+			"move_executing": move_executing,
+			"carrying": carrying,
+			"harvest_executing": harvest_executing,
+			"return_executing": return_executing,
+			"include_locomotion": true,
+			"build_allowlist": PackedStringArray(), ## 无建造摊平
+		}
+	)
 
 
-## 农民卡 + F2 建造三按钮（图标/热键/Tip 读单位 UI；槽位仍用 F2 摊平 3–5）
 static func peasant_with_build(
 	move_executing: bool = false,
 	carrying: bool = false,
@@ -177,33 +231,29 @@ static func peasant_with_build(
 	return_executing: bool = false,
 	building_ids: PackedStringArray = PackedStringArray(),
 	can_afford: PackedInt32Array = PackedInt32Array(),
-	building_executing: PackedInt32Array = PackedInt32Array()
+	building_executing: PackedInt32Array = PackedInt32Array(),
+	unit_id: String = "hpea"
 ) -> Array[Dictionary]:
-	var card := peasant(move_executing, carrying, harvest_executing, return_executing)
-	var cat := _cat()
-	for i in range(SLOT_BUILD_COUNT):
-		var slot := SLOT_BUILD_FIRST + i
-		if i < building_ids.size():
-			var bid := str(building_ids[i])
-			var ok := i < can_afford.size() and int(can_afford[i]) != 0
-			var exec := i < building_executing.size() and int(building_executing[i]) != 0
-			var cost := _building_cost_line(bid)
-			var entry := cat.unit_hud_entry(
-				bid,
-				ACTION_BUILD_PREFIX + bid,
-				{
-					"slot_override": slot,
-					"enabled": ok,
-					"executing": exec,
-					"cost_line": cost,
-				}
-			)
-			if entry.is_empty():
-				entry = _build_button_fallback(bid, ok, exec, slot)
-			card[slot] = entry
-		else:
-			card[slot] = {}
-	return card
+	## building_ids 为空：Builds ∩ F2 锁死表（顺序跟 UnitFunc Builds）
+	var ids := building_ids
+	if ids.is_empty():
+		var allow := PackedStringArray()
+		for bid in BuildingCatalog.F2_BUILDING_IDS:
+			allow.append(str(bid))
+		ids = _cat().filter_builds(unit_id, allow)
+	return for_unit(
+		unit_id,
+		{
+			"move_executing": move_executing,
+			"carrying": carrying,
+			"harvest_executing": harvest_executing,
+			"return_executing": return_executing,
+			"include_locomotion": true,
+			"building_ids": ids,
+			"can_afford": can_afford,
+			"building_executing": building_executing,
+		}
+	)
 
 
 static func _building_cost_line(building_id: String) -> String:
@@ -215,26 +265,11 @@ static func _building_cost_line(building_id: String) -> String:
 	return cost + "。"
 
 
+## Catalog 缺 UI 行时的极简兜底（不再写死中文名/图标表；显示 id）
 static func _build_button_fallback(
 	building_id: String, can_afford: bool, executing: bool, slot: int
 ) -> Dictionary:
-	var name := building_id
-	var hotkey := "?"
-	var icon := "ReplaceableTextures/CommandButtons/BTNBuild.png"
-	match building_id:
-		"hhou":
-			name = "农场"
-			hotkey = "F"
-			icon = "ReplaceableTextures/CommandButtons/BTNFarm.png"
-		"halt":
-			name = "祭坛"
-			hotkey = "A"
-			icon = "ReplaceableTextures/CommandButtons/BTNAltarOfKings.png"
-		"hbar":
-			name = "兵营"
-			hotkey = "B"
-			icon = "ReplaceableTextures/CommandButtons/BTNHumanBarracks.png"
-	var tip := "建造 %s (|cffffcc00%s|r)\n%s" % [name, hotkey, _building_cost_line(building_id)]
+	var tip := "建造 %s\n%s" % [building_id, _building_cost_line(building_id)]
 	if not can_afford:
 		tip += "\n|cffff6060资源不足|r"
 	elif executing:
@@ -243,10 +278,10 @@ static func _build_button_fallback(
 		"id": ACTION_BUILD_PREFIX + building_id,
 		"text": "执行中" if executing else "",
 		"tooltip": tip,
-		"hotkey": hotkey.unicode_at(0),
-		"hotkey_label": hotkey,
-		"icon": icon,
-		"icon_disabled": icon,
+		"hotkey": 0,
+		"hotkey_label": "",
+		"icon": "ReplaceableTextures/CommandButtons/BTNBuild.png",
+		"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNBuild.png",
 		"executing": executing,
 		"enabled": can_afford,
 		"slot": slot,
@@ -259,15 +294,7 @@ static func _building_display_name(building_id: String) -> String:
 	var n := str(row.get("name", "")).strip_edges()
 	if not n.is_empty():
 		return n
-	match building_id:
-		"hhou":
-			return "农场"
-		"halt":
-			return "祭坛"
-		"hbar":
-			return "兵营"
-		_:
-			return building_id
+	return building_id
 
 
 ## 去掉 WC3 色码，供 Godot tooltip 纯文本显示。

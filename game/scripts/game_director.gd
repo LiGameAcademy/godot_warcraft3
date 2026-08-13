@@ -1706,7 +1706,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
 		_card_is_peasant = false
-		_apply_command_card(CommandCard.town_hall())
+		_apply_command_card(CommandCard.for_unit(tid, {"include_locomotion": false}))
 		game_hud.set_status("主城已选 · 命令卡见热键（Catalog）")
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
@@ -1847,24 +1847,24 @@ func _update_build_hud_if_relevant(key: String, ratio: float, elapsed: float, to
 		_apply_unit_info_to_hud(primary, bid)
 
 
-## F2-4：可建造列表（F2 锁死 3 建筑；未来按 race/tech 过滤）。
-func _build_building_ids() -> PackedStringArray:
-	var arr := PackedStringArray()
+## F2-4：可建造列表 = UnitFunc Builds ∩ F2 锁死表（槽位顺序跟 F2 表）。
+func _build_building_ids(worker_type_id: String = "hpea") -> PackedStringArray:
+	var allow := PackedStringArray()
 	for bid in BuildingCatalog.F2_BUILDING_IDS:
-		arr.append(str(bid))
-	return arr
+		allow.append(str(bid))
+	return CommandButtonCatalog.get_shared().filter_builds(worker_type_id, allow)
 
 
-func _build_can_afford_flags() -> PackedInt32Array:
+func _build_can_afford_flags(building_ids: PackedStringArray) -> PackedInt32Array:
 	var arr := PackedInt32Array()
-	for bid in BuildingCatalog.F2_BUILDING_IDS:
+	for bid in building_ids:
 		arr.append(1 if _can_afford(str(bid)) else 0)
 	return arr
 
 
-func _build_executing_flags() -> PackedInt32Array:
+func _build_executing_flags(building_ids: PackedStringArray) -> PackedInt32Array:
 	var arr := PackedInt32Array()
-	for _bid in BuildingCatalog.F2_BUILDING_IDS:
+	for _bid in building_ids:
 		arr.append(0) ## F2-4 简化：未来接 _is_any_peasant_building(_bid) 再开
 	return arr
 
@@ -1901,19 +1901,32 @@ func _refresh_command_card() -> void:
 		"moving": moving,
 	}
 	if _card_is_peasant:
+		var worker_tid := _primary_type_id(selected)
+		if worker_tid.is_empty():
+			worker_tid = "hpea"
+		var build_ids := _build_building_ids(worker_tid)
 		_apply_command_card(
-			CommandCard.peasant_with_build(
-				moving,
-				carrying,
-				harvesting and not carrying,
-				returning,
-				_build_building_ids(),
-				_build_can_afford_flags(),
-				_build_executing_flags()
+			CommandCard.for_unit(
+				worker_tid,
+				{
+					"move_executing": moving,
+					"carrying": carrying,
+					"harvest_executing": harvesting and not carrying,
+					"return_executing": returning,
+					"building_ids": build_ids,
+					"can_afford": _build_can_afford_flags(build_ids),
+					"building_executing": _build_executing_flags(build_ids),
+				}
 			)
 		)
 	else:
-		_apply_command_card(CommandCard.basic_locomotion(moving))
+		var tid := _primary_type_id(selected)
+		if tid.is_empty():
+			_apply_command_card(CommandCard.basic_locomotion(moving))
+		else:
+			_apply_command_card(
+				CommandCard.for_unit(tid, {"move_executing": moving, "include_locomotion": true})
+			)
 
 
 func _refresh_move_executing_ui() -> void:
@@ -1947,16 +1960,33 @@ func _refresh_move_executing_ui() -> void:
 	_last_harvest_ui = snap
 	# 互斥格可能从采集切到交回，需整卡刷新
 	if is_peasant:
+		var worker_tid := _primary_type_id(selected)
+		if worker_tid.is_empty():
+			worker_tid = "hpea"
+		var build_ids := _build_building_ids(worker_tid)
 		_apply_command_card(
-			CommandCard.peasant_with_build(
-				moving,
-				carrying,
-				harvesting and not carrying,
-				returning,
-				_build_building_ids(),
-				_build_can_afford_flags(),
-				_build_executing_flags()
+			CommandCard.for_unit(
+				worker_tid,
+				{
+					"move_executing": moving,
+					"carrying": carrying,
+					"harvest_executing": harvesting and not carrying,
+					"return_executing": returning,
+					"building_ids": build_ids,
+					"can_afford": _build_can_afford_flags(build_ids),
+					"building_executing": _build_executing_flags(build_ids),
+				}
 			)
 		)
 	else:
 		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
+
+
+func _primary_type_id(selected: Array) -> String:
+	if selected.is_empty():
+		return ""
+	var n: Variant = selected[0]
+	if n is Node3D:
+		var d: Dictionary = (n as Node3D).get_meta("unit_data", {})
+		return str(d.get("typeId", "")).strip_edges()
+	return ""

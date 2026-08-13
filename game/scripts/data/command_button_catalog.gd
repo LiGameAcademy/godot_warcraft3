@@ -64,6 +64,50 @@ func get_builds(unit_id: String) -> PackedStringArray:
 	return _split_csv(str(row.get("builds", "")))
 
 
+## UnitAbilities.abilList（DefStore）；无表/无行 → 空。
+func get_abil_list(unit_id: String) -> PackedStringArray:
+	var uid := unit_id.strip_edges()
+	if uid.is_empty():
+		return PackedStringArray()
+	var store := _def_store()
+	if store == null:
+		return PackedStringArray()
+	store.ensure_table(UnitAbilitiesDef.TABLE_NAME)
+	var def: UnitAbilitiesDef = store.get_row(UnitAbilitiesDef.TABLE_NAME, uid) as UnitAbilitiesDef
+	if def == null:
+		return PackedStringArray()
+	return _split_csv(def.abil_list)
+
+
+func get_ability_order(abil_id: String) -> String:
+	var row := get_ability(abil_id)
+	return str(row.get("order", "")).strip_edges().to_lower()
+
+
+## Builds ∩ allowlist。
+## allow 空 → 原 Builds 顺序；allow 非空 → **按 allowlist 顺序**（F2 锁死表稳定槽位）。
+func filter_builds(unit_id: String, allowlist: PackedStringArray = PackedStringArray()) -> PackedStringArray:
+	var builds := get_builds(unit_id)
+	if allowlist.is_empty():
+		return builds
+	var have: Dictionary = {}
+	for b in builds:
+		have[str(b)] = true
+	var out := PackedStringArray()
+	for a in allowlist:
+		var id := str(a)
+		if have.has(id):
+			out.append(id)
+	return out
+
+
+func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
+
+
 static func slot_of(pos: Vector2i) -> int:
 	return clampi(pos.y, 0, 2) * 4 + clampi(pos.x, 0, 3)
 
