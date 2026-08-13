@@ -12,6 +12,7 @@
     "convert:textures": "node src/cli.js --textures-only",
     "convert:models": "node src/cli.js --models-only",
     "bake:scn": "node scripts/bake-model-scenes.mjs",
+    "repair:gltf-uris": "node scripts/repair-gltf-uris.mjs",
     "convert:lost-temple": "node scripts/convert-lost-temple.mjs",
     "convert:echo-isles": "node scripts/convert-echo-isles.mjs",
     "reconvert:additive": "node scripts/reconvert-additive-geosets.mjs"

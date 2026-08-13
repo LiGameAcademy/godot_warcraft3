@@ -4,6 +4,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { LEGACY_CACHE_ROOT } from "../../pipeline-paths.mjs";
 
 const DATA_FIXED = [
   "UI/WorldEditData.txt",
@@ -26,6 +27,28 @@ const UNIT_TXT_NAMES = [
   "CampaignUnitStrings.txt",
 ];
 
+/** 命令卡 UI：图标 / Buttonpos / Tip / Hotkey（非 SLK） */
+const COMMAND_ABILITY_TXT_NAMES = [
+  "CommandFunc.txt",
+  "CommandStrings.txt",
+  "CommonAbilityFunc.txt",
+  "CommonAbilityStrings.txt",
+  "HumanAbilityFunc.txt",
+  "HumanAbilityStrings.txt",
+  "OrcAbilityFunc.txt",
+  "OrcAbilityStrings.txt",
+  "UndeadAbilityFunc.txt",
+  "UndeadAbilityStrings.txt",
+  "NightElfAbilityFunc.txt",
+  "NightElfAbilityStrings.txt",
+  "NeutralAbilityFunc.txt",
+  "NeutralAbilityStrings.txt",
+  "ItemAbilityFunc.txt",
+  "ItemAbilityStrings.txt",
+  "CampaignAbilityFunc.txt",
+  "CampaignAbilityStrings.txt",
+];
+
 const UNIT_ROOT_PREFIXES = ["", "Melee_V0/", "Melee_V1/", "Custom_V0/", "Custom_V1/"];
 
 /**
@@ -41,6 +64,18 @@ export function copyPassthroughBatch(opts) {
   let copied = 0;
   let skipped = 0;
   let missing = 0;
+
+  /** staging 缺文件时回退遗留 .cache（按逻辑相对路径） */
+  function resolveSrc(logical) {
+    const parts = logical.split("/");
+    const primary = path.join(inDir, ...parts);
+    if (fs.existsSync(primary)) return primary;
+    if (LEGACY_CACHE_ROOT && path.resolve(inDir) !== path.resolve(LEGACY_CACHE_ROOT)) {
+      const fb = path.join(LEGACY_CACHE_ROOT, ...parts);
+      if (fs.existsSync(fb)) return fb;
+    }
+    return primary;
+  }
 
   /** @param {string} src @param {string} dst */
   function ensureCopy(src, dst) {
@@ -61,17 +96,28 @@ export function copyPassthroughBatch(opts) {
     copied += 1;
   }
 
+  /** @param {string} logical */
+  function copyDataLogical(logical) {
+    ensureCopy(resolveSrc(logical), path.join(dataOut, ...logical.split("/")));
+  }
+
   // UnitFunc / UnitStrings
   for (const prefix of UNIT_ROOT_PREFIXES) {
     for (const name of UNIT_TXT_NAMES) {
-      const logical = `${prefix}Units/${name}`;
-      ensureCopy(path.join(inDir, ...logical.split("/")), path.join(dataOut, ...logical.split("/")));
+      copyDataLogical(`${prefix}Units/${name}`);
+    }
+  }
+
+  // Command / Ability Func+Strings（命令卡 Catalog）
+  for (const prefix of UNIT_ROOT_PREFIXES) {
+    for (const name of COMMAND_ABILITY_TXT_NAMES) {
+      copyDataLogical(`${prefix}Units/${name}`);
     }
   }
 
   // UI txt
   for (const logical of DATA_FIXED) {
-    ensureCopy(path.join(inDir, ...logical.split("/")), path.join(dataOut, ...logical.split("/")));
+    copyDataLogical(logical);
   }
 
   // PathTextures/**

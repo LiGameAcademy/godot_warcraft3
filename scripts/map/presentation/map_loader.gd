@@ -4,6 +4,8 @@ extends Node3D
 ## 地图装配入口：构建 MapBuildContext，按序驱动各 Layer。
 
 signal map_loaded
+## stage 文案 + 0..1 粗进度（供进局 Loading 屏）
+signal load_progress(stage: String, progress: float)
 
 @export var map_dir: String = "res://assets/map-parsed/losttemple"
 @export var build_water: bool = true
@@ -69,6 +71,7 @@ var _pathing_doodad_entries: Array = []
 ## 最近一次加载的 heightfield JSON（供运行时加单位插值高度）
 var _last_hf_dict: Dictionary = {}
 var _map_ready: bool = false
+var _load_progress: float = 0.0
 
 
 func get_tiles() -> Wc3TerrainTileCatalog:
@@ -128,7 +131,7 @@ func _ready() -> void:
 	_doodads.setup(_catalog, _cache)
 	_units.setup(_catalog, _cache)
 
-	_set_status("加载地形贴图索引…")
+	_set_status("加载地形贴图索引…", 0.01)
 	_tiles.load_default()
 	_cliff_catalog.load_default()
 	_tiles_ready = true
@@ -374,26 +377,37 @@ func is_units_batch_loading() -> bool:
 	return _units != null and _units.has_method("is_batch_loading") and _units.is_batch_loading()
 
 
-## 编辑器增量放置一条单位。
-func add_unit_instance(entry: Dictionary, hf: Dictionary) -> bool:
+## 编辑器/游戏增量放置一条单位。返回根节点；失败 null（bool 语境下仍可当成败用）。
+func add_unit_instance(entry: Dictionary, hf: Dictionary) -> Node3D:
 	if _units == null:
-		return false
+		return null
 	_units.setup(get_id_catalog(), _cache)
 	var heightfield: Wc3Heightfield = null
 	if not hf.is_empty():
 		heightfield = Wc3Heightfield.from_dict(hf, true)
-	var ok: bool = _units.add_one(entry, heightfield)
-	if ok:
+	var node: Node3D = _units.add_one(entry, heightfield)
+	if node != null:
 		_pathing_unit_entries.append(entry)
 		if show_pathing_ground:
 			_rebuild_pathing_overlay()
-	return ok
+	return node
 
 
 func remove_unit_instance(creation_number: int) -> bool:
 	if _units == null:
 		return false
-	return _units.remove_by_creation_number(creation_number)
+	var ok := _units.remove_by_creation_number(creation_number)
+	if ok:
+		for i in range(_pathing_unit_entries.size() - 1, -1, -1):
+			var e: Variant = _pathing_unit_entries[i]
+			if e is Dictionary and int((e as Dictionary).get("creationNumber", -2)) == creation_number:
+				_pathing_unit_entries.remove_at(i)
+				break
+		if show_pathing_ground:
+			_rebuild_pathing_overlay()
+		elif has_method("_apply_dynamic_pathing"):
+			call("_apply_dynamic_pathing")
+	return ok
 
 
 func find_unit_node(creation_number: int) -> Node3D:
@@ -410,7 +424,7 @@ func update_unit_instance(entry: Dictionary, hf: Dictionary) -> bool:
 		return false
 	if not _units.remove_by_creation_number(cn):
 		return false
-	return add_unit_instance(entry, hf)
+	return add_unit_instance(entry, hf) != null
 
 
 ## 编辑器增量放置一条。
@@ -567,12 +581,14 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 
 func _load_all() -> void:
 	_map_ready = false
+	_load_progress = 0.0
 	var t0 := Time.get_ticks_msec()
+	_set_status("读取地图数据…", 0.02)
 	var hf: Dictionary = _external_hf
 	if hf.is_empty():
 		hf = _read_json(map_dir.path_join("terrain-heightfield.json"))
 	if hf.is_empty():
-		_set_status("地图加载失败：缺少 terrain-heightfield.json")
+		_set_status("地图加载失败：缺少 terrain-heightfield.json", 0.0)
 		return
 	_last_hf_dict = hf
 
@@ -582,7 +598,7 @@ func _load_all() -> void:
 	var ctx = MapBuildContext.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
 	_apply_ramp_cliff_filter(ctx)
 
-	_set_status("生成贴图地形高度图（悬崖留缝）…")
+	_set_status("生成贴图地形高度图（悬崖留缝）…", 0.12)
 	_terrain.build(ctx)
 	_build_boundary(ctx)
 	if build_terrain_collision:
@@ -590,16 +606,16 @@ func _load_all() -> void:
 	await get_tree().process_frame
 
 	if build_cliffs:
-		_set_status("放置悬崖模型…")
+		_set_status("放置悬崖模型…", 0.28)
 		_cliffs.build(ctx)
 		await get_tree().process_frame
-	_set_status("放置斜坡模型…")
+	_set_status("放置斜坡模型…", 0.38)
 	_build_ramps(ctx)
 	await get_tree().process_frame
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
 	if build_water:
-		_set_status("生成水体…")
+		_set_status("生成水体…", 0.48)
 		_water.foam_cliff_out_extra = foam_cliff_out_extra
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
@@ -607,6 +623,7 @@ func _load_all() -> void:
 		await get_tree().process_frame
 	# Doodad/Unit：SoA 加载后再 to_dict 填 ctx（Layer 仍吃 AoS）
 	if place_units:
+		_set_status("放置单位模型…", 0.58)
 		var unit_path: String = map_dir.path_join("units.json")
 		if FileAccess.file_exists(unit_path):
 			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
@@ -617,6 +634,7 @@ func _load_all() -> void:
 	else:
 		_pathing_unit_entries = []
 	if place_doodads:
+		_set_status("放置装饰物…", 0.72)
 		var dood_path: String = map_dir.path_join("doodads.json")
 		if FileAccess.file_exists(dood_path):
 			var dood_list: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
@@ -629,9 +647,10 @@ func _load_all() -> void:
 	else:
 		_pathing_doodad_entries = []
 	if show_pathing_debug_grid and _debug_grid:
-		_set_status("开启调试栅格（GPU）…")
+		_set_status("开启调试栅格（GPU）…", 0.88)
 		_debug_grid.build(ctx)
 		await get_tree().process_frame
+	_set_status("构建寻路数据…", 0.92)
 	_ensure_pathing_map(ctx.heightfield as Wc3Heightfield)
 	_apply_dynamic_pathing()
 	if show_pathing_ground:
@@ -644,8 +663,9 @@ func _load_all() -> void:
 	var shore_n := _water.last_shore_count if build_water else 0
 	var doodad_n := _doodads.last_placed if place_doodads else 0
 	_set_status(
-		"地形就绪（%d ms，留缝 %d，悬崖 %d，斜坡 %d，水面 %d，岸浪 %d，装饰 %d）— WASD 移动，右键转向，滚轮缩放"
-		% [ms, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
+		"地形就绪（%d ms，留缝 %d，悬崖 %d，斜坡 %d，水面 %d，岸浪 %d，装饰 %d）"
+		% [ms, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n],
+		0.96
 	)
 	print(
 		"Terrain load in %d ms from %s (gaps=%d cliffs=%d ramps=%d water=%d shore=%d doodads=%d)"
@@ -691,16 +711,13 @@ func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		push_warning("缺少 %s" % path)
 		return {}
-	var text := RuntimeAssets.read_utf8_text(path)
-	if text.is_empty():
-		return {}
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return {}
-	return parsed
+	return RuntimeAssets.read_json_dict(path)
 
 
-func _set_status(text: String) -> void:
+func _set_status(text: String, progress: float = -1.0) -> void:
+	if progress >= 0.0:
+		_load_progress = clampf(progress, 0.0, 1.0)
 	if _status:
 		_status.text = text
 	print(text)
+	load_progress.emit(text, _load_progress)

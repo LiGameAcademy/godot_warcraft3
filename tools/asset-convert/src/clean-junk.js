@@ -140,9 +140,19 @@ export function cleanConvertedJunk(outDir, opts = {}) {
       }
       for (const im of json.images || []) {
         const uri = String(im.uri || "").replace(/\\/g, "/");
-        if (!uri || uri.startsWith("data:")) continue;
-        const resolved = path.resolve(dir, uri);
-        keep.add(path.normalize(resolved).toLowerCase());
+        if (uri && !uri.startsWith("data:")) {
+          const resolved = path.resolve(dir, uri);
+          keep.add(path.normalize(resolved).toLowerCase());
+        }
+        // 无 uri 时仍按 name 基名保留同目录 PNG，避免 clean 删掉后 repair 补出悬空 URI
+        const nameHint = String(im.name || "").replace(/\\/g, "/");
+        if (nameHint) {
+          const base = path.basename(nameHint);
+          if (base.toLowerCase().endsWith(".png") || base.toLowerCase().endsWith(".blp")) {
+            const pngName = base.replace(/\.blp$/i, ".png");
+            keep.add(path.normalize(path.join(dir, pngName)).toLowerCase());
+          }
+        }
       }
     }
 

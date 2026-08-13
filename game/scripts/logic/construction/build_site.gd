@@ -39,12 +39,12 @@ func _ready() -> void:
 
 
 ## 接 BuildController.build_started 信号。
-## owner：建造者 peasant 所属玩家 id（决定建筑归属 + 队伍色）。
-func start(order: BuildOrder, owner: int) -> void:
+## player_owner：建造者 peasant 所属玩家 id（决定建筑归属 + 队伍色）。
+func start(order: BuildOrder, player_owner: int) -> void:
 	if _state != STATE_IDLE or order == null:
 		return
 	_order = order
-	_owner = owner
+	_owner = player_owner
 	_state = STATE_BUILDING
 	_elapsed = 0.0
 	# primary builder 加入（_active_builders 留空等 arrived 时 add）
@@ -105,12 +105,12 @@ func _process(delta: float) -> void:
 	if _state != STATE_BUILDING or _order == null:
 		return
 	_elapsed += delta * _process_speedup()
-	var total: float = _order.build_time_sec
-	if total <= 0.0:
-		total = 1.0
-	var ratio: float = clampf(_elapsed / total, 0.0, 1.0)
-	progress_changed.emit(_elapsed, total, ratio)
-	if _elapsed >= total:
+	var total_sec: float = _order.build_time_sec
+	if total_sec <= 0.0:
+		total_sec = 1.0
+	var ratio: float = clampf(_elapsed / total_sec, 0.0, 1.0)
+	progress_changed.emit(_elapsed, total_sec, ratio)
+	if _elapsed >= total_sec:
 		_state = STATE_DONE
 		_order.state = BuildOrder.STATE_DONE
 		set_process(false)

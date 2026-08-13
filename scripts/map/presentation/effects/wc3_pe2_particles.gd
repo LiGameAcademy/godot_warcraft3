@@ -42,8 +42,8 @@ static func load_payload(glb_path: String) -> Dictionary:
 
 
 static func has_emitters(glb_path: String) -> bool:
-	if _prefab_exists(glb_path):
-		return true
+	# 以 pe2.json 为准。pe2.tscn 虽可提交，但 ExtResource 常指向
+	# asset-converted（.gdignore），ResourceLoader 必失败并刷屏。
 	var data := load_payload(glb_path)
 	var emitters: Array = data.get("emitters", [])
 	return not emitters.is_empty()
@@ -153,25 +153,10 @@ static func _prefab_exists(glb_path: String) -> bool:
 	return RuntimeAssets.file_exists(tscn)
 
 
-static func _instantiate_prefab(glb_path: String) -> Node3D:
-	var tscn := pe2_tscn_path_from_glb(glb_path)
-	if tscn.is_empty() or not RuntimeAssets.file_exists(tscn):
-		return null
-	var packed: PackedScene = null
-	if ResourceLoader.exists(tscn):
-		packed = ResourceLoader.load(tscn, "PackedScene") as PackedScene
-	else:
-		# 文件已在磁盘、尚未 .import 时也可直接 load
-		packed = load(tscn) as PackedScene
-	if packed == null:
-		return null
-	var inst := packed.instantiate()
-	if inst is Node3D:
-		var n := inst as Node3D
-		n.name = PE2_ROOT_NAME
-		return n
-	if inst != null:
-		inst.free()
+static func _instantiate_prefab(_glb_path: String) -> Node3D:
+	# 运行时禁用 pe2.tscn：全部 162 个预制的粒子贴图 ExtResource 落在
+	# asset-converted/（.gdignore），Godot 报 No loader / Parse Error 刷屏。
+	# 粒子改由 pe2.json + RuntimeAssets.load_converted_texture 构建。
 	return null
 
 

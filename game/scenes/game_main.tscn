@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://game/scripts/presentation/wc3_game_cursor.gd" id="4_cursor"]
 [ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://game/scenes/game_hud.tscn" id="5_hud"]
 [ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://game/scenes/unit_selector.tscn" id="6_sel"]
+[ext_resource type="Script" path="res://game/scripts/presentation/health_bar_manager.gd" id="7_hpbar"]
+[ext_resource type="PackedScene" path="res://game/scenes/game_loading_screen.tscn" id="8_loading"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -36,12 +38,20 @@ show_pathing_ground = true
 
 [node name="GameHud" parent="." unique_id=553656308 instance=ExtResource("5_hud")]
 
+[node name="HealthBarManager" type="CanvasLayer" parent="."]
+layer = 8
+script = ExtResource("7_hpbar")
+
 [node name="UnitSelector" parent="." instance=ExtResource("6_sel")]
 
 [node name="GameDirector" type="Node" parent="." unique_id=528822564]
 script = ExtResource("3_director")
+health_bar_manager = NodePath("../HealthBarManager")
 
 [node name="GameCursor" type="Node" parent="." unique_id=1503412235]
 script = ExtResource("4_cursor")
 race = "human"
 auto_flash_move_on_rmb = false
+
+[node name="GameLoadingScreen" parent="." instance=ExtResource("8_loading")]
+map_title = "Echo Isles"

@@ -2,9 +2,6 @@
 
 [ext_resource type="PackedScene" path="res://assets/asset-converted/Buildings/Other/TowerDefenseTower/TowerDefenseTower.scn" id="1_base"]
 [ext_resource type="Script" path="res://scripts/map/presentation/model_visual_sync.gd" id="2_sync"]
-[ext_resource type="PackedScene" path="res://assets/pe2-prefabs/Buildings/Other/TowerDefenseTower/TowerDefenseTower.pe2.tscn" id="3_pe2"]
 
 [node name="Buildings_Other_TowerDefenseTower_TowerDefenseTower_mdx" instance=ExtResource("1_base")]
 script = ExtResource("2_sync")
-
-[node name="Pe2Root" parent="TowerDefenseTower" instance=ExtResource("3_pe2")]

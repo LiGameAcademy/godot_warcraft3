@@ -1,91 +1,175 @@
 class_name CommandCard
 extends RefCounted
 
-## 行动面板条目构建（HUD 命令格）。id 稳定，供 Director 按动作而非槽位下发。
+## 行动面板条目构建（HUD 命令格）。
+## 图标 / 槽位 / 热键 / Tip 来自 CommandButtonCatalog（WC3 Func+Strings）；
+## action_id 与运行时态（执行中、买不起）仍由本类组装。
 
 const ACTION_MOVE := "move"
 const ACTION_STOP := "stop"
 const ACTION_HARVEST_GOLD := "harvest_gold"
 const ACTION_RETURN_GOODS := "return_goods"
 const ACTION_BUILD_PREFIX := "build:" ## F2-4：建造按钮 action_id 前缀
+const ACTION_TRAIN_PREFIX := "train:" ## 训练单位：train:hpea
+const ACTION_CALL_TO_ARMS := "call_to_arms"
+const ACTION_SET_RALLY := "set_rally"
 
-const ICON_MOVE := "ReplaceableTextures/CommandButtons/BTNMove.png"
-const ICON_STOP := "ReplaceableTextures/CommandButtons/BTNStop.png"
-const ICON_MOVE_DIS := "ReplaceableTextures/CommandButtonsDisabled/DISBTNMove.png"
-const ICON_STOP_DIS := "ReplaceableTextures/CommandButtonsDisabled/DISBTNStop.png"
-const ICON_GATHER := "ReplaceableTextures/CommandButtons/BTNGatherGold.png"
-const ICON_GATHER_DIS := "ReplaceableTextures/CommandButtonsDisabled/DISBTNGatherGold.png"
-const ICON_RETURN := "ReplaceableTextures/CommandButtons/BTNReturnGoods.png"
-const ICON_RETURN_DIS := "ReplaceableTextures/CommandButtonsDisabled/DISBTNReturnGoods.png"
+## 采集 / 交回：官方 Ahar Buttonpos=3,1；无 Catalog 时回退槽
+const SLOT_HARVEST_FALLBACK := 7
 
-## 采集 / 交回互斥格（WC3 同槽换图）
-const SLOT_HARVEST_RETURN := 2
-
-## 建造按钮槽位（3-5；WC3 经典：农民 12 槽中 3-5 为种建筑）。
+## 建造按钮槽位（F2 竖切：主卡摊平 3 建筑，非完整 AHbu 子菜单）
 const SLOT_BUILD_FIRST := 3
 const SLOT_BUILD_COUNT := 3
 
-
-static func move_tooltip(executing: bool) -> String:
-	var body := "移动 (|cffffcc00M|r)\n命令单位移动到指定地点。"
-	if executing:
-		return body + "\n|cff00ff00当前：执行中|r"
-	return body
-
-
-static func harvest_tooltip(executing: bool) -> String:
-	var body := "采集金币 (|cffffcc00G|r)\n命令农民开采金矿。"
-	if executing:
-		return body + "\n|cff00ff00当前：执行中|r"
-	return body
+const CMD_MOVE := "CmdMove"
+const CMD_STOP := "CmdStop"
+const CMD_RALLY := "CmdRally"
+const ABIL_HARVEST := "Ahar"
+const ABIL_CALL_TO_ARMS := "Amic"
+const TOWN_HALL_ID := "htow"
 
 
-static func return_tooltip(executing: bool) -> String:
-	var body := "送回资源 (|cffffcc00R|r)\n将携带的资源送回主城等接收建筑。"
-	if executing:
-		return body + "\n|cff00ff00当前：执行中|r"
-	return body
+static func _cat() -> CommandButtonCatalog:
+	return CommandButtonCatalog.get_shared()
 
 
-## WC3 基础单位卡：槽 0=移动(M)，槽 1=停止(S)；其余空。
-static func basic_locomotion(move_executing: bool = false) -> Array[Dictionary]:
+static func _empty_card() -> Array[Dictionary]:
 	var card: Array[Dictionary] = []
 	card.resize(12)
 	for i in range(12):
 		card[i] = {}
-	card[0] = {
-		"id": ACTION_MOVE,
-		"text": "执行中" if move_executing else "",
-		"tooltip": move_tooltip(move_executing),
-		"hotkey": KEY_M,
-		"hotkey_label": "M",
-		"icon": ICON_MOVE,
-		"icon_disabled": ICON_MOVE_DIS,
-		"executing": move_executing,
-		"enabled": true,
-	}
-	card[1] = {
-		"id": ACTION_STOP,
-		"text": "",
-		"tooltip": "停止 (|cffffcc00S|r)\n命令单位停止当前行动。",
-		"hotkey": KEY_S,
-		"hotkey_label": "S",
-		"icon": ICON_STOP,
-		"icon_disabled": ICON_STOP_DIS,
-		"executing": false,
-		"enabled": true,
-	}
 	return card
 
 
-## F2-4：拼装"执行中/空闲"执行标志到 tooltip 末尾。
-static func _exec_note(executing: bool, hotkey_letter: String) -> String:
-	return "\n|cff00ff00当前：执行中|r" if executing else ""
+static func _place(card: Array[Dictionary], entry: Dictionary) -> void:
+	if entry.is_empty():
+		return
+	var slot := int(entry.get("slot", -1))
+	if slot < 0 or slot >= card.size():
+		return
+	card[slot] = entry
 
 
-## 农民卡：移动/停止 + 槽 2 采集↔交回（按是否负金互斥显示）+ 槽 3-5 建造按钮。
-## building_ids：当前可建造列表（按 BuildingCatalog.F2_BUILDING_IDS 顺序；F2 锁死 3 项）。
-## can_afford[i]：gold/lumber 够；false → 灰；executing 反高亮。
+## 人族主城卡：Trains + Amic + CmdRally（位姿/文案/图标读 Catalog）
+static func town_hall() -> Array[Dictionary]:
+	var cat := _cat()
+	var card := _empty_card()
+	var trains := cat.get_trains(TOWN_HALL_ID)
+	if trains.is_empty():
+		trains = PackedStringArray(["hpea"])
+	for tid in trains:
+		_place(
+			card,
+			cat.unit_hud_entry(
+				tid,
+				ACTION_TRAIN_PREFIX + tid,
+				{"enabled": true, "executing": false}
+			)
+		)
+	_place(
+		card,
+		cat.ability_hud_entry(
+			ABIL_CALL_TO_ARMS,
+			ACTION_CALL_TO_ARMS,
+			{"enabled": true, "executing": false}
+		)
+	)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_RALLY,
+			ACTION_SET_RALLY,
+			{"enabled": true, "executing": false}
+		)
+	)
+	return card
+
+
+## WC3 基础单位卡：CmdMove / CmdStop
+static func basic_locomotion(move_executing: bool = false) -> Array[Dictionary]:
+	var cat := _cat()
+	var card := _empty_card()
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_MOVE,
+			ACTION_MOVE,
+			{"executing": move_executing, "enabled": true}
+		)
+	)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_STOP,
+			ACTION_STOP,
+			{"executing": false, "enabled": true}
+		)
+	)
+	return card
+
+
+## 农民卡：移动/停止 + Ahar 采集↔交回（Unart / Unhotkey）
+static func peasant(
+	move_executing: bool = false,
+	carrying: bool = false,
+	harvest_executing: bool = false,
+	return_executing: bool = false
+) -> Array[Dictionary]:
+	var cat := _cat()
+	var card := basic_locomotion(move_executing)
+	var har := cat.get_ability(ABIL_HARVEST)
+	if har.is_empty():
+		# Catalog 未同步时极简回退
+		var fallback_slot := SLOT_HARVEST_FALLBACK
+		if carrying:
+			card[fallback_slot] = {
+				"id": ACTION_RETURN_GOODS,
+				"text": "",
+				"tooltip": "送回资源",
+				"hotkey": KEY_E,
+				"hotkey_label": "E",
+				"icon": "ReplaceableTextures/CommandButtons/BTNReturnGoods.png",
+				"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNReturnGoods.png",
+				"executing": return_executing,
+				"enabled": true,
+				"slot": fallback_slot,
+			}
+		else:
+			card[fallback_slot] = {
+				"id": ACTION_HARVEST_GOLD,
+				"text": "",
+				"tooltip": "采集",
+				"hotkey": KEY_G,
+				"hotkey_label": "G",
+				"icon": "ReplaceableTextures/CommandButtons/BTNGatherGold.png",
+				"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNGatherGold.png",
+				"executing": harvest_executing,
+				"enabled": true,
+				"slot": fallback_slot,
+			}
+		return card
+	if carrying:
+		_place(
+			card,
+			cat.ability_hud_entry(
+				ABIL_HARVEST,
+				ACTION_RETURN_GOODS,
+				{"use_un": true, "executing": return_executing, "enabled": true}
+			)
+		)
+	else:
+		_place(
+			card,
+			cat.ability_hud_entry(
+				ABIL_HARVEST,
+				ACTION_HARVEST_GOLD,
+				{"use_un": false, "executing": harvest_executing, "enabled": true}
+			)
+		)
+	return card
+
+
+## 农民卡 + F2 建造三按钮（图标/热键/Tip 读单位 UI；槽位仍用 F2 摊平 3–5）
 static func peasant_with_build(
 	move_executing: bool = false,
 	carrying: bool = false,
@@ -96,108 +180,94 @@ static func peasant_with_build(
 	building_executing: PackedInt32Array = PackedInt32Array()
 ) -> Array[Dictionary]:
 	var card := peasant(move_executing, carrying, harvest_executing, return_executing)
+	var cat := _cat()
 	for i in range(SLOT_BUILD_COUNT):
 		var slot := SLOT_BUILD_FIRST + i
 		if i < building_ids.size():
 			var bid := str(building_ids[i])
 			var ok := i < can_afford.size() and int(can_afford[i]) != 0
 			var exec := i < building_executing.size() and int(building_executing[i]) != 0
-			card[slot] = _build_button_entry(bid, ok, exec)
+			var cost := _building_cost_line(bid)
+			var entry := cat.unit_hud_entry(
+				bid,
+				ACTION_BUILD_PREFIX + bid,
+				{
+					"slot_override": slot,
+					"enabled": ok,
+					"executing": exec,
+					"cost_line": cost,
+				}
+			)
+			if entry.is_empty():
+				entry = _build_button_fallback(bid, ok, exec, slot)
+			card[slot] = entry
 		else:
 			card[slot] = {}
 	return card
 
 
-## 建造按钮 entry 工厂。action_id = "build:<4-char-id>"。
-static func _build_button_entry(building_id: String, can_afford: bool, executing: bool) -> Dictionary:
-	var name := _building_display_name(building_id)
+static func _building_cost_line(building_id: String) -> String:
 	var g := BuildingCatalog.get_gold_cost(building_id)
 	var l := BuildingCatalog.get_lumber_cost(building_id)
-	var cost := "%d 金" % g
+	var cost := "造价 %d 金" % g
 	if l > 0:
 		cost += " · %d 木" % l
-	var hotkey := _building_hotkey(building_id)
-	var sb := "\n|cff00ff00%s|r" % name
-	var tooltip := "建造 %s (|cffffcc00%s|r)%s\n造价 %s。" % [name, hotkey, sb, cost]
+	return cost + "。"
+
+
+static func _build_button_fallback(
+	building_id: String, can_afford: bool, executing: bool, slot: int
+) -> Dictionary:
+	var name := building_id
+	var hotkey := "?"
+	var icon := "ReplaceableTextures/CommandButtons/BTNBuild.png"
+	match building_id:
+		"hhou":
+			name = "农场"
+			hotkey = "F"
+			icon = "ReplaceableTextures/CommandButtons/BTNFarm.png"
+		"halt":
+			name = "祭坛"
+			hotkey = "A"
+			icon = "ReplaceableTextures/CommandButtons/BTNAltarOfKings.png"
+		"hbar":
+			name = "兵营"
+			hotkey = "B"
+			icon = "ReplaceableTextures/CommandButtons/BTNHumanBarracks.png"
+	var tip := "建造 %s (|cffffcc00%s|r)\n%s" % [name, hotkey, _building_cost_line(building_id)]
 	if not can_afford:
-		tooltip += "\n|cffff6060资源不足|r"
+		tip += "\n|cffff6060资源不足|r"
 	elif executing:
-		tooltip += "\n|cff00ff00当前：执行中|r"
-	var icon := _building_icon_path(building_id)
+		tip += "\n|cff00ff00当前：执行中|r"
 	return {
 		"id": ACTION_BUILD_PREFIX + building_id,
 		"text": "执行中" if executing else "",
-		"tooltip": tooltip,
+		"tooltip": tip,
 		"hotkey": hotkey.unicode_at(0),
 		"hotkey_label": hotkey,
 		"icon": icon,
 		"icon_disabled": icon,
 		"executing": executing,
 		"enabled": can_afford,
+		"slot": slot,
 	}
 
 
-## 4 字符 id → 中文显示名（F2 锁死 3 建筑）。
+## 显示名（Director 状态栏等）；优先 Catalog Name。
 static func _building_display_name(building_id: String) -> String:
+	var row := _cat().get_unit_ui(building_id)
+	var n := str(row.get("name", "")).strip_edges()
+	if not n.is_empty():
+		return n
 	match building_id:
-		"hhou": return "农场"
-		"halt": return "祭坛"
-		"hbar": return "兵营"
-		_: return building_id
-
-
-## 4 字符 id → 玩家热键。
-static func _building_hotkey(building_id: String) -> String:
-	match building_id:
-		"hhou": return "F"
-		"halt": return "A"
-		"hbar": return "B"
-		_: return "?"
-
-
-## 4 字符 id → BTNBuild 按钮图标（按 WC3 习惯 BTN<Name>Build）。
-## BTN 模板约定："ReplaceableTextures/CommandButtons/BTNFarm.png" 等。
-static func _building_icon_path(building_id: String) -> String:
-	match building_id:
-		"hhou": return "ReplaceableTextures/CommandButtons/BTNFarm.png"
-		"halt": return "ReplaceableTextures/CommandButtons/BTNAltar.png"
-		"hbar": return "ReplaceableTextures/CommandButtons/BTNBarracks.png"
-		_: return "ReplaceableTextures/CommandButtons/BTNBuild.png"
-
-
-## 农民卡：移动/停止 + 槽 2 采集↔交回（按是否负金互斥显示）。
-static func peasant(
-	move_executing: bool = false,
-	carrying: bool = false,
-	harvest_executing: bool = false,
-	return_executing: bool = false
-) -> Array[Dictionary]:
-	var card := basic_locomotion(move_executing)
-	if carrying:
-		card[SLOT_HARVEST_RETURN] = {
-			"id": ACTION_RETURN_GOODS,
-			"text": "执行中" if return_executing else "",
-			"tooltip": return_tooltip(return_executing),
-			"hotkey": KEY_R,
-			"hotkey_label": "R",
-			"icon": ICON_RETURN,
-			"icon_disabled": ICON_RETURN_DIS,
-			"executing": return_executing,
-			"enabled": true,
-		}
-	else:
-		card[SLOT_HARVEST_RETURN] = {
-			"id": ACTION_HARVEST_GOLD,
-			"text": "执行中" if harvest_executing else "",
-			"tooltip": harvest_tooltip(harvest_executing),
-			"hotkey": KEY_G,
-			"hotkey_label": "G",
-			"icon": ICON_GATHER,
-			"icon_disabled": ICON_GATHER_DIS,
-			"executing": harvest_executing,
-			"enabled": true,
-		}
-	return card
+		"hhou":
+			return "农场"
+		"halt":
+			return "祭坛"
+		"hbar":
+			return "兵营"
+		_:
+			return building_id
 
 
 ## 去掉 WC3 色码，供 Godot tooltip 纯文本显示。

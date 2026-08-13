@@ -30,7 +30,7 @@ static func project_abs(res_or_abs: String) -> String:
 	return p.replace("\\", "/")
 
 
-## 读 UTF-8 文本；含 NUL 的二进制直接拒绝，避免引擎 Unicode parsing ERROR 刷屏。
+## 读 UTF-8 文本；二进制/非法 UTF-8 直接拒绝，避免引擎 Unicode parsing ERROR 刷屏。
 static func read_utf8_text(res_or_abs: String) -> String:
 	var disk := project_abs(res_or_abs)
 	if disk.is_empty() or not FileAccess.file_exists(disk):
@@ -38,11 +38,70 @@ static func read_utf8_text(res_or_abs: String) -> String:
 	var bytes := FileAccess.get_file_as_bytes(disk)
 	if bytes.is_empty():
 		return ""
-	# 全文件扫 NUL（JSON/配置不应含 0x00；误读 GLB/PNG 时在此拦下）
+	# PNG / GLB / 常见二进制魔数：勿走 UTF-8 解码
+	if bytes.size() >= 4:
+		# PNG: 89 50 4E 47
+		if bytes[0] == 0x89 and bytes[1] == 0x50 and bytes[2] == 0x4E and bytes[3] == 0x47:
+			return ""
+		# glTF binary / GLB: glTF
+		if bytes[0] == 0x67 and bytes[1] == 0x6C and bytes[2] == 0x54 and bytes[3] == 0x46:
+			return ""
+	# 全文件扫 NUL（JSON/配置不应含 0x00；误读其它二进制时在此拦下）
 	for i in range(bytes.size()):
 		if bytes[i] == 0:
 			return ""
+	# 非法 UTF-8 也会打引擎 ERROR；先校验再解码（切勿先调 get_string_from_utf8）
+	if not _bytes_are_valid_utf8(bytes):
+		return ""
 	return bytes.get_string_from_utf8()
+
+
+## 解析 JSON 文本。剥离 `\\u0000`（map-parse 空 FourCC），避免 Godot Unexpected NUL ERROR。
+static func parse_json_text(text: String) -> Variant:
+	if text.is_empty():
+		return null
+	if text.find("\\u0000") >= 0:
+		text = text.replace("\\u0000", "")
+	return JSON.parse_string(text)
+
+
+## 读盘并解析 JSON 对象；失败返回空 Dictionary。
+static func read_json_dict(res_or_abs: String) -> Dictionary:
+	var text := read_utf8_text(res_or_abs)
+	if text.is_empty():
+		return {}
+	var parsed: Variant = parse_json_text(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed as Dictionary
+
+
+static func _bytes_are_valid_utf8(bytes: PackedByteArray) -> bool:
+	var i := 0
+	var n := bytes.size()
+	while i < n:
+		var c := bytes[i]
+		if c <= 0x7F:
+			i += 1
+			continue
+		var need := 0
+		if c >= 0xC2 and c <= 0xDF:
+			need = 1
+		elif c >= 0xE0 and c <= 0xEF:
+			need = 2
+		elif c >= 0xF0 and c <= 0xF4:
+			need = 3
+		else:
+			return false
+		if i + need >= n:
+			return false
+		for j in range(1, need + 1):
+			var cc := bytes[i + j]
+			if cc < 0x80 or cc > 0xBF:
+				return false
+		# 过严排除一些 overlong / 非法码点即可满足「别误读二进制」
+		i += need + 1
+	return true
 
 
 ## 相对路径 → res://assets/asset-converted/...
@@ -208,16 +267,51 @@ static func load_packed_scene(res_or_abs: String) -> PackedScene:
 			res_path = ProjectSettings.localize_path(res_path)
 	if not file_exists(res_path) and not file_exists(project_abs(res_path)):
 		return null
+	# asset-converted 有 .gdignore：旧 .scn 若 ExtResource 指向其中 PNG，
+	# ResourceLoader 会刷 "No loader found" / Failed loading。直接跳过改走 glTF。
+	if _packed_scene_refs_gdignored_converted(res_path):
+		return null
 	var loaded: Resource = ResourceLoader.load(res_path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE)
 	if loaded is PackedScene:
 		return loaded as PackedScene
-	# 部分环境下 gdignore / 未导入：再试绝对路径
-	var disk := project_abs(res_path)
-	if disk != res_path:
-		loaded = ResourceLoader.load(disk, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE)
-		if loaded is PackedScene:
-			return loaded as PackedScene
 	return null
+
+
+## 粗检场景二进制/文本是否引用 asset-converted 下贴图（不可 import）。
+static func _packed_scene_refs_gdignored_converted(res_or_abs: String) -> bool:
+	var disk := project_abs(res_or_abs)
+	if disk.is_empty() or not FileAccess.file_exists(disk):
+		return false
+	var lower := disk.replace("\\", "/").to_lower()
+	# 仅检查 .scn（visuals/*.tscn 可提交，另议）
+	if not lower.ends_with(".scn"):
+		return false
+	var bytes := FileAccess.get_file_as_bytes(disk)
+	if bytes.is_empty():
+		return false
+	return (
+		_bytes_has_ascii(bytes, "asset-converted/")
+		or _bytes_has_ascii(bytes, "asset-converted\\")
+	)
+
+
+static func _bytes_has_ascii(bytes: PackedByteArray, needle: String) -> bool:
+	if needle.is_empty() or bytes.is_empty():
+		return false
+	var n := needle.to_utf8_buffer()
+	var nlen := n.size()
+	var lim := bytes.size() - nlen
+	if lim < 0:
+		return false
+	for i in range(lim + 1):
+		var ok := true
+		for j in range(nlen):
+			if bytes[i + j] != n[j]:
+				ok = false
+				break
+		if ok:
+			return true
+	return false
 
 
 ## 将根节点打包存为 .scn（目录自动创建）。

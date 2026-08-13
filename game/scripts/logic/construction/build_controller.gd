@@ -190,7 +190,7 @@ func _on_arrived() -> void:
 	build_started.emit(_order)
 
 
-func _on_site_completed(order: BuildOrder, site_wc3: Vector2, owner: int) -> void:
+func _on_site_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
 	# 人口变化：Farm +6，Altar/Barracks 0
 	if _session != null:
 		var stock: PlayerStock = _session.local_stock()
@@ -205,7 +205,7 @@ func _on_site_completed(order: BuildOrder, site_wc3: Vector2, owner: int) -> voi
 	_order = null
 	_state = STATE_IDLE
 	state_changed.emit(_state)
-	build_completed.emit(order, site_wc3, owner)
+	build_completed.emit(order, site_wc3, player_owner)
 
 
 ## 资源 + 选址校验。任何失败 → 不扣资源 + 返回 false。

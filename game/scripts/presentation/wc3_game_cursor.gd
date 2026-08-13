@@ -155,7 +155,10 @@ func _load_sheet(race_id: String) -> bool:
 	if path.is_empty() or not RuntimeAssets.file_exists(path):
 		push_error("Wc3GameCursor: 缺少光标图集 %s（race=%s）" % [path, race_id])
 		return false
-	var src := load(path) as Texture2D
+	# asset-converted 有 .gdignore，不能 ResourceLoader.load；走磁盘 ImageTexture
+	var src := RuntimeAssets.load_converted_texture(
+		"%s/%s" % [CURSOR_DIR, str(RACE_SHEETS.get(_normalize_race(race_id), RACE_SHEETS["human"]))]
+	)
 	if src == null:
 		push_error("Wc3GameCursor: 无法加载 %s" % path)
 		return false

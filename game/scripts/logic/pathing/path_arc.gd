@@ -86,8 +86,6 @@ static func arc_samples(
 	var t_s: float = atan2(-a.x, a.y)
 	# 圆心 C = S - R × (cos t_s, sin t_s) = -R × (cos t_s, sin t_s)
 	var center: Vector2 = start - R * Vector2(cos(t_s), sin(t_s))
-	# 终点角：转 θ 角
-	var t_e: float = t_s + theta
 	var out2 := PackedVector2Array()
 	out2.append(start)
 	for i in range(1, n_samples + 1):

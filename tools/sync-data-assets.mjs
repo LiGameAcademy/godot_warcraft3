@@ -4,7 +4,7 @@
  *
  * 注：完整 bootstrap 已把本步并入 convert passthrough；本脚本供单独补跑。
  *
- *   UnitFunc / UnitStrings / UI txt → assets/slk-exported/
+ *   UnitFunc / UnitStrings / Command* / *Ability* / UI txt → assets/slk-exported/
  *   PathTextures/**               → assets/asset-converted/
  *
  * 用法：
@@ -34,7 +34,7 @@ function main() {
     console.log(`用法: node tools/sync-data-assets.mjs [--force]
 
 从 staging（或遗留 .cache）同步：
-  · UnitFunc / UnitStrings / UI txt → assets/slk-exported/
+  · UnitFunc / UnitStrings / Command* / *Ability* / UI txt → assets/slk-exported/
   · PathTextures/**               → assets/asset-converted/
 `);
     return;

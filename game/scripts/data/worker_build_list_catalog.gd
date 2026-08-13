@@ -82,13 +82,9 @@ func _ensure_loaded(unit_id: String, race: String) -> void:
 	var full_path := FOLDER.path_join(fn)
 	if _loaded.has(full_path):
 		return
-	if not FileAccess.file_exists(full_path):
+	var text := RuntimeAssets.read_utf8_text(full_path)
+	if text.is_empty():
 		return
-	var f := FileAccess.open(full_path, FileAccess.READ)
-	if f == null:
-		return
-	var text := f.get_as_text()
-	f.close()
 	_loaded[full_path] = true
 	_parse_into(text, unit_id)
 

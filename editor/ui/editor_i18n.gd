@@ -138,10 +138,10 @@ func _load_zh_name_sort() -> void:
 	_zh_name_sort.clear()
 	if not FileAccess.file_exists(ZH_NAME_SORT_PATH):
 		return
-	var f := FileAccess.open(ZH_NAME_SORT_PATH, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(ZH_NAME_SORT_PATH)
+	if text.is_empty():
 		return
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	_zh_name_sort = parsed as Dictionary
@@ -236,10 +236,9 @@ func _merge_mpq_file(logical: String) -> void:
 	var abs_path := RuntimeAssets.resolve(logical)
 	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
 		return
-	var f := FileAccess.open(abs_path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(abs_path)
+	if text.is_empty():
 		return
-	var text := f.get_as_text()
 	if text.begins_with("\ufeff"):
 		text = text.substr(1)
 	for line in text.split("\n"):

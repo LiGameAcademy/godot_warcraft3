@@ -396,12 +396,14 @@ func _parse_unit_ini_file(logical: String, out_names: Dictionary, field: String)
 	var abs_path := RuntimeAssets.resolve(logical)
 	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
 		return
-	var f := FileAccess.open(abs_path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(abs_path)
+	if text.is_empty():
 		return
+	if text.begins_with("\ufeff"):
+		text = text.substr(1)
 	var section := ""
-	while not f.eof_reached():
-		var line := f.get_line().strip_edges()
+	for raw in text.split("\n"):
+		var line := raw.strip_edges()
 		if line.is_empty() or line.begins_with("//"):
 			continue
 		if line.begins_with("[") and line.ends_with("]"):
@@ -424,12 +426,14 @@ func _parse_unit_func_file(logical: String, out_art: Dictionary, out_pos: Dictio
 	var abs_path := RuntimeAssets.resolve(logical)
 	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
 		return
-	var f := FileAccess.open(abs_path, FileAccess.READ)
-	if f == null:
+	var text := RuntimeAssets.read_utf8_text(abs_path)
+	if text.is_empty():
 		return
+	if text.begins_with("\ufeff"):
+		text = text.substr(1)
 	var section := ""
-	while not f.eof_reached():
-		var line := f.get_line().strip_edges()
+	for raw in text.split("\n"):
+		var line := raw.strip_edges()
 		if line.is_empty() or line.begins_with("//"):
 			continue
 		if line.begins_with("[") and line.ends_with("]"):

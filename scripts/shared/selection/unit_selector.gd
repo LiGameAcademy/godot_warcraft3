@@ -63,6 +63,7 @@ var _radius_cache: Dictionary = {}
 
 
 func _ready() -> void:
+	set_process(false)
 	_ensure_input_layer()
 	_ensure_overlay()
 	# Director 若因脚本解析失败未 setup，下一帧自救绑定相机/单位层。
@@ -130,6 +131,12 @@ func handle_pointer_event(event: InputEvent) -> bool:
 		var mb := event as InputEventMouseButton
 		if mb.button_index != MOUSE_BUTTON_LEFT:
 			return false
+		# 框选进行中：松手/续按必须完成，即使光标已滑到 HUD（否则抬起被底栏吞掉）
+		if _marqueeing:
+			if mb.pressed:
+				return true
+			_on_release(mb.position)
+			return true
 		if _hud_blocks_screen(mb.position):
 			return false
 		if mb.pressed:
@@ -172,6 +179,15 @@ func _on_world_gui_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index != MOUSE_BUTTON_LEFT:
 			return
+		# 与 handle_pointer_event 一致：框选中不受 HUD 区限制
+		if _marqueeing:
+			if not mb.pressed:
+				_on_release(mb.position)
+			if _input_root != null:
+				_input_root.accept_event()
+			return
+		if _hud_blocks_screen(mb.position):
+			return
 		if mb.pressed:
 			_on_press(mb.position)
 		else:
@@ -191,8 +207,15 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _process(_delta: float) -> void:
+	# 兜底：松手事件被 HUD Control 吃掉时，仍结束框选
+	if _marqueeing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_on_release(get_viewport().get_mouse_position())
+
+
 func _hud_blocks_screen(screen_pos: Vector2) -> bool:
 	# 粗略避开底栏 / 右上资源条，避免抢走 HUD 按钮。
+	# 注意：框选进行中不要调用此函数拦截松手（见 handle_pointer_event）。
 	var vp := get_viewport().get_visible_rect().size
 	if vp.y <= 1.0:
 		return false
@@ -218,6 +241,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_press(screen_pos: Vector2) -> void:
 	_marqueeing = true
+	set_process(true)
 	_marquee.begin(screen_pos)
 
 
@@ -225,6 +249,7 @@ func _on_release(screen_pos: Vector2) -> void:
 	if not _marqueeing:
 		return
 	_marqueeing = false
+	set_process(false)
 	_marquee.update(screen_pos)
 	var rect := _marquee.finish()
 	if rect.size.x >= 0.5 and rect.size.y >= 0.5:

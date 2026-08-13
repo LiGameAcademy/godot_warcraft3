@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Echo Isles / 人族 Melee 开发所需贴图+模型子集（比全量 convert 快很多）。
- * 覆盖：Lordaeron 地形/树/水、人族建筑与基础单位、金矿/泉水、常用纹理。
+ * 覆盖：Lordaeron 地形/树/水、人族建筑与基础单位、中立建筑、野怪、常用纹理。
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -28,11 +28,14 @@ const includes = [
   "Doodads/LordaeronSummer/**",
   "Doodads/Terrain/LordaeronTree/**",
   "Doodads/Terrain/Cityscape/**",
-  // 中立建筑
-  "Buildings/Other/GoldMine/**",
-  "buildings/other/GoldMine/**",
-  "Buildings/Other/FountainOfLife/**",
-  "buildings/other/FountainOfLife/**",
+  // 中立建筑（Echo Isles：金矿/酒馆/商店/雇佣兵营/集市/鱼人小屋等）
+  "Buildings/Other/**",
+  "buildings/other/**",
+  // 野怪 / 小动物（同目录 PNG；缺贴图会粉模）
+  "Units/Creeps/**",
+  "units/creeps/**",
+  "Units/Critters/**",
+  "units/critters/**",
   // 人族建筑 + 基础单位（Melee 开局）
   "Buildings/Human/**",
   "buildings/human/**",

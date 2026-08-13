@@ -514,7 +514,8 @@ function parseModel(data, logicalPath) {
 
 /** Classic WC3 replaceable texture IDs → default BLP (used when Image is empty). */
 const REPLACEABLE_DEFAULTS = {
-	1: null, // team color → _placeholders/team_color.png
+	// 默认队伍色：导出时直接嵌 TeamColor00（红/玩家1）；运行时仍可按 owner 重染
+	1: "ReplaceableTextures/TeamColor/TeamColor00.blp",
 	2: null, // team glow → _placeholders/team_glow.png（编辑器常跳过纯 glow geoset）
 	11: "ReplaceableTextures/Cliff/Cliff0.blp",
 	31: "ReplaceableTextures/LordaeronTree/LordaeronSnowTree.blp",
@@ -527,9 +528,10 @@ const REPLACEABLE_DEFAULTS = {
 	37: "ReplaceableTextures/UndergroundTree/UnderTree.blp",
 };
 
-/** ReplaceableId → 占位 PNG 逻辑路径与默认 RGBA */
+/** ReplaceableId → 占位 PNG（仅当默认 BLP/PNG 也找不到时） */
 const REPLACEABLE_PLACEHOLDERS = {
-	1: { pngLogical: "_placeholders/team_color.png", rgba: [30, 70, 180, 255] },
+	// 对齐 TeamColor00 红，避免再出现整片占位蓝
+	1: { pngLogical: "_placeholders/team_color.png", rgba: [220, 40, 40, 255] },
 	// 半透明白：加法混合时才像光晕；误当成不透明时也不至于整块实心蓝
 	2: { pngLogical: "_placeholders/team_glow.png", rgba: [255, 255, 255, 96] },
 };

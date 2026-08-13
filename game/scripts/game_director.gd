@@ -4,6 +4,9 @@ extends Node
 ## 游戏总管（对标 MapEditor）。
 ## 职责：配置 MapLoader、Melee 开局、Session/库存、选中、相机。
 
+## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
+signal session_ready
+
 const MeleeRacePreviewScr = preload("res://game/scripts/data/melee_race_preview.gd")
 const MeleeBootstrapScr = preload("res://game/scripts/logic/melee_bootstrap.gd")
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
@@ -25,6 +28,7 @@ const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 @export var game_hud: GameHud
 @export var unit_selector: Node
 @export var game_cursor: Node
+@export var health_bar_manager: HealthBarManager
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -84,12 +88,20 @@ var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
 var _last_harvest_ui: Dictionary = {}
+## 当前命令卡：keycode → action_id（热键走 Catalog，不写死 M/G/R…）
+var _card_hotkey_actions: Dictionary = {}
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
 var _build_ghost: BuildPlacementGhost = null
 ## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
 var _last_screen_pos: Vector2 = Vector2.ZERO
+## 运行时自增 creationNumber（建造半成品等）。
+var _next_runtime_cn: int = 900000
+## construction_key → { cn, node }；开工刷建筑，完工升满血，取消移除。
+var _active_construction: Dictionary = {}
+## 当前 HUD 绑定的工地 progress（避免重复 connect）。
+var _hud_build_site: BuildSite = null
 
 
 func _ready() -> void:
@@ -110,6 +122,10 @@ func _ready() -> void:
 
 func get_session() -> GameSession:
 	return _session
+
+
+func is_session_ready() -> bool:
+	return _bootstrapped
 
 
 ## 按本地玩家种族切换光标图集（human/orc/undead/nightelf）。
@@ -149,14 +165,19 @@ func _resolve_exports() -> void:
 			game_cursor = parent_n.get_node_or_null("GameCursor")
 			if game_cursor == null:
 				game_cursor = parent_n.get_node_or_null("HumanCursor")
+	if health_bar_manager == null:
+		health_bar_manager = get_node_or_null("../HealthBarManager") as HealthBarManager
+		if health_bar_manager == null and parent_n != null:
+			health_bar_manager = parent_n.get_node_or_null("HealthBarManager") as HealthBarManager
 	print(
-		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s cursor=%s"
+		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s cursor=%s hpbar=%s"
 		% [
 			map_root != null,
 			rts_camera != null,
 			game_hud != null,
 			unit_selector != null,
 			game_cursor != null,
+			health_bar_manager != null,
 		]
 	)
 
@@ -297,27 +318,17 @@ func _input(event: InputEvent) -> void:
 
 
 func _map_display_name() -> String:
-	var path := map_dir.path_join("info.json")
-	if FileAccess.file_exists(path):
-		var f := FileAccess.open(path, FileAccess.READ)
-		if f:
-			var data = JSON.parse_string(f.get_as_text())
-			if typeof(data) == TYPE_DICTIONARY:
-				var n := str((data as Dictionary).get("name", "")).strip_edges()
-				if not n.is_empty():
-					return n
+	var data := RuntimeAssets.read_json_dict(map_dir.path_join("info.json"))
+	if not data.is_empty():
+		var n := str(data.get("name", "")).strip_edges()
+		if not n.is_empty():
+			return n
 	return map_dir.get_file()
 
 
 func _load_camera_bounds() -> void:
-	var path := map_dir.path_join("info.json")
-	if not FileAccess.file_exists(path):
-		return
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return
-	var data = JSON.parse_string(f.get_as_text())
-	if typeof(data) != TYPE_DICTIONARY:
+	var data := RuntimeAssets.read_json_dict(map_dir.path_join("info.json"))
+	if data.is_empty():
 		return
 	var b: Variant = data.get("cameraBounds", null)
 	if b is Array and (b as Array).size() >= 4:
@@ -335,9 +346,21 @@ func _on_map_loaded() -> void:
 	_setup_selector()
 	_setup_pathing()
 	_setup_minimap()
+	_setup_health_bars()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
+	session_ready.emit()
+
+
+func _setup_health_bars() -> void:
+	if health_bar_manager == null:
+		_resolve_exports()
+	if health_bar_manager == null or map_root == null or rts_camera == null:
+		return
+	var cam := rts_camera.get_camera()
+	health_bar_manager.configure(cam, map_root.get_unit_layer())
+	health_bar_manager.resync()
 
 
 ## 地图就绪后再绑 PathQuery：WPM/合成图此时才保证有效。
@@ -563,37 +586,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
-		if key == KEY_S and enable_move_command:
-			if _issue_stop(UnitOrder.Source.HOTKEY):
-				get_viewport().set_input_as_handled()
-				return
-		if key == KEY_M and enable_move_command and _card_supports_move:
-			_begin_move_targeting(UnitOrder.Source.HOTKEY)
+		# 命令卡热键（Catalog Tip/Hotkey；交回官方为 E）
+		if _card_hotkey_actions.has(key):
+			_on_command_action(str(_card_hotkey_actions[key]), UnitOrder.Source.HOTKEY)
 			get_viewport().set_input_as_handled()
 			return
-		if key == KEY_G and _card_is_peasant:
-			_begin_harvest_targeting(UnitOrder.Source.HOTKEY)
-			get_viewport().set_input_as_handled()
-			return
-		if key == KEY_R and _card_is_peasant:
-			if _issue_return_goods(UnitOrder.Source.HOTKEY):
-				get_viewport().set_input_as_handled()
-				return
-		# F2-4：F / A / B 直接进建造瞄准
-		if _card_is_peasant:
-			match key:
-				KEY_F:
-					_begin_build_targeting("hhou", UnitOrder.Source.HOTKEY)
-					get_viewport().set_input_as_handled()
-					return
-				KEY_A:
-					_begin_build_targeting("halt", UnitOrder.Source.HOTKEY)
-					get_viewport().set_input_as_handled()
-					return
-				KEY_B:
-					_begin_build_targeting("hbar", UnitOrder.Source.HOTKEY)
-					get_viewport().set_input_as_handled()
-					return
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
@@ -1046,7 +1043,7 @@ func _is_build_targeting() -> bool:
 
 
 ## F2-4：玩家按下"建造 <something>"按钮 → 进入瞄准态。
-func _begin_build_targeting(building_id: String, source: int) -> void:
+func _begin_build_targeting(building_id: String, _source: int) -> void:
 	if not BuildingCatalog.is_building(building_id):
 		if game_hud:
 			game_hud.set_status("未知建筑 %s" % building_id)
@@ -1076,8 +1073,8 @@ func _begin_build_targeting(building_id: String, source: int) -> void:
 		_build_placement.update_screen(_last_screen_pos)
 		_apply_ghost_to_screen()
 	if game_hud:
-		var name := CommandCard._building_display_name(building_id)
-		game_hud.set_status("建造瞄准：%s · 左键指定地点 · 右键/Esc 取消" % name)
+		var display_name := CommandCard._building_display_name(building_id)
+		game_hud.set_status("建造瞄准：%s · 左键指定地点 · 右键/Esc 取消" % display_name)
 
 
 func _cancel_build_targeting() -> void:
@@ -1225,48 +1222,145 @@ func _ensure_build_controller(unit: Node3D) -> BuildController:
 func _wire_build_signals(bc: BuildController) -> void:
 	if bc == null:
 		return
+	if not bc.build_started.is_connected(_on_build_started):
+		bc.build_started.connect(_on_build_started)
 	if not bc.build_completed.is_connected(_on_build_completed):
 		bc.build_completed.connect(_on_build_completed)
 	if not bc.build_cancelled.is_connected(_on_build_cancelled):
 		bc.build_cancelled.connect(_on_build_cancelled)
 
 
-## F2-5：工地 timer 跑完 → 刷建筑（MapUnitLayer + pathing dynamic blit）。
-func _on_build_completed(order: BuildOrder, site_wc3: Vector2, owner: int) -> void:
+## 农民到位开工：立刻刷半成品建筑（低血 + under_construction），进度驱动血条/HUD。
+func _on_build_started(order: BuildOrder) -> void:
+	if order == null or map_root == null or _heightfield == null:
+		return
+	var key := _construction_key(order)
+	if _active_construction.has(key):
+		return
+	var player_owner := 0
+	if order.builder != null:
+		var d: Dictionary = order.builder.get_meta("unit_data", {})
+		player_owner = int(d.get("owner", local_player))
+	var cn := _alloc_runtime_cn()
+	var entry := _build_entry_for(order.building_id, order.site_wc3, player_owner, cn)
+	entry["hitPoints"] = 5.0
+	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if node == null:
+		push_warning("GameDirector: 半成品建筑刷出失败 %s" % order.building_id)
+		return
+	UnitLife.ensure(node)
+	UnitLife.set_under_construction(node, true)
+	UnitLife.set_ratio(node, 0.05)
+	_active_construction[key] = {"cn": cn, "node": node, "building_id": order.building_id}
+	var bc: BuildController = null
+	if order.builder != null:
+		bc = order.builder.get_node_or_null("BuildController") as BuildController
+	var site: BuildSite = bc.current_site() if bc != null else null
+	if site != null:
+		var cb := _on_construction_progress.bind(key)
+		if not site.progress_changed.is_connected(cb):
+			site.progress_changed.connect(cb)
+	_refresh_dynamic_pathing()
+	if health_bar_manager:
+		health_bar_manager.resync()
+	_sync_build_hud_for_selection()
+
+
+func _on_construction_progress(elapsed: float, total: float, ratio: float, key: String) -> void:
+	if not _active_construction.has(key):
+		return
+	var rec: Dictionary = _active_construction[key]
+	var node: Node3D = rec.get("node") as Node3D
+	if node == null or not is_instance_valid(node):
+		return
+	UnitLife.set_ratio(node, maxf(ratio, 0.05))
+	_update_build_hud_if_relevant(key, ratio, elapsed, total)
+
+
+## F2-5：工地 timer 跑完 → 半成品转正（满血）；若无半成品则兜底刷建筑。
+func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
 	if order == null:
 		return
-	var entry := _build_entry_for(order.building_id, site_wc3, owner)
-	# MapUnitLayer.add_one 写可见模型（MapLoader 内部把 entry push 到 _pathing_unit_entries）
+	var key := _construction_key(order)
+	if _active_construction.has(key):
+		var rec: Dictionary = _active_construction[key]
+		var node: Node3D = rec.get("node") as Node3D
+		if node != null and is_instance_valid(node):
+			UnitLife.set_under_construction(node, false)
+			UnitLife.set_ratio(node, 1.0)
+		_active_construction.erase(key)
+		_unbind_hud_build_site()
+		if game_hud != null:
+			game_hud.clear_build_progress()
+			game_hud.set_status("完工：%s @ (%.0f, %.0f)" % [order.building_id, site_wc3.x, site_wc3.y])
+		_refresh_command_card()
+		_sync_selection_info_panel()
+		if health_bar_manager:
+			health_bar_manager.resync()
+		return
+	var entry := _build_entry_for(order.building_id, site_wc3, player_owner, _alloc_runtime_cn())
 	if map_root != null and _heightfield != null:
 		map_root.add_unit_instance(entry, _heightfield.as_dict_view())
-		# 触发 pathing dynamic 重新 blit：新建筑的 footprint 进入动态寻路面，A* 永久绕开
-		if map_root.has_method("_apply_dynamic_pathing"):
-			map_root.call("_apply_dynamic_pathing")
-		elif map_root.has_method("set_pathing_map") and _pathing != null:
-			map_root.set_pathing_map(_pathing)
+		_refresh_dynamic_pathing()
 	if game_hud != null:
+		game_hud.clear_build_progress()
 		game_hud.set_status("完工：%s @ (%.0f, %.0f)" % [order.building_id, site_wc3.x, site_wc3.y])
 	_refresh_command_card()
+	if health_bar_manager:
+		health_bar_manager.resync()
 
 
-func _on_build_cancelled(_order: BuildOrder) -> void:
+func _on_build_cancelled(order: BuildOrder) -> void:
+	if order != null:
+		var key := _construction_key(order)
+		if _active_construction.has(key):
+			var rec: Dictionary = _active_construction[key]
+			var cn := int(rec.get("cn", -1))
+			if cn >= 0 and map_root != null:
+				map_root.remove_unit_instance(cn)
+				_refresh_dynamic_pathing()
+			_active_construction.erase(key)
+	_unbind_hud_build_site()
+	if game_hud != null:
+		game_hud.clear_build_progress()
 	_refresh_command_card()
+	if health_bar_manager:
+		health_bar_manager.resync()
+
+
+func _alloc_runtime_cn() -> int:
+	var cn := _next_runtime_cn
+	_next_runtime_cn += 1
+	return cn
+
+
+func _construction_key(order: BuildOrder) -> String:
+	if order == null:
+		return ""
+	if order.builder != null and is_instance_valid(order.builder):
+		return "builder_%d" % order.builder.get_instance_id()
+	return "%s_%.0f_%.0f" % [order.building_id, order.site_wc3.x, order.site_wc3.y]
+
+
+func _refresh_dynamic_pathing() -> void:
+	if map_root == null:
+		return
+	if map_root.has_method("_apply_dynamic_pathing"):
+		map_root.call("_apply_dynamic_pathing")
+	elif map_root.has_method("set_pathing_map") and _pathing != null:
+		map_root.set_pathing_map(_pathing)
 
 
 ## 完工后入图的 unit entry dict（MapUnitLayer 期望的字段）。
-func _build_entry_for(building_id: String, site_wc3: Vector2, owner: int) -> Dictionary:
+func _build_entry_for(building_id: String, site_wc3: Vector2, player_owner: int, creation_number: int = -1) -> Dictionary:
 	return {
 		"typeId": building_id,
 		"position": {"x": site_wc3.x, "y": site_wc3.y},
-		"owner": owner,
-		"creationNumber": -1, ## MapUnitLayer 会按 typeId_creationNumber 起名；-1 → 自增
+		"owner": player_owner,
+		"creationNumber": creation_number,
 		"variation": 0,
 		"isBuilding": true,
 	}
-
-
-## 建筑 path_tex → 1-bit Image（占位；F2-5 由 MapLoader._apply_dynamic_pathing 接管）。
-var _id_catalog: Wc3IdCatalog = null
 
 
 func _local_stock() -> PlayerStock:
@@ -1508,40 +1602,81 @@ func _on_minimap_clicked(uv: Vector2) -> void:
 		)
 
 
-func _on_command_pressed(slot: int) -> void:
+func _on_command_pressed(_slot: int) -> void:
 	# 有 action_id 时由 _on_command_action 处理；纯文字占位格仍提示
 	if game_hud != null and game_hud.has_method("set_status"):
 		pass
 
 
-func _on_command_action(action_id: String) -> void:
+func _on_command_action(
+	action_id: String, source: int = UnitOrder.Source.PANEL
+) -> void:
 	match action_id:
 		CommandCard.ACTION_MOVE:
-			_begin_move_targeting(UnitOrder.Source.PANEL)
+			if enable_move_command:
+				_begin_move_targeting(source)
 		CommandCard.ACTION_STOP:
-			_issue_stop(UnitOrder.Source.PANEL)
+			if enable_move_command:
+				_issue_stop(source)
 		CommandCard.ACTION_HARVEST_GOLD:
-			_begin_harvest_targeting(UnitOrder.Source.PANEL)
+			_begin_harvest_targeting(source)
 		CommandCard.ACTION_RETURN_GOODS:
-			_issue_return_goods(UnitOrder.Source.PANEL)
+			_issue_return_goods(source)
+		CommandCard.ACTION_CALL_TO_ARMS:
+			if game_hud:
+				game_hud.set_status("战斗号召：逻辑待接（F3+）")
+		CommandCard.ACTION_SET_RALLY:
+			if game_hud:
+				game_hud.set_status("设置集结点：逻辑待接")
 		_:
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())
-				_begin_build_targeting(bid, UnitOrder.Source.PANEL)
+				_begin_build_targeting(bid, source)
+				return
+			if action_id.begins_with(CommandCard.ACTION_TRAIN_PREFIX):
+				var uid := action_id.substr(CommandCard.ACTION_TRAIN_PREFIX.length())
+				if game_hud:
+					game_hud.set_status("训练 %s：逻辑待接（F3–F4）" % uid)
 				return
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
 
 
+func _apply_command_card(card: Array) -> void:
+	if game_hud != null:
+		game_hud.set_command_card(card)
+	_card_hotkey_actions.clear()
+	for e in card:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d := e as Dictionary
+		var id := str(d.get("id", "")).strip_edges()
+		var hk := int(d.get("hotkey", 0))
+		if id.is_empty() or hk == 0:
+			continue
+		if not bool(d.get("enabled", true)):
+			continue
+		_card_hotkey_actions[hk] = id
+
+
+func _clear_command_card_hotkeys() -> void:
+	_card_hotkey_actions.clear()
+
+
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
+	if health_bar_manager:
+		health_bar_manager.set_selection(selected)
 	if game_hud == null:
 		return
 	if primary == null or selected.is_empty():
 		_card_supports_move = false
 		_card_is_peasant = false
+		_clear_command_card_hotkeys()
+		_unbind_hud_build_site()
 		game_hud.set_unit_info("—", 0, 0)
+		game_hud.clear_build_progress()
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
 		return
@@ -1550,11 +1685,13 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	var label := tid
 	if selected.size() > 1:
 		label = "%s ×%d" % [tid, selected.size()]
-	game_hud.set_unit_info(label, 0, 0)
+	_apply_unit_info_to_hud(primary, label)
 	# 中立金矿：黄环 + 储量状态（树不可左键选中）
 	if tid == "ngol" or _is_gold_mine(primary):
 		_card_supports_move = false
 		_card_is_peasant = false
+		_unbind_hud_build_site()
+		game_hud.clear_build_progress()
 		game_hud.clear_command_labels()
 		var gold_left := int(d.get("goldAmount", -1))
 		var rt := GoldMineRuntime.ensure(primary)
@@ -1562,29 +1699,151 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 			gold_left = rt.remaining_gold
 		elif gold_left < 0:
 			gold_left = 12500
-		# Info 区无 HP 槽时只显示名称；储量走 status
 		game_hud.set_unit_info("金矿", 0, 0)
 		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
 		return
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
 		_card_is_peasant = false
-		game_hud.set_command_labels(
-			PackedStringArray(["训练", "号召", "交资源", "", "", "", "", "", "", "", "", ""])
-		)
-		game_hud.set_status("主城已选 · 具备接收资源能力")
+		_apply_command_card(CommandCard.town_hall())
+		game_hud.set_status("主城已选 · 命令卡见热键（Catalog）")
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
 		_refresh_command_card()
 		if _card_is_peasant:
-			game_hud.set_status("已选 %s · M移动 · S停止 · G采集 / R交回" % tid)
+			game_hud.set_status("已选 %s · 农民命令卡（采集/交回/建造热键见按钮）" % tid)
 		else:
-			game_hud.set_status("已选 %s · M 移动 · S 停止" % tid)
+			game_hud.set_status("已选 %s · 移动/停止见命令卡" % tid)
 	else:
 		_card_supports_move = false
 		_card_is_peasant = false
+		_clear_command_card_hotkeys()
 		game_hud.clear_command_labels()
-		game_hud.set_status("已选 %s" % tid)
+		if UnitLife.is_under_construction(primary):
+			game_hud.set_status("建造中：%s" % tid)
+		else:
+			game_hud.set_status("已选 %s" % tid)
+	_sync_build_hud_for_selection()
+
+
+func _apply_unit_info_to_hud(unit: Node3D, label: String) -> void:
+	if game_hud == null or unit == null:
+		return
+	UnitLife.ensure(unit)
+	var hp := int(round(UnitLife.get_life(unit)))
+	var hp_max := int(round(UnitLife.get_max_life(unit)))
+	game_hud.set_unit_info(label, hp, hp_max)
+
+
+func _sync_selection_info_panel() -> void:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or game_hud == null:
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "?"))
+	_apply_unit_info_to_hud(primary, tid)
+	_sync_build_hud_for_selection()
+
+
+func _sync_build_hud_for_selection() -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		_unbind_hud_build_site()
+		game_hud.clear_build_progress()
+		return
+	# 选中半成品建筑
+	if UnitLife.is_under_construction(primary):
+		var r := UnitLife.ratio(primary)
+		var d: Dictionary = primary.get_meta("unit_data", {})
+		var tid := str(d.get("typeId", ""))
+		game_hud.set_build_progress(true, r, "建造 %s %d%%" % [tid, int(round(r * 100.0))])
+		_unbind_hud_build_site()
+		return
+	# 选中正在施工的农民
+	var bc := primary.get_node_or_null("BuildController") as BuildController
+	var site: BuildSite = bc.current_site() if bc != null else null
+	if site != null and site.is_active():
+		_bind_hud_build_site(site)
+		var total := site.total()
+		var ratio := 0.0 if total <= 0.0 else clampf(site.elapsed() / total, 0.0, 1.0)
+		var order := site.current_order()
+		var bid := order.building_id if order != null else ""
+		game_hud.set_build_progress(true, ratio, "建造 %s %d%%" % [bid, int(round(ratio * 100.0))])
+		return
+	_unbind_hud_build_site()
+	game_hud.clear_build_progress()
+
+
+func _bind_hud_build_site(site: BuildSite) -> void:
+	if site == null or site == _hud_build_site:
+		return
+	_unbind_hud_build_site()
+	_hud_build_site = site
+	if not site.progress_changed.is_connected(_on_hud_build_site_progress):
+		site.progress_changed.connect(_on_hud_build_site_progress)
+
+
+func _unbind_hud_build_site() -> void:
+	if _hud_build_site != null and is_instance_valid(_hud_build_site):
+		if _hud_build_site.progress_changed.is_connected(_on_hud_build_site_progress):
+			_hud_build_site.progress_changed.disconnect(_on_hud_build_site_progress)
+	_hud_build_site = null
+
+
+func _on_hud_build_site_progress(elapsed: float, total: float, ratio: float) -> void:
+	if game_hud == null:
+		return
+	var bid := ""
+	if _hud_build_site != null:
+		var order := _hud_build_site.current_order()
+		if order != null:
+			bid = order.building_id
+	var caption := "建造 %s %d%%" % [bid, int(round(ratio * 100.0))]
+	if total > 0.0:
+		caption += " · %.0f/%.0fs" % [elapsed, total]
+	game_hud.set_build_progress(true, ratio, caption)
+	_sync_selection_info_panel_hp_only()
+
+
+func _sync_selection_info_panel_hp_only() -> void:
+	if unit_selector == null or game_hud == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "?"))
+	_apply_unit_info_to_hud(primary, tid)
+
+
+func _update_build_hud_if_relevant(key: String, ratio: float, elapsed: float, total: float) -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var rec: Dictionary = _active_construction.get(key, {})
+	var node: Node3D = rec.get("node") as Node3D
+	var bid := str(rec.get("building_id", ""))
+	var watching := false
+	if node != null and primary == node:
+		watching = true
+	elif primary.get_node_or_null("BuildController") != null:
+		var bc := primary.get_node_or_null("BuildController") as BuildController
+		if bc != null and _construction_key(bc.current_order()) == key:
+			watching = true
+	if not watching:
+		return
+	var caption := "建造 %s %d%%" % [bid, int(round(ratio * 100.0))]
+	if total > 0.0:
+		caption += " · %.0f/%.0fs" % [elapsed, total]
+	game_hud.set_build_progress(true, ratio, caption)
+	if primary == node:
+		_apply_unit_info_to_hud(primary, bid)
 
 
 ## F2-4：可建造列表（F2 锁死 3 建筑；未来按 race/tech 过滤）。
@@ -1641,7 +1900,7 @@ func _refresh_command_card() -> void:
 		"moving": moving,
 	}
 	if _card_is_peasant:
-		game_hud.set_command_card(
+		_apply_command_card(
 			CommandCard.peasant_with_build(
 				moving,
 				carrying,
@@ -1653,7 +1912,7 @@ func _refresh_command_card() -> void:
 			)
 		)
 	else:
-		game_hud.set_command_card(CommandCard.basic_locomotion(moving))
+		_apply_command_card(CommandCard.basic_locomotion(moving))
 
 
 func _refresh_move_executing_ui() -> void:
@@ -1687,7 +1946,7 @@ func _refresh_move_executing_ui() -> void:
 	_last_harvest_ui = snap
 	# 互斥格可能从采集切到交回，需整卡刷新
 	if is_peasant:
-		game_hud.set_command_card(
+		_apply_command_card(
 			CommandCard.peasant_with_build(
 				moving,
 				carrying,

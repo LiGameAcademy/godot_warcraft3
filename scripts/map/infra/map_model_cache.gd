@@ -12,6 +12,8 @@ var _anim_flags: Dictionary = {}
 var _parts_cache: Dictionary = {}
 ## owner_id → TeamColor Texture2D
 var _team_color_tex: Dictionary = {}
+## bake .scn 时写入的默认队伍色（0 = TeamColor00 红）；运行时仍按 owner 重染
+const DEFAULT_BAKE_TEAM_COLOR := 0
 ## path → PackedByteArray（空闲预读；点选可跳过磁盘 IO）
 var _bytes_cache: Dictionary = {}
 ## GLB 解析后待懒烘焙为 .scn 的队列
@@ -246,11 +248,11 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 			inst.free()
 	var proto := _ensure_scene(path, prefer_visuals)
 	if proto == null:
-		var abs := RuntimeAssets.project_abs(path)
-		var exists := not abs.is_empty() and FileAccess.file_exists(abs)
+		var disk_abs := RuntimeAssets.project_abs(path)
+		var exists := not disk_abs.is_empty() and FileAccess.file_exists(disk_abs)
 		push_warning(
 			"MapModelCache.instance_glb_preview failed: path=%s prefer_visuals=%s disk_abs=%s exists=%s"
-			% [path, prefer_visuals, abs, exists]
+			% [path, prefer_visuals, disk_abs, exists]
 		)
 		return null
 	var dup := proto.duplicate() as Node3D
@@ -316,14 +318,11 @@ func _ensure_packed(path: String) -> PackedScene:
 
 
 func _try_load_scn_packed(glb_path: String, prefer_visuals: bool = true) -> PackedScene:
-	# 优先可提交的 visuals 封装（继承 .scn + Pe2Root + ModelVisualSync）
+	# visuals/*.tscn 常 ExtResource pe2.tscn（贴图在 .gdignore），ResourceLoader 会刷屏失败。
+	# 优先：同目录 .scn + pe2.json 运行时组装（等价 visuals 配方，无 ExtResource）。
 	if prefer_visuals:
 		var vis_path := RuntimeAssets.resolve_visual_scene(glb_path)
 		if not vis_path.is_empty():
-			var vis_packed := RuntimeAssets.load_packed_scene(vis_path)
-			if vis_packed != null:
-				return vis_packed
-			# .gdignore 导致 ExtResource 基座失败时，按 visuals 配方运行时拼装
 			var composed := _compose_visual_packed(glb_path)
 			if composed != null:
 				return composed
@@ -530,6 +529,7 @@ func process_lazy_bake_one() -> bool:
 
 ## 将缓存中的原型打包为 .scn（优先写 asset-converted 同目录，失败则 user://）。
 ## force=true 时覆盖已有旁路 .scn（export --force / 补 geosetvis 轨后重烤）。
+## 打包前套默认队伍色（TeamColor00），便于编辑器直接打开 .scn 即见染色；游戏侧仍会按 owner 重染。
 func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 	if glb_path.is_empty():
 		return false
@@ -540,6 +540,7 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 		proto = _scene_cache[glb_path] as Node3D
 	if proto == null:
 		return false
+	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, true)
 	var res_p := RuntimeAssets.model_scene_path(glb_path)
 	var err := RuntimeAssets.save_packed_scene(proto, res_p)
 	if err != OK:
@@ -753,7 +754,22 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = t
 			continue
 		for si in range(mi.mesh.get_surface_count()):
 			var mat: Material = mi.get_active_material(si)
-			if mat == null or not (mat is StandardMaterial3D):
+			if mat == null:
+				continue
+			# 已 bake 过的队色垫底 ShaderMaterial：只换 team_color_tex，保留漫反射
+			if mat is ShaderMaterial:
+				var shm := mat as ShaderMaterial
+				if _is_team_color_underlay_shader(shm):
+					var sh_out := shm.duplicate() as ShaderMaterial
+					if tex != null:
+						sh_out.set_shader_parameter("team_color_tex", tex)
+						sh_out.set_shader_parameter("use_team_texture", true)
+					else:
+						sh_out.set_shader_parameter("use_team_texture", false)
+					sh_out.set_shader_parameter("team_color_fallback", fallback)
+					mi.set_surface_override_material(si, sh_out)
+				continue
+			if not (mat is StandardMaterial3D):
 				continue
 			var sm := mat as StandardMaterial3D
 			if not _is_team_color_material(sm):
@@ -808,6 +824,13 @@ func _make_team_color_underlay(
 		out.set_shader_parameter("use_team_texture", false)
 	out.set_shader_parameter("team_color_fallback", fallback)
 	return out
+
+
+func _is_team_color_underlay_shader(mat: ShaderMaterial) -> bool:
+	if mat == null or mat.shader == null:
+		return false
+	var p := str(mat.shader.resource_path).replace("\\", "/").to_lower()
+	return p.contains("wc3_team_color_underlay")
 
 
 func _is_exclusive_team_color_mesh(mi: MeshInstance3D) -> bool:

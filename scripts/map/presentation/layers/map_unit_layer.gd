@@ -128,12 +128,11 @@ func batch_done() -> int:
 	return _batch_done_count
 
 
-## 增量追加一条（笔刷放置）。
-func add_one(u: Dictionary, hf: Wc3Heightfield) -> bool:
+## 增量追加一条（笔刷放置）。返回根节点；失败 null。
+func add_one(u: Dictionary, hf: Wc3Heightfield) -> Node3D:
 	if u.is_empty() or _catalog == null:
-		return false
-	_place_one_internal(u, hf, true)
-	return true
+		return null
+	return _place_one_internal(u, hf, true)
 
 
 func remove_by_creation_number(creation_number: int) -> bool:
@@ -238,10 +237,10 @@ func _unit_glb_path(u: Dictionary) -> String:
 	return _catalog.converted_glb_path(str(u.get("typeId", "")), int(u.get("variation", 0)))
 
 
-func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: bool = true) -> void:
+func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: bool = true) -> Node3D:
 	var type_id := str(u.get("typeId", ""))
 	if not show_start_locations and type_id == "sloc":
-		return
+		return null
 	var variation := int(u.get("variation", 0))
 	var pos: Dictionary = u.get("position", {})
 	var owner_id := int(u.get("owner", 12))
@@ -288,6 +287,8 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 			if not glb.is_empty():
 				_Pe2.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
+	UnitLife.ensure(node)
+	return node
 
 
 ## 建筑：地面 UberSplat 贴花 + 按模型脚底环下沉，减轻「悬空」。

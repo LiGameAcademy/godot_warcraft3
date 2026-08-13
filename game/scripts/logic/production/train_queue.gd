@@ -46,7 +46,7 @@ func start(
 	gold: int,
 	lumber: int,
 	site_wc3: Vector2,
-	owner: int
+	player_owner: int
 ) -> bool:
 	if _state != STATE_IDLE:
 		return false
@@ -58,7 +58,7 @@ func start(
 	_gold_spent = gold
 	_lumber_spent = lumber
 	_site_wc3 = site_wc3
-	_owner = owner
+	_owner = player_owner
 	_state = STATE_TRAINING
 	set_process(true)
 	state_changed.emit(_state)

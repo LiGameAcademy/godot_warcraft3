@@ -19,18 +19,19 @@ var move_type: String = "foot"
 ## 直径占满几格 → 半宽向下取整为 clearance。
 ## 例：r=16→径32→1 格→c=0；r=48→径96→3 格→c=1。
 static func clearance_from_radius(
-	radius_wc3: float,
+	p_radius_wc3: float,
 	cell_size: float = Wc3Coords.PATHING_CELL
 ) -> int:
-	if radius_wc3 <= 0.0 or cell_size <= 0.0:
+	if p_radius_wc3 <= 0.0 or cell_size <= 0.0:
 		return 0
-	var diam_cells := int(ceil((radius_wc3 * 2.0) / cell_size))
+	var diam_cells := int(ceil((p_radius_wc3 * 2.0) / cell_size))
+	@warning_ignore("integer_division")
 	return maxi(0, (diam_cells - 1) / 2)
 
 
-static func make(radius_wc3: float, move_type: String = "foot") -> RefCounted:
+static func make(p_radius_wc3: float, p_move_type: String = "foot") -> RefCounted:
 	var p = new()
-	p.radius_wc3 = maxf(radius_wc3, 0.0)
+	p.radius_wc3 = maxf(p_radius_wc3, 0.0)
 	p.clearance_cells = clearance_from_radius(p.radius_wc3)
-	p.move_type = move_type
+	p.move_type = p_move_type
 	return p

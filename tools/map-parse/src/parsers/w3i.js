@@ -71,7 +71,11 @@ export function parseW3i(buffer, strings = {}) {
     },
     globalWeather: r.readFourCC(),
     customSoundEnvironment: r.readString(),
-    customLightTileset: String.fromCharCode(r.readUInt8()),
+    // 单字节 tileset；0 表示未设。勿写成 "\u0000"（Godot JSON.parse 会 Unicode NUL ERROR）
+    customLightTileset: (() => {
+      const b = r.readUInt8();
+      return b === 0 ? "" : String.fromCharCode(b);
+    })(),
     waterTint: [r.readUInt8(), r.readUInt8(), r.readUInt8(), r.readUInt8()],
     players: [],
     forces: [],

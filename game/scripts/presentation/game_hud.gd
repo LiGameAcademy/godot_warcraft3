@@ -1,7 +1,7 @@
 class_name GameHud
 extends CanvasLayer
 
-## 开发期逻辑 HUD：命令格支持图标 / tooltip / 执行中态；可日后换 WC3 Console 皮。
+## 现代底栏 HUD（AOE4 向）：左小地图 / 中信息 / 右命令格。暂不复刻 WC3 Console。
 
 signal command_pressed(slot: int)
 signal command_action(action_id: String)
@@ -16,8 +16,14 @@ signal minimap_clicked(uv: Vector2)
 @onready var _food_label: Label = %FoodValue
 @onready var _unit_name: Label = %UnitName
 @onready var _unit_hp: Label = %UnitHp
+@onready var _build_row: Control = %BuildProgressRow
+@onready var _build_bar: ProgressBar = %BuildProgressBar
+@onready var _build_label: Label = %BuildProgressLabel
 @onready var _minimap: Control = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
+@onready var _command_panel: Control = $Root/MarginContainer3/CommandPanel
+@onready var _command_title: Label = $Root/MarginContainer3/CommandPanel/Inner/CommandTitle
+@onready var _center_host: Control = $Root/MarginContainer2
 @onready var _status: Label = %StatusLabel
 @onready var _hint: Label = %HintLabel
 @onready var _bottom: Control = $Root/MarginContainer3
@@ -29,12 +35,15 @@ var _game_minimap: Control = null
 
 
 func _ready() -> void:
+	_style_command_panel()
+	_style_center_panel()
 	_wire_command_buttons()
 	_wire_minimap_input()
 	if _hint:
 		_hint.visible = show_dev_hint
 	set_resources(0, 0, 0, 0)
 	set_unit_info("—", 0, 0)
+	clear_build_progress()
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
 	if not map_dir.is_empty():
@@ -116,6 +125,54 @@ func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
 			_unit_hp.text = ""
 
 
+## 建造进度（中栏）；ratio 0..1。visible=false 时隐藏整行。
+func set_build_progress(visible_on: bool, ratio: float = 0.0, caption: String = "") -> void:
+	if _build_row:
+		_build_row.visible = visible_on
+	if not visible_on:
+		return
+	var r := clampf(ratio, 0.0, 1.0)
+	if _build_bar:
+		_build_bar.value = r * 100.0
+	if _build_label:
+		if caption.is_empty():
+			_build_label.text = "建造 %d%%" % int(round(r * 100.0))
+		else:
+			_build_label.text = caption
+
+
+func clear_build_progress() -> void:
+	set_build_progress(false)
+
+
+func _style_center_panel() -> void:
+	if _center_host == null:
+		return
+	var panel := _center_host.get_node_or_null("InfoFrame") as PanelContainer
+	if panel == null:
+		return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.08, 0.11, 0.9)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(0.45, 0.5, 0.55, 0.7)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	panel.add_theme_stylebox_override("panel", sb)
+	if _unit_name:
+		_unit_name.add_theme_font_size_override("font_size", 16)
+		_unit_name.add_theme_color_override("font_color", Color(0.95, 0.95, 0.92))
+	if _unit_hp:
+		_unit_hp.add_theme_color_override("font_color", Color(0.55, 0.9, 0.55))
+	if _build_bar:
+		_build_bar.min_value = 0.0
+		_build_bar.max_value = 100.0
+		_build_bar.show_percentage = false
+		_build_bar.custom_minimum_size = Vector2(0, 14)
+
+
 ## 兼容旧调用：仅文字标签。
 func set_command_labels(labels: PackedStringArray) -> void:
 	var card: Array[Dictionary] = []
@@ -167,7 +224,11 @@ func set_command_executing(action_id: String, executing: bool) -> void:
 		_set_button_executing(btn, executing)
 		if action_id == "move":
 			btn.tooltip_text = _plain_tooltip(_move_tooltip(executing))
-			btn.text = "执行中" if executing else ""
+			# 有图标时不盖「执行中」字，只靠 modulate 高亮
+			if btn.icon == null:
+				btn.text = "执行中" if executing else ""
+			else:
+				btn.text = ""
 		break
 
 
@@ -195,24 +256,29 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		btn.icon = null
 		btn.disabled = true
 		btn.tooltip_text = ""
-		btn.modulate = Color.WHITE
+		btn.modulate = Color(1, 1, 1, 0.55)
 		btn.focus_mode = Control.FOCUS_NONE
 		return
 	btn.disabled = not enabled
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _plain_tooltip(str(entry.get("tooltip", "")))
 	var executing := bool(entry.get("executing", false))
+	# 有图标时尽量不盖字；执行中只靠高亮 + tooltip。
 	var text := str(entry.get("text", ""))
-	if executing and text.is_empty():
-		text = "执行中"
-	btn.text = text
 	var icon_rel := str(entry.get("icon", ""))
 	if not enabled:
 		var dis := str(entry.get("icon_disabled", ""))
 		if not dis.is_empty():
 			icon_rel = dis
-	btn.icon = _load_icon(icon_rel)
+	var icon := _load_icon(icon_rel)
+	btn.icon = icon
 	btn.expand_icon = true
+	if icon != null and (text.is_empty() or text == "执行中"):
+		btn.text = ""
+	else:
+		if executing and text.is_empty():
+			text = "执行中"
+		btn.text = text
 	_set_button_executing(btn, executing)
 
 
@@ -237,17 +303,76 @@ func _plain_tooltip(raw: String) -> String:
 
 
 func _load_icon(rel_or_res: String) -> Texture2D:
+	# asset-converted 有 .gdignore，不能 ResourceLoader.load；走磁盘 Image → Texture2D。
 	if rel_or_res.is_empty():
 		return null
 	var path := RuntimeAssets.converted_path(rel_or_res)
 	if _icon_cache.has(path):
 		return _icon_cache[path] as Texture2D
-	if not RuntimeAssets.file_exists(path):
-		return null
-	var tex := load(path) as Texture2D
+	var tex := RuntimeAssets.load_texture(path)
 	if tex != null:
 		_icon_cache[path] = tex
 	return tex
+
+
+## 临时美化：深色面板 + 金边命令格（日后可换 WC3 Console 皮）。
+func _style_command_panel() -> void:
+	if _command_panel:
+		var panel_sb := StyleBoxFlat.new()
+		panel_sb.bg_color = Color(0.06, 0.07, 0.1, 0.94)
+		panel_sb.set_border_width_all(2)
+		panel_sb.border_color = Color(0.62, 0.48, 0.2, 0.95)
+		panel_sb.set_corner_radius_all(6)
+		panel_sb.content_margin_left = 10
+		panel_sb.content_margin_right = 10
+		panel_sb.content_margin_top = 8
+		panel_sb.content_margin_bottom = 10
+		panel_sb.shadow_color = Color(0, 0, 0, 0.45)
+		panel_sb.shadow_size = 6
+		_command_panel.add_theme_stylebox_override("panel", panel_sb)
+	if _command_title:
+		_command_title.add_theme_color_override("font_color", Color(0.92, 0.82, 0.45))
+		_command_title.add_theme_font_size_override("font_size", 14)
+		_command_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if _command_grid == null:
+		return
+	_command_grid.add_theme_constant_override("h_separation", 6)
+	_command_grid.add_theme_constant_override("v_separation", 6)
+	var normal := _make_cmd_stylebox(Color(0.14, 0.15, 0.2, 1.0), Color(0.55, 0.44, 0.2))
+	var hover := _make_cmd_stylebox(Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28))
+	var pressed := _make_cmd_stylebox(Color(0.28, 0.24, 0.12, 1.0), Color(1.0, 0.85, 0.35))
+	var disabled := _make_cmd_stylebox(Color(0.1, 0.1, 0.12, 0.85), Color(0.28, 0.28, 0.3))
+	for i in range(_command_grid.get_child_count()):
+		var btn := _command_grid.get_child(i) as Button
+		if btn == null:
+			continue
+		btn.custom_minimum_size = Vector2(52, 52)
+		btn.add_theme_stylebox_override("normal", normal)
+		btn.add_theme_stylebox_override("hover", hover)
+		btn.add_theme_stylebox_override("pressed", pressed)
+		btn.add_theme_stylebox_override("disabled", disabled)
+		btn.add_theme_stylebox_override("focus", hover)
+		btn.add_theme_color_override("font_color", Color(0.95, 0.9, 0.55))
+		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.95, 0.65))
+		btn.add_theme_color_override("font_disabled_color", Color(0.45, 0.45, 0.48))
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		btn.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+		btn.expand_icon = true
+		btn.clip_text = true
+
+
+func _make_cmd_stylebox(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_border_width_all(2)
+	sb.border_color = border
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 4
+	sb.content_margin_right = 4
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	return sb
 
 
 func _wire_command_buttons() -> void:

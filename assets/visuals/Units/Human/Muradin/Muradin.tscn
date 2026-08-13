@@ -2,9 +2,6 @@
 
 [ext_resource type="PackedScene" path="res://assets/asset-converted/Units/Human/Muradin/Muradin.scn" id="1_base"]
 [ext_resource type="Script" path="res://scripts/map/presentation/model_visual_sync.gd" id="2_sync"]
-[ext_resource type="PackedScene" path="res://assets/pe2-prefabs/Units/Human/Muradin/Muradin.pe2.tscn" id="3_pe2"]
 
 [node name="Units_Human_Muradin_Muradin_mdx" instance=ExtResource("1_base")]
 script = ExtResource("2_sync")
-
-[node name="Pe2Root" parent="Muradin" instance=ExtResource("3_pe2")]

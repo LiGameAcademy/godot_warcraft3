@@ -408,6 +408,7 @@ func _astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 		if cur_i == goal_i:
 			return _reconstruct(came, cur_i, w)
 		var cx: int = cur_i % w
+		@warning_ignore("integer_division")
 		var cy: int = cur_i / w
 		for n in _neighbors(cx, cy):
 			var ni := _idx(n, w)
@@ -460,6 +461,7 @@ func _reconstruct(came: PackedInt32Array, goal_i: int, w: int) -> Array[Vector2i
 	var cur := goal_i
 	var guard := 0
 	while cur >= 0 and guard < came.size():
+		@warning_ignore("integer_division")
 		rev.append(Vector2i(cur % w, cur / w))
 		cur = came[cur]
 		guard += 1

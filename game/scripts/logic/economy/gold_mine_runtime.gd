@@ -90,7 +90,7 @@ func entrance_slot_wc3(lane_index: int, lane_count: int = DEFAULT_LANE_COUNT) ->
 static func corridor_portals_wc3(
 	mine: Node3D,
 	hall: Node3D,
-	mine_radius_wc3: float = 100.0,
+	p_mine_radius_wc3: float = 100.0,
 	hall_radius_wc3: float = 176.0,
 	mine_margin_wc3: float = MINE_EXIT_MARGIN_WC3,
 	hall_margin_wc3: float = ENTRANCE_OFFSET_WC3
@@ -103,7 +103,7 @@ static func corridor_portals_wc3(
 	if to_hall.length_squared() < 1.0:
 		to_hall = Vector2(0.0, -1.0)
 	var dir := to_hall.normalized()
-	var mine_r := maxf(mine_radius_wc3, 32.0) + mine_margin_wc3
+	var mine_r := maxf(p_mine_radius_wc3, 32.0) + mine_margin_wc3
 	var hall_r := maxf(hall_radius_wc3, 32.0) + hall_margin_wc3
 	# 矿上离主城最近的点；主城上离矿最近的点
 	return {

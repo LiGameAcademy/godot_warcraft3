@@ -33,6 +33,7 @@ static func _wedge_slots(count: int, spacing: float) -> PackedVector2Array:
 	#   i=3: left back row 2
 	#   i=4: right back row 2
 	for i in range(1, count):
+		@warning_ignore("integer_division")
 		var row: int = (i + 1) / 2  # 1, 1, 2, 2, 3, 3, ...
 		var is_left: bool = (i % 2 == 1)
 		var lateral: float = -1.0 if is_left else 1.0
@@ -53,11 +54,12 @@ static func _rect_slots(count: int, spacing: float) -> PackedVector2Array:
 	# 默认列数 3；行数 = ceil((count-1) / cols)
 	var cols: int = 3
 	var followers: int = count - 1
-	var rows: int = int(ceil(float(followers) / float(cols)))
+	var _rows: int = int(ceil(float(followers) / float(cols)))
 	# leader 在 (0, 0)，后方（-Y）排列 follower
 	# 行间距 = spacing；列间距 = spacing
 	# 居中：列偏移 = -(cols-1) * spacing / 2
 	for i in range(followers):
+		@warning_ignore("integer_division")
 		var row: int = i / cols
 		var col: int = i % cols
 		var x: float = (float(col) - float(cols - 1) * 0.5) * spacing

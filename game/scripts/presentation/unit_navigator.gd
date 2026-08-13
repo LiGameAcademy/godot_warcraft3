@@ -27,6 +27,14 @@ const PathArcScr = preload("res://game/scripts/logic/pathing/path_arc.gd")
 @export var face_move_dir: bool = true
 ## WC3 UnitData.turnRate：圈/秒。0.6 ≈ 农民；角速度 = turn_rate * TAU。
 @export var turn_rate: float = 0.5
+## 转向夹角越大走得越慢，避免蟹行满速横挪。
+@export var enable_turn_speed_scale: bool = true
+## 夹角 ≤ 此角度（度）仍全速。
+@export var turn_speed_full_deg: float = 25.0
+## 夹角 ≥ 此角度（度）用到 turn_speed_min。
+@export var turn_speed_min_deg: float = 140.0
+## 大转弯时的速度倍率（0=原地转向，约 0.1~0.2 较自然）。
+@export_range(0.0, 1.0, 0.01) var turn_speed_min: float = 0.12
 ## UnitBalance.collision（WC3）；用于 soft 分离。农民约 16。
 @export var collision_radius_wc3: float = 16.0
 ## A* 净空格数（由 collision 推导）；0 = 单格通道即可。
@@ -312,13 +320,13 @@ func _process(delta: float) -> void:
 		_wp_i += 1
 		_stall_time = 0.0
 		return
-	var step := speed_wc3 * delta
+	var speed := speed_wc3
 	# F3-3: 上下坡速度衰减（WC3 真实斜坡观感）
 	if enable_slope_speed and _prev_wc3 != Vector2.INF:
-		var adjusted: float = SlopeSpeedScr.apply(
-			cur_wc3, _prev_wc3, speed_wc3, slope_max_deg
-		)
-		step = adjusted * delta
+		speed = SlopeSpeedScr.apply(cur_wc3, _prev_wc3, speed_wc3, slope_max_deg)
+	# 朝向与前进方向夹角越大越慢（先转向再迈步，减轻蟹行）
+	speed *= _turn_speed_mul(body, to)
+	var step := speed * delta
 	var desired: Vector2
 	if step >= dist:
 		desired = target_wc3
@@ -327,16 +335,22 @@ func _process(delta: float) -> void:
 	# F-PATH-7: 外部 override 替换默认 waypoint 跟随（F4 战斗 pursue/evade 用）
 	if enable_steering_override and _steering_override.is_valid():
 		var override_vel: Vector2 = _steering_override.call(cur_wc3, delta)
+		# override 也吃转向降速，避免追击时满速侧移
+		override_vel *= _turn_speed_mul(body, override_vel)
 		desired = cur_wc3 + override_vel * delta
 	var next := _with_separation(body, cur_wc3, desired, delta, is_last, dist)
 	var moved := next.distance_to(cur_wc3)
 	_apply_wc3_pos(body, next)
 	_refresh_reservation(body)
 	_prev_wc3 = next  # F3-3: 记下上一帧位置
-	# 面向合成速度方向（含轻微侧移），比纯路点更稳
-	var move_dir := next - cur_wc3
-	if face_move_dir and move_dir.length_squared() > 0.01:
-		_face_dir(body, move_dir, delta)
+	# 面向期望前进方向（路点/override），大转弯时会先转身再加速
+	var face_dir := to
+	if enable_steering_override and _steering_override.is_valid():
+		var face_move := next - cur_wc3
+		if face_move.length_squared() > 0.01:
+			face_dir = face_move
+	if face_move_dir and face_dir.length_squared() > 0.01:
+		_face_dir(body, face_dir, delta)
 	# 贴不可走边缘：离墙推与目标对冲 → 位移≈0 却永远到不了 → 停 Walk
 	if moved < 0.75:
 		_stall_time += delta
@@ -406,6 +420,27 @@ func _face_dir(body: Node3D, dir_wc3: Vector2, delta: float) -> void:
 	var target_yaw := atan2(dir_wc3.y, dir_wc3.x)
 	var rate := maxf(turn_rate, 0.05) * TAU
 	body.rotation.y = rotate_toward(body.rotation.y, target_yaw, rate * delta)
+
+
+## 当前朝向与期望前进方向夹角 → 速度倍率（1=全速，大转弯→turn_speed_min）。
+func _turn_speed_mul(body: Node3D, dir_wc3: Vector2) -> float:
+	if not enable_turn_speed_scale or body == null:
+		return 1.0
+	if dir_wc3.length_squared() < 0.0001:
+		return 1.0
+	var move_yaw := atan2(dir_wc3.y, dir_wc3.x)
+	var ang := absf(angle_difference(body.rotation.y, move_yaw))
+	var a0 := deg_to_rad(turn_speed_full_deg)
+	var a1 := deg_to_rad(maxf(turn_speed_min_deg, turn_speed_full_deg + 1.0))
+	if ang <= a0:
+		return 1.0
+	var min_mul := clampf(turn_speed_min, 0.0, 1.0)
+	if ang >= a1:
+		return min_mul
+	var t := (ang - a0) / (a1 - a0)
+	# smoothstep：中间段更顺，少「突然刹住」感
+	t = t * t * (3.0 - 2.0 * t)
+	return lerpf(1.0, min_mul, t)
 
 
 func _apply_wc3_pos(body: Node3D, wc3_xy: Vector2) -> void:
