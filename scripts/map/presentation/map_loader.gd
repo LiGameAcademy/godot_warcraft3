@@ -590,6 +590,9 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 func _load_all() -> void:
 	_map_ready = false
 	_load_progress = 0.0
+	var t_all := Time.get_ticks_msec()
+	var timing: Dictionary = {}
+
 	var t0 := Time.get_ticks_msec()
 	_set_status("读取地图数据…", 0.02)
 	var hf: Dictionary = _external_hf
@@ -605,44 +608,85 @@ func _load_all() -> void:
 		info = _read_json(map_dir.path_join("info.json"))
 	var ctx = MapBuildContext.create(map_dir, hf, info, _tiles, _catalog, _cache, _cliff_catalog)
 	_apply_ramp_cliff_filter(ctx)
+	timing["read"] = Time.get_ticks_msec() - t0
 
+	t0 = Time.get_ticks_msec()
 	_set_status("生成贴图地形高度图（悬崖留缝）…", 0.12)
+	await get_tree().process_frame
 	_terrain.build(ctx)
 	_build_boundary(ctx)
 	if build_terrain_collision:
 		_ensure_terrain_collision()
 	await get_tree().process_frame
+	timing["terrain"] = Time.get_ticks_msec() - t0
 
 	if build_cliffs:
+		t0 = Time.get_ticks_msec()
 		_set_status("放置悬崖模型…", 0.28)
+		await get_tree().process_frame
 		_cliffs.build(ctx)
 		await get_tree().process_frame
+		timing["cliffs"] = Time.get_ticks_msec() - t0
+	else:
+		timing["cliffs"] = 0
+
+	t0 = Time.get_ticks_msec()
 	_set_status("放置斜坡模型…", 0.38)
+	await get_tree().process_frame
 	_build_ramps(ctx)
 	await get_tree().process_frame
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
+	timing["ramps"] = Time.get_ticks_msec() - t0
+
 	if build_water:
+		t0 = Time.get_ticks_msec()
 		_set_status("生成水体…", 0.48)
+		await get_tree().process_frame
 		_water.foam_cliff_out_extra = foam_cliff_out_extra
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		await _water.build(ctx)
 		await get_tree().process_frame
+		timing["water"] = Time.get_ticks_msec() - t0
+	else:
+		timing["water"] = 0
+
 	# Doodad/Unit：SoA 加载后再 to_dict 填 ctx（Layer 仍吃 AoS）
 	if place_units:
+		t0 = Time.get_ticks_msec()
 		_set_status("放置单位模型…", 0.58)
+		await get_tree().process_frame
 		var unit_path: String = map_dir.path_join("units.json")
 		if FileAccess.file_exists(unit_path):
 			var unit_list: Wc3UnitList = Wc3UnitList.load_json_path(unit_path)
 			ctx.units = unit_list.to_dict() if unit_list != null else {}
-		_pathing_unit_entries = ctx.units.get("units", []) as Array if typeof(ctx.units) == TYPE_DICTIONARY else []
-		_units.build(ctx)
+		var unit_entries: Array = (
+			ctx.units.get("units", []) as Array if typeof(ctx.units) == TYPE_DICTIONARY else []
+		)
+		_pathing_unit_entries = unit_entries
+		# 分帧 + 后台预载：避免缺 .scn 时同步 GLTF 卡死主线程 ~100s+
+		_units.gltf_parse_per_frame = 2
+		_units.batch_budget_ms = 10
+		_units.rebuild_from_list_batched(ctx.heightfield as Wc3Heightfield, unit_entries)
+		while _units.is_batch_loading():
+			var done_u := _units.batch_done()
+			var tot_u := _units.batch_total()
+			if tot_u > 0:
+				var p := 0.58 + 0.12 * (float(done_u) / float(tot_u))
+				_set_status("放置单位模型… %d/%d" % [done_u, tot_u], p)
+			await get_tree().process_frame
 		await get_tree().process_frame
+		timing["units"] = Time.get_ticks_msec() - t0
+		MapLog.info(MapLog.Layer.LOAD, "Units", "batched done in %dms" % int(timing["units"]))
 	else:
 		_pathing_unit_entries = []
+		timing["units"] = 0
+
 	if place_doodads:
+		t0 = Time.get_ticks_msec()
 		_set_status("放置装饰物…", 0.72)
+		await get_tree().process_frame
 		var dood_path: String = map_dir.path_join("doodads.json")
 		if FileAccess.file_exists(dood_path):
 			var dood_list: Wc3DoodadList = Wc3DoodadList.load_json_path(dood_path)
@@ -652,19 +696,26 @@ func _load_all() -> void:
 		)
 		_doodads.build(ctx)
 		await get_tree().process_frame
+		timing["doodads"] = Time.get_ticks_msec() - t0
 	else:
 		_pathing_doodad_entries = []
+		timing["doodads"] = 0
+
+	t0 = Time.get_ticks_msec()
 	if show_pathing_debug_grid and _debug_grid:
 		_set_status("开启调试栅格（GPU）…", 0.88)
+		await get_tree().process_frame
 		_debug_grid.build(ctx)
 		await get_tree().process_frame
 	_set_status("构建寻路数据…", 0.92)
+	await get_tree().process_frame
 	_ensure_pathing_map(ctx.heightfield as Wc3Heightfield)
 	_apply_dynamic_pathing()
 	if show_pathing_ground:
 		_rebuild_pathing_overlay()
+	timing["pathing"] = Time.get_ticks_msec() - t0
 
-	var ms := Time.get_ticks_msec() - t0
+	var ms := Time.get_ticks_msec() - t_all
 	var cliff_n := _cliffs.last_placed if build_cliffs else 0
 	var ramp_n := _ramps.last_placement_count if _ramps else 0
 	var water_n := _water.last_cell_count if build_water else 0
@@ -678,6 +729,36 @@ func _load_all() -> void:
 	print(
 		"Terrain load in %d ms from %s (gaps=%d cliffs=%d ramps=%d water=%d shore=%d doodads=%d)"
 		% [ms, map_dir, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
+	)
+	print(
+		"Load timing: read=%dms terrain=%dms cliffs=%dms ramps=%dms water=%dms units=%dms doodads=%dms pathing=%dms total=%dms"
+		% [
+			int(timing.get("read", 0)),
+			int(timing.get("terrain", 0)),
+			int(timing.get("cliffs", 0)),
+			int(timing.get("ramps", 0)),
+			int(timing.get("water", 0)),
+			int(timing.get("units", 0)),
+			int(timing.get("doodads", 0)),
+			int(timing.get("pathing", 0)),
+			ms,
+		]
+	)
+	MapLog.info(
+		MapLog.Layer.LOAD,
+		"MapLoader",
+		"read=%d terrain=%d cliffs=%d ramps=%d water=%d units=%d doodads=%d pathing=%d total=%d"
+		% [
+			int(timing.get("read", 0)),
+			int(timing.get("terrain", 0)),
+			int(timing.get("cliffs", 0)),
+			int(timing.get("ramps", 0)),
+			int(timing.get("water", 0)),
+			int(timing.get("units", 0)),
+			int(timing.get("doodads", 0)),
+			int(timing.get("pathing", 0)),
+			ms,
+		]
 	)
 	_map_ready = true
 	map_loaded.emit()

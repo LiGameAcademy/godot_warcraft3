@@ -1,0 +1,14 @@
+{
+	"min_level": "DEBUG",
+	"layers": {
+		"DATA": true,
+		"CATALOG": true,
+		"LOGIC": true,
+		"PRESENT": true,
+		"EDITOR": true,
+		"LOAD": true,
+		"GAME": true,
+		"GM": true
+	},
+	"comment": "分类日志开关。min_level: DEBUG|INFO|WARN|ERROR。改后进局或 MapLog.reload_config() 生效。也可放 user://debug_log.json 覆盖。"
+}

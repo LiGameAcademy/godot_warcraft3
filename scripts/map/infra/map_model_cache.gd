@@ -20,9 +20,21 @@ var _bytes_cache: Dictionary = {}
 var _lazy_bake_queue: PackedStringArray = PackedStringArray()
 ## 后台预载：path → { kind, scn_path|holder|task_id }
 var _preload: Dictionary = {}
+## 开图统计：.scn 命中 / 同步 GLTF 解析 / 内存缓存命中
+var last_scn_hits: int = 0
+var last_gltf_loads: int = 0
+var last_cache_hits: int = 0
+
+
+func reset_load_stats() -> void:
+	last_scn_hits = 0
+	last_gltf_loads = 0
+	last_cache_hits = 0
 
 
 func instance_glb(path: String) -> Node3D:
+	if has_cached(path):
+		last_cache_hits += 1
 	var packed: PackedScene = _ensure_packed(path)
 	if packed != null:
 		var inst := packed.instantiate()
@@ -74,10 +86,17 @@ func evict(path: String) -> void:
 
 
 ## 外部加载的 PackedScene（如 ResourceLoader 线程结果）写入缓存。
+## 走一遍材质/geosetvis 修正，避免裸 .scn 实例化后贴图/可见轨异常。
 func register_external_packed(glb_path: String, packed: PackedScene) -> void:
 	if glb_path.is_empty() or packed == null:
 		return
-	_packed_cache[glb_path] = packed
+	var inst := packed.instantiate()
+	if inst is Node3D:
+		_register_loaded_scene(glb_path, inst as Node3D, false)
+	else:
+		if inst != null:
+			inst.free()
+		_packed_cache[glb_path] = packed
 	_preload.erase(glb_path)
 
 
@@ -98,6 +117,10 @@ func request_preload(glb_path: String) -> void:
 		if err == OK or err == ERR_BUSY:
 			_preload[path] = {"kind": "scn", "scn_path": scn_path}
 			return
+	# JSON .gltf 必须主线程 append_from_file（外链贴图）；勿读字节走 GLB 校验
+	if path.to_lower().ends_with(".gltf"):
+		_preload[path] = {"kind": "gltf_pending"}
+		return
 	_start_bytes_preload(path)
 
 
@@ -199,14 +222,18 @@ func _poll_bytes_preload(path: String, info: Dictionary) -> void:
 
 
 func _finish_gltf_preload(path: String) -> bool:
-	var bytes: PackedByteArray = PackedByteArray()
-	if _bytes_cache.has(path):
-		bytes = _bytes_cache[path] as PackedByteArray
 	_preload.erase(path)
-	if bytes.is_empty():
-		return false
-	# GLTFDocument 必须在主线程
-	var proto := _ensure_scene_from_bytes(path, bytes)
+	var proto: Node3D = null
+	# .gltf：必须走文件加载；bytes 路径会因非 GLB 魔数误入黑名单，永久粉胶囊
+	if path.to_lower().ends_with(".gltf"):
+		proto = _ensure_scene(path)
+	else:
+		var bytes: PackedByteArray = PackedByteArray()
+		if _bytes_cache.has(path):
+			bytes = _bytes_cache[path] as PackedByteArray
+		if bytes.is_empty():
+			return false
+		proto = _ensure_scene_from_bytes(path, bytes)
 	if proto == null:
 		return false
 	# 确保有 PackedScene 供后续 instance
@@ -398,6 +425,10 @@ func _ensure_scene_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 			return _register_loaded_scene(path, inst as Node3D, false)
 		if inst != null:
 			inst.free()
+	# JSON .gltf 禁止 append_from_buffer（外链 URI + 会误入 fail 黑名单）
+	if path.to_lower().ends_with(".gltf"):
+		var from_file := RuntimeAssets.load_gltf_scene(path)
+		return _register_loaded_scene(path, from_file, true)
 	var loaded := RuntimeAssets.load_gltf_scene_from_bytes(bytes, path)
 	return _register_loaded_scene(path, loaded, true)
 
@@ -406,6 +437,10 @@ func _ensure_scene_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true) -> Node3D:
 	if loaded == null:
 		return null
+	if from_gltf:
+		last_gltf_loads += 1
+	else:
+		last_scn_hits += 1
 	_fix_wc3_blend_materials(loaded)
 	# 原型上清掉 autoplay，避免实例化瞬间播 Attack
 	var ap := _find_animation_player(loaded)
@@ -542,13 +577,17 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 		return false
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, true)
 	var res_p := RuntimeAssets.model_scene_path(glb_path)
+	var user_p := RuntimeAssets.model_scene_user_path(glb_path)
+	var saved_path := ""
 	var err := RuntimeAssets.save_packed_scene(proto, res_p)
-	if err != OK:
-		err = RuntimeAssets.save_packed_scene(proto, RuntimeAssets.model_scene_user_path(glb_path))
 	if err == OK:
-		var packed := RuntimeAssets.load_packed_scene(
-			res_p if RuntimeAssets.file_exists(res_p) else RuntimeAssets.model_scene_user_path(glb_path)
-		)
+		saved_path = res_p
+	else:
+		err = RuntimeAssets.save_packed_scene(proto, user_p)
+		if err == OK:
+			saved_path = user_p
+	if err == OK and not saved_path.is_empty():
+		var packed := RuntimeAssets.load_packed_scene(saved_path)
 		if packed != null:
 			_packed_cache[glb_path] = packed
 		return true

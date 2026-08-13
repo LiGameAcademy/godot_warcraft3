@@ -12,7 +12,7 @@ signal batch_finished(placed: int, placeholders: int)
 @export var batch_budget_ms: int = 8
 @export var batch_max_per_frame: int = 24
 ## 每帧最多在主线程解析几个尚无 .scn 的 GLB（GLTFDocument 非线程安全）。
-@export var gltf_parse_per_frame: int = 1
+@export var gltf_parse_per_frame: int = 4
 ## false：不放置 sloc（游戏内隐藏开始点；编辑器保持 true）
 @export var show_start_locations: bool = true
 ## false：不显示死亡掉落提示环（游戏内隐藏；编辑器对齐 WE 可开）
@@ -51,12 +51,64 @@ func build(ctx: MapBuildContext) -> void:
 	last_placeholder = 0
 	if ctx == null:
 		return
+	if _cache != null and _cache.has_method("reset_load_stats"):
+		_cache.reset_load_stats()
+	var t0 := Time.get_ticks_msec()
 	var units: Array = ctx.units.get("units", [])
+	var unique := 0
+	var seen: Dictionary = {}
+	var scn_ready := 0
+	var missing_scn: PackedStringArray = PackedStringArray()
+	for u in units:
+		if typeof(u) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = u as Dictionary
+		var tid := str(entry.get("typeId", ""))
+		var variation := int(entry.get("variation", 0))
+		var glb := _unit_glb_path(entry)
+		if glb.is_empty() or seen.has(glb):
+			continue
+		seen[glb] = true
+		unique += 1
+		if RuntimeAssets.resolve_model_scene(glb) != "":
+			scn_ready += 1
+		else:
+			missing_scn.append("%s v%d → %s" % [tid, variation, glb.get_file()])
 	for u in units:
 		if typeof(u) != TYPE_DICTIONARY:
 			continue
 		_place_one_internal(u as Dictionary, ctx.heightfield, true)
-	print("Units: glb=%d placeholder=%d" % [last_placed, last_placeholder])
+	var ms := Time.get_ticks_msec() - t0
+	var scn_h := int(_cache.last_scn_hits) if _cache != null else 0
+	var gltf_n := int(_cache.last_gltf_loads) if _cache != null else 0
+	var cache_h := int(_cache.last_cache_hits) if _cache != null else 0
+	print(
+		"Units: glb=%d placeholder=%d unique=%d scnDisk=%d/%d loadMs=%d cacheHit=%d scnLoad=%d gltfParse=%d"
+		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
+	)
+	MapLog.info(
+		MapLog.Layer.LOAD,
+		"Units",
+		"placed=%d ph=%d unique=%d scnDisk=%d/%d ms=%d cache=%d scn=%d gltf=%d"
+		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
+	)
+	if not missing_scn.is_empty():
+		MapLog.warn(
+			MapLog.Layer.LOAD,
+			"Units",
+			"缺旁路 .scn（%d/%d，同步将 GLTF 解析）: %s"
+			% [missing_scn.size(), unique, ", ".join(missing_scn)]
+		)
+		# 方便复制进 bake --include
+		var stems: PackedStringArray = PackedStringArray()
+		for line in missing_scn:
+			var arrow := line.find("→")
+			if arrow >= 0:
+				stems.append(line.substr(arrow + 1).strip_edges())
+			else:
+				stems.append(line)
+		print("Units missing .scn files: %s" % ", ".join(stems))
+		print("Hint: npm run bake:scn -- --force --include <path-fragment>")
 
 
 ## 用 Document 的 AoS 条目全量重建（同步，仅小列表或测试用）。
@@ -74,8 +126,13 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 	last_placed = 0
 	last_placeholder = 0
 	_batch_pending.clear()
+	# 上一局若把 .gltf 误当 GLB 解析，会进 fail 黑名单；开图清掉
+	RuntimeAssets.clear_gltf_fail_cache()
 	var unique_paths := PackedStringArray()
 	var seen: Dictionary = {}
+	var missing_scn: PackedStringArray = PackedStringArray()
+	if _cache != null and _cache.has_method("reset_load_stats"):
+		_cache.reset_load_stats()
 	for u in units:
 		if typeof(u) != TYPE_DICTIONARY:
 			continue
@@ -83,13 +140,23 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 		_batch_pending.append(entry)
 		if not try_load_glb or _catalog == null:
 			continue
-		var glb := _catalog.converted_glb_path(
-			str(entry.get("typeId", "")), int(entry.get("variation", 0))
-		)
+		var tid := str(entry.get("typeId", ""))
+		var variation := int(entry.get("variation", 0))
+		var glb := _catalog.converted_glb_path(tid, variation)
 		if glb.is_empty() or seen.has(glb):
 			continue
 		seen[glb] = true
 		unique_paths.append(glb)
+		if RuntimeAssets.resolve_model_scene(glb) == "":
+			missing_scn.append("%s v%d → %s" % [tid, variation, glb.get_file()])
+	if not missing_scn.is_empty():
+		MapLog.warn(
+			MapLog.Layer.LOAD,
+			"Units",
+			"缺可用旁路 .scn（%d/%d，将分帧 GLTF；含外链贴图的坏scn已跳过）：%s"
+			% [missing_scn.size(), unique_paths.size(), ", ".join(missing_scn)]
+		)
+		print("Units missing .scn files: %s" % ", ".join(missing_scn))
 	_batch_hf = hf
 	_batch_done_count = 0
 	_batch_total = _batch_pending.size()
@@ -196,8 +263,13 @@ func _process(_delta: float) -> void:
 			i += 1
 			continue
 		_batch_pending.remove_at(i)
-		# allow_sync=false：未缓存则占位，绝不在开图路径同步解析 GLB
-		_place_one_internal(u, _batch_hf, false)
+		# 已缓存：只实例化；未缓存且预载已结束：允许同步解析一次，避免永久粉胶囊
+		var allow_sync := (
+			_cache == null
+			or glb_path.is_empty()
+			or not _cache.has_cached(glb_path)
+		)
+		_place_one_internal(u, _batch_hf, allow_sync)
 		_batch_done_count += 1
 		placed_this_frame += 1
 		var elapsed: int = Time.get_ticks_msec() - t0
@@ -216,18 +288,32 @@ func _process(_delta: float) -> void:
 		_batch_hf = null
 		set_process(false)
 		print("Units threaded: glb=%d placeholder=%d" % [last_placed, last_placeholder])
+		if _cache != null:
+			MapLog.info(
+				MapLog.Layer.LOAD,
+				"Units",
+				"threaded placed=%d ph=%d cache=%d scn=%d gltf=%d"
+				% [
+					last_placed,
+					last_placeholder,
+					int(_cache.last_cache_hits),
+					int(_cache.last_scn_hits),
+					int(_cache.last_gltf_loads),
+				]
+			)
 		batch_finished.emit(last_placed, last_placeholder)
 		return
-	# 全部卡在 pending 且预载已结束 → 强制占位收尾，避免死等
+	# 全部卡在 pending 且预载已结束 → 同步解析收尾（禁止再冻成占位粉胶囊）
 	if preload_left == 0 and placed_this_frame == 0:
 		while not _batch_pending.is_empty():
 			var left: Dictionary = _batch_pending.pop_front()
-			_place_one_internal(left, _batch_hf, false)
+			_place_one_internal(left, _batch_hf, true)
 			_batch_done_count += 1
 		batch_progress.emit(_batch_done_count, _batch_total)
 		_batch_active = false
 		_batch_hf = null
 		set_process(false)
+		print("Units threaded(flush): glb=%d placeholder=%d" % [last_placed, last_placeholder])
 		batch_finished.emit(last_placed, last_placeholder)
 
 

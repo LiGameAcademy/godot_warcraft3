@@ -1,6 +1,6 @@
 class_name GameMinimap
 extends Control
-## 游戏小地图：war3mapMap 底图 + 视口黄框 + 正式 MiniMap 图标 / 队伍色点。
+## 游戏小地图：war3mapMap 底图 + 视口黄框 + 建筑 Art 图标 / 队伍色点。
 ## 坐标与编辑器共用 MapMinimapUtils（heightfield UV）。
 
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
@@ -10,7 +10,7 @@ signal clicked(uv: Vector2)
 const NEUTRAL_OWNER_MIN := 12
 const DOT_UNIT := 2.5
 const DOT_BLDG := 4.0
-## 正式图标逻辑路径（asset-converted；BLP→PNG）。优先 MiniMapIcon/，兼容旧文件名。
+## 正式分类图标（金矿 / 中立建筑兜底 / 野怪）；建筑优先用 UnitFunc Art。
 const ICON_GOLD_A := "UI/MiniMap/MiniMapIcon/MinimapIconGold.png"
 const ICON_GOLD_B := "UI/MiniMap/minimap-gold.png"
 const ICON_NEUTRAL_BLDG_A := "UI/MiniMap/MiniMapIcon/MinimapIconNeutralBuilding.png"
@@ -18,6 +18,8 @@ const ICON_NEUTRAL_BLDG_B := "UI/MiniMap/minimap-neutralbuilding.png"
 const ICON_CREEP_A := "UI/MiniMap/MinimapIconCreepLoc.png"
 const ICON_CREEP_B := "UI/MiniMap/MinimapIconCreepLoc2.png"
 const ICON_DRAW_SCALE := 1.15
+## BTN Art 原图 64×64，小地图上缩到此边长（像素）。
+const ART_ICON_PX := 16.0
 
 var _tex: TextureRect
 var _overlay: Control
@@ -27,12 +29,15 @@ var _unit_host: Node = null
 var _camera: Camera3D = null
 var _camera_rig: Node3D = null
 var _local_player: int = 0
+var _catalog: Wc3IdCatalog = null
 var _viewport_quad: PackedVector2Array = PackedVector2Array()
 var _drag_pressed: bool = false
 var _icon_gold: Texture2D = null
 var _icon_neutral_bldg: Texture2D = null
 var _icon_creep: Texture2D = null
 var _icons_loaded: bool = false
+## typeId → Art 贴图（含 null 哨兵，避免重复查表）
+var _art_icon_cache: Dictionary = {}
 
 
 func _ready() -> void:
@@ -49,14 +54,24 @@ func configure(
 	unit_host: Node,
 	camera: Camera3D,
 	camera_rig: Node3D,
-	local_player: int = 0
+	local_player: int = 0,
+	catalog: Wc3IdCatalog = null
 ) -> void:
 	_hf = heightfield
 	_unit_host = unit_host
 	_camera = camera
 	_camera_rig = camera_rig
 	_local_player = local_player
+	if catalog != null:
+		_catalog = catalog
 	_ensure_icons()
+	if _overlay != null:
+		_overlay.queue_redraw()
+
+
+func set_id_catalog(catalog: Wc3IdCatalog) -> void:
+	_catalog = catalog
+	_art_icon_cache.clear()
 	if _overlay != null:
 		_overlay.queue_redraw()
 
@@ -235,10 +250,10 @@ func _draw_unit_markers() -> void:
 			continue
 		var pos := _uv_to_overlay(uv)
 		var owner_id := int(d.get("owner", -1))
-		var is_bldg := BuildingVisualScr.is_building(tid)
+		var is_bldg := _is_building_type(tid)
 		var icon := _pick_icon(tid, owner_id, is_bldg)
 		if icon != null:
-			var sz := icon.get_size() * ICON_DRAW_SCALE
+			var sz := _icon_draw_size(icon)
 			_overlay.draw_texture_rect(icon, Rect2(pos - sz * 0.5, sz), false)
 		else:
 			var col := _dot_color(tid, owner_id, is_bldg)
@@ -246,15 +261,76 @@ func _draw_unit_markers() -> void:
 			_overlay.draw_rect(Rect2(pos - Vector2(half, half), Vector2(half * 2.0, half * 2.0)), col)
 
 
+func _is_building_type(type_id: String) -> bool:
+	if BuildingVisualScr.is_building(type_id):
+		return true
+	# 兜底：DefStore 未就绪时用 IdCatalog（避免中立建筑被画成野怪点）
+	if _catalog != null:
+		return bool(_catalog.lookup(type_id).get("is_building", false))
+	return false
+
+
+func _icon_draw_size(icon: Texture2D) -> Vector2:
+	if icon == null:
+		return Vector2.ZERO
+	# 分类小图标保持原尺寸；BTN Art（通常 64²）缩到 ART_ICON_PX
+	var native := icon.get_size()
+	if icon == _icon_gold or icon == _icon_neutral_bldg or icon == _icon_creep:
+		return native * ICON_DRAW_SCALE
+	var side := ART_ICON_PX
+	if native.x > 1.0 and native.y > 1.0:
+		return Vector2(side, side * native.y / native.x)
+	return Vector2(side, side)
+
+
 func _pick_icon(type_id: String, owner_id: int, is_building: bool) -> Texture2D:
+	var is_neutral := owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0
+	# 建筑：优先 UnitFunc Art（金矿/酒馆/雇佣兵营等各不相同）
+	if is_building:
+		var art := _art_icon_for(type_id)
+		if art != null:
+			return art
+		if type_id == "ngol":
+			return _icon_gold
+		if is_neutral:
+			return _icon_neutral_bldg if _icon_neutral_bldg != null else _icon_gold
+		return null
 	if type_id == "ngol":
 		return _icon_gold
-	var is_neutral := owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0
-	if is_building and is_neutral:
-		return _icon_neutral_bldg if _icon_neutral_bldg != null else _icon_gold
-	if not is_building and is_neutral:
+	if is_neutral:
 		return _icon_creep
 	return null
+
+
+func _art_icon_for(type_id: String) -> Texture2D:
+	var tid := type_id.strip_edges()
+	if tid.is_empty():
+		return null
+	if _art_icon_cache.has(tid):
+		return _art_icon_cache[tid] as Texture2D
+	var tex: Texture2D = null
+	if _catalog != null:
+		tex = _catalog.unit_art_texture(tid)
+	if tex == null:
+		tex = _load_art_via_command_catalog(tid)
+	_art_icon_cache[tid] = tex
+	return tex
+
+
+func _load_art_via_command_catalog(type_id: String) -> Texture2D:
+	var cat := CommandButtonCatalog.get_shared()
+	if cat == null:
+		return null
+	var row: Dictionary = cat.get_unit_ui(type_id)
+	var art := str(row.get("Art", row.get("art", ""))).replace("\\", "/").strip_edges()
+	if art.is_empty():
+		return null
+	var lower := art.to_lower()
+	if lower.ends_with(".tga") or lower.ends_with(".blp"):
+		art = art.substr(0, art.length() - 4) + ".png"
+	elif not lower.ends_with(".png"):
+		art = art + ".png"
+	return _load_icon(art)
 
 
 func _dot_color(type_id: String, owner_id: int, is_building: bool) -> Color:

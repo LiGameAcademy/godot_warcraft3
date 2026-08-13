@@ -57,14 +57,15 @@ func configure_minimap(
 	unit_host: Node,
 	camera: Camera3D,
 	camera_rig: Node3D,
-	local_player: int = 0
+	local_player: int = 0,
+	catalog: Wc3IdCatalog = null
 ) -> void:
 	if not map_directory.is_empty():
 		map_dir = map_directory
 	_ensure_game_minimap()
 	if _game_minimap == null:
 		return
-	_game_minimap.configure(heightfield, unit_host, camera, camera_rig, local_player)
+	_game_minimap.configure(heightfield, unit_host, camera, camera_rig, local_player, catalog)
 	setup_minimap_map(map_dir)
 
 

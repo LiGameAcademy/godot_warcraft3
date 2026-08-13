@@ -28,10 +28,16 @@ const DEFAULT_UNIT_RADIUS := 0.40
 const DEFAULT_BUILDING_RADIUS := 1.20
 const DEFAULT_UNIT_HEIGHT := 1.20
 const DEFAULT_BUILDING_HEIGHT := 3.50
-## 射线未中胶囊时，脚底屏幕像素兜底半径
-const FOOT_FALLBACK_PX := 36.0
-## 建筑相对单位的射线距离惩罚（同屏重叠时优先点到农民）
-const BUILDING_RAY_PENALTY := 1.75
+## 射线未中胶囊时，脚底屏幕像素兜底半径（建筑不再放大，避免远距误点主城）
+const FOOT_FALLBACK_PX := 32.0
+## 建筑相对单位的射线距离惩罚（同屏重叠时优先点到农民 / 金矿）
+const BUILDING_RAY_PENALTY := 2.25
+## 大建筑额外按半径加权，避免 mesh 膨胀胶囊「吸走」远处点击
+const BUILDING_RADIUS_SCORE_MUL := 0.55
+## mesh AABB 相对 collision/scale 的最大放宽倍数
+const MESH_RADIUS_EXPAND := 1.25
+const MAX_BUILDING_PICK_RADIUS := 2.20
+const MAX_UNIT_PICK_RADIUS := 0.85
 
 signal selection_changed(primary: Node3D, selected: Array)
 
@@ -264,13 +270,23 @@ func _on_release(screen_pos: Vector2) -> void:
 			clear_selection()
 
 
-## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。不含树木（树走 pick_extra）。
+## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。不含树木（树走 TreeRegistry）。
 func pick_at(screen_pos: Vector2) -> Node3D:
 	_try_autobind()
 	return _pick_at(screen_pos)
 
 
-## 点选：相机射线打竖直胶囊；未命中再脚底像素兜底。
+## 脚底到屏幕点的像素距离；不可见/无相机返回 INF。
+func screen_foot_distance(node: Node3D, screen_pos: Vector2) -> float:
+	if camera == null or node == null or not is_instance_valid(node):
+		return INF
+	if camera.is_position_behind(node.global_position):
+		return INF
+	return camera.unproject_position(node.global_position).distance_to(screen_pos)
+
+
+## 点选：相机射线打竖直胶囊（高度用模型 AABB）；未命中再脚底像素兜底。
+## 半径权威：UnitBalance.collision → UnitUI.scale → 有限 mesh 放宽（禁止裸 mesh 吸点击）。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:
 		return null
@@ -295,7 +311,7 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 		if t >= 0.0:
 			var score := t
 			if is_bldg:
-				score += BUILDING_RAY_PENALTY
+				score += BUILDING_RAY_PENALTY + radius * BUILDING_RADIUS_SCORE_MUL
 			if score < best_t:
 				best_t = score
 				best_ray = n
@@ -305,13 +321,11 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 		var sp := camera.unproject_position(n.global_position)
 		var d2 := sp.distance_squared_to(screen_pos)
 		var foot_r := FOOT_FALLBACK_PX
-		if is_bldg:
-			foot_r *= 1.8
 		if d2 > foot_r * foot_r:
 			continue
 		var foot_score := d2
 		if is_bldg:
-			foot_score += 900.0
+			foot_score += 1200.0 + radius * 400.0
 		if foot_score < best_foot_d2:
 			best_foot_d2 = foot_score
 			best_foot = n
@@ -322,6 +336,7 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 
 
 ## 竖直胶囊（轴线 = 单位脚底沿 +Y）与射线求交，返回 t；未中返回 -1。
+## 圆柱段用完整高度，两端半球半径计入 Y 判定（含高度，避免「只看 XZ」误点远处建筑）。
 func _ray_vertical_capsule(
 	origin: Vector3, dir: Vector3, base: Vector3, height: float, radius: float
 ) -> float:
@@ -363,18 +378,27 @@ func _pick_radius_world(node: Node3D, type_id: String, is_bldg: bool) -> float:
 	if _radius_cache.has(type_id):
 		return float(_radius_cache[type_id])
 	var r := DEFAULT_BUILDING_RADIUS if is_bldg else DEFAULT_UNIT_RADIUS
-	# unitUI.scale ≈ 选中圈直径（WC3）；有则优先
+	# 1) UnitBalance.collision（WC3）→ Godot
 	if not type_id.is_empty():
+		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
+		var bal: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, type_id)
+		if bal is UnitBalanceDef:
+			var col := (bal as UnitBalanceDef).collision
+			if col > 0.0:
+				r = col * Wc3Coords.WORLD_SCALE
+		# 2) unitUI.scale ≈ 选中圈直径（WC3）
 		Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
 		var row: Resource = Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, type_id)
 		if row is UnitUiDef:
 			var sc := (row as UnitUiDef).scale
 			if sc > 1.0:
-				r = sc * Wc3Coords.WORLD_SCALE * 0.5
-	# 网格半宽兜底放大（避免 scale 偏小点不中）
+				r = maxf(r, sc * Wc3Coords.WORLD_SCALE * 0.5)
+	# 3) mesh 仅允许有限放宽，禁止整模 AABB 吞点击（主城误吸金矿/树）
 	var mesh_r := _mesh_xz_diameter(node) * 0.45
 	if mesh_r > r:
-		r = mesh_r
+		r = minf(mesh_r, r * MESH_RADIUS_EXPAND)
+	var cap := MAX_BUILDING_PICK_RADIUS if is_bldg else MAX_UNIT_PICK_RADIUS
+	r = clampf(r, 0.12, cap)
 	_radius_cache[type_id] = r
 	return r
 

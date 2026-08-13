@@ -240,16 +240,15 @@ static func model_scene_user_path(relative_or_glb: String) -> String:
 
 
 ## 优先与 GLB 同目录 .scn → 旧 model-scenes/ → user:// 懒烘焙。
+## 含 gdignore 外链贴图的坏 .scn 视为不存在，便于改走 glTF / 懒烘焙覆盖。
 static func resolve_model_scene(relative_or_glb: String) -> String:
-	var res_p := model_scene_path(relative_or_glb)
-	if file_exists(res_p):
-		return res_p
-	var legacy_p := legacy_model_scene_path(relative_or_glb)
-	if file_exists(legacy_p):
-		return legacy_p
-	var user_p := model_scene_user_path(relative_or_glb)
-	if file_exists(user_p):
-		return user_p
+	for p in [
+		model_scene_path(relative_or_glb),
+		legacy_model_scene_path(relative_or_glb),
+		model_scene_user_path(relative_or_glb),
+	]:
+		if file_exists(p) and not is_packed_scene_unsafe_for_resource_loader(p):
+			return p
 	return ""
 
 
@@ -267,9 +266,9 @@ static func load_packed_scene(res_or_abs: String) -> PackedScene:
 			res_path = ProjectSettings.localize_path(res_path)
 	if not file_exists(res_path) and not file_exists(project_abs(res_path)):
 		return null
-	# asset-converted 有 .gdignore：旧 .scn 若 ExtResource 指向其中 PNG，
-	# ResourceLoader 会刷 "No loader found" / Failed loading。直接跳过改走 glTF。
-	if _packed_scene_refs_gdignored_converted(res_path):
+	# asset-converted 有 .gdignore：.scn 若外链其中 PNG，
+	# ResourceLoader 会刷 "No loader found" / Failed loading。跳过改走 glTF。
+	if is_packed_scene_unsafe_for_resource_loader(res_path):
 		return null
 	var loaded: Resource = ResourceLoader.load(res_path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE)
 	if loaded is PackedScene:
@@ -277,22 +276,34 @@ static func load_packed_scene(res_or_abs: String) -> PackedScene:
 	return null
 
 
-## 粗检场景二进制/文本是否引用 asset-converted 下贴图（不可 import）。
-static func _packed_scene_refs_gdignored_converted(res_or_abs: String) -> bool:
+## true = 不要走 ResourceLoader（会因 gdignore 贴图外链报错）。
+static func is_packed_scene_unsafe_for_resource_loader(res_or_abs: String) -> bool:
+	var lower := res_or_abs.replace("\\", "/").to_lower()
+	if not lower.ends_with(".scn") and not lower.ends_with(".tscn"):
+		return false
 	var disk := project_abs(res_or_abs)
 	if disk.is_empty() or not FileAccess.file_exists(disk):
-		return false
-	var lower := disk.replace("\\", "/").to_lower()
-	# 仅检查 .scn（visuals/*.tscn 可提交，另议）
-	if not lower.ends_with(".scn"):
 		return false
 	var bytes := FileAccess.get_file_as_bytes(disk)
 	if bytes.is_empty():
 		return false
-	return (
-		_bytes_has_ascii(bytes, "asset-converted/")
-		or _bytes_has_ascii(bytes, "asset-converted\\")
-	)
+	# 仅匹配会触发 ResourceLoader 依赖解析的路径；纯嵌入贴图的 .scn 无 res://assets/asset-converted
+	if (
+		_bytes_has_ascii(bytes, "res://assets/asset-converted/")
+		or _bytes_has_ascii(bytes, "res://assets/asset-converted\\")
+		or _bytes_has_ascii(bytes, "pe2.tscn")
+	):
+		return true
+	return false
+
+
+## 兼容旧名
+static func _packed_scene_unsafe_for_resource_loader(res_or_abs: String) -> bool:
+	return is_packed_scene_unsafe_for_resource_loader(res_or_abs)
+
+
+static func _packed_scene_refs_gdignored_converted(res_or_abs: String) -> bool:
+	return is_packed_scene_unsafe_for_resource_loader(res_or_abs)
 
 
 static func _bytes_has_ascii(bytes: PackedByteArray, needle: String) -> bool:
@@ -315,16 +326,93 @@ static func _bytes_has_ascii(bytes: PackedByteArray, needle: String) -> bool:
 
 
 ## 将根节点打包存为 .scn（目录自动创建）。
+## 打包前临时清空指向 asset-converted 的 resource_path，避免写出 ResourceLoader 无法解析的外链。
 static func save_packed_scene(root: Node, res_or_user_path: String) -> Error:
 	if root == null or res_or_user_path.is_empty():
 		return ERR_INVALID_PARAMETER
+	var cleared: Array = []
+	_clear_asset_converted_resource_paths(root, cleared)
 	var packed := PackedScene.new()
 	var pack_err := packed.pack(root)
+	_restore_resource_paths(cleared)
 	if pack_err != OK:
 		return pack_err
 	var disk := project_abs(res_or_user_path)
 	DirAccess.make_dir_recursive_absolute(disk.get_base_dir())
 	return ResourceSaver.save(packed, res_or_user_path)
+
+
+static func _clear_asset_converted_resource_paths(node: Node, cleared: Array) -> void:
+	if node == null:
+		return
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.material_override != null:
+			_clear_material_converted_paths(mi.material_override, cleared)
+		var surf_count := mi.get_surface_override_material_count()
+		for si in range(surf_count):
+			_clear_material_converted_paths(mi.get_surface_override_material(si), cleared)
+		if mi.mesh != null:
+			_maybe_clear_res_path(mi.mesh, cleared)
+			for si2 in range(mi.mesh.get_surface_count()):
+				_clear_material_converted_paths(mi.get_active_material(si2), cleared)
+				_clear_material_converted_paths(mi.mesh.surface_get_material(si2), cleared)
+	elif node is GeometryInstance3D:
+		var gi := node as GeometryInstance3D
+		if gi.material_override != null:
+			_clear_material_converted_paths(gi.material_override, cleared)
+	for c in node.get_children():
+		_clear_asset_converted_resource_paths(c, cleared)
+
+
+static func _clear_material_converted_paths(mat: Material, cleared: Array) -> void:
+	if mat == null:
+		return
+	_maybe_clear_res_path(mat, cleared)
+	if mat is BaseMaterial3D:
+		var bm := mat as BaseMaterial3D
+		_maybe_clear_res_path(bm.albedo_texture, cleared)
+		_maybe_clear_res_path(bm.normal_texture, cleared)
+		_maybe_clear_res_path(bm.metallic_texture, cleared)
+		_maybe_clear_res_path(bm.roughness_texture, cleared)
+		_maybe_clear_res_path(bm.emission_texture, cleared)
+		_maybe_clear_res_path(bm.ao_texture, cleared)
+		_maybe_clear_res_path(bm.heightmap_texture, cleared)
+		_maybe_clear_res_path(bm.orm_texture, cleared)
+	elif mat is ShaderMaterial:
+		var sm := mat as ShaderMaterial
+		_maybe_clear_res_path(sm.shader, cleared)
+		for pname in sm.get_property_list():
+			if typeof(pname) != TYPE_DICTIONARY:
+				continue
+			var pn := str(pname.get("name", ""))
+			if pn.is_empty() or not pn.begins_with("shader_parameter/"):
+				continue
+			var val: Variant = sm.get(pn)
+			if val is Resource:
+				_maybe_clear_res_path(val as Resource, cleared)
+
+
+static func _maybe_clear_res_path(res: Resource, cleared: Array) -> void:
+	if res == null:
+		return
+	var p := str(res.resource_path).replace("\\", "/")
+	if p.is_empty():
+		return
+	if not p.begins_with("res://assets/asset-converted/") and not p.contains("/asset-converted/"):
+		return
+	cleared.append({"res": res, "path": p})
+	res.resource_path = ""
+
+
+static func _restore_resource_paths(cleared: Array) -> void:
+	for item in cleared:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var res: Resource = item.get("res") as Resource
+		var path := str(item.get("path", ""))
+		if res != null and not path.is_empty():
+			res.resource_path = path
 
 
 ## 逻辑路径 → 绝对磁盘路径。优先 Autoload AssetProvider（converted + slk-exported）。
@@ -421,9 +509,13 @@ static func _load_gltf_from_file(disk_path: String) -> Node3D:
 
 
 ## 已读入内存的 GLB 字节 → 场景（主线程调用；纹理相对 base_dir 解析）。
-## 注意：.gltf JSON 不要走这条（外部 URI 从 buffer 无法可靠解析）。
+## 注意：.gltf JSON 不要走这条（外部 URI 从 buffer 无法可靠解析）；若误传 .gltf 会改走文件加载。
 static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: String) -> Node3D:
 	var disk_path := project_abs(glb_res_or_abs)
+	var lower := disk_path.to_lower()
+	# 误把 .gltf JSON 当 GLB 字节解析会 fail→黑名单，导致永久粉胶囊
+	if lower.ends_with(".gltf"):
+		return load_gltf_scene(glb_res_or_abs)
 	if _gltf_fail_cache.has(disk_path):
 		return null
 	if not _is_plausible_gltf_bytes(bytes):
@@ -449,6 +541,11 @@ static func load_gltf_scene_from_bytes(bytes: PackedByteArray, glb_res_or_abs: S
 	if not disk_path.is_empty():
 		_gltf_fail_cache[disk_path] = true
 	return null
+
+
+## 清除误入的 GLTF 失败黑名单（例如曾把 .gltf 当 GLB 解析）。
+static func clear_gltf_fail_cache() -> void:
+	_gltf_fail_cache.clear()
 
 
 ## GLB 魔数 `glTF`；空 BIN / 坏 chunk 在校验阶段拦掉，避免引擎「Buffer 0」ERROR。

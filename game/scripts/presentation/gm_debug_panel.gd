@@ -1,0 +1,163 @@
+class_name GmDebugPanel
+extends CanvasLayer
+
+## 开发 GM 面板。热键由 GameDirector 转发（默认 ` 反引号 / F4），避免编辑器抢走 F10。
+## 控制地面栅格、pathing overlay、斜坡 debug、寻路线等。
+
+signal toggled(visible_now: bool)
+
+var _panel: PanelContainer
+var _grid_option: OptionButton
+var _pathing_check: CheckBox
+var _ramp_check: CheckBox
+var _path_dbg_check: CheckBox
+var _hint: Label
+var _map: MapLoader
+var _director: Node
+
+
+func _ready() -> void:
+	layer = 45
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	visible = false
+	_resolve_refs()
+	_build_ui()
+	_sync_from_world()
+
+
+func toggle() -> void:
+	set_open(not visible)
+
+
+func set_open(on: bool) -> void:
+	visible = on
+	if on:
+		_resolve_refs()
+		_sync_from_world()
+	MapLog.info(MapLog.Layer.GM, "GM", "panel=%s" % ("open" if on else "closed"))
+	toggled.emit(on)
+
+
+func _resolve_refs() -> void:
+	var parent_n := get_parent()
+	if parent_n != null:
+		if _map == null or not is_instance_valid(_map):
+			_map = parent_n.get_node_or_null("MapRoot") as MapLoader
+		if _director == null or not is_instance_valid(_director):
+			_director = parent_n.get_node_or_null("GameDirector")
+
+
+func _build_ui() -> void:
+	_panel = PanelContainer.new()
+	_panel.name = "Panel"
+	_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_panel.position = Vector2(12, 72)
+	_panel.custom_minimum_size = Vector2(300, 0)
+	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	_panel.add_child(margin)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	margin.add_child(v)
+
+	var title := Label.new()
+	title.text = "GM / 调试（` 或 F4）"
+	title.add_theme_font_size_override("font_size", 16)
+	v.add_child(title)
+
+	var grid_row := HBoxContainer.new()
+	v.add_child(grid_row)
+	var gl := Label.new()
+	gl.text = "地面栅格"
+	gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid_row.add_child(gl)
+	_grid_option = OptionButton.new()
+	_grid_option.add_item("关", 0)
+	_grid_option.add_item("大", 1)
+	_grid_option.add_item("大+中", 2)
+	_grid_option.add_item("大+中+小", 3)
+	_grid_option.item_selected.connect(_on_grid_selected)
+	grid_row.add_child(_grid_option)
+
+	_pathing_check = CheckBox.new()
+	_pathing_check.text = "Pathing 地面色块"
+	_pathing_check.toggled.connect(_on_pathing_toggled)
+	v.add_child(_pathing_check)
+
+	_ramp_check = CheckBox.new()
+	_ramp_check.text = "斜坡 Debug"
+	_ramp_check.toggled.connect(_on_ramp_toggled)
+	v.add_child(_ramp_check)
+
+	_path_dbg_check = CheckBox.new()
+	_path_dbg_check.text = "寻路线（同 F9）"
+	_path_dbg_check.toggled.connect(_on_path_dbg_toggled)
+	v.add_child(_path_dbg_check)
+
+	_hint = Label.new()
+	_hint.text = "日志：game/config/debug_log.json"
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8))
+	v.add_child(_hint)
+
+
+func _sync_from_world() -> void:
+	_resolve_refs()
+	if _grid_option != null and _map != null:
+		_grid_option.select(clampi(_map.get_view_grid_level(), 0, 3))
+	elif _grid_option != null and _director != null:
+		_grid_option.select(clampi(int(_director.get("view_grid_level")), 0, 3))
+	if _pathing_check != null and _map != null:
+		_pathing_check.set_pressed_no_signal(_map.get_show_pathing_ground())
+	if _ramp_check != null and _map != null:
+		_ramp_check.set_pressed_no_signal(_map.get_show_ramp_debug())
+	elif _ramp_check != null and _director != null:
+		_ramp_check.set_pressed_no_signal(bool(_director.get("show_ramp_debug")))
+	if _path_dbg_check != null and _director != null:
+		_path_dbg_check.set_pressed_no_signal(bool(_director.get("show_path_debug")))
+
+
+func _on_grid_selected(idx: int) -> void:
+	_resolve_refs()
+	var level := idx
+	if _grid_option != null:
+		level = _grid_option.get_item_id(idx)
+	if _map != null:
+		_map.set_view_grid_level(level)
+	if _director != null:
+		_director.set("view_grid_level", level)
+	MapLog.info(MapLog.Layer.GM, "GM", "view_grid_level=%d" % level)
+
+
+func _on_pathing_toggled(on: bool) -> void:
+	_resolve_refs()
+	if _map != null:
+		_map.set_show_pathing_ground(on)
+	if _director != null:
+		_director.set("show_pathing_ground", on)
+	MapLog.info(MapLog.Layer.GM, "GM", "pathing_ground=%s" % on)
+
+
+func _on_ramp_toggled(on: bool) -> void:
+	_resolve_refs()
+	if _map != null:
+		_map.set_show_ramp_debug(on)
+	if _director != null:
+		_director.set("show_ramp_debug", on)
+	MapLog.info(MapLog.Layer.GM, "GM", "ramp_debug=%s" % on)
+
+
+func _on_path_dbg_toggled(on: bool) -> void:
+	_resolve_refs()
+	if _director != null:
+		_director.set("show_path_debug", on)
+		if _director.has_method("_apply_path_debug_visibility"):
+			_director.call("_apply_path_debug_visibility")
+	MapLog.info(MapLog.Layer.GM, "GM", "path_debug=%s" % on)

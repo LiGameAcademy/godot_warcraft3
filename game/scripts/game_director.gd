@@ -22,6 +22,8 @@ const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_ce
 const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
+const TargetFlashFxScr = preload("res://game/scripts/presentation/target_flash_fx.gd")
+const GmDebugPanelScr = preload("res://game/scripts/presentation/gm_debug_panel.gd")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -106,11 +108,13 @@ var _hud_build_site: BuildSite = null
 
 func _ready() -> void:
 	_rng.randomize()
+	MapLog.reload_config()
 	_resolve_exports()
 	if map_root == null:
 		push_error("GameDirector: 未绑定 map_root")
 		return
 	_configure_map_root()
+	_ensure_gm_panel()
 	_wire_hud()
 	_load_camera_bounds()
 	_configure_camera()
@@ -118,6 +122,44 @@ func _ready() -> void:
 		map_root.map_loaded.connect(_on_map_loaded)
 	if map_root.is_map_ready():
 		_on_map_loaded()
+
+
+var _gm_panel: CanvasLayer = null
+
+
+func _ensure_gm_panel() -> void:
+	var parent_n := get_parent()
+	if parent_n == null:
+		return
+	if _gm_panel != null and is_instance_valid(_gm_panel):
+		return
+	var existing := parent_n.get_node_or_null("GmDebugPanel") as CanvasLayer
+	if existing != null:
+		_gm_panel = existing
+		return
+	var gm: CanvasLayer = GmDebugPanelScr.new()
+	gm.name = "GmDebugPanel"
+	_gm_panel = gm
+	# _ready 期间父节点 blocked，必须延迟挂接
+	parent_n.add_child.call_deferred(gm)
+
+
+func _toggle_gm_panel() -> void:
+	_ensure_gm_panel()
+	if _gm_panel == null or not is_instance_valid(_gm_panel):
+		return
+	if not _gm_panel.is_inside_tree():
+		# 仍在 deferred 队列：进树后再开
+		_gm_panel.call_deferred("set_open", true)
+	elif _gm_panel.has_method("toggle"):
+		_gm_panel.call("toggle")
+	if game_hud != null and _gm_panel.is_inside_tree():
+		game_hud.set_status("GM 面板：%s（` / F4）" % ("开" if _gm_panel.visible else "关"))
+
+
+func _apply_path_debug_visibility() -> void:
+	if _path_debug != null:
+		_path_debug.set_enabled(show_path_debug)
 
 
 func get_session() -> GameSession:
@@ -408,7 +450,8 @@ func _setup_minimap() -> void:
 		map_root.get_unit_layer(),
 		cam,
 		rts_camera,
-		local_player
+		local_player,
+		map_root.get_id_catalog()
 	)
 
 
@@ -586,7 +629,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 	if event is InputEventKey and event.pressed and not event.echo:
-		var key := (event as InputEventKey).keycode
+		var ek := event as InputEventKey
+		var key := ek.keycode
+		var phys := ek.physical_keycode
+		# GM 面板：`（反引号）或 F4。F10 常被编辑器占用。
+		if (
+			key == KEY_QUOTELEFT
+			or phys == KEY_QUOTELEFT
+			or key == KEY_F4
+			or phys == KEY_F4
+		):
+			_toggle_gm_panel()
+			get_viewport().set_input_as_handled()
+			return
 		# 命令卡热键（Catalog Tip/Hotkey；交回官方为 E）
 		if _card_hotkey_actions.has(key):
 			_on_command_action(str(_card_hotkey_actions[key]), UnitOrder.Source.HOTKEY)
@@ -665,24 +720,100 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 
 
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
+## 金矿 / 树 / 送回点按「脚底屏幕距离」比分，避免主城 oversized 胶囊抢走远处树/矿。
 func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 	var ground_goal := _screen_to_goal_wc3(screen_pos)
+	var best: SmartTarget = null
+	var best_score := INF
+
+	var picked: Node3D = null
 	if unit_selector != null and unit_selector.has_method("pick_at"):
-		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
-		if picked != null and _is_gold_mine(picked):
-			return SmartTarget.gold_mine(picked, _node_goal_wc3(picked, ground_goal))
-		if picked != null and _is_own_dropoff_building(picked, selected):
-			return SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
+		picked = unit_selector.call("pick_at", screen_pos) as Node3D
+
+	if picked != null and _is_gold_mine(picked):
+		var s := _screen_score_node(picked, screen_pos)
+		if s < best_score:
+			best_score = s
+			best = SmartTarget.gold_mine(picked, _node_goal_wc3(picked, ground_goal))
+
 	if _tree_registry != null:
 		var cn := _tree_registry.pick_cn_at_screen(screen_pos)
 		if cn >= 0:
 			var tree_goal := _tree_registry.get_pos_wc3(cn)
 			if tree_goal == Vector2.INF:
 				tree_goal = ground_goal
-			return SmartTarget.tree(cn, tree_goal)
+			var s2 := _screen_score_tree(cn, screen_pos)
+			if s2 < best_score:
+				best_score = s2
+				best = SmartTarget.tree(cn, tree_goal)
+
+	if picked != null and _is_own_dropoff_building(picked, selected):
+		var s3 := _screen_score_node(picked, screen_pos)
+		# 送回点略惩罚：同等距离时优先矿/树
+		s3 += 18.0
+		if s3 < best_score:
+			best_score = s3
+			best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
+
+	if best != null:
+		if best.kind == SmartTarget.Kind.TREE:
+			_flash_tree_target(best.tree_cn)
+		elif best.kind == SmartTarget.Kind.GOLD_MINE and best.node != null:
+			TargetFlashFxScr.flash_target(best.node, 0.45, 1.6, true)
+		return best
 	if ground_goal == Vector2.INF:
 		return null
 	return SmartTarget.ground(ground_goal)
+
+
+func _screen_score_node(node: Node3D, screen_pos: Vector2) -> float:
+	if unit_selector != null and unit_selector.has_method("screen_foot_distance"):
+		return float(unit_selector.call("screen_foot_distance", node, screen_pos))
+	if rts_camera == null:
+		return INF
+	var cam := rts_camera.get_camera() if rts_camera.has_method("get_camera") else null
+	if cam == null or node == null:
+		return INF
+	if cam.is_position_behind(node.global_position):
+		return INF
+	return cam.unproject_position(node.global_position).distance_to(screen_pos)
+
+
+func _screen_score_tree(creation_number: int, screen_pos: Vector2) -> float:
+	if _tree_registry == null:
+		return INF
+	var pos_wc3 := _tree_registry.get_pos_wc3(creation_number)
+	if pos_wc3 == Vector2.INF:
+		return INF
+	var gpos := Wc3Coords.wc3_xy_to_godot(pos_wc3.x, pos_wc3.y, 0.0)
+	# 尽量用条目高度
+	var entry: Dictionary = _tree_registry.get_entry(creation_number)
+	var p: Dictionary = entry.get("position", {})
+	if not p.is_empty():
+		gpos = Wc3Coords.wc3_xy_to_godot(
+			float(p.get("x", pos_wc3.x)),
+			float(p.get("y", pos_wc3.y)),
+			float(p.get("z", 0.0))
+		)
+	var cam: Camera3D = null
+	if unit_selector != null and unit_selector.get("camera") != null:
+		cam = unit_selector.get("camera") as Camera3D
+	elif rts_camera != null and rts_camera.has_method("get_camera"):
+		cam = rts_camera.call("get_camera") as Camera3D
+	if cam == null:
+		return INF
+	if cam.is_position_behind(gpos):
+		return INF
+	return cam.unproject_position(gpos).distance_to(screen_pos)
+
+
+func _flash_tree_target(creation_number: int) -> void:
+	if _tree_registry == null or creation_number < 0:
+		return
+	var node := _tree_registry.ensure_promoted(creation_number)
+	if node != null:
+		# 原作感：黄环 + 树模 emissive 闪烁
+		TargetFlashFxScr.flash_target(node, 0.65, 1.15, true)
 
 
 func _screen_to_goal_wc3(screen_pos: Vector2) -> Vector2:
@@ -873,6 +1004,7 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector.has_method("pick_at"):
 		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
 		if picked != null and _is_gold_mine(picked):
+			TargetFlashFxScr.flash_target(picked, 0.45, 1.6, true)
 			var n := _command_router.issue_harvest_gold(peasants, picked, source)
 			if n > 0 and game_hud:
 				game_hud.set_status("采集金币 · %d 农民" % n)
@@ -881,6 +1013,7 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 		if picked != null and _is_harvestable_tree_node(picked):
 			var cn := _tree_cn_of(picked)
 			if cn >= 0:
+				_flash_tree_target(cn)
 				var nl := _command_router.issue_harvest_lumber(peasants, cn, source)
 				if nl > 0 and game_hud:
 					game_hud.set_status("采集木材 · %d 农民" % nl)
@@ -889,6 +1022,7 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _tree_registry != null:
 		var cn2 := _tree_registry.pick_cn_at_screen(screen_pos)
 		if cn2 >= 0:
+			_flash_tree_target(cn2)
 			var nl2 := _command_router.issue_harvest_lumber(peasants, cn2, source)
 			if nl2 > 0 and game_hud:
 				game_hud.set_status("采集木材 · %d 农民" % nl2)

@@ -29,12 +29,13 @@ const TOWN_HALL_TIER := {
 ## 返回 null 表示 autoload 未就绪（selftest 阶段预期）。
 static func _wc3_def_store() -> Node:
 	var ml := Engine.get_main_loop()
-	if ml == null:
+	if ml == null or not (ml is SceneTree):
 		return null
-	var root: Node = ml.root if ml.has_method("root") else null
-	if root == null:
+	var tree := ml as SceneTree
+	# SceneTree.root 是属性，不是 method；has_method("root") 恒为 false
+	if tree.root == null:
 		return null
-	return root.get_node_or_null("Wc3DefStore")
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 static func is_building(type_id: String) -> bool:
