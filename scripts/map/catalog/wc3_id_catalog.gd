@@ -284,6 +284,7 @@ func _merge_unit_balance() -> void:
 
 ## WE 编辑器专用「开始点」(sloc)：不在 UnitUI.slk，由 WorldEditData 注入。
 ## 参考 HiveWE / WorldEditData：模型 Objects\StartLocation、脚印 16x16、图标 StartingLocation。
+## path_tex 仅作编辑器占位预览；运行时寻路见 Wc3PathingMap.apply_entity_pathing（显式跳过 sloc）。
 func _inject_start_location() -> void:
 	if _units.has("sloc"):
 		return

@@ -302,6 +302,9 @@ func blit_pathing_at_world(wc3_x: float, wc3_y: float, angle_deg: float, img: Im
 
 ## 扫单位/装饰列表，按 Catalog.path_tex blit 动态脚印（建筑、中立建筑、阻挡物等）。
 ## 返回成功 blit 条数。
+##
+## 跳过 Start Location（sloc）：地图里常有多个出生点，游戏只占其中一个；
+## sloc 的 path_tex 是编辑器占位脚印，不应写入运行时寻路（否则空出生点也会锁死主城栅格）。
 func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 	clear_dynamic()
 	if not is_valid() or catalog == null:
@@ -314,7 +317,11 @@ func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 		var type_id := str(d.get("typeId", d.get("id", "")))
 		if type_id.is_empty():
 			continue
+		if type_id == "sloc":
+			continue
 		var info: Dictionary = catalog.lookup(type_id)
+		if bool(info.get("is_start_location", false)):
+			continue
 		var path_tex := str(info.get("path_tex", ""))
 		if not Wc3PathingTextures.is_valid_path_tex(path_tex):
 			continue
