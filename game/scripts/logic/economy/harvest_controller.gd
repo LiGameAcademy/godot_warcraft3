@@ -69,6 +69,8 @@ var _wait_goal_wc3: Vector2 = Vector2.INF
 var _tree_goal_wc3: Vector2 = Vector2.INF
 var _tree_repath_cooldown: float = 0.0
 var _tree_repath_count: int = 0
+## 处理 path_failed / 改砍时禁止同步再入（go_to 失败会立刻 emit）。
+var _handling_tree_path_fail: bool = false
 var _tree_jitter_sec: float = 0.0
 var _tree_jitter_anchor_wc3: Vector2 = Vector2.INF
 var _dropoff_repath: int = 0
@@ -240,7 +242,12 @@ func start_harvest_lumber(creation_number: int) -> bool:
 	set_process(true)
 	if body != null and _try_begin_chop_if_ready(body):
 		return true
-	return _go_tree_approach()
+	# 接受伐木令：先赴下令树；到不了由 path_failed / approach 改砍邻树
+	if _go_tree_approach():
+		return true
+	# 首趟失败且未能改砍 → 干净收工（勿留半激活状态像「拒单」）
+	abort()
+	return false
 
 
 ## 送回资源。preferred_dropoff：右键点中的主城/伐木场；null 则找最近可收建筑。
@@ -1373,7 +1380,10 @@ func _go_tree_approach() -> bool:
 		_tree_goal_wc3 = goal
 	_tree_repath_count += 1
 	_tree_repath_cooldown = 0.5
-	return _go_to_wc3(goal)
+	if _go_to_wc3(goal):
+		return true
+	# go_to 失败会同步发 path_failed → 可能已改砍邻树；仍在伐木则算接受订单
+	return _active and _state == State.MOVE_TO_TREE and _tree_cn >= 0
 
 
 func _can_start_chop(body: Node3D) -> bool:
@@ -1399,8 +1409,11 @@ func _dist_to_tree_wc3(body: Node3D) -> float:
 	return Wc3Coords.godot_to_wc3_xy(body.global_position).distance_to(tp)
 
 
-## 首选树有空位则用；否则附近可站位的活树。exclude_cn：到不了的树不再选。
-func _resolve_tree_target(preferred_cn: int, exclude_cn: int = -1) -> int:
+## 首选树有空位则用；否则附近可站位的活树。
+## exclude_cn / exclude：到不了的树不再选。
+func _resolve_tree_target(
+	preferred_cn: int, exclude_cn: int = -1, exclude: Dictionary = {}
+) -> int:
 	var reg := _tree_registry()
 	var body := _body()
 	if reg == null or body == null:
@@ -1410,6 +1423,7 @@ func _resolve_tree_target(preferred_cn: int, exclude_cn: int = -1) -> int:
 	if (
 		preferred_cn >= 0
 		and preferred_cn != exclude_cn
+		and not exclude.has(preferred_cn)
 		and reg.is_alive(preferred_cn)
 	):
 		var slot0 := _pick_tree_chop_slot(body, preferred_cn)
@@ -1425,7 +1439,7 @@ func _resolve_tree_target(preferred_cn: int, exclude_cn: int = -1) -> int:
 	var candidates: Array[int] = reg.list_near_cn(from, search_r)
 	for cn in candidates:
 		var cni := int(cn)
-		if cni == preferred_cn or cni == exclude_cn:
+		if cni == preferred_cn or cni == exclude_cn or exclude.has(cni):
 			continue
 		if not reg.is_alive(cni):
 			continue
@@ -1440,27 +1454,68 @@ func _resolve_tree_target(preferred_cn: int, exclude_cn: int = -1) -> int:
 	return -1
 
 
-## 当前树到不了 → 排除后改砍邻树。成功则已发起 approach。
+## 当前树到不了 → 排除后改砍邻树（可连试多棵）。成功则已发起 approach。
 func _retarget_unreachable_tree() -> bool:
-	var old := _tree_cn
+	var tried: Dictionary = {}
+	if _tree_cn >= 0:
+		tried[_tree_cn] = true
 	_release_tree_claim()
-	var next := _resolve_tree_target(-1, old)
-	if next < 0:
-		return false
-	_tree_repath_count = 0
-	_tree_repath_cooldown = 0.0
 	_set_state(State.MOVE_TO_TREE)
 	set_process(true)
-	return _go_tree_approach()
+	# 改砍寻路时吞掉嵌套 path_failed，由本循环连试邻树
+	var prev_handling := _handling_tree_path_fail
+	_handling_tree_path_fail = true
+	var ok := false
+	for _i in range(6):
+		var next := _resolve_tree_target(-1, -1, tried)
+		if next < 0:
+			break
+		tried[next] = true
+		_tree_cn = next
+		_tree_repath_count = 0
+		_tree_repath_cooldown = 0.0
+		_tree_jitter_sec = 0.0
+		_tree_jitter_anchor_wc3 = Vector2.INF
+		# resolve 已 claim 并写好 goal；勿再 bind 成几何点冲掉空位
+		if _go_tree_approach_quiet():
+			ok = true
+			break
+		_release_tree_claim()
+	_handling_tree_path_fail = prev_handling
+	return ok
+
+
+## 赴指定树（不触发改砍）；用于改砍循环内试路。
+func _go_tree_approach_quiet() -> bool:
+	var body := _body()
+	var reg := _tree_registry()
+	if body == null or reg == null or _tree_cn < 0:
+		return false
+	if _try_begin_chop_if_ready(body):
+		return true
+	var goal := _tree_goal_wc3
+	if goal == Vector2.INF:
+		goal = _pick_tree_approach_any(body, _tree_cn)
+		_tree_goal_wc3 = goal
+	if goal == Vector2.INF:
+		return false
+	_tree_repath_count += 1
+	_tree_repath_cooldown = 0.5
+	return _go_to_wc3(goal)
 
 
 func _on_nav_path_failed(_reason: String) -> void:
-	# 已对当前树发起过寻路后失败 → 再改砍邻树（不在下令瞬间换树）
+	# 赴树途中失败 → 立刻改砍邻树（勿吞第一次 path_failed）
+	if _handling_tree_path_fail:
+		return
 	if not _active or _state != State.MOVE_TO_TREE:
 		return
-	if _tree_repath_count < 1:
-		return
-	_retarget_unreachable_tree()
+	_handling_tree_path_fail = true
+	var ok := _retarget_unreachable_tree()
+	_handling_tree_path_fail = false
+	if not ok:
+		# 无邻树可改：结束伐木，避免空转
+		abort()
 
 
 func _wire_nav_path_failed(on: bool) -> void:

@@ -2,8 +2,8 @@
 
 > 对齐 WC3：己方选中 **绿环**；中立金矿左键可选 **黄环**（树**不可**左键选中，只右键伐木）。  
 > 所属层：**Presentation**（环网格）+ **Logic/Session**（谁算「选中 / 目标」）。  
-> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TREE_INTERACT.md](TREE_INTERACT.md)  
-> 最后更新：2026-08-09
+> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · [HUD.md](HUD.md)（中栏肖像 / 当前选中）  
+> 最后更新：2026-08-14
 
 ---
 
@@ -34,7 +34,9 @@
 - 左键选中：己方 → 绿；中立金矿 → 黄 + HUD 储量。  
 - 树木：**不**进左键拾取；promote 仅由伐木/伤害触发。  
 - 环尺寸仍读 Catalog / 碰撞近似（与现 `UnitSelector` 一致）。  
-- API 可扩展敌/友色，但 P0 只落地绿 + 黄。
+- API 可扩展敌/友色，但 P0 只落地绿 + 黄。  
+- **多选当前选中（primary）**：环可对 primary 更高亮、其余略淡（与 [HUD.md](HUD.md) §4 联动；Tab 切主选）。  
+- **框选人数**：不设原作 12 上限。
 
 **非目标（P0）**
 

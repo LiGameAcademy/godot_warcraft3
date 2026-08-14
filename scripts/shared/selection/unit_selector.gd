@@ -165,6 +165,38 @@ func get_selected() -> Array[Node3D]:
 	return _selected.duplicate()
 
 
+## 多选时切换「当前选中」（肖像 / 命令卡跟随）。无人数上限。
+func cycle_primary(step: int = 1) -> bool:
+	if _selected.size() <= 1:
+		return false
+	var idx := _selected.find(_primary)
+	if idx < 0:
+		idx = 0
+	var n := _selected.size()
+	idx = posmod(idx + step, n)
+	var next := _selected[idx]
+	if next == _primary:
+		return false
+	_primary = next
+	_refresh_rings()
+	selection_changed.emit(_primary, _selected.duplicate())
+	return true
+
+
+## 将已在选中集合内的单位设为当前选中。
+func set_primary(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	if not _selected.has(node):
+		return false
+	if node == _primary:
+		return true
+	_primary = node
+	_refresh_rings()
+	selection_changed.emit(_primary, _selected.duplicate())
+	return true
+
+
 func clear_selection() -> void:
 	_set_selection([])
 
@@ -532,6 +564,7 @@ func _looks_building(type_id: String, _d: Dictionary) -> bool:
 
 
 func _set_selection(nodes: Array) -> void:
+	# 故意不设原作 12 人框选上限：选中集合可任意大。
 	_selected.clear()
 	for n in nodes:
 		if n is Node3D and is_instance_valid(n):
@@ -539,7 +572,9 @@ func _set_selection(nodes: Array) -> void:
 	if _selected.is_empty():
 		_primary = null
 	else:
-		_primary = _selected[0]
+		# 保留仍在集合内的旧 primary；否则取第一个
+		if _primary == null or not is_instance_valid(_primary) or not _selected.has(_primary):
+			_primary = _selected[0]
 	_refresh_rings()
 	selection_changed.emit(_primary, _selected.duplicate())
 
@@ -670,7 +705,11 @@ func _update_ring(mi: MeshInstance3D, host: Node3D) -> void:
 	mi.position = Vector3(0.0, SEL_RING_Y_BIAS, 0.0)
 	var mat := mi.material_override as StandardMaterial3D
 	if mat != null:
-		mat.albedo_color = _ring_color(ring_kind_for(host))
+		var col := _ring_color(ring_kind_for(host))
+		# 多选时：当前选中全亮，其余略淡
+		if _selected.size() > 1 and host != _primary:
+			col.a *= 0.45
+		mat.albedo_color = col
 	mi.visible = true
 
 

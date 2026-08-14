@@ -8,6 +8,7 @@
 4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`（Godot 运行时挂 `GPUParticles3D`）
    - **v2**：写入 `active_sequences`（Visibility∩EmissionRate 按 Sequence 作用域）；`null`=全程发射（火盆），数组=仅训练烟/建造尘等阶段性特效
    - 批量导出可编辑预制：`godot --headless -s res://tools/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force`
+   - **对外说明（特效全貌）**：[docs/blog/04-wc3-effects-conversion.md](../../docs/blog/04-wc3-effects-conversion.md)
 5. **Geoset 显隐** → 同 stem 旁路 `*.geosetvis.json`（Sequence 作用域 alpha）；Godot 导入丢 scale 轨后由 `MapModelCache` 补 `:visible`
 6. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
 

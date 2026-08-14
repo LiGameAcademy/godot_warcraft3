@@ -2,8 +2,8 @@
 
 > 与地图编辑器（`editor/`）对称的**运行时**入口：加载已解析地图、跑对战规则、将来接 WE 触发器。  
 > 默认开发地图：**Echo Isles**（`res://assets/map-parsed/echoisles`）  
-> 最后更新：2026-08-09  
-> **当前主线：F2 建造**（F0 命令 + F1 采集已落地）
+> 最后更新：2026-08-14  
+> **当前主线：F2 建造**（F0 命令 + F1 采集已落地）；HUD 中栏契约见 [HUD.md](HUD.md)
 
 ## 文档
 
@@ -17,7 +17,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 游戏层架构、与 Editor/Map 分层关系、触发器远期设计 |
 | [PATHFINDING_CHOICE.md](../pathfinding/CHOICE.md) | **寻路选型**：网格 A\* vs NavMesh+RVO（主推网格） |
 | [ENVIRONMENT.md](ENVIRONMENT.md) | 天空 / 天气 / 光照 / 阴影复刻方案（WC3→Godot） |
-| [HUD.md](HUD.md) | 人族游戏 HUD（逻辑 Control；API） |
+| [HUD.md](HUD.md) | **游戏 HUD**：三分栏、中栏三种形态、肖像、主选/Tab、命令卡二级建造 |
 
 ## 与编辑器的关系
 

@@ -1,11 +1,11 @@
-# Dev-Setup.ps1 — Windows 一键准备开发资源
+﻿# Dev-Setup.ps1 - Windows one-shot resource setup
 #
-# 用法（仓库根目录）:
+# Usage (repo root):
 #   .\tools\Dev-Setup.ps1 -GameDir "D:\Program Files (x86)\Warcraft3"
 #   .\tools\Dev-Setup.ps1 -GameDir "D:\Warcraft III" -Godot "D:\Godot\Godot_v4.6.3-stable_win64_console.exe"
 #   .\tools\Dev-Setup.ps1 -GameDir $env:WC3_GAME_DIR -Profile full -Force
 #
-# 等价于: node tools/dev-setup.mjs ...
+# Equivalent: node tools/dev-setup.mjs ...
 
 [CmdletBinding()]
 param(
@@ -32,7 +32,7 @@ if ($Help) {
 
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
-    Write-Error "未找到 Node.js。请安装 Node 18+ 并确保 node 在 PATH 中。"
+    Write-Error "Node.js not found. Install Node 18+ and ensure node is on PATH."
 }
 
 $argsList = @("$Root\tools\dev-setup.mjs", "--profile", $Profile, "--maps", $Maps)
@@ -43,6 +43,6 @@ if ($SkipExtract) { $argsList += "--skip-extract" }
 if ($SkipGodot) { $argsList += "--skip-godot" }
 foreach ($o in $Only) { $argsList += @("--only", $o) }
 
-Write-Host "Dev-Setup → node $($argsList -join ' ')" -ForegroundColor Cyan
+Write-Host ("Dev-Setup -> node " + ($argsList -join " ")) -ForegroundColor Cyan
 & node @argsList
 exit $LASTEXITCODE

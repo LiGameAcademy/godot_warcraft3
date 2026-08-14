@@ -92,6 +92,8 @@ var _last_move_executing: bool = false
 var _last_harvest_ui: Dictionary = {}
 ## 当前命令卡：keycode → action_id（热键走 Catalog，不写死 M/G/R…）
 var _card_hotkey_actions: Dictionary = {}
+## 农民建造二级面板是否打开（主卡仅 AHbu 入口）。
+var _build_menu_open: bool = false
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
@@ -288,6 +290,26 @@ func _wire_hud() -> void:
 		game_hud.command_pressed.connect(_on_command_pressed)
 	if game_hud.has_signal("command_action") and not game_hud.command_action.is_connected(_on_command_action):
 		game_hud.command_action.connect(_on_command_action)
+	if game_hud.has_signal("multi_select_clicked") and not game_hud.multi_select_clicked.is_connected(_on_multi_select_clicked):
+		game_hud.multi_select_clicked.connect(_on_multi_select_clicked)
+
+
+func _setup_portrait_hud() -> void:
+	if game_hud == null or map_root == null:
+		return
+	if not game_hud.has_method("configure_portrait"):
+		return
+	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
+	var catalog = map_root.get_id_catalog() if map_root.has_method("get_id_catalog") else null
+	game_hud.configure_portrait(cache, catalog)
+
+
+func _on_multi_select_clicked(instance_id: int) -> void:
+	if unit_selector == null or instance_id == 0:
+		return
+	var obj := instance_from_id(instance_id)
+	if obj is Node3D:
+		unit_selector.set_primary(obj as Node3D)
 
 
 func _setup_selector() -> void:
@@ -402,6 +424,7 @@ func _on_map_loaded() -> void:
 	_setup_selector()
 	_setup_pathing()
 	_setup_minimap()
+	_setup_portrait_hud()
 	_setup_health_bars()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
@@ -698,6 +721,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_cancel_build_targeting()
 			get_viewport().set_input_as_handled()
 			return
+	# 建造二级面板：Esc → 回主卡
+	if (
+		_build_menu_open
+		and event is InputEventKey
+		and event.pressed
+		and not event.echo
+		and (event as InputEventKey).keycode == KEY_ESCAPE
+	):
+		_set_build_menu_open(false)
+		get_viewport().set_input_as_handled()
+		return
 	# 右键智能命令优先于调试热键：金矿→采集，空地→移动。
 	if enable_move_command and event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -714,6 +748,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var ek := event as InputEventKey
 		var key := ek.keycode
 		var phys := ek.physical_keycode
+		# 多选：Tab / Shift+Tab 切换当前选中（肖像 + 命令卡）
+		if key == KEY_TAB or phys == KEY_TAB:
+			if unit_selector != null and unit_selector.has_method("cycle_primary"):
+				var step := -1 if ek.shift_pressed else 1
+				if unit_selector.cycle_primary(step):
+					get_viewport().set_input_as_handled()
+					return
 		# GM 面板：`（反引号）或 F4。F10 常被编辑器占用。
 		if (
 			key == KEY_QUOTELEFT
@@ -803,6 +844,10 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
 ## 金矿 / 树 / 送回点按「脚底屏幕距离」比分，避免主城 oversized 胶囊抢走远处树/矿。
+## 送回点 / 工地：须脚底足够近；空闲农民点主城不当送回（当地面移动）。
+const SMART_BUILDING_FOOT_PX := 40.0
+
+
 func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 	var ground_goal := _screen_to_goal_wc3(screen_pos)
 	var best: SmartTarget = null
@@ -829,21 +874,27 @@ func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 				best_score = s2
 				best = SmartTarget.tree(cn, tree_goal)
 
-	if picked != null and _is_own_dropoff_building(picked, selected):
-		var s3 := _screen_score_node(picked, screen_pos)
-		# 送回点略惩罚：同等距离时优先矿/树
-		s3 += 18.0
-		if s3 < best_score:
-			best_score = s3
-			best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
+	if (
+		picked != null
+		and _is_own_dropoff_building(picked, selected)
+		and _selection_any_carrying(selected)
+	):
+		var foot_drop := _screen_score_node(picked, screen_pos)
+		# 须点得够近，避免主城大胶囊抢走「点附近地面移动」
+		if foot_drop <= SMART_BUILDING_FOOT_PX:
+			var s3 := foot_drop + 18.0
+			if s3 < best_score:
+				best_score = s3
+				best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
 
-	# 未完工建筑 → 增派建造（优先于空地移动）
+	# 未完工建筑 → 增派建造（也须脚底够近）
 	if picked != null and UnitLife.is_under_construction(picked):
-		var s4 := _screen_score_node(picked, screen_pos)
-		s4 -= 8.0
-		if s4 < best_score:
-			best_score = s4
-			best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
+		var foot_site := _screen_score_node(picked, screen_pos)
+		if foot_site <= SMART_BUILDING_FOOT_PX:
+			var s4 := foot_site - 8.0
+			if s4 < best_score:
+				best_score = s4
+				best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
 
 	if best != null:
 		# 树木：黄环 + emissive（原作点选反馈）；金矿不闪
@@ -932,6 +983,17 @@ func _is_own_dropoff_building(building: Node3D, selected: Array) -> bool:
 			continue
 		var ud: Dictionary = (n as Node).get_meta("unit_data", {})
 		if int(ud.get("owner", -2)) == b_owner:
+			return true
+	return false
+
+
+## 选中单位里是否有人负重（空闲农民点主城不当送回）。
+func _selection_any_carrying(selected: Array) -> bool:
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var hc := (n as Node).get_node_or_null("HarvestController") as HarvestController
+		if hc != null and hc.is_carrying():
 			return true
 	return false
 
@@ -1287,6 +1349,8 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 		if game_hud:
 			game_hud.set_status("资源不足，无法建造 %s" % building_id)
 		return
+	# 选建筑后收起二级面板，进入瞄准
+	_build_menu_open = false
 	# 中断其他瞄准态
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
@@ -1303,6 +1367,7 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 		_last_screen_pos = vp.get_mouse_position()
 	_build_placement.update_screen(_last_screen_pos)
 	_apply_ghost_to_screen()
+	_refresh_command_card()
 	if game_hud:
 		var display_name := CommandCard._building_display_name(building_id)
 		game_hud.set_status("建造瞄准：%s · 左键指定地点 · 右键/Esc 取消" % display_name)
@@ -1318,6 +1383,25 @@ func _cancel_build_targeting() -> void:
 	_sync_selector_enabled_for_targeting()
 	if game_hud:
 		game_hud.set_status("建造取消")
+
+
+func _set_build_menu_open(open: bool) -> void:
+	if _build_menu_open == open:
+		if open:
+			_refresh_command_card()
+		return
+	_build_menu_open = open
+	if open:
+		_set_move_targeting(false)
+		_set_harvest_targeting(false)
+		if _is_build_targeting():
+			_cancel_build_targeting()
+	_refresh_command_card()
+	if game_hud:
+		if open:
+			game_hud.set_status("建造：选择建筑 · Esc/取消 返回")
+		elif _card_is_peasant:
+			game_hud.set_status("已选农民 · 建造见命令卡")
 
 
 func _commit_build_targeting(screen_pos: Vector2) -> void:
@@ -1894,6 +1978,11 @@ func _on_command_action(
 			_begin_harvest_targeting(source)
 		CommandCard.ACTION_RETURN_GOODS:
 			_issue_return_goods(source)
+		CommandCard.ACTION_OPEN_BUILD:
+			if _card_is_peasant:
+				_set_build_menu_open(true)
+		CommandCard.ACTION_CLOSE_BUILD:
+			_set_build_menu_open(false)
 		CommandCard.ACTION_CALL_TO_ARMS:
 			if game_hud:
 				game_hud.set_status("战斗号召：逻辑待接（F3+）")
@@ -1938,6 +2027,7 @@ func _clear_command_card_hotkeys() -> void:
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
+	_build_menu_open = false
 	if _is_build_targeting():
 		_cancel_build_targeting()
 	if health_bar_manager:
@@ -1949,18 +2039,15 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		_card_is_peasant = false
 		_clear_command_card_hotkeys()
 		_unbind_hud_build_site()
-		game_hud.set_unit_info("—", 0, 0)
+		game_hud.set_selection_info(SelectionInfoBuilder.build_empty())
 		game_hud.clear_build_progress()
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
 		return
+	_apply_selection_info_to_hud(primary, selected)
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var tid := str(d.get("typeId", "?"))
-	var label := tid
-	if selected.size() > 1:
-		label = "%s ×%d" % [tid, selected.size()]
-	_apply_unit_info_to_hud(primary, label)
-	# 中立金矿：黄环 + 储量状态（树不可左键选中）
+	# 中立金矿：黄环；命令卡清空；详情里已有储量
 	if tid == "ngol" or _is_gold_mine(primary):
 		_card_supports_move = false
 		_card_is_peasant = false
@@ -1973,7 +2060,6 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 			gold_left = rt.remaining_gold
 		elif gold_left < 0:
 			gold_left = 12500
-		game_hud.set_unit_info("金矿", 0, 0)
 		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
 		return
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
@@ -2000,24 +2086,38 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_sync_build_hud_for_selection()
 
 
+func _apply_selection_info_to_hud(primary: Node3D, selected: Array) -> void:
+	if game_hud == null:
+		return
+	if not game_hud.has_method("set_selection_info"):
+		_apply_unit_info_to_hud(primary, "")
+		return
+	game_hud.set_selection_info(SelectionInfoBuilder.build(primary, selected))
+
+
 func _apply_unit_info_to_hud(unit: Node3D, label: String) -> void:
 	if game_hud == null or unit == null:
 		return
 	UnitLife.ensure(unit)
 	var hp := int(round(UnitLife.get_life(unit)))
 	var hp_max := int(round(UnitLife.get_max_life(unit)))
-	game_hud.set_unit_info(label, hp, hp_max)
+	var name_s := label
+	if name_s.is_empty():
+		var d: Dictionary = unit.get_meta("unit_data", {})
+		name_s = str(d.get("typeId", "—"))
+	game_hud.set_unit_info(name_s, hp, hp_max)
 
 
 func _sync_selection_info_panel() -> void:
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	var selected: Array = []
+	if unit_selector.has_method("get_selected"):
+		selected = unit_selector.call("get_selected")
 	if primary == null or game_hud == null:
 		return
-	var d: Dictionary = primary.get_meta("unit_data", {})
-	var tid := str(d.get("typeId", "?"))
-	_apply_unit_info_to_hud(primary, tid)
+	_apply_selection_info_to_hud(primary, selected)
 	_sync_build_hud_for_selection()
 
 
@@ -2089,9 +2189,10 @@ func _sync_selection_info_panel_hp_only() -> void:
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
 	if primary == null:
 		return
-	var d: Dictionary = primary.get_meta("unit_data", {})
-	var tid := str(d.get("typeId", "?"))
-	_apply_unit_info_to_hud(primary, tid)
+	var selected: Array = []
+	if unit_selector.has_method("get_selected"):
+		selected = unit_selector.call("get_selected")
+	_apply_selection_info_to_hud(primary, selected)
 
 
 func _update_build_hud_if_relevant(key: String, ratio: float, elapsed: float, total: float) -> void:
@@ -2148,18 +2249,22 @@ func _refresh_command_card() -> void:
 	if not unit_selector.has_method("get_selected"):
 		return
 	var selected: Array = unit_selector.call("get_selected")
+	var primary: Node3D = null
+	if unit_selector.has_method("get_primary"):
+		primary = unit_selector.call("get_primary") as Node3D
 	var moving := false
 	var carrying := false
 	var harvesting := false
 	var returning := false
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
-		var peasants := _command_router.filter_peasants(selected)
-		var movers := _command_router.filter_movers(selected)
-		_card_is_peasant = (
-			not peasants.is_empty() and peasants.size() == movers.size()
-		)
+		# 命令卡跟当前选中：仅 primary 是农民时显示农民卡
+		var primary_peasants: Array = []
+		if primary != null:
+			primary_peasants = _command_router.filter_peasants([primary])
+		_card_is_peasant = not primary_peasants.is_empty()
 		if _card_is_peasant:
+			var peasants := _command_router.filter_peasants(selected)
 			carrying = _command_router.any_carrying(peasants)
 			harvesting = _command_router.any_harvesting(peasants)
 			returning = _command_router.any_returning(peasants)
@@ -2174,25 +2279,9 @@ func _refresh_command_card() -> void:
 		"moving": moving,
 	}
 	if _card_is_peasant:
-		var worker_tid := _primary_type_id(selected)
-		if worker_tid.is_empty():
-			worker_tid = "hpea"
-		var build_ids := _build_building_ids(worker_tid)
-		_apply_command_card(
-			CommandCard.for_unit(
-				worker_tid,
-				{
-					"move_executing": moving,
-					"carrying": carrying,
-					"harvest_executing": harvesting and not carrying,
-					"return_executing": returning,
-					"building_ids": build_ids,
-					"can_afford": _build_can_afford_flags(build_ids),
-					"building_executing": _build_executing_flags(build_ids),
-				}
-			)
-		)
+		_apply_peasant_command_card(selected, moving, carrying, harvesting, returning)
 	else:
+		_build_menu_open = false
 		var tid := _primary_type_id(selected)
 		if tid.is_empty():
 			_apply_command_card(CommandCard.basic_locomotion(moving))
@@ -2200,6 +2289,35 @@ func _refresh_command_card() -> void:
 			_apply_command_card(
 				CommandCard.for_unit(tid, {"move_executing": moving, "include_locomotion": true})
 			)
+
+
+func _apply_peasant_command_card(
+	selected: Array,
+	moving: bool,
+	carrying: bool,
+	harvesting: bool,
+	returning: bool
+) -> void:
+	var worker_tid := _primary_type_id(selected)
+	if worker_tid.is_empty():
+		worker_tid = "hpea"
+	var build_ids := _build_building_ids(worker_tid)
+	_apply_command_card(
+		CommandCard.for_unit(
+			worker_tid,
+			{
+				"move_executing": moving,
+				"carrying": carrying,
+				"harvest_executing": harvesting and not carrying,
+				"return_executing": returning,
+				"building_ids": build_ids,
+				"can_afford": _build_can_afford_flags(build_ids),
+				"building_executing": _build_executing_flags(build_ids),
+				"build_menu_open": _build_menu_open,
+				"worker_race": "human",
+			}
+		)
+	)
 
 
 func _refresh_move_executing_ui() -> void:
@@ -2212,7 +2330,12 @@ func _refresh_move_executing_ui() -> void:
 	var carrying := false
 	var harvesting := false
 	var returning := false
-	var is_peasant := _card_is_peasant
+	var is_peasant := false
+	if _command_router != null and unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null:
+			is_peasant = not _command_router.filter_peasants([primary]).is_empty()
+	_card_is_peasant = is_peasant
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
 		if is_peasant:
@@ -2231,35 +2354,20 @@ func _refresh_move_executing_ui() -> void:
 		return
 	_last_move_executing = moving
 	_last_harvest_ui = snap
-	# 互斥格可能从采集切到交回，需整卡刷新
+	# 互斥格可能从采集切到交回，需整卡刷新（保留建造二级面板）
 	if is_peasant:
-		var worker_tid := _primary_type_id(selected)
-		if worker_tid.is_empty():
-			worker_tid = "hpea"
-		var build_ids := _build_building_ids(worker_tid)
-		_apply_command_card(
-			CommandCard.for_unit(
-				worker_tid,
-				{
-					"move_executing": moving,
-					"carrying": carrying,
-					"harvest_executing": harvesting and not carrying,
-					"return_executing": returning,
-					"building_ids": build_ids,
-					"can_afford": _build_can_afford_flags(build_ids),
-					"building_executing": _build_executing_flags(build_ids),
-				}
-			)
-		)
+		_apply_peasant_command_card(selected, moving, carrying, harvesting, returning)
 	else:
 		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
 
 
-func _primary_type_id(selected: Array) -> String:
-	if selected.is_empty():
-		return ""
-	var n: Variant = selected[0]
-	if n is Node3D:
-		var d: Dictionary = (n as Node3D).get_meta("unit_data", {})
-		return str(d.get("typeId", "")).strip_edges()
+func _primary_type_id(_selected: Array = []) -> String:
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var p: Node3D = unit_selector.call("get_primary") as Node3D
+		if p != null and is_instance_valid(p):
+			var d: Dictionary = p.get_meta("unit_data", {})
+			return str(d.get("typeId", "")).strip_edges()
+	if not _selected.is_empty() and _selected[0] is Node3D:
+		var d2: Dictionary = (_selected[0] as Node3D).get_meta("unit_data", {})
+		return str(d2.get("typeId", "")).strip_edges()
 	return ""

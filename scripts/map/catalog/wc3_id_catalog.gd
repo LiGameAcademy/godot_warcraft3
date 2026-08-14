@@ -209,6 +209,51 @@ func converted_glb_path(type_id: String, variation: int = 0) -> String:
 	return ""
 
 
+## 肖像模型路径（*_Portrait / *_portrait）；无则空串。
+func portrait_glb_path(type_id: String) -> String:
+	var base := model_base_path(type_id)
+	if base.is_empty():
+		return ""
+	var dir := base.get_base_dir()
+	var stem := base.get_file()
+	var stems: PackedStringArray = [
+		"%s/%s_Portrait" % [dir, stem],
+		"%s/%s_portrait" % [dir, stem],
+	]
+	# 常见大小写变体（Peasant vs peasant）
+	if stem != stem.to_lower():
+		stems.append("%s/%s_Portrait" % [dir, stem.to_lower()])
+		stems.append("%s/%s_portrait" % [dir, stem.to_lower()])
+	for s in stems:
+		for ext in [".gltf", ".glb"]:
+			var p := RuntimeAssets.converted_path(s + ext)
+			if RuntimeAssets.file_exists(p):
+				return p
+	# 目录扫描兜底（大小写不一致时）
+	var disk_dir := RuntimeAssets.project_abs(RuntimeAssets.converted_path(dir))
+	if disk_dir.is_empty() or not DirAccess.dir_exists_absolute(disk_dir):
+		return ""
+	var da := DirAccess.open(disk_dir)
+	if da == null:
+		return ""
+	da.list_dir_begin()
+	var fname := da.get_next()
+	var want := stem.to_lower()
+	while fname != "":
+		var lower := fname.to_lower()
+		if lower.ends_with("_portrait.gltf") or lower.ends_with("_portrait.glb"):
+			var name_stem := lower.get_basename().trim_suffix("_portrait")
+			if name_stem == want or name_stem.begins_with(want):
+				var rel := "%s/%s" % [dir, fname]
+				var found := RuntimeAssets.converted_path(rel)
+				if RuntimeAssets.file_exists(found):
+					da.list_dir_end()
+					return found
+		fname = da.get_next()
+	da.list_dir_end()
+	return ""
+
+
 func _entry_matches(e: Dictionary, tileset_letter: String, category_code: String) -> bool:
 	if not category_code.is_empty() and category_code != "*":
 		if str(e.get("category", "")).to_upper() != category_code:

@@ -100,16 +100,16 @@ size_flags_vertical = 3
 script = ExtResource("2_minimap")
 
 [node name="MarginContainer2" type="MarginContainer" parent="Root" unique_id=325332713]
-custom_minimum_size = Vector2(320, 0)
+custom_minimum_size = Vector2(420, 0)
 layout_mode = 1
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -180.0
-offset_top = -140.0
-offset_right = 180.0
+offset_left = -240.0
+offset_top = -168.0
+offset_right = 240.0
 offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
@@ -122,14 +122,69 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="UnitName" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1610151325]
+[node name="InfoBody" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=2040397341]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="PortraitCol" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody" unique_id=2040397342]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="PortraitHost" type="CenterContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397343]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 96)
+layout_mode = 2
+
+[node name="PortraitHpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397344]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 10)
+layout_mode = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="PortraitManaBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397345]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 8)
+layout_mode = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="DetailCol" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody" unique_id=2040397346]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="UnitName" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=1610151325]
 unique_name_in_owner = true
 layout_mode = 2
 text = "—"
 
-[node name="UnitHp" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=951166218]
+[node name="UnitHp" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166218]
 unique_name_in_owner = true
 layout_mode = 2
+
+[node name="AttackLine" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166219]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+
+[node name="ArmorLine" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166220]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+
+[node name="SpecialLines" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166221]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 2
+
+[node name="MultiSelectStrip" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=2040397347]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
 
 [node name="BuildProgressRow" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1451336588]
 unique_name_in_owner = true

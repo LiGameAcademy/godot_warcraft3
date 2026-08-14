@@ -6,6 +6,8 @@ extends CanvasLayer
 signal command_pressed(slot: int)
 signal command_action(action_id: String)
 signal minimap_clicked(uv: Vector2)
+## 多选条点击：instance_id → Director 设 primary
+signal multi_select_clicked(instance_id: int)
 
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 @export var console_height_ratio: float = 0.2
@@ -16,6 +18,13 @@ signal minimap_clicked(uv: Vector2)
 @onready var _food_label: Label = %FoodValue
 @onready var _unit_name: Label = %UnitName
 @onready var _unit_hp: Label = %UnitHp
+@onready var _attack_line: Label = %AttackLine
+@onready var _armor_line: Label = %ArmorLine
+@onready var _special_lines: Label = %SpecialLines
+@onready var _portrait_host: Control = %PortraitHost
+@onready var _portrait_hp: ProgressBar = %PortraitHpBar
+@onready var _portrait_mana: ProgressBar = %PortraitManaBar
+@onready var _multi_strip: HBoxContainer = %MultiSelectStrip
 @onready var _build_row: Control = %BuildProgressRow
 @onready var _build_bar: ProgressBar = %BuildProgressBar
 @onready var _build_label: Label = %BuildProgressLabel
@@ -32,17 +41,19 @@ signal minimap_clicked(uv: Vector2)
 var _slot_action_ids: PackedStringArray = PackedStringArray()
 var _icon_cache: Dictionary = {} ## path → Texture2D
 var _game_minimap: Control = null
+var _portrait: UnitPortraitView = null
 
 
 func _ready() -> void:
 	_style_command_panel()
 	_style_center_panel()
+	_ensure_portrait_view()
 	_wire_command_buttons()
 	_wire_minimap_input()
 	if _hint:
 		_hint.visible = show_dev_hint
 	set_resources(0, 0, 0, 0)
-	set_unit_info("—", 0, 0)
+	set_selection_info(SelectionInfoBuilder.build_empty())
 	clear_build_progress()
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
@@ -117,13 +128,135 @@ func _on_stock_changed(stock) -> void:
 
 
 func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
+	## 兼容旧调用；完整态请用 set_selection_info。
 	if _unit_name:
 		_unit_name.text = unit_name if not unit_name.is_empty() else "—"
 	if _unit_hp:
 		if hp_max > 0:
-			_unit_hp.text = "HP %d / %d" % [hp, hp_max]
+			_unit_hp.text = "生命 %d / %d" % [hp, hp_max]
 		else:
 			_unit_hp.text = ""
+	_set_bar(_portrait_hp, hp, hp_max, true)
+
+
+## 中栏完整刷新。info 见 SelectionInfoBuilder / docs/design/game/HUD.md。
+func set_selection_info(info: Dictionary) -> void:
+	if info.is_empty():
+		info = SelectionInfoBuilder.build_empty()
+	var mode := str(info.get("mode", "empty"))
+	var display := str(info.get("display_name", "—"))
+	var hp := int(info.get("hp", 0))
+	var hp_max := int(info.get("hp_max", 0))
+	var mana := int(info.get("mana", 0))
+	var mana_max := int(info.get("mana_max", 0))
+	if _unit_name:
+		_unit_name.text = display if not display.is_empty() else "—"
+	if _unit_hp:
+		if hp_max > 0:
+			_unit_hp.text = "生命 %d / %d" % [hp, hp_max]
+			if mana_max > 0:
+				_unit_hp.text += " · 魔法 %d / %d" % [mana, mana_max]
+		else:
+			_unit_hp.text = ""
+	_set_bar(_portrait_hp, hp, hp_max, mode != "empty")
+	_set_bar(_portrait_mana, mana, mana_max, mana_max > 0 and mode != "empty")
+	if _attack_line:
+		var atk := str(info.get("attack_line", ""))
+		_attack_line.text = atk
+		_attack_line.visible = not atk.is_empty() and mode != "empty"
+	if _armor_line:
+		var arm := str(info.get("armor_line", ""))
+		_armor_line.text = arm
+		_armor_line.visible = not arm.is_empty() and mode != "empty"
+	if _special_lines:
+		var specials: PackedStringArray = info.get("special_lines", PackedStringArray()) as PackedStringArray
+		if specials == null:
+			specials = PackedStringArray()
+		_special_lines.text = "\n".join(specials)
+		_special_lines.visible = not specials.is_empty()
+	var tid := str(info.get("portrait_type_id", ""))
+	var owner_id := int(info.get("owner_id", 0))
+	if mode == "empty" or tid.is_empty():
+		if _portrait != null:
+			_portrait.clear_portrait()
+	elif _portrait != null:
+		_portrait.show_type(tid, owner_id)
+	_refresh_multi_strip(info.get("multi", []) as Array, mode == "multi")
+	var hint := str(info.get("status_hint", ""))
+	if not hint.is_empty() and _status:
+		# 不覆盖更具体的 Director 状态时：仅空/默认时写入
+		pass
+
+
+func configure_portrait(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:
+	_ensure_portrait_view()
+	if _portrait != null:
+		_portrait.configure(cache, catalog)
+
+
+func _ensure_portrait_view() -> void:
+	if _portrait != null and is_instance_valid(_portrait):
+		return
+	if _portrait_host == null:
+		return
+	for c in _portrait_host.get_children():
+		if c is UnitPortraitView:
+			_portrait = c as UnitPortraitView
+			return
+	_portrait = UnitPortraitView.new()
+	_portrait.name = "UnitPortraitView"
+	_portrait_host.add_child(_portrait)
+
+
+func _set_bar(bar: ProgressBar, cur: int, mx: int, show_bar: bool) -> void:
+	if bar == null:
+		return
+	bar.visible = show_bar and mx > 0
+	if not bar.visible:
+		return
+	bar.max_value = 100.0
+	bar.value = 100.0 * float(cur) / float(maxi(mx, 1))
+
+
+func _refresh_multi_strip(entries: Array, show_strip: bool) -> void:
+	if _multi_strip == null:
+		return
+	for c in _multi_strip.get_children():
+		c.queue_free()
+	_multi_strip.visible = show_strip and not entries.is_empty()
+	if not _multi_strip.visible:
+		return
+	var shown := 0
+	const MAX_ICONS := 16
+	for e in entries:
+		if shown >= MAX_ICONS:
+			var more := Label.new()
+			more.text = "+%d" % (entries.size() - shown)
+			more.add_theme_font_size_override("font_size", 11)
+			_multi_strip.add_child(more)
+			break
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d := e as Dictionary
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(36, 36)
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.tooltip_text = str(d.get("tooltip", ""))
+		var icon := _load_icon(str(d.get("icon", "")))
+		btn.icon = icon
+		btn.expand_icon = true
+		if icon == null:
+			btn.text = str(d.get("type_id", "?")).substr(0, 3)
+		var is_pri := bool(d.get("is_primary", false))
+		btn.modulate = Color(1.15, 1.05, 0.55) if is_pri else Color(0.85, 0.85, 0.88)
+		var iid := int(d.get("instance_id", 0))
+		btn.pressed.connect(_on_multi_strip_pressed.bind(iid))
+		_multi_strip.add_child(btn)
+		shown += 1
+
+
+func _on_multi_strip_pressed(instance_id: int) -> void:
+	multi_select_clicked.emit(instance_id)
 
 
 ## 建造进度（中栏）；ratio 0..1。visible=false 时隐藏整行。
@@ -157,8 +290,8 @@ func _style_center_panel() -> void:
 	sb.set_border_width_all(1)
 	sb.border_color = Color(0.45, 0.5, 0.55, 0.7)
 	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 12
-	sb.content_margin_right = 12
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 8
 	panel.add_theme_stylebox_override("panel", sb)
@@ -167,11 +300,36 @@ func _style_center_panel() -> void:
 		_unit_name.add_theme_color_override("font_color", Color(0.95, 0.95, 0.92))
 	if _unit_hp:
 		_unit_hp.add_theme_color_override("font_color", Color(0.55, 0.9, 0.55))
+		_unit_hp.add_theme_font_size_override("font_size", 12)
+	if _attack_line:
+		_attack_line.add_theme_color_override("font_color", Color(0.9, 0.82, 0.55))
+	if _armor_line:
+		_armor_line.add_theme_color_override("font_color", Color(0.7, 0.78, 0.9))
+	if _special_lines:
+		_special_lines.add_theme_color_override("font_color", Color(0.75, 0.75, 0.72))
 	if _build_bar:
 		_build_bar.min_value = 0.0
 		_build_bar.max_value = 100.0
 		_build_bar.show_percentage = false
 		_build_bar.custom_minimum_size = Vector2(0, 14)
+	_style_resource_bar(_portrait_hp, Color(0.2, 0.55, 0.22), Color(0.12, 0.14, 0.12))
+	_style_resource_bar(_portrait_mana, Color(0.25, 0.4, 0.85), Color(0.1, 0.12, 0.18))
+
+
+func _style_resource_bar(bar: ProgressBar, fill: Color, bg: Color) -> void:
+	if bar == null:
+		return
+	bar.min_value = 0.0
+	bar.max_value = 100.0
+	bar.show_percentage = false
+	var bg_sb := StyleBoxFlat.new()
+	bg_sb.bg_color = bg
+	bg_sb.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("background", bg_sb)
+	var fill_sb := StyleBoxFlat.new()
+	fill_sb.bg_color = fill
+	fill_sb.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("fill", fill_sb)
 
 
 ## 兼容旧调用：仅文字标签。
@@ -239,6 +397,7 @@ func set_status(text: String) -> void:
 
 
 func set_portrait_texture(_tex: Texture2D) -> void:
+	## 已改用 3D UnitPortraitView；保留空实现以免旧调用报错。
 	pass
 
 

@@ -3,7 +3,7 @@
 > **角色**：从 godot_warcraft3 项目抽出"相对独立 + 完整"的技术点，整理成
 > 适合对外分享的博客文章。**与 `docs/` 模块文档区分**——docs 是工程规范，
 > blog 是技术叙事（"为什么这样做 + 踩过的坑 + 怎么权衡"）。
-> 最后更新：2026-08-05
+> 最后更新：2026-08-14
 
 ---
 
@@ -18,15 +18,15 @@
 | **01** | [GDScript Shader 跨引擎对照：HiveWE GLSL → Godot gdshader](01-shader-porting-hivewe-to-godot.md) | ✅ draft | `docs/shader/README.md` 9.6KB + `WATER_DEEP_ANALYSIS.md` 27.8KB |
 | **02** | [F-PATH 寻路模块：5 纯函数 + F3 队形 + F4 战斗起步](02-pathing-modules-hivewe-to-godot.md) | ✅ draft | `game/scripts/logic/pathing/{steering_behaviors,path_arc,slope_speed,formation_follow,combat_steering}.gd` + 8 selftest 40 项 |
 | **03** | 斜坡逻辑 4-phase：从 HivEWE side-ramp gate 到 Phase A/B/C/D | 📋 待写 | `wc3_ramp_paint.gd` + `HIVEWE_ALIGN.md` §3.1 |
+| **04** | [魔兽特效怎么转到 Godot：PE2 / 显隐 / 绑骨旁路](04-wc3-effects-conversion.md) | ✅ draft | `convert-mdx.js` pe2/geosetvis/attachments + `wc3_pe2_particles.gd` + [ATTACHMENTS_BAKE.md](../design/asset-convert/ATTACHMENTS_BAKE.md) |
 | **13** | Pathing data 层：从 WPM 文件到 GPU 纹理 | 📋 待写 | `scripts/map/data/wc3_pathing_map.gd` + `wc3_pathing_textures.gd` + `wc3_tga.gd` + `map_pathing_layer.gd` |
 
 ### 第二梯队
 
 | # | 选题 | 写作素材 |
 |---|------|----------|
-| 04 | PE2 粒子系统：HivEWE ParticleEmitter2 → Godot GPU 粒子 | `wc3_pe2_particles.gd` 13.5KB + `fe6aad6` commit |
-| 05 | Doodad 大量 mesh 渲染：MultiMesh 边界 + INSTANCE_CUSTOM 错相位 | `map_doodad_layer.gd:52-58` + 多实例决策 |
-| 06 | Melee Bootstrap：4 玩家主城开局（Echo Isles 经典地图放位）| `melee_bootstrap.gd` 168 行 + `game_director.gd` |
+| 04 | PE2 粒子系统：HivEWE ParticleEmitter2 → Godot GPU 粒子 | → 已并入 [04-wc3-effects-conversion.md](04-wc3-effects-conversion.md) |
+| 05 | Doodad 大量 mesh 渲染：MultiMesh 边界 + INSTANCE_CUSTOM 错相位 | `map_doodad_layer.gd:52-58` + 多实例决策 || 06 | Melee Bootstrap：4 玩家主城开局（Echo Isles 经典地图放位）| `melee_bootstrap.gd` 168 行 + `game_director.gd` |
 | 07 | minimap Phase 3：HiveWE 着色 live terrain raster | `e40b2ba` commit |
 
 ### 第三梯队（工程化）

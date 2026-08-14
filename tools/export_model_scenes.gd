@@ -21,6 +21,8 @@ func _run() -> void:
 	var includes: PackedStringArray = PackedStringArray()
 	var force := false
 	var limit := 0
+	var shard := 1
+	var shard_id := 0
 	var args := OS.get_cmdline_user_args()
 	var i := 0
 	while i < args.size():
@@ -37,6 +39,16 @@ func _run() -> void:
 			limit = int(args[i])
 		elif s.begins_with("--limit="):
 			limit = int(s.substr("--limit=".length()))
+		elif s == "--shard" and i + 1 < args.size():
+			i += 1
+			shard = maxi(int(args[i]), 1)
+		elif s.begins_with("--shard="):
+			shard = maxi(int(s.substr("--shard=".length())), 1)
+		elif s == "--shard-id" and i + 1 < args.size():
+			i += 1
+			shard_id = int(args[i])
+		elif s.begins_with("--shard-id="):
+			shard_id = int(s.substr("--shard-id=".length()))
 		i += 1
 
 	var root_abs := RuntimeAssets.project_abs(RuntimeAssets.CONVERTED_RES_ROOT)
@@ -48,7 +60,19 @@ func _run() -> void:
 
 	var glb_files: PackedStringArray = []
 	_collect_glb(root_abs, glb_files)
-	var found_msg := "export_model_scenes: found %d model files under asset-converted" % glb_files.size()
+	glb_files.sort()
+	if shard > 1:
+		var filtered: PackedStringArray = []
+		var root_norm := root_abs.replace("\\", "/")
+		for p in glb_files:
+			var logical := str(p).replace("\\", "/").replace(root_norm + "/", "")
+			if logical.hash() % shard == shard_id:
+				filtered.append(p)
+		glb_files = filtered
+	var found_msg := (
+		"export_model_scenes: found %d model files under asset-converted (shard %d/%d)"
+		% [glb_files.size(), shard_id, shard]
+	)
 	print(found_msg)
 	_plog("INFO", found_msg)
 	var cache := MapModelCache.new()

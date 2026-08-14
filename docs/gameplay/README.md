@@ -66,7 +66,7 @@
 
 | # | 章节 | 状态 | 来源 | 一句话 |
 |---|------|------|------|--------|
-| 13 | **Game HUD** | 📋 | `game_hud.gd` 7354 行 + `game_hud.tscn` 7775 行 | minimap + 资源条 + 命令卡 + 选中环 |
+| 13 | **Game HUD** | 🟡 partial | [HUD.md](../design/game/HUD.md) | 小地图✅ 资源条✅ 命令卡（含建造二级）✅；中栏肖像/详情/多选条 📋 |
 | 14 | **Game Cursor + 移动确认 FX** | 📋 | `wc3_game_cursor.gd` 6789 行 + `move_confirm_fx.tscn` | 人类种族光标 + 移动确认特效 + 转向 / Walk/Stand |
 
 ### 收尾
