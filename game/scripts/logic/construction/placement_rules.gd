@@ -1,39 +1,99 @@
 class_name PlacementRules
 extends RefCounted
 
-## 建造选址规则（游戏侧；编辑器侧的 unit_placement_rules.gd 是 Document 上下文）。
-## 校验：(building_id, wc3_xy) 是否可建。
-##
-## F2 当前规则：
-## 1. pathing.can_build_footprint(x, y, cells_w, cells_h) 全部可建
-## 2. footprint 解析失败时降级为 can_build_at（点 cell）
-## 3. unit_entries 占位检查暂略（F2-3 简化；F2-4 ghost preview 时加）
-##
-## 距己方主城最小距离暂不强制（WC3 实际允许紧贴；F2-3 不做）。
+## 建造选址规则（游戏侧）。
+## 格网权威：寻路格（PATHING_CELL=32 = 调试栅格「小」；「中」128 = 4×4 寻路格）。
+## 原作建造预览：footprint 内逐格绿/红，非整块变色；落点吸附到寻路格。
 
-## 距主城最小距离（WC3 单位；暂未启用，留常量给后续）。
 const MIN_DIST_FROM_TOWN_HALL_WC3 := 256.0
 
 
-## 是否可在 (wc3_x, wc3_y) 放置 building_id。
+## 是否可在已吸附的 site 放置（全部 footprint 格可建）。
 static func can_build_at(
 	building_id: String,
 	wc3_xy: Vector2,
 	pathing: Wc3PathingMap,
 	_unit_entries: Array = []
 ) -> bool:
-	if not BuildingCatalog.is_building(building_id):
-		return false
-	if pathing == null or not pathing.is_valid():
-		return false
-	var fp: Vector2i = BuildingCatalog.get_footprint(building_id)
-	if fp.x <= 0 or fp.y <= 0:
-		return pathing.can_build_at(wc3_xy.x, wc3_xy.y)
-	return pathing.can_build_footprint(wc3_xy.x, wc3_xy.y, fp.x, fp.y)
+	var sample := sample_footprint(building_id, wc3_xy, pathing)
+	return bool(sample.get("all_ok", false))
 
 
-## footprint（pathing 格数）。失败时返回 (0, 0) 供 ghost 走"点"放置。
+## footprint 寻路格数。失败 → (0,0)。
 static func get_footprint(building_id: String) -> Vector2i:
 	if not BuildingCatalog.is_building(building_id):
 		return Vector2i.ZERO
 	return BuildingCatalog.get_footprint(building_id)
+
+
+## 将光标世界点吸附为 footprint 中心（min 角落在寻路格边界上）。
+static func snap_site_wc3(
+	building_id: String,
+	raw_wc3: Vector2,
+	pathing: Wc3PathingMap
+) -> Vector2:
+	if pathing == null or not pathing.is_valid():
+		return raw_wc3
+	var fp := get_footprint(building_id)
+	if fp.x <= 0 or fp.y <= 0:
+		fp = Vector2i(1, 1)
+	var cs := pathing.cell_size
+	var half := Vector2(float(fp.x) * 0.5, float(fp.y) * 0.5)
+	var min_c := pathing.world_to_cell(
+		raw_wc3.x - half.x * cs,
+		raw_wc3.y - half.y * cs
+	)
+	return Vector2(
+		pathing.origin_wc3.x + (float(min_c.x) + half.x) * cs,
+		pathing.origin_wc3.y + (float(min_c.y) + half.y) * cs
+	)
+
+
+## 采样 footprint 各寻路格可建性。
+## 返回：
+##   min_cell: Vector2i
+##   size: Vector2i
+##   ok: PackedByteArray（row-major，1=可建 0=不可建）
+##   all_ok: bool
+##   site_wc3: Vector2（与传入一致，调用方应先 snap）
+static func sample_footprint(
+	building_id: String,
+	site_wc3: Vector2,
+	pathing: Wc3PathingMap
+) -> Dictionary:
+	var empty := {
+		"min_cell": Vector2i.ZERO,
+		"size": Vector2i.ZERO,
+		"ok": PackedByteArray(),
+		"all_ok": false,
+		"site_wc3": site_wc3,
+	}
+	if not BuildingCatalog.is_building(building_id):
+		return empty
+	if pathing == null or not pathing.is_valid():
+		return empty
+	var fp := get_footprint(building_id)
+	if fp.x <= 0 or fp.y <= 0:
+		fp = Vector2i(1, 1)
+	var cs := pathing.cell_size
+	var half := Vector2(float(fp.x) * 0.5, float(fp.y) * 0.5)
+	var min_c := pathing.world_to_cell(
+		site_wc3.x - half.x * cs,
+		site_wc3.y - half.y * cs
+	)
+	var mask := PackedByteArray()
+	mask.resize(fp.x * fp.y)
+	var all_ok := true
+	for dy in range(fp.y):
+		for dx in range(fp.x):
+			var ok := pathing.can_build_cell(min_c.x + dx, min_c.y + dy)
+			mask[dy * fp.x + dx] = 1 if ok else 0
+			if not ok:
+				all_ok = false
+	return {
+		"min_cell": min_c,
+		"size": fp,
+		"ok": mask,
+		"all_ok": all_ok,
+		"site_wc3": site_wc3,
+	}

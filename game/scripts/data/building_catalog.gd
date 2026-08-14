@@ -66,6 +66,32 @@ static func get_hp(building_id: String) -> int:
 	return bal.hp if bal != null else 0
 
 
+## 修理金币（UnitBalance.goldRep；多工加速时额外消耗基准）。
+static func get_gold_rep(building_id: String) -> int:
+	var bal := _get_balance(building_id)
+	if bal == null:
+		return 0
+	return bal.gold_rep if bal.gold_rep > 0 else bal.goldcost
+
+
+## 修理木材。
+static func get_lumber_rep(building_id: String) -> int:
+	var bal := _get_balance(building_id)
+	if bal == null:
+		return 0
+	return bal.lumber_rep if bal.lumber_rep > 0 else bal.lumbercost
+
+
+## 修理时间基准（秒；UnitBalance.reptm；≤0 时回退 bldtm）。
+static func get_repair_time(building_id: String) -> float:
+	var bal := _get_balance(building_id)
+	if bal == null:
+		return 0.0
+	if bal.reptm > 0:
+		return float(bal.reptm)
+	return float(bal.bldtm)
+
+
 ## 护甲类型（fort / small / medium / large / hero / divine / none）。
 static func get_def_type(building_id: String) -> String:
 	var bal := _get_balance(building_id)

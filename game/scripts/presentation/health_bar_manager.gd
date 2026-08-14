@@ -2,16 +2,28 @@ class_name HealthBarManager
 extends CanvasLayer
 
 ## 全局头顶血条（Present）。跟随 MapUnitLayer 单位/建筑；读 UnitLife，不写战斗逻辑。
-## 显隐：受伤 / 建造中 / 选中（可配置）。
+## 默认常显；GM 可关。关闭后按住 Alt 临时显示。
+## 挂点优先骨骼 Bone_Head / Overhead / Head，否则回退 AABB 顶。
 
 const BAR_W := 52.0
 const BAR_H := 6.0
-const Y_BIAS := 0.4
+const Y_BIAS := 0.15
 const SKIP_META := {
 	"SelectionRing": true,
 	"DeathDropRing": true,
 }
+## 优先匹配的骨骼名（MDX→GLTF 常见）
+const BONE_CANDIDATES := [
+	"Bone_Head",
+	"Bone_Overhead",
+	"Overhead",
+	"Head",
+	"bone_head",
+	"Bone Head",
+]
 
+
+@export var always_show: bool = true
 @export var show_when_damaged: bool = true
 @export var show_when_selected: bool = true
 @export var show_under_construction: bool = true
@@ -20,10 +32,12 @@ const SKIP_META := {
 var _camera: Camera3D = null
 var _unit_host: Node = null
 var _root: Control = null
-## instance_id → { bar: Control, fill: ColorRect, bg: ColorRect }
+## instance_id → { bar, fill, bg, node, bone_idx, skeleton }
 var _entries: Dictionary = {}
 ## instance_id → true（当前选中）
 var _selected: Dictionary = {}
+## Alt 按住临时显示（always_show=false 时）
+var _alt_hold_show: bool = false
 
 
 func _ready() -> void:
@@ -37,6 +51,18 @@ func configure(camera: Camera3D, unit_host: Node) -> void:
 	_unit_host = unit_host
 	_ensure_root()
 	resync()
+
+
+func set_always_show(on: bool) -> void:
+	always_show = on
+
+
+func set_alt_hold_show(on: bool) -> void:
+	_alt_hold_show = on
+
+
+func is_always_show() -> bool:
+	return always_show
 
 
 func set_selection(selected: Array) -> void:
@@ -73,7 +99,6 @@ func resync() -> void:
 func _process(_delta: float) -> void:
 	if _camera == null or _unit_host == null or _root == null:
 		return
-	# 轻量：每帧跟位置；偶发补注册（建造刷出等）
 	if Engine.get_process_frames() % 15 == 0:
 		resync()
 	for id in _entries.keys():
@@ -90,7 +115,7 @@ func _process(_delta: float) -> void:
 		bar.visible = want
 		if not want:
 			continue
-		var world := _bar_world_pos(node)
+		var world := _bar_world_pos(e, node)
 		if _camera.is_position_behind(world):
 			bar.visible = false
 			continue
@@ -124,6 +149,9 @@ func _is_trackable(node: Node3D) -> bool:
 
 
 func _should_show(node: Node3D, id: int) -> bool:
+	# 常显，或 GM 关闭时常按 Alt 临时显示
+	if always_show or Input.is_key_pressed(KEY_ALT) or _alt_hold_show:
+		return true
 	if show_under_construction and UnitLife.is_under_construction(node):
 		return true
 	if show_when_selected and _selected.has(id):
@@ -133,9 +161,43 @@ func _should_show(node: Node3D, id: int) -> bool:
 	return false
 
 
-func _bar_world_pos(node: Node3D) -> Vector3:
+func _bar_world_pos(e: Dictionary, node: Node3D) -> Vector3:
+	var sk: Skeleton3D = e.get("skeleton") as Skeleton3D
+	var bone_idx: int = int(e.get("bone_idx", -1))
+	if sk != null and is_instance_valid(sk) and bone_idx >= 0:
+		return sk.to_global(sk.get_bone_global_pose(bone_idx).origin) + Vector3(0.0, Y_BIAS, 0.0)
+	var attach: Node3D = e.get("attach") as Node3D
+	if attach != null and is_instance_valid(attach):
+		return attach.global_position + Vector3(0.0, Y_BIAS, 0.0)
 	var h := _estimate_height(node)
 	return node.global_position + Vector3(0.0, h + Y_BIAS, 0.0)
+
+
+func _resolve_attach(node: Node3D) -> Dictionary:
+	# BoneAttachment3D（若转换器已挂）
+	for c in node.find_children("*", "BoneAttachment3D", true, false):
+		var ba := c as BoneAttachment3D
+		if ba == null:
+			continue
+		var bn := str(ba.bone_name)
+		for cand in BONE_CANDIDATES:
+			if bn == cand or bn.to_lower().contains("head") or bn.to_lower().contains("overhead"):
+				return {"attach": ba, "skeleton": null, "bone_idx": -1}
+	# Skeleton3D 按名找骨
+	for c in node.find_children("*", "Skeleton3D", true, false):
+		var sk := c as Skeleton3D
+		if sk == null:
+			continue
+		for cand in BONE_CANDIDATES:
+			var idx := sk.find_bone(cand)
+			if idx >= 0:
+				return {"attach": null, "skeleton": sk, "bone_idx": idx}
+		# 模糊：任意含 Head / Overhead 的骨
+		for i in range(sk.get_bone_count()):
+			var nm := sk.get_bone_name(i).to_lower()
+			if nm.contains("overhead") or nm.ends_with("head") or nm.contains("bone_head"):
+				return {"attach": null, "skeleton": sk, "bone_idx": i}
+	return {"attach": null, "skeleton": null, "bone_idx": -1}
 
 
 func _estimate_height(node: Node3D) -> float:
@@ -185,7 +247,16 @@ func _make_bar(node: Node3D) -> Dictionary:
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(fill)
 	_root.add_child(bar)
-	return {"node": node, "bar": bar, "fill": fill, "bg": bg}
+	var attach_info := _resolve_attach(node)
+	return {
+		"node": node,
+		"bar": bar,
+		"fill": fill,
+		"bg": bg,
+		"attach": attach_info.get("attach"),
+		"skeleton": attach_info.get("skeleton"),
+		"bone_idx": int(attach_info.get("bone_idx", -1)),
+	}
 
 
 func _apply_fill(e: Dictionary, r: float) -> void:

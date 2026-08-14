@@ -96,14 +96,22 @@ var _card_hotkey_actions: Dictionary = {}
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
 var _build_ghost: BuildPlacementGhost = null
+## 进入瞄准后须先移动鼠标再左键确认，避免点面板同一帧误提交。
+var _build_confirm_armed: bool = false
 ## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
 var _last_screen_pos: Vector2 = Vector2.ZERO
 ## 运行时自增 creationNumber（建造半成品等）。
 var _next_runtime_cn: int = 900000
-## construction_key → { cn, node }；开工刷建筑，完工升满血，取消移除。
+## construction_key → { cn, node, building_id, site }
 var _active_construction: Dictionary = {}
 ## 当前 HUD 绑定的工地 progress（避免重复 connect）。
 var _hud_build_site: BuildSite = null
+## 工地宿主（农民离开后 BuildSite 挂于此）
+var _build_sites_host: Node = null
+## building Node3D instance_id → BuildSite
+var _build_site_by_building: Dictionary = {}
+## "%s_x_y" → BuildSite
+var _build_site_by_key: Dictionary = {}
 
 
 func _ready() -> void:
@@ -343,11 +351,16 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_last_screen_pos = (event as InputEventMouseMotion).position
 		if _build_placement != null and _build_placement.is_active():
+			_build_confirm_armed = true
 			_build_placement.update_screen(_last_screen_pos)
 			_apply_ghost_to_screen()
 	if _build_placement != null and _build_placement.is_active() and event is InputEventMouseButton:
 		var mb_b := event as InputEventMouseButton
 		if mb_b.pressed and mb_b.button_index == MOUSE_BUTTON_LEFT:
+			# 点在 HUD/小地图上不提交；须先移动过鼠标再确认
+			if not _build_confirm_armed or _pointer_over_blocking_gui():
+				get_viewport().set_input_as_handled()
+				return
 			_commit_build_targeting(mb_b.position)
 			get_viewport().set_input_as_handled()
 			return
@@ -426,17 +439,86 @@ func _setup_pathing() -> void:
 		map_root.get_id_catalog()
 	)
 	_command_router = CommandRouter.new()
+	_ensure_build_sites_host()
 	_command_router.configure(
 		_path_query,
 		_crowd_query,
 		Callable(self, "_ensure_navigator"),
 		Callable(self, "_ensure_harvest_controller"),
 		Callable(self, "_ensure_build_controller"),
-		_session
+		_session,
+		Callable(self, "_find_build_site"),
+		Callable(self, "_find_build_site_by_node")
 	)
 	_setup_tree_registry()
 	_ensure_path_debug()
 
+
+func _ensure_build_sites_host() -> void:
+	if _build_sites_host != null and is_instance_valid(_build_sites_host):
+		return
+	var host := Node.new()
+	host.name = "BuildSitesHost"
+	host.add_to_group("build_sites_host")
+	add_child(host)
+	_build_sites_host = host
+
+
+func _find_build_site(site_wc3: Vector2, building_id: String) -> BuildSite:
+	var key := _site_lookup_key(building_id, site_wc3)
+	var site: BuildSite = _build_site_by_key.get(key) as BuildSite
+	if site != null and is_instance_valid(site) and site.is_active():
+		return site
+	return null
+
+
+func _find_build_site_by_node(building_node: Node3D) -> BuildSite:
+	if building_node == null or not is_instance_valid(building_node):
+		return null
+	var site: BuildSite = _build_site_by_building.get(building_node.get_instance_id()) as BuildSite
+	if site != null and is_instance_valid(site) and site.is_active():
+		return site
+	# 回退：用 unit_data 坐标查
+	var d: Dictionary = building_node.get_meta("unit_data", {})
+	var bid := str(d.get("typeId", ""))
+	var pos: Dictionary = d.get("position", {})
+	return _find_build_site(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))), bid)
+
+
+func _site_lookup_key(building_id: String, site_wc3: Vector2) -> String:
+	return "%s_%.0f_%.0f" % [building_id, site_wc3.x, site_wc3.y]
+
+
+func _register_build_site(site: BuildSite, building_node: Node3D, order: BuildOrder) -> void:
+	if site == null or order == null:
+		return
+	var key := _site_lookup_key(order.building_id, order.site_wc3)
+	_build_site_by_key[key] = site
+	if building_node != null and is_instance_valid(building_node):
+		_build_site_by_building[building_node.get_instance_id()] = site
+	if not site.build_completed.is_connected(_on_registered_site_completed):
+		site.build_completed.connect(_on_registered_site_completed)
+
+
+func _unregister_build_site(order: BuildOrder, building_node: Node3D = null) -> void:
+	if order == null:
+		return
+	var key := _site_lookup_key(order.building_id, order.site_wc3)
+	var site: BuildSite = _build_site_by_key.get(key) as BuildSite
+	_build_site_by_key.erase(key)
+	if building_node != null and is_instance_valid(building_node):
+		_build_site_by_building.erase(building_node.get_instance_id())
+	if site != null and is_instance_valid(site):
+		if site.build_completed.is_connected(_on_registered_site_completed):
+			site.build_completed.disconnect(_on_registered_site_completed)
+		# 已 reparent 到 host 的工地需释放；仍挂在农民下的由 BuildController 释放
+		if _build_sites_host != null and site.get_parent() == _build_sites_host:
+			site.queue_free()
+
+
+func _on_registered_site_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
+	# 农民已离开时由 Director 收尾；若 BuildController 仍会 emit，二次调用安全
+	_on_build_completed(order, site_wc3, player_owner)
 
 func _setup_minimap() -> void:
 	if game_hud == null or map_root == null or rts_camera == null:
@@ -755,6 +837,14 @@ func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 			best_score = s3
 			best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
 
+	# 未完工建筑 → 增派建造（优先于空地移动）
+	if picked != null and UnitLife.is_under_construction(picked):
+		var s4 := _screen_score_node(picked, screen_pos)
+		s4 -= 8.0
+		if s4 < best_score:
+			best_score = s4
+			best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
+
 	if best != null:
 		# 树木：黄环 + emissive（原作点选反馈）；金矿不闪
 		if best.kind == SmartTarget.Kind.TREE:
@@ -867,6 +957,10 @@ func _format_smart_status(result: Dictionary) -> String:
 				return "智能 · 送回 %d · 移动 %d" % [returned, moved]
 			if returned > 0:
 				return "送回资源 · %d 单位" % returned
+		"BuildSite":
+			var built := int(result.get("built", 0))
+			if built > 0:
+				return "加入建造 · %d 单位" % built
 	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
 	if moved > 0 and goal != Vector2.INF:
 		return "移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved]
@@ -1175,7 +1269,7 @@ func _is_build_targeting() -> bool:
 	return _build_placement != null and _build_placement.is_active()
 
 
-## F2-4：玩家按下"建造 <something>"按钮 → 进入瞄准态。
+## F2-4：玩家按下"建造 <something>"按钮 → 进入瞄准态，显示跟手预览。
 func _begin_build_targeting(building_id: String, _source: int) -> void:
 	if not BuildingCatalog.is_building(building_id):
 		if game_hud:
@@ -1199,12 +1293,16 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 	_ensure_build_placement_objects()
 	_build_placement.begin(building_id)
 	_ensure_ghost_node(building_id)
+	# 面板点击：先禁止确认；热键且光标已在地图上可立刻确认
+	_build_confirm_armed = not _pointer_over_blocking_gui()
 	_build_ghost.set_visible_preview(true)
 	_sync_selector_enabled_for_targeting()
-	# 接 first mouse update
-	if not _last_screen_pos.is_equal_approx(Vector2.ZERO):
-		_build_placement.update_screen(_last_screen_pos)
-		_apply_ghost_to_screen()
+	# 用当前鼠标位置立刻刷新预览（面板点击处若打不中地面，等移出 HUD 后再显示）
+	var vp := get_viewport()
+	if vp != null:
+		_last_screen_pos = vp.get_mouse_position()
+	_build_placement.update_screen(_last_screen_pos)
+	_apply_ghost_to_screen()
 	if game_hud:
 		var display_name := CommandCard._building_display_name(building_id)
 		game_hud.set_status("建造瞄准：%s · 左键指定地点 · 右键/Esc 取消" % display_name)
@@ -1214,6 +1312,7 @@ func _cancel_build_targeting() -> void:
 	if _build_placement == null:
 		return
 	_build_placement.cancel()
+	_build_confirm_armed = false
 	if _build_ghost != null:
 		_build_ghost.set_visible_preview(false)
 	_sync_selector_enabled_for_targeting()
@@ -1240,6 +1339,7 @@ func _commit_build_targeting(screen_pos: Vector2) -> void:
 		return
 	if not _build_placement.commit():
 		return
+	_build_confirm_armed = false
 	# 接 peasant 列表后下 issue_build
 	var peasants: Array = _command_router.filter_peasants(_get_selected_safe())
 	_command_router.issue_build(peasants, bid, site, UnitOrder.Source.TARGETING)
@@ -1254,32 +1354,40 @@ func _apply_ghost_to_screen() -> void:
 		return
 	if not _build_placement.is_active():
 		return
-	var hit := _ground_at_screen(_last_screen_pos)
-	if hit == Vector3.INF:
-		_build_ghost.visible = false
+	# 光标在命令面板上：已有落点则保持；尚无落点则先不画
+	if _pointer_over_blocking_gui():
+		var site := _build_placement.current_site_wc3()
+		if site == Vector2.INF:
+			_build_ghost.set_visible_preview(false)
+		else:
+			_build_ghost.set_visible_preview(true)
 		return
-	_build_ghost.visible = true
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var wx := hit.x * inv
-	var wy := -hit.z * inv
-	var ty := hit.y
-	_build_ghost.set_position_wc3(wx, wy, ty)
-	_build_ghost.set_valid(_build_placement.is_valid())
+	var site2 := _build_placement.current_site_wc3()
+	if site2 == Vector2.INF:
+		return
+	_build_ghost.set_visible_preview(true)
+	_build_ghost.update_from_sample(
+		_build_placement.current_footprint_sample(),
+		_pathing,
+		_heightfield,
+		site2
+	)
 
 
-func _on_build_placement_changed(_bid: String, _site: Vector2, valid: bool) -> void:
+func _on_build_placement_changed(_bid: String, _site: Vector2, _valid: bool) -> void:
 	if _build_ghost != null and _build_placement != null and _build_placement.is_active():
-		_build_ghost.set_valid(valid)
+		_apply_ghost_to_screen()
 
 
 func _on_build_placement_cancelled() -> void:
+	_build_confirm_armed = false
 	if _build_ghost != null:
 		_build_ghost.set_visible_preview(false)
 	_sync_selector_enabled_for_targeting()
 
 
 func _on_build_placement_committed(_bid: String, _site: Vector2) -> void:
-	pass
+	_build_confirm_armed = false
 
 
 func _ensure_build_placement_objects() -> void:
@@ -1304,7 +1412,22 @@ func _ensure_ghost_node(building_id: String) -> void:
 			map_root.add_child(_build_ghost)
 		else:
 			add_child(_build_ghost)
+	if map_root != null:
+		_build_ghost.configure(map_root.get_model_cache(), map_root.get_id_catalog())
 	_build_ghost.set_building(building_id)
+
+
+## HUD / 小地图等吃鼠标的 Control：建造确认与地面采样应避开。
+func _pointer_over_blocking_gui() -> bool:
+	if unit_selector != null and unit_selector.has_method("_hud_blocks_screen"):
+		return bool(unit_selector.call("_hud_blocks_screen", _last_screen_pos))
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	var hovered := vp.gui_get_hovered_control()
+	if hovered == null:
+		return false
+	return hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE
 
 
 func _heightfield_ref() -> Wc3Heightfield:
@@ -1384,11 +1507,21 @@ func _on_build_started(order: BuildOrder) -> void:
 	UnitLife.ensure(node)
 	UnitLife.set_under_construction(node, true)
 	UnitLife.set_ratio(node, 0.05)
-	_active_construction[key] = {"cn": cn, "node": node, "building_id": order.building_id}
+	# Birth 建造动画
+	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
+	if cache != null:
+		BuildingVisual.apply_phase(cache, node, order.building_id, BuildingVisual.Phase.BIRTH)
 	var bc: BuildController = null
 	if order.builder != null:
 		bc = order.builder.get_node_or_null("BuildController") as BuildController
 	var site: BuildSite = bc.current_site() if bc != null else null
+	_active_construction[key] = {
+		"cn": cn,
+		"node": node,
+		"building_id": order.building_id,
+		"site": site,
+	}
+	_register_build_site(site, node, order)
 	if site != null:
 		var cb := _on_construction_progress.bind(key)
 		if not site.progress_changed.is_connected(cb):
@@ -1397,7 +1530,8 @@ func _on_build_started(order: BuildOrder) -> void:
 	if health_bar_manager:
 		health_bar_manager.resync()
 	_sync_build_hud_for_selection()
-
+	if game_hud:
+		game_hud.set_status("开工：%s" % order.building_id)
 
 func _on_construction_progress(elapsed: float, total: float, ratio: float, key: String) -> void:
 	if not _active_construction.has(key):
@@ -1415,30 +1549,36 @@ func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int
 	if order == null:
 		return
 	var key := _construction_key(order)
-	if _active_construction.has(key):
-		var rec: Dictionary = _active_construction[key]
-		var node: Node3D = rec.get("node") as Node3D
-		if node != null and is_instance_valid(node):
-			UnitLife.set_under_construction(node, false)
-			UnitLife.set_ratio(node, 1.0)
-		_active_construction.erase(key)
-		_unbind_hud_build_site()
-		if game_hud != null:
-			game_hud.clear_build_progress()
-			game_hud.set_status("完工：%s @ (%.0f, %.0f)" % [order.building_id, site_wc3.x, site_wc3.y])
-		_refresh_command_card()
-		_sync_selection_info_panel()
-		if health_bar_manager:
-			health_bar_manager.resync()
+	# BuildController 与 site 可能双重回调；只处理一次
+	if not _active_construction.has(key):
 		return
-	var entry := _build_entry_for(order.building_id, site_wc3, player_owner, _alloc_runtime_cn())
-	if map_root != null and _heightfield != null:
+	var rec: Dictionary = _active_construction[key]
+	var building_node: Node3D = rec.get("node") as Node3D
+	_active_construction.erase(key)
+	if building_node != null and is_instance_valid(building_node):
+		UnitLife.set_under_construction(building_node, false)
+		UnitLife.set_ratio(building_node, 1.0)
+		var cache = map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null
+		if cache != null:
+			BuildingVisual.apply_phase(cache, building_node, order.building_id, BuildingVisual.Phase.IDLE)
+	elif map_root != null and _heightfield != null:
+		var entry := _build_entry_for(order.building_id, site_wc3, player_owner, _alloc_runtime_cn())
 		map_root.add_unit_instance(entry, _heightfield.as_dict_view())
 		_refresh_dynamic_pathing()
+	# 人口上限（首工已离开时 BuildController 不会加）
+	if _session != null:
+		var stock: PlayerStock = _session.local_stock()
+		if stock != null:
+			var fmade: int = BuildingCatalog.get_food_made(order.building_id)
+			if fmade > 0:
+				stock.add_food_cap(fmade)
+	_unbind_hud_build_site()
+	_unregister_build_site(order, building_node)
 	if game_hud != null:
 		game_hud.clear_build_progress()
 		game_hud.set_status("完工：%s @ (%.0f, %.0f)" % [order.building_id, site_wc3.x, site_wc3.y])
 	_refresh_command_card()
+	_sync_selection_info_panel()
 	if health_bar_manager:
 		health_bar_manager.resync()
 
@@ -1449,10 +1589,12 @@ func _on_build_cancelled(order: BuildOrder) -> void:
 		if _active_construction.has(key):
 			var rec: Dictionary = _active_construction[key]
 			var cn := int(rec.get("cn", -1))
+			var building_node: Node3D = rec.get("node") as Node3D
 			if cn >= 0 and map_root != null:
 				map_root.remove_unit_instance(cn)
 				_refresh_dynamic_pathing()
 			_active_construction.erase(key)
+			_unregister_build_site(order, building_node)
 	_unbind_hud_build_site()
 	if game_hud != null:
 		game_hud.clear_build_progress()
@@ -1470,10 +1612,7 @@ func _alloc_runtime_cn() -> int:
 func _construction_key(order: BuildOrder) -> String:
 	if order == null:
 		return ""
-	if order.builder != null and is_instance_valid(order.builder):
-		return "builder_%d" % order.builder.get_instance_id()
-	return "%s_%.0f_%.0f" % [order.building_id, order.site_wc3.x, order.site_wc3.y]
-
+	return _site_lookup_key(order.building_id, order.site_wc3)
 
 func _refresh_dynamic_pathing() -> void:
 	if map_root == null:
@@ -1799,6 +1938,8 @@ func _clear_command_card_hotkeys() -> void:
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
+	if _is_build_targeting():
+		_cancel_build_targeting()
 	if health_bar_manager:
 		health_bar_manager.set_selection(selected)
 	if game_hud == null:

@@ -13,4 +13,4 @@ func try_join(_site: Node, _builder: Node3D) -> bool:
 ## on_builder_arrived：人 visible（不隐藏）；BuildSite.add_builder
 ## on_cancel：释放 active_builders（visible + IDLE）
 ## on_complete：释放 active_builders
-## tick：BuildSite 自己推进进度（每多 1 个 builder +50% rate，由 BuildSite._process 调）
+## tick：BuildSite 自己推进进度（N 工人 → N× 基准速率；0 人暂停）

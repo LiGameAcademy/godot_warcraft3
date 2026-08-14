@@ -12,8 +12,8 @@ extends Node3D
 signal commit_requested(building_id: String, site_wc3: Vector2)
 signal cancel_requested
 
-const BOX_HEIGHT_GODOT := 1.0
-const LABEL_OFFSET_GODOT := 1.0
+const BOX_HEIGHT_GODOT := 0.35
+const LABEL_OFFSET_GODOT := 0.25
 const LEGAL_COLOR := Color(0.20, 0.85, 0.30, 0.50)
 const ILLEGAL_COLOR := Color(0.85, 0.20, 0.20, 0.50)
 
@@ -36,8 +36,10 @@ func setup(building_id: String) -> void:
 
 
 ## 外部刷新位置 + 合法性颜色。
-func update_position(wc3_xy: Vector2, can_build: bool) -> void:
+## wc3_xy 为中心；高度由调用方可选传入 Godot Y（默认 0）。
+func update_position(wc3_xy: Vector2, can_build: bool, terrain_y_godot: float = 0.0) -> void:
 	var godot_pos: Vector3 = Wc3Coords.wc3_xy_to_godot(wc3_xy.x, wc3_xy.y, 0.0)
+	godot_pos.y = terrain_y_godot
 	global_position = godot_pos
 	if can_build != _can_build:
 		_can_build = can_build
@@ -58,12 +60,13 @@ func cancel() -> void:
 
 
 func _build_visual() -> void:
-	var w: float = float(_footprint.x) * Wc3Coords.PATHING_CELL
-	var d: float = float(_footprint.y) * Wc3Coords.PATHING_CELL
+	# footprint 格 → Godot 尺寸（× PATHING_CELL × WORLD_SCALE）
+	var w: float = float(_footprint.x) * Wc3Coords.PATHING_CELL * Wc3Coords.WORLD_SCALE
+	var d: float = float(_footprint.y) * Wc3Coords.PATHING_CELL * Wc3Coords.WORLD_SCALE
 	if w <= 0.0:
-		w = Wc3Coords.PATHING_CELL
+		w = Wc3Coords.PATHING_CELL * Wc3Coords.WORLD_SCALE
 	if d <= 0.0:
-		d = Wc3Coords.PATHING_CELL
+		d = Wc3Coords.PATHING_CELL * Wc3Coords.WORLD_SCALE
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(w, BOX_HEIGHT_GODOT, d)
 	_box = MeshInstance3D.new()
@@ -78,9 +81,9 @@ func _build_visual() -> void:
 	_label = Label3D.new()
 	_label.text = _display_name()
 	_label.font_size = 64
-	_label.pixel_size = 0.05
+	_label.pixel_size = 0.002
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_label.position = Vector3(0.0, BOX_HEIGHT_GODOT + LABEL_OFFSET_GODOT, 0.0)
+	_label.position = Vector3(0.0, BOX_HEIGHT_GODOT * 0.5 + LABEL_OFFSET_GODOT, 0.0)
 	_label.modulate = LEGAL_COLOR
 	_label.no_depth_test = true
 	add_child(_label)

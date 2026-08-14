@@ -11,9 +11,11 @@ var _grid_option: OptionButton
 var _pathing_check: CheckBox
 var _ramp_check: CheckBox
 var _path_dbg_check: CheckBox
+var _hp_bar_check: CheckBox
 var _hint: Label
 var _map: MapLoader
 var _director: Node
+var _health_bars: HealthBarManager
 
 
 func _ready() -> void:
@@ -45,6 +47,10 @@ func _resolve_refs() -> void:
 			_map = parent_n.get_node_or_null("MapRoot") as MapLoader
 		if _director == null or not is_instance_valid(_director):
 			_director = parent_n.get_node_or_null("GameDirector")
+		if _health_bars == null or not is_instance_valid(_health_bars):
+			_health_bars = parent_n.get_node_or_null("HealthBarManager") as HealthBarManager
+			if _health_bars == null and _director != null:
+				_health_bars = _director.get("health_bar_manager") as HealthBarManager
 
 
 func _build_ui() -> void:
@@ -104,6 +110,11 @@ func _build_ui() -> void:
 	_path_dbg_check.toggled.connect(_on_path_dbg_toggled)
 	v.add_child(_path_dbg_check)
 
+	_hp_bar_check = CheckBox.new()
+	_hp_bar_check.text = "全局血条常显（关则按住 Alt）"
+	_hp_bar_check.toggled.connect(_on_hp_bar_toggled)
+	v.add_child(_hp_bar_check)
+
 	_hint = Label.new()
 	_hint.text = "日志：game/config/debug_log.json"
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -125,6 +136,11 @@ func _sync_from_world() -> void:
 		_ramp_check.set_pressed_no_signal(bool(_director.get("show_ramp_debug")))
 	if _path_dbg_check != null and _director != null:
 		_path_dbg_check.set_pressed_no_signal(bool(_director.get("show_path_debug")))
+	if _hp_bar_check != null:
+		var on := true
+		if _health_bars != null:
+			on = _health_bars.is_always_show()
+		_hp_bar_check.set_pressed_no_signal(on)
 
 
 func _on_grid_selected(idx: int) -> void:
@@ -164,3 +180,10 @@ func _on_path_dbg_toggled(on: bool) -> void:
 		if _director.has_method("_apply_path_debug_visibility"):
 			_director.call("_apply_path_debug_visibility")
 	MapLog.info(MapLog.Layer.GM, "GM", "path_debug=%s" % on)
+
+
+func _on_hp_bar_toggled(on: bool) -> void:
+	_resolve_refs()
+	if _health_bars != null:
+		_health_bars.set_always_show(on)
+	MapLog.info(MapLog.Layer.GM, "GM", "hp_bars_always=%s" % on)

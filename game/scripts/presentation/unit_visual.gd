@@ -86,6 +86,24 @@ func set_locomotion(moving: bool) -> void:
 	_play_logical(want, blend)
 
 
+## 建造站桩：播 Stand Work（人族施工）。结束时恢复 Stand/Walk。
+func set_building_work(active: bool) -> void:
+	if active:
+		_chopping = false
+		_moving = false
+		_logical = ""
+		_play_logical("Stand_Work", 0.1)
+		if _logical != "Stand_Work" and _logical != "Stand Work":
+			var body := get_parent() as Node3D
+			var resolved := BuildingVisual.resolve_animation(body, "Stand Work")
+			if not resolved.is_empty() and _play_with_blend(body, resolved, 0.1):
+				_logical = "Stand Work"
+	else:
+		if _logical == "Stand_Work" or _logical == "Stand Work":
+			_logical = ""
+			_play_logical(_logical_for(_moving, _carry), BLEND_TO_STAND)
+
+
 ## 伐木站桩：播 Attack Lumber（回退 Attack）。结束时恢复 Walk/Stand。
 ## 已在砍伐中再次 set(true)：保持循环（多击攒木），不打断。
 func set_chopping(active: bool) -> void:

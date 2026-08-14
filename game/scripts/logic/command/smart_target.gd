@@ -8,6 +8,8 @@ enum Kind {
 	GOLD_MINE = 1,
 	TREE = 2,
 	DROPOFF = 3,
+	## 未完工建筑：农民可 join 建造
+	BUILD_SITE = 4,
 }
 
 
@@ -51,6 +53,14 @@ static func dropoff(building: Node3D, goal: Vector2) -> SmartTarget:
 	return t
 
 
+static func build_site(building: Node3D, goal: Vector2) -> SmartTarget:
+	var t := SmartTarget.new()
+	t.kind = Kind.BUILD_SITE
+	t.node = building
+	t.goal_wc3 = goal
+	return t
+
+
 func kind_name() -> String:
 	match kind:
 		Kind.GROUND:
@@ -61,5 +71,7 @@ func kind_name() -> String:
 			return "Tree"
 		Kind.DROPOFF:
 			return "Dropoff"
+		Kind.BUILD_SITE:
+			return "BuildSite"
 		_:
 			return "Unknown"

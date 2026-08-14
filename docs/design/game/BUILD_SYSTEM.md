@@ -383,9 +383,9 @@ game/scripts/
 | BuildingCatalog | ✅ | 造价 / bldtm / pathTex / fmade |
 | PlacementRules | ✅ | 越界 / 占格 / 可通行；荒地谓词未接 |
 | BuildPlacementController | ✅ | begin / update_screen / confirm / cancel |
-| BuildPlacementGhost | ✅ | 绿/红半透明 footprint |
+| BuildPlacementGhost | ✅ | 寻路格吸附；逐格贴地绿/红；半透明建筑模型 |
 | BuildController | ✅ | 走位、扣费、按 profile hide、退款 |
-| BuildSite | ✅ | timer + **F2-C** `add_builder` / 多工加速（每多 1 人 +50%） |
+| BuildSite | ✅ | timer + **F2-C** `add_builder`；0 人暂停；N 人速率 ∝ N；≥2 人扣 goldRep/lumberRep |
 | HumanConstructionStrategy | ✅ | 人族策略接线 |
 | CommandCard `ubuild` | ✅ | builds 展开 → `begin_placement` |
 | GameDirector 接线 | ✅ | `_ensure_build_placement_objects` |
@@ -406,16 +406,17 @@ game/scripts/
 | 项 | 说明 |
 |----|------|
 | **Ghost 地面采样 arity**（2026-04-14） | Director 绑定 `Callable(self, "_ground_at_screen")`（需 `screen_pos`）。`BuildPlacementController._recompute` 曾 `.call()` 零参 → 点建造按钮即报错。已改为 `.call(_screen_pos)`。 |
+| **Ghost 跟手 / 整图变色 / 贴地遮挡 / 逐格预览**（2026-04-14） | 误用 `1/WORLD_SCALE`；整块变色。已改为：寻路格吸附、footprint **逐格**绿/红贴地、半透明模型。建造格=调试「小」格(32)；「中」格(128)=4×4 建造格。 |
 
 ### 13.4 与设计契约的差距
 
 | 项 | 现状 | 优先级 |
 |----|------|--------|
 | 人族可见施工 / Profile 退款 | ✅ 已按 `hides_builder` / `cancel_refund_ratio` | — |
-| 多工加速（BuildSite） | ✅ 速率已实现；Repair / 点工地 join UI 需实机再验 | P1 验 |
+| 多工加速（BuildSite） | ✅ 0 人暂停；N∝速率；≥2 扣 goldRep；右键半成品 / 再下令 join | — |
 | WorldMembership.exit/enter | 流程文档曾写；当前人族路径未强制依赖 | P1（亡灵必做） |
 | `requirePlace` / `preventPlace` | PlacementRules 未接 | P2（亡灵） |
-| Birth / 工地幼体视觉 | 未做 | P2 |
+| Birth / 工地幼体视觉 | ✅ 开工播 Birth；完工回 Stand | — |
 | Orc / NE / Undead Strategy | stub | 各族里程碑 |
 | 兵营 TrainQueue | 属 F3/F4，非建造核心 | F3+ |
 
@@ -430,7 +431,7 @@ game/scripts/
   热修：_get_ground_hit.call(screen_pos)
 
 下一刀（建议顺序）
-  1. 实机：Peasant → 建房 → Ghost 跟手 → 落点 → 完工 → food_cap
+  1. ~~实机：Peasant → Ghost 跟手~~（2026-04-14 热修：top_level / HUD 武装）
   2. 第二农民 join（Repair / 点工地）UI 与验收
   3. Undead：hide + WorldMembership + blight requirePlace
   4. Orc / NightElf：hide / 消耗工人分叉
