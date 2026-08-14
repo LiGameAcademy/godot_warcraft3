@@ -319,12 +319,22 @@ static func _packed_scene_refs_gdignored_converted(res_or_abs: String) -> bool:
 static func _bytes_has_ascii(bytes: PackedByteArray, needle: String) -> bool:
 	if needle.is_empty() or bytes.is_empty():
 		return false
-	# 用 String.find 比双重 GDScript 循环快一个数量级（仅用于小 probe）
-	var hay := bytes.get_string_from_utf8()
-	if hay.is_empty():
-		# 含 NUL 时 utf8 可能失败：退回 ascii 宽松解码
-		hay = bytes.get_string_from_ascii()
-	return hay.find(needle) >= 0
+	# 禁止 get_string_from_utf8/ascii：.scn 二进制含 NUL 时会截断，漏检外链贴图路径，
+	# 并刷 "Unicode parsing error... Unexpected NUL"。
+	var n := needle.to_utf8_buffer()
+	var n_len := n.size()
+	var limit := bytes.size() - n_len
+	if limit < 0:
+		return false
+	for i in range(limit + 1):
+		var matched := true
+		for j in range(n_len):
+			if bytes[i + j] != n[j]:
+				matched = false
+				break
+		if matched:
+			return true
+	return false
 
 
 ## 将根节点打包存为 .scn（目录自动创建）。

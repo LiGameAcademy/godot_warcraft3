@@ -220,9 +220,17 @@ func _process(_delta: float) -> void:
 
 
 func _hud_blocks_screen(screen_pos: Vector2) -> bool:
-	# 粗略避开底栏 / 右上资源条，避免抢走 HUD 按钮。
 	# 注意：框选进行中不要调用此函数拦截松手（见 handle_pointer_event）。
-	var vp := get_viewport().get_visible_rect().size
+	# 主判据：鼠标下已有接事件的 Control（HUD / GM / 命令卡 / Option 弹出项）。
+	# 框选走 _input 早于 GUI；若不让路，GM 勾选/下拉会被点选吃掉。
+	var viewport := get_viewport()
+	if viewport == null:
+		return false
+	var hovered := viewport.gui_get_hovered_control()
+	if hovered != null and _is_ui_control_blocking(hovered):
+		return true
+	# 兜底：底栏 / 右上资源条（hovered 偶发为空时）
+	var vp := viewport.get_visible_rect().size
 	if vp.y <= 1.0:
 		return false
 	if screen_pos.y >= vp.y * 0.78:
@@ -230,6 +238,22 @@ func _hud_blocks_screen(screen_pos: Vector2) -> bool:
 	if screen_pos.y <= 52.0 and screen_pos.x >= vp.x - 340.0:
 		return true
 	return false
+
+
+func _is_ui_control_blocking(ctrl: Control) -> bool:
+	if ctrl == null or not is_instance_valid(ctrl):
+		return false
+	# 选择器自建穿透层 / 框选 overlay：不算 UI
+	if _input_root != null and is_instance_valid(_input_root):
+		if ctrl == _input_root or _input_root.is_ancestor_of(ctrl):
+			return false
+	if _overlay != null and is_instance_valid(_overlay):
+		if ctrl == _overlay or _overlay.is_ancestor_of(ctrl):
+			return false
+	# IGNORE 控件不抢点击（全屏 HUD 根常为 IGNORE）
+	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+		return false
+	return true
 
 
 func _unhandled_input(event: InputEvent) -> void:

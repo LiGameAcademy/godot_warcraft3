@@ -54,9 +54,11 @@ func _build_ui() -> void:
 	_panel.position = Vector2(12, 72)
 	_panel.custom_minimum_size = Vector2(300, 0)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_panel.focus_mode = Control.FOCUS_CLICK
 	add_child(_panel)
 
 	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_STOP
 	margin.add_theme_constant_override("margin_left", 10)
 	margin.add_theme_constant_override("margin_right", 10)
 	margin.add_theme_constant_override("margin_top", 8)
@@ -64,6 +66,7 @@ func _build_ui() -> void:
 	_panel.add_child(margin)
 
 	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_STOP
 	v.add_theme_constant_override("separation", 6)
 	margin.add_child(v)
 

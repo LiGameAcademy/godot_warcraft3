@@ -756,10 +756,9 @@ func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 			best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
 
 	if best != null:
+		# 树木：黄环 + emissive（原作点选反馈）；金矿不闪
 		if best.kind == SmartTarget.Kind.TREE:
 			_flash_tree_target(best.tree_cn)
-		elif best.kind == SmartTarget.Kind.GOLD_MINE and best.node != null:
-			TargetFlashFxScr.flash_target(best.node, 0.45, 1.6, true)
 		return best
 	if ground_goal == Vector2.INF:
 		return null
@@ -1004,7 +1003,6 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector.has_method("pick_at"):
 		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
 		if picked != null and _is_gold_mine(picked):
-			TargetFlashFxScr.flash_target(picked, 0.45, 1.6, true)
 			var n := _command_router.issue_harvest_gold(peasants, picked, source)
 			if n > 0 and game_hud:
 				game_hud.set_status("采集金币 · %d 农民" % n)
