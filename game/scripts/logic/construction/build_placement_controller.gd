@@ -20,7 +20,7 @@ var _building_id: String = ""
 var _screen_pos: Vector2 = Vector2.ZERO
 var _site_wc3: Vector2 = Vector2.INF
 var _valid: bool = false
-var _get_ground_hit: Callable = Callable() ## () -> Vector3（godot 坐标，已含地表 y）
+var _get_ground_hit: Callable = Callable() ## (screen_pos: Vector2) -> Vector3（godot 坐标，已含地表 y）
 var _get_heightfield: Callable = Callable() ## () -> Wc3Heightfield
 var _get_pathing: Callable = Callable() ## () -> Wc3PathingMap
 var _get_cell_reservation: Callable = Callable() ## () -> PathCellReservation
@@ -94,7 +94,10 @@ func commit() -> bool:
 func _recompute() -> void:
 	if _building_id.is_empty():
 		return
-	var hit: Vector3 = _get_ground_hit.call() if _get_ground_hit.is_valid() else Vector3.INF
+	# Director 绑定的是 _ground_at_screen(screen_pos)，必须传入当前光标
+	var hit: Vector3 = (
+		_get_ground_hit.call(_screen_pos) if _get_ground_hit.is_valid() else Vector3.INF
+	)
 	if hit == Vector3.INF:
 		_site_wc3 = Vector2.INF
 		_valid = false

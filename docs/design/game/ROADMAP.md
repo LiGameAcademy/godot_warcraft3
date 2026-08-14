@@ -42,7 +42,7 @@ F  人族游玩竖切        采集→基建→英雄→训兵→科技→技能
 E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂接
 ```
 
-编号即推荐顺序；**A→D 已基本落地；F 竖切已完成 F0+F1，当前主线为 F2 建造**（详见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)）；E 仍单独开里程碑。
+编号即推荐顺序；**A→D 已基本落地；F 竖切已完成 F0+F1，F2 人族建造可玩**（见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md) §13）；下一主线建议 F3 英雄 / F4 训兵；E 仍单独开里程碑。
 
 ---
 
@@ -110,7 +110,7 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 |----|------|------|
 | F0 | 命令 / SmartTarget / Router；农民移动停止面板 | ✅ |
 | F1 | 采集金、木、送回；树 promote；CarrySlot | ✅ |
-| F2 | 祭坛、农场、兵营（建造 + 占位 + 人口） | 契约见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md)；人族 Strategy 竖切，预留四族 Profile |
+| F2 | 祭坛、农场、兵营（建造 + 占位 + 人口） | ✅ 人族可玩；缺口：join UI 验 / blight / 他族 Strategy / Birth（[BUILD_SYSTEM.md](BUILD_SYSTEM.md) §13） |
 | F3 | 召唤大法师 | |
 | F4 | 训练步兵 | |
 | F5 | 伐木场 | |

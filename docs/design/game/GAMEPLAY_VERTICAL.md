@@ -223,9 +223,10 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 
 ### F2 · 建造祭坛、农场、兵营
 
-> **当前进度：骨架已有 → 按 [BUILD_SYSTEM.md](BUILD_SYSTEM.md) 校正人族语义并接线**  
-> 分支：`feature/building-system`  
-> **设计契约（必读）：** 四族建造非对称 → 用 `ConstructionProfile` + Strategy，F2 只实现人族；**禁止**把「工人隐藏」当默认（那是兽/灵）。
+> **当前进度：人族竖切可玩**（Catalog / Placement / BuildSite / CommandCard 已接线；2026-04-14 修 Ghost `_get_ground_hit` arity）  
+> 分支：`feature/building-system`（已与 `master` 同步）  
+> **设计契约（必读）：** 四族建造非对称 → 用 `ConstructionProfile` + Strategy，F2 只实现人族；**禁止**把「工人隐藏」当默认（那是兽/灵）。  
+> 状态与缺口详见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md) §13。
 
 **玩法**
 
@@ -248,12 +249,12 @@ MOVE_TO_MINE →（首趟：车道候位散开 / 循环：统一出矿门）enqu
 | # | 关注点 | 关键产物 | 状态 |
 |---|--------|----------|------|
 | **F2-1** | docs: F2 计划 + [BUILD_SYSTEM.md](BUILD_SYSTEM.md) 四族契约 | 本节 + BUILD_SYSTEM + ROADMAP | ✅ |
-| **F2-2** | data: BuildingCatalog + ConstructionProfile（人族） | `BuildingCatalog` + `construction_profile_catalog.gd` | ⏳ |
-| **F2-3** | logic: BuildSite 共享真相 + HumanStrategy + 单次扣费 | `construction/*` + Router 映射 `BuildOrder` | ⏳ |
-| **F2-4** | present: PlacementGhost（绿/红合法性预览） | `placement_ghost.gd` | ⏳ |
-| **F2-5** | logic/present: 工地进度（人族可见施工；非隐藏农民） | `BuildSite` + 进度条；P1 多工加速 | ⏳ |
+| **F2-2** | data: BuildingCatalog + ConstructionProfile（人族） | `BuildingCatalog` + `construction_profile_catalog.gd` | ✅ |
+| **F2-3** | logic: BuildSite 共享真相 + HumanStrategy + 单次扣费 | `construction/*` + Router 映射 `BuildOrder` | ✅ |
+| **F2-4** | present: PlacementGhost（绿/红合法性预览） | `build_placement_ghost.gd` | ✅ |
+| **F2-5** | logic/present: 工地进度（人族可见施工；非隐藏农民） | `BuildSite` + F2-C 多工加速；进度条可再抛光 | ✅ |
 | **F2-6** | logic: TrainQueue 最小（兵营训步兵 1 队列 + 出门） | `train_queue.gd`（延伸 F3/F4） | ⏳ |
-| **F2-7** | test: selftest 覆盖 Profile 语义 | 单工可见 / 单次扣费 / 取消退款 / 选址 | ⏳ |
+| **F2-7** | test: selftest 覆盖 Profile 语义 | `selftest_f2_build_system.gd`（Profile/Builds/多工） | ✅ |
 
 **代码落点（不破架构）**
 
@@ -297,7 +298,7 @@ game/scripts/
 7. 同样流程造 Altar / Barracks；Barracks 训 Footman（F2-6）
 8. 取消：工地消失、按 Profile 退款、农民恢复 IDLE/可见
 
-**下一步：** 按 BUILD_SYSTEM §12 做人族 Strategy + Director 接线（修 High 问题）
+**下一步：** 实机验收 Ghost→完工；第二农民 join UI；TrainQueue 并入 F3/F4。兽/灵/亡与 blight 见 BUILD_SYSTEM §13.5。
 
 ---
 
