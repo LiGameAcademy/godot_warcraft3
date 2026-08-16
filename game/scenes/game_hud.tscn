@@ -1,7 +1,8 @@
-[gd_scene format=3 uid="uid://jswtl3uxmvo7"]
+[gd_scene load_steps=3 format=3 uid="uid://jswtl3uxmvo7"]
 
 [ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
 [ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://game/scripts/presentation/game_minimap.gd" id="2_minimap"]
+[ext_resource type="PackedScene" uid="uid://bq8portraitview01" path="res://game/scripts/presentation/hud/unit_portrait_view.tscn" id="3_portrait"]
 
 [node name="GameHud" type="CanvasLayer" unique_id=1807320661]
 layer = 10
@@ -134,6 +135,10 @@ theme_override_constants/separation = 3
 [node name="PortraitHost" type="CenterContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397343]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(96, 96)
+layout_mode = 2
+
+[node name="UnitPortraitView" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHost" unique_id=2040397399 instance=ExtResource("3_portrait")]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="PortraitHpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397344]

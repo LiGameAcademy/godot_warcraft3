@@ -121,10 +121,12 @@ UnitSelector
 
 ### 渲染
 
-- HUD 内 `SubViewport` + 实例化 Portrait 场景；队伍色按 owner 重染（与战场模型同一套）。
-- **相机**：当前 glTF 转换**未带出** MDX Portrait Camera（`cameras=0`）。
-  1. **近期**：启发式相机（看向 `Bone_Head` / AABB 中心，固定 FOV）。
-  2. **远期**：转换器回填 Camera，或从 MDX 读机位后写入旁路数据。
+- HUD：`game/scripts/presentation/hud/unit_portrait_view.tscn`（队色 `ColorRect` + SubViewport）。
+- 模型队色按 owner 重染；MDX 内嵌背景板运行时隐藏（勿用笼统 `_portrait` 匹配，会误藏全身）。
+- **相机**（优先级）：
+  1. bake 进 `*_Portrait.scn` 的 `MdxCameras/Camera3D`
+  2. 旁路 `*.cameras.json`
+  3. AABB 启发式
 
 ### 回退
 

@@ -991,17 +991,19 @@ func _should_hide_preview_mesh(mi: MeshInstance3D) -> bool:
 			blob += " " + str(tex.resource_name).to_lower()
 		# 建筑脚底 UberSplat / 死亡烟雾 / 肖像背景板 — 游戏与 WE 场景不展示
 		# （仅隐藏模型内嵌 geoset；运行时贴花见上方 early-out）
+		# 注意：勿用笼统 "_portrait"——会把 peasant_Portrait 全身 mesh 全藏掉，HUD 只剩队色底。
 		if (
 			blob.contains("ubersplat")
 			or blob.contains("/splats/")
 			or blob.contains("deathsmug")
 			or blob.contains("death_smug")
+			or blob.contains("portraitbackground")
+			or blob.contains("portrait_background")
+			or blob.contains("portrait bg")
 			or blob.contains("background")
 			or blob.contains("back_ground")
-			or blob.contains("_portrait")
 		):
-			return true
-		# 模型内嵌 Textures\Shadow.blp（地精商店脚底实心黑盘等）；真正建筑阴影走 unitUI.buildingShadow
+			return true		# 模型内嵌 Textures\Shadow.blp（地精商店脚底实心黑盘等）；真正建筑阴影走 unitUI.buildingShadow
 		if _is_embedded_blob_shadow_tex(tex, blob):
 			return true
 		# Team Glow（_rep2 / team_glow 占位）：英雄光环/武器光晕，Stand 下应隐藏

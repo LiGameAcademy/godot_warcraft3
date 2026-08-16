@@ -22,6 +22,7 @@ signal multi_select_clicked(instance_id: int)
 @onready var _armor_line: Label = %ArmorLine
 @onready var _special_lines: Label = %SpecialLines
 @onready var _portrait_host: Control = %PortraitHost
+@onready var _portrait: UnitPortraitView = %UnitPortraitView
 @onready var _portrait_hp: ProgressBar = %PortraitHpBar
 @onready var _portrait_mana: ProgressBar = %PortraitManaBar
 @onready var _multi_strip: HBoxContainer = %MultiSelectStrip
@@ -41,13 +42,11 @@ signal multi_select_clicked(instance_id: int)
 var _slot_action_ids: PackedStringArray = PackedStringArray()
 var _icon_cache: Dictionary = {} ## path → Texture2D
 var _game_minimap: Control = null
-var _portrait: UnitPortraitView = null
 
 
 func _ready() -> void:
 	_style_command_panel()
 	_style_center_panel()
-	_ensure_portrait_view()
 	_wire_command_buttons()
 	_wire_minimap_input()
 	if _hint:
@@ -189,23 +188,8 @@ func set_selection_info(info: Dictionary) -> void:
 
 
 func configure_portrait(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:
-	_ensure_portrait_view()
 	if _portrait != null:
 		_portrait.configure(cache, catalog)
-
-
-func _ensure_portrait_view() -> void:
-	if _portrait != null and is_instance_valid(_portrait):
-		return
-	if _portrait_host == null:
-		return
-	for c in _portrait_host.get_children():
-		if c is UnitPortraitView:
-			_portrait = c as UnitPortraitView
-			return
-	_portrait = UnitPortraitView.new()
-	_portrait.name = "UnitPortraitView"
-	_portrait_host.add_child(_portrait)
 
 
 func _set_bar(bar: ProgressBar, cur: int, mx: int, show_bar: bool) -> void:

@@ -126,17 +126,22 @@ func _run() -> void:
 		# 这样 cache.bake_model_scene 烤出 .scn 时已含 attachment 节点
 		var att_data := _read_attachments(logical_glb)
 		var proto := cache.get_proto(glb_res)
-		if proto != null and not att_data.is_empty():
-			# C-3: 先按 VertexGroup 拆 mesh（修"小配件位置错乱"），再拼 attachment 节点
-			_split_meshes_by_group(proto, att_data)
-			_assemble_attachments(proto, att_data)
-			# 拆组后原 Geoset_N 节点已删；必须重注 :visible → Geoset_N_Group_*
-			if cache.has_method("reinject_geoset_vis_tracks"):
-				cache.reinject_geoset_vis_tracks(glb_res)
-			# Stand_Work*：腰带斧 hide-scale 会把 AxHandle 上的施工锤一起缩没 → 对齐左手并取消 hide
-			var work_fix := _fix_work_tool_anims(proto)
-			if work_fix > 0:
-				_plog("INFO", "fix_work_tool_anims: %d sequences (%s)" % [work_fix, logical_glb])
+		if proto != null:
+			if not att_data.is_empty():
+				# C-3: 先按 VertexGroup 拆 mesh（修"小配件位置错乱"），再拼 attachment 节点
+				_split_meshes_by_group(proto, att_data)
+				_assemble_attachments(proto, att_data)
+				# 拆组后原 Geoset_N 节点已删；必须重注 :visible → Geoset_N_Group_*
+				if cache.has_method("reinject_geoset_vis_tracks"):
+					cache.reinject_geoset_vis_tracks(glb_res)
+				# Stand_Work*：腰带斧 hide-scale 会把 AxHandle 上的施工锤一起缩没 → 对齐左手并取消 hide
+				var work_fix := _fix_work_tool_anims(proto)
+				if work_fix > 0:
+					_plog("INFO", "fix_work_tool_anims: %d sequences (%s)" % [work_fix, logical_glb])
+			# MDX Cameras → 场景内 Camera3D（肖像机位；无 sidecar 则跳过）
+			var cam_n := _inject_mdx_cameras(proto, logical_glb)
+			if cam_n > 0:
+				_plog("INFO", "inject_mdx_cameras: %d (%s)" % [cam_n, logical_glb])
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
@@ -199,17 +204,22 @@ func _matches_any_include(logical_glb: String, includes: PackedStringArray) -> b
 ## C-2: 读 .attachments.json sidecar（路径同 .gltf）。
 ## 读失败或文件不存在 → 返回空 Dictionary。
 func _read_attachments(logical_glb: String) -> Dictionary:
-	# logical_glb = "Buildings/Human/TownHall/TownHall.gltf"
-	# -> 替换 .gltf 为 .attachments.json
-	var att_path := logical_glb
-	if att_path.to_lower().ends_with(".gltf"):
-		att_path = att_path.substr(0, att_path.length() - 5) + ".attachments.json"
-	elif att_path.to_lower().ends_with(".glb"):
-		att_path = att_path.substr(0, att_path.length() - 4) + ".attachments.json"
+	return _read_json_sidecar(logical_glb, ".attachments.json")
+
+
+func _read_cameras(logical_glb: String) -> Dictionary:
+	return _read_json_sidecar(logical_glb, ".cameras.json")
+
+
+func _read_json_sidecar(logical_glb: String, suffix: String) -> Dictionary:
+	var side := logical_glb
+	if side.to_lower().ends_with(".gltf"):
+		side = side.substr(0, side.length() - 5) + suffix
+	elif side.to_lower().ends_with(".glb"):
+		side = side.substr(0, side.length() - 4) + suffix
 	else:
 		return {}
-	# 关键：必须含 res:// 前缀 + assets/asset-converted/，project_abs 才正确解析
-	var disk := RuntimeAssets.project_abs("res://assets/asset-converted/" + att_path)
+	var disk := RuntimeAssets.project_abs("res://assets/asset-converted/" + side)
 	if not FileAccess.file_exists(disk):
 		return {}
 	var f := FileAccess.open(disk, FileAccess.READ)
@@ -221,6 +231,65 @@ func _read_attachments(logical_glb: String) -> Dictionary:
 	if typeof(data) != TYPE_DICTIONARY:
 		return {}
 	return data
+
+
+## 把 *.cameras.json 写成场景内 Camera3D（current=false，由 HUD 启用）。
+func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
+	if proto == null:
+		return 0
+	var data := _read_cameras(logical_glb)
+	var cams_v: Variant = data.get("cameras", [])
+	if typeof(cams_v) != TYPE_ARRAY:
+		return 0
+	var cams: Array = cams_v
+	if cams.is_empty():
+		return 0
+	# 清掉旧注入，避免 --force 重烤叠节点
+	for c in proto.find_children("*", "Camera3D", true, false):
+		var cam0 := c as Camera3D
+		if cam0 != null and bool(cam0.get_meta("wc3_mdx_camera", false)):
+			cam0.queue_free()
+	var host := Node3D.new()
+	host.name = "MdxCameras"
+	proto.add_child(host)
+	host.owner = proto
+	var n := 0
+	for item in cams:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		var pos_v: Variant = d.get("position", null)
+		var tgt_v: Variant = d.get("target", null)
+		if typeof(pos_v) != TYPE_ARRAY or typeof(tgt_v) != TYPE_ARRAY:
+			continue
+		var pos_a: Array = pos_v
+		var tgt_a: Array = tgt_v
+		if pos_a.size() < 3 or tgt_a.size() < 3:
+			continue
+		var cam := Camera3D.new()
+		var cname := str(d.get("name", "Camera%02d" % (n + 1)))
+		cam.name = cname if not cname.is_empty() else ("Camera%02d" % (n + 1))
+		cam.current = false
+		cam.set_meta("wc3_mdx_camera", true)
+		cam.fov = clampf(float(d.get("fov_y_deg", 30.0)), 5.0, 120.0)
+		var near_v := float(d.get("near", 0.01))
+		var far_v := float(d.get("far", 100.0))
+		if near_v > 0.0:
+			cam.near = near_v
+		if far_v > near_v:
+			cam.far = far_v
+		var pos := Vector3(float(pos_a[0]), float(pos_a[1]), float(pos_a[2]))
+		var tgt := Vector3(float(tgt_a[0]), float(tgt_a[1]), float(tgt_a[2]))
+		host.add_child(cam)
+		cam.owner = proto
+		cam.position = pos
+		if pos.distance_squared_to(tgt) > 1e-8:
+			# proto 尚未入树，不能用 look_at()
+			cam.look_at_from_position(pos, tgt, Vector3.UP)
+		n += 1
+	if n == 0:
+		host.queue_free()
+	return n
 
 
 ## C-3: 按 VertexGroup 拆 geoset mesh（实现抽到 scripts/tool/split_meshes_by_group.gd）

@@ -17,6 +17,7 @@ import {
 import {
   blpLogicalToPng,
   mdxLogicalToAttachments,
+  mdxLogicalToCameras,
   mdxLogicalToGeosetVis,
   mdxLogicalToGltf,
   mdxLogicalToPe2,
@@ -245,6 +246,54 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     emitters,
   };
   // P3-10：原子写盘（.tmp → rename）—— 中途崩溃不留半成品 .pe2.json
+  atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
+  return dest;
+}
+
+/**
+ * MDX Cameras → *.cameras.json（Godot Y-up + MODEL_SCALE）。
+ * Portrait 模型通常有一台对准头部的 Camera；背景板仍导出 mesh，由运行时隐藏。
+ * @param {object} model
+ * @param {string} logicalPath
+ * @param {string} outDir
+ */
+function writeCamerasSidecar(model, logicalPath, outDir) {
+  const camsIn = model.Cameras ?? [];
+  const cameras = [];
+  for (const cam of camsIn) {
+    const posWc3 = asVec3(cam.Position);
+    const tgtWc3 = asVec3(cam.TargetPosition);
+    const posG = wc3ToGltfVec3(posWc3[0], posWc3[1], posWc3[2]);
+    const tgtG = wc3ToGltfVec3(tgtWc3[0], tgtWc3[1], tgtWc3[2]);
+    const fovRad = Number(cam.FieldOfView);
+    const fovDeg =
+      Number.isFinite(fovRad) && fovRad > 0
+        ? (fovRad * 180) / Math.PI
+        : 30;
+    cameras.push({
+      name: String(cam.Name || `Camera_${cameras.length}`),
+      position: [
+        posG[0] * MODEL_SCALE,
+        posG[1] * MODEL_SCALE,
+        posG[2] * MODEL_SCALE,
+      ],
+      target: [
+        tgtG[0] * MODEL_SCALE,
+        tgtG[1] * MODEL_SCALE,
+        tgtG[2] * MODEL_SCALE,
+      ],
+      fov_y_deg: fovDeg,
+      near: (Number(cam.NearClip) || 1) * MODEL_SCALE,
+      far: (Number(cam.FarClip) || 10000) * MODEL_SCALE,
+    });
+  }
+  const camLogical = mdxLogicalToCameras(logicalPath);
+  const dest = path.join(outDir, ...camLogical.split("/"));
+  const payload = {
+    version: 1,
+    source: normalizeLogicalPath(logicalPath),
+    cameras,
+  };
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
 }
@@ -1139,6 +1188,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     outDir,
     ...mdxLogicalToAttachments(logicalPath).split("/"),
   );
+  const camDest = path.join(
+    outDir,
+    ...mdxLogicalToCameras(logicalPath).split("/"),
+  );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
@@ -1147,6 +1200,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writePe2Sidecar(model, logicalPath, inDir, outDir);
     writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
     writeAttachmentsSidecar(model, logicalPath, outDir);
+    writeCamerasSidecar(model, logicalPath, outDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
@@ -1155,6 +1209,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(pe2Dest);
     unlinkQuiet(geosetVisDest);
     unlinkQuiet(attDest);
+    unlinkQuiet(camDest);
     throw err;
   }
   return dest;
@@ -1181,24 +1236,31 @@ export async function convertMdxBatch(options) {
       outDir,
       ...mdxLogicalToGeosetVis(file.logicalPath).split("/"),
     );
+    const camDest = path.join(
+      outDir,
+      ...mdxLogicalToCameras(file.logicalPath).split("/"),
+    );
 
     if (
       !force &&
       fs.existsSync(dest) &&
       fs.existsSync(pe2Dest) &&
-      fs.existsSync(geosetVisDest)
+      fs.existsSync(geosetVisDest) &&
+      fs.existsSync(camDest)
     ) {
       const srcStat = fs.statSync(file.absPath);
       const dstStat = fs.statSync(dest);
       const pe2Stat = fs.statSync(pe2Dest);
       const visStat = fs.statSync(geosetVisDest);
+      const camStat = fs.statSync(camDest);
       const valid = isValidGltfOnDisk(dest);
       if (
         dstStat.mtimeMs >= srcStat.mtimeMs &&
         dstStat.size > 0 &&
         valid &&
         pe2Stat.mtimeMs >= srcStat.mtimeMs &&
-        visStat.mtimeMs >= srcStat.mtimeMs
+        visStat.mtimeMs >= srcStat.mtimeMs &&
+        camStat.mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
         processed += 1;
