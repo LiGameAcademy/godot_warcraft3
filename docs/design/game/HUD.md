@@ -38,7 +38,7 @@ GameHud (CanvasLayer)
         └── Commands           4×3 命令格
 ```
 
-现状代码：中栏已接肖像 / 血蓝条 / 攻防与特殊行 / 多选条；生产队列未接。小地图与命令卡（含建造二级菜单）已接线。
+现状代码：中栏已接肖像 / 血蓝条 / 攻防与特殊行 / 多选条；生产队列未接。小地图（`game/hud/game_minimap.tscn`）与命令卡（含建造二级菜单）已接线。
 ---
 
 ## 3. 中栏：三种形态
@@ -121,7 +121,7 @@ UnitSelector
 
 ### 渲染
 
-- HUD：`game/scripts/presentation/hud/unit_portrait_view.tscn`（队色 `ColorRect` + SubViewport）。
+- HUD：`game/hud/unit_portrait_view.tscn`（队色 `ColorRect` + SubViewport）。
 - 模型队色按 owner 重染；MDX 内嵌背景板运行时隐藏（勿用笼统 `_portrait` 匹配，会误藏全身）。
 - **相机**（优先级）：
   1. bake 进 `*_Portrait.scn` 的 `MdxCameras/Camera3D`
@@ -148,8 +148,10 @@ hud.set_build_progress(visible, ratio, caption)
 hud.set_status(text)
 hud.set_command_card(entries)           # 12 格 Dictionary
 hud.configure_minimap(map_dir, hf, unit_host, cam, rig, local_player)
-hud.set_portrait_texture(tex)           # 占位，未实现
+hud.set_portrait_texture(tex)           # 已改用 UnitPortraitView；保留空实现
 ```
+
+小地图：`game/hud/game_minimap.tscn`（正方形 176；玩家点=队伍色，中立点=黑；金矿/nbmm 仍用原作图标）。
 
 **目标扩展（实现时补齐）：**
 

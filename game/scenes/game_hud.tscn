@@ -1,8 +1,8 @@
 [gd_scene load_steps=3 format=3 uid="uid://jswtl3uxmvo7"]
 
 [ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
-[ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://game/scripts/presentation/game_minimap.gd" id="2_minimap"]
-[ext_resource type="PackedScene" uid="uid://bq8portraitview01" path="res://game/scripts/presentation/hud/unit_portrait_view.tscn" id="3_portrait"]
+[ext_resource type="PackedScene" uid="uid://de0w2wwx4cytc" path="res://game/hud/game_minimap.tscn" id="2_minimap"]
+[ext_resource type="PackedScene" uid="uid://b1ihsk6ogfgxw" path="res://game/hud/unit_portrait_view.tscn" id="3_portrait"]
 
 [node name="GameHud" type="CanvasLayer" unique_id=1807320661]
 layer = 10
@@ -83,22 +83,23 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_top = -136.0
-offset_right = 148.0
+offset_left = 8.0
+offset_top = -200.0
+offset_right = 200.0
+offset_bottom = -8.0
 grow_vertical = 0
 
 [node name="MinimapPanel" type="PanelContainer" parent="Root/MarginContainer" unique_id=1317276697]
-custom_minimum_size = Vector2(148, 0)
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="Minimap" type="Control" parent="Root/MarginContainer/MinimapPanel" unique_id=1263699207]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(136, 136)
+custom_minimum_size = Vector2(176, 176)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-script = ExtResource("2_minimap")
+
+[node name="Minimap" parent="Root/MarginContainer/MinimapPanel" unique_id=1263699207 instance=ExtResource("2_minimap")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
 [node name="MarginContainer2" type="MarginContainer" parent="Root" unique_id=325332713]
 custom_minimum_size = Vector2(420, 0)

@@ -2,7 +2,7 @@ class_name GameMinimap
 extends Control
 ## 游戏小地图：war3mapMap 底图 + 视口黄框 + 分类图标 / 队伍色方块。
 ## 金矿 → minimap-gold；中立建筑（UnitUI.nbmmIcon）→ minimap-neutralbuilding；
-## 玩家单位/建筑 → 队伍色正方形。无字母叠加（SLK 无首字母字段）。
+## 玩家单位/建筑 → 队伍色正方形；中立单位 → 黑色。
 ## 坐标与编辑器共用 MapMinimapUtils（heightfield UV）。
 
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
@@ -13,20 +13,25 @@ const NEUTRAL_OWNER_MIN := 12
 const GOLD_MINE_TYPE := "ngol"
 const DOT_UNIT := 2.5
 const DOT_BLDG := 4.0
+## HUD 角标默认边长（正方形；与 war3mapMap 256² 对齐）。
+const DEFAULT_SIDE := 176.0
 ## 原作路径优先；MiniMapIcon/ 下为编辑器 MMP 用图，作回退。
 const ICON_GOLD := "UI/MiniMap/minimap-gold.png"
 const ICON_GOLD_FALLBACK := "UI/MiniMap/MiniMapIcon/MinimapIconGold.png"
 const ICON_NEUTRAL_BLDG := "UI/MiniMap/minimap-neutralbuilding.png"
 const ICON_NEUTRAL_BLDG_FALLBACK := "UI/MiniMap/MiniMapIcon/MinimapIconNeutralBuilding.png"
 const ICON_DRAW_SCALE := 1.15
+const _NEUTRAL_DOT := Color(0.05, 0.05, 0.05, 1.0)
 
-var _tex: TextureRect
-var _overlay: Control
+@onready var _tex: TextureRect = $Background
+@onready var _overlay: Control = $Overlay
+
 var _image: Image = null
 var _hf: Wc3Heightfield = null
 var _unit_host: Node = null
 var _camera: Camera3D = null
 var _camera_rig: Node3D = null
+## 本地玩家（预留友军高亮等；点色一律走队伍色表）
 var _local_player: int = 0
 var _catalog: Wc3IdCatalog = null
 var _viewport_quad: PackedVector2Array = PackedVector2Array()
@@ -40,10 +45,15 @@ var _nbmm_cache: Dictionary = {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(136, 136)
-	_ensure_children()
+	if custom_minimum_size.x < 64.0 or custom_minimum_size.y < 64.0:
+		custom_minimum_size = Vector2(DEFAULT_SIDE, DEFAULT_SIDE)
 	_ensure_icons()
-	gui_input.connect(_on_gui_input)
+	if _overlay != null and not _overlay.draw.is_connected(_on_overlay_draw):
+		_overlay.draw.connect(_on_overlay_draw)
+	if not resized.is_connected(_on_resized):
+		resized.connect(_on_resized)
+	if not gui_input.is_connected(_on_gui_input):
+		gui_input.connect(_on_gui_input)
 	set_process(true)
 
 
@@ -75,22 +85,24 @@ func set_id_catalog(catalog: Wc3IdCatalog) -> void:
 
 
 func load_from_map_dir(map_dir: String) -> bool:
-	_ensure_children()
 	var img := _try_load_war3map(map_dir)
 	if img == null:
 		return false
 	_image = img
-	_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_tex.texture = ImageTexture.create_from_image(img)
-	_overlay.queue_redraw()
+	if _tex != null:
+		_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_tex.texture = ImageTexture.create_from_image(img)
+	if _overlay != null:
+		_overlay.queue_redraw()
 	return true
 
 
 func set_background_texture(tex: Texture2D) -> void:
-	_ensure_children()
-	_tex.texture = tex
+	if _tex != null:
+		_tex.texture = tex
 	_image = tex.get_image() if tex != null else null
-	_overlay.queue_redraw()
+	if _overlay != null:
+		_overlay.queue_redraw()
 
 
 func _process(_delta: float) -> void:
@@ -103,24 +115,9 @@ func _process(_delta: float) -> void:
 		_overlay.queue_redraw()
 
 
-func _ensure_children() -> void:
-	if _tex != null and is_instance_valid(_tex):
-		return
-	_tex = TextureRect.new()
-	_tex.name = "Background"
-	_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	add_child(_tex)
-	_overlay = Control.new()
-	_overlay.name = "Overlay"
-	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_overlay.draw.connect(_on_overlay_draw)
-	_overlay.resized.connect(func() -> void: _overlay.queue_redraw())
-	add_child(_overlay)
+func _on_resized() -> void:
+	if _overlay != null:
+		_overlay.queue_redraw()
 
 
 func _ensure_icons() -> void:
@@ -157,7 +154,6 @@ func _try_load_war3map(map_dir: String) -> Image:
 		var disk := RuntimeAssets.project_abs(path)
 		if disk.is_empty() or not FileAccess.file_exists(disk):
 			continue
-		# 用绝对磁盘路径，避免 Image.load(res://) 触发 export 警告
 		var img := Image.new()
 		if img.load(disk) == OK:
 			return img
@@ -204,13 +200,18 @@ func _uv_to_overlay(uv: Vector2) -> Vector2:
 	)
 
 
+## 与 TextureRect KEEP_ASPECT_CENTERED 一致：按底图像素比居中 letterbox。
 func _drawn_rect() -> Rect2:
 	var cs := size
 	if cs.x <= 1.0 or cs.y <= 1.0:
 		return Rect2(Vector2.ZERO, cs)
 	if _image == null:
-		return Rect2(Vector2.ZERO, cs)
+		# 无图时仍按正方形可用区（避免矩形控件里 UV 被压扁）
+		var side := minf(cs.x, cs.y)
+		return Rect2((cs - Vector2(side, side)) * 0.5, Vector2(side, side))
 	var ts := Vector2(float(_image.get_width()), float(_image.get_height()))
+	if ts.x < 1.0 or ts.y < 1.0:
+		return Rect2(Vector2.ZERO, cs)
 	var sc := minf(cs.x / ts.x, cs.y / ts.y)
 	var drawn := ts * sc
 	return Rect2((cs - drawn) * 0.5, drawn)
@@ -253,7 +254,7 @@ func _draw_unit_markers() -> void:
 			var sz := _icon_draw_size(icon)
 			_overlay.draw_texture_rect(icon, Rect2(pos - sz * 0.5, sz), false)
 		else:
-			var col := _dot_color(tid, owner_id, is_bldg)
+			var col := _dot_color(tid, owner_id)
 			var half := DOT_BLDG if is_bldg else DOT_UNIT
 			_overlay.draw_rect(Rect2(pos - Vector2(half, half), Vector2(half * 2.0, half * 2.0)), col)
 
@@ -261,7 +262,6 @@ func _draw_unit_markers() -> void:
 func _is_building_type(type_id: String) -> bool:
 	if BuildingVisualScr.is_building(type_id):
 		return true
-	# 兜底：DefStore 未就绪时用 IdCatalog（避免中立建筑被画成野怪点）
 	if _catalog != null:
 		return bool(_catalog.lookup(type_id).get("is_building", false))
 	return false
@@ -273,7 +273,7 @@ func _icon_draw_size(icon: Texture2D) -> Vector2:
 	return icon.get_size() * ICON_DRAW_SCALE
 
 
-## 仅金矿球 / 中立小屋；其余返回 null → 队伍色方块。
+## 仅金矿球 / 中立小屋；其余返回 null → 队伍色或中立黑点。
 func _pick_icon(type_id: String, owner_id: int, is_building: bool) -> Texture2D:
 	if type_id == GOLD_MINE_TYPE:
 		return _icon_gold
@@ -283,7 +283,6 @@ func _pick_icon(type_id: String, owner_id: int, is_building: bool) -> Texture2D:
 
 
 func _shows_neutral_building_icon(type_id: String, owner_id: int) -> bool:
-	# UnitUI.nbmmIcon：对象编辑器「中立建筑 - 显示小地图图标」（布尔开关，非字母）
 	if _nbmm_cache.has(type_id):
 		return bool(_nbmm_cache[type_id])
 	var show_icon := false
@@ -321,11 +320,11 @@ func _nbmm_lookup_defstore(type_id: String) -> Dictionary:
 	return out
 
 
-func _dot_color(type_id: String, owner_id: int, is_building: bool) -> Color:
-	if type_id == GOLD_MINE_TYPE:
-		return Color(1.0, 0.82, 0.12, 1.0)
-	if owner_id == _local_player:
-		return Color(0.25, 0.55, 1.0, 1.0) if not is_building else Color(0.35, 0.7, 1.0, 1.0)
+## 玩家 → 队伍色；中立 → 黑。
+func _dot_color(type_id: String, owner_id: int) -> Color:
 	if owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0:
-		return Color(0.95, 0.78, 0.2, 1.0) if is_building else Color(1.0, 0.65, 0.15, 1.0)
-	return Color(1.0, 0.12, 0.1, 1.0)
+		return _NEUTRAL_DOT
+	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
+	if color_i >= 0 and color_i < MapPlaceholders.PLAYER_COLORS.size():
+		return MapPlaceholders.PLAYER_COLORS[color_i]
+	return MapPlaceholders.PLAYER_COLORS[clampi(owner_id, 0, MapPlaceholders.PLAYER_COLORS.size() - 1)]

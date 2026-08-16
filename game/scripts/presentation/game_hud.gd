@@ -29,7 +29,7 @@ signal multi_select_clicked(instance_id: int)
 @onready var _build_row: Control = %BuildProgressRow
 @onready var _build_bar: ProgressBar = %BuildProgressBar
 @onready var _build_label: Label = %BuildProgressLabel
-@onready var _minimap: Control = %Minimap
+@onready var _minimap: GameMinimap = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _command_panel: Control = $Root/MarginContainer3/CommandPanel
 @onready var _command_title: Label = $Root/MarginContainer3/CommandPanel/Inner/CommandTitle
@@ -41,7 +41,6 @@ signal multi_select_clicked(instance_id: int)
 ## slot → action_id（空=无动作）
 var _slot_action_ids: PackedStringArray = PackedStringArray()
 var _icon_cache: Dictionary = {} ## path → Texture2D
-var _game_minimap: Control = null
 
 
 func _ready() -> void:
@@ -72,25 +71,16 @@ func configure_minimap(
 ) -> void:
 	if not map_directory.is_empty():
 		map_dir = map_directory
-	_ensure_game_minimap()
-	if _game_minimap == null:
+	if _minimap == null:
 		return
-	_game_minimap.configure(heightfield, unit_host, camera, camera_rig, local_player, catalog)
+	_minimap.configure(heightfield, unit_host, camera, camera_rig, local_player, catalog)
 	setup_minimap_map(map_dir)
 
 
 func setup_minimap_map(map_directory: String) -> bool:
-	_ensure_game_minimap()
-	if _game_minimap == null:
+	if _minimap == null:
 		return false
-	return _game_minimap.load_from_map_dir(map_directory)
-
-
-func _ensure_game_minimap() -> void:
-	if _game_minimap != null and is_instance_valid(_game_minimap):
-		return
-	if _minimap != null and _minimap.has_method("configure") and _minimap.has_signal("clicked"):
-		_game_minimap = _minimap
+	return _minimap.load_from_map_dir(map_directory)
 
 
 func _apply_bottom_height() -> void:
@@ -386,9 +376,8 @@ func set_portrait_texture(_tex: Texture2D) -> void:
 
 
 func set_minimap_texture(tex: Texture2D) -> void:
-	_ensure_game_minimap()
-	if _game_minimap != null:
-		_game_minimap.set_background_texture(tex)
+	if _minimap != null:
+		_minimap.set_background_texture(tex)
 
 
 func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
@@ -540,30 +529,11 @@ func _on_command_pressed(slot: int) -> void:
 
 
 func _wire_minimap_input() -> void:
-	_ensure_game_minimap()
-	if _game_minimap != null:
-		if not _game_minimap.clicked.is_connected(_on_game_minimap_clicked):
-			_game_minimap.clicked.connect(_on_game_minimap_clicked)
-		return
-	# 兼容旧 ColorRect 占位
 	if _minimap == null:
 		return
-	if not _minimap.gui_input.is_connected(_on_minimap_gui_input):
-		_minimap.gui_input.connect(_on_minimap_gui_input)
+	if not _minimap.clicked.is_connected(_on_game_minimap_clicked):
+		_minimap.clicked.connect(_on_game_minimap_clicked)
 
 
 func _on_game_minimap_clicked(uv: Vector2) -> void:
 	minimap_clicked.emit(uv)
-
-
-func _on_minimap_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			var sz := _minimap.size
-			if sz.x < 1.0 or sz.y < 1.0:
-				return
-			var uv := Vector2(mb.position.x / sz.x, mb.position.y / sz.y)
-			uv = uv.clamp(Vector2.ZERO, Vector2.ONE)
-			minimap_clicked.emit(uv)
-			_minimap.accept_event()

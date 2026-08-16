@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://de0w2wwx4cytc"]
+
+[ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://game/hud/game_minimap.gd" id="1_script"]
+
+[node name="GameMinimap" type="Control"]
+custom_minimum_size = Vector2(176, 176)
+layout_mode = 3
+anchors_preset = 0
+mouse_filter = 0
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Overlay" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
