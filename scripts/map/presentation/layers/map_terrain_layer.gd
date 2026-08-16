@@ -104,6 +104,7 @@ func build(ctx: MapBuildContext) -> void:
 		}
 	)
 	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ground.layers = Wc3Coords.RENDER_LAYER_TERRAIN
 
 	MapLog.info(
 		MapLog.Layer.PRESENT,

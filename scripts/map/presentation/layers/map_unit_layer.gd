@@ -363,7 +363,13 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 			_Pe2.attach_to(node, glb)
 		# 建筑（含主城升本档）按 typeId 选 Stand / Stand Upgrade*；单位仍走普通 Stand
 		if BuildingVisualScr.is_building(type_id):
-			BuildingVisualScr.apply_idle(_cache, node, type_id)
+			# 仅明确半成品播 Birth。地图 hitPoints=-1 表示「用默认满血」，切勿当成残血开工。
+			# 金矿等中立建筑始终 Stand（Birth 很长且带尘效，会整图错乱）。
+			var under := bool(u.get("under_construction", false))
+			if under and type_id != "ngol":
+				BuildingVisualScr.apply_phase(_cache, node, type_id, BuildingVisualScr.Phase.BIRTH)
+			else:
+				BuildingVisualScr.apply_idle(_cache, node, type_id)
 			_apply_building_ground(node, type_id, hf)
 		else:
 			# Stand + geosetvis 定格：藏尸体/无关 Geoset（羊、野猪、野怪等同建筑/树）
@@ -374,21 +380,42 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 				_Pe2.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
 	UnitLife.ensure(node)
+	_apply_unit_render_layers(node)
 	return node
 
 
+## 单位/建筑走 RENDER_LAYER_UNITS，使 UberSplat Decal 只印地形、不印墙体。
+func _apply_unit_render_layers(root: Node) -> void:
+	if root == null:
+		return
+	for n in root.find_children("*", "GeometryInstance3D", true, false):
+		var gi := n as GeometryInstance3D
+		if gi == null:
+			continue
+		# 运行时 UberSplat Decal 本身不参与 layers 绘制（Decal 用 cull_mask）
+		if bool(gi.get_meta("is_runtime_uber_splat", false)):
+			continue
+		gi.layers = Wc3Coords.RENDER_LAYER_UNITS
+
+
 ## 建筑：地面 UberSplat 贴花 + 按模型脚底环下沉，减轻「悬空」。
+## 不改 heightfield（对齐 HiveWE：只插值贴地 + UberSplat 过渡，不平整地形）。
 func _apply_building_ground(node: Node3D, type_id: String, hf: Wc3Heightfield) -> void:
 	if node == null:
 		return
 	var tileset := ""
 	if hf != null:
 		tileset = str(hf.main_tileset)
-	_UberSplat.attach_to(node, type_id, tileset)
+	# 先估下沉再挂贴花，便于把贴花补偿回地表
 	var sink := _UberSplat.foot_sink_y(node)
+	var y_delta := _UberSplat.BUILDING_Y_LIFT - sink
 	node.set_meta("building_foot_sink", sink)
-	if sink > 0.02:
-		node.position.y -= sink
+	node.set_meta("building_y_delta", y_delta)
+	if absf(y_delta) > 1e-5:
+		node.position.y += y_delta
+	var splat := _UberSplat.attach_to(node, type_id, tileset)
+	if splat != null:
+		_UberSplat.compensate_parent_y(splat, y_delta)
 
 
 func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
@@ -403,9 +430,16 @@ func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
 	var new_z_wc3: float = hf.interpolated_height(wx, wy)
 	var n3 := node as Node3D
 	n3.position = Wc3Coords.wc3_xy_to_godot(wx, wy, new_z_wc3)
-	var sink := float(n3.get_meta("building_foot_sink", 0.0))
-	if sink > 0.02:
-		n3.position.y -= sink
+	var y_delta := float(n3.get_meta("building_y_delta", 0.0))
+	if absf(y_delta) <= 1e-5:
+		# 兼容旧 meta：仅有 foot_sink
+		var sink := float(n3.get_meta("building_foot_sink", 0.0))
+		y_delta = _UberSplat.BUILDING_Y_LIFT - sink
+	if absf(y_delta) > 1e-5:
+		n3.position.y += y_delta
+	var splat := n3.get_node_or_null(_UberSplat.SPLAT_ROOT_NAME) as Node3D
+	if splat != null:
+		_UberSplat.compensate_parent_y(splat, y_delta)
 	pos = pos.duplicate()
 	pos["z"] = new_z_wc3
 	d = d.duplicate(true)

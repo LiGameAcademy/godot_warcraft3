@@ -67,7 +67,11 @@ func rebuild(pathing: Wc3PathingMap, hf: Wc3Heightfield = null) -> void:
 			img.set_pixel(px, h - 1 - py, c)
 			blocked += 1
 	last_cell_count = blocked
-	_tex = ImageTexture.create_from_image(img)
+	# 原地更新纹理：已绑在地表 shader 上的 ImageTexture 必须 set_image，否则叠层看起来不刷新
+	if _tex == null:
+		_tex = ImageTexture.create_from_image(img)
+	else:
+		_tex.set_image(img)
 	_apply_uniforms(
 		true,
 		_tex,

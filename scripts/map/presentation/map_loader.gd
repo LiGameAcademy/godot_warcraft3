@@ -321,7 +321,10 @@ func _rebuild_pathing_overlay() -> void:
 	if _pathing_layer == null:
 		_pathing_layer = get_node_or_null("Pathing") as MapPathingLayer
 	var hf: Wc3Heightfield = null
-	if not _external_hf.is_empty():
+	var hf_dict := get_heightfield_dict()
+	if not hf_dict.is_empty():
+		hf = Wc3Heightfield.from_dict(hf_dict, true)
+	elif not _external_hf.is_empty():
 		hf = Wc3Heightfield.from_dict(_external_hf, true)
 	_ensure_pathing_map(hf)
 	# 无论是否显示 overlay，都要 blit 动态脚印（树木不可走依赖此步）
@@ -396,8 +399,11 @@ func add_unit_instance(entry: Dictionary, hf: Dictionary) -> Node3D:
 	var node: Node3D = _units.add_one(entry, heightfield)
 	if node != null:
 		_pathing_unit_entries.append(entry)
+		# 无论是否显示叠层，都必须 blit 动态脚印（建造合法性依赖）
 		if show_pathing_ground:
 			_rebuild_pathing_overlay()
+		else:
+			_apply_dynamic_pathing()
 	return node
 
 
@@ -413,8 +419,8 @@ func remove_unit_instance(creation_number: int) -> bool:
 				break
 		if show_pathing_ground:
 			_rebuild_pathing_overlay()
-		elif has_method("_apply_dynamic_pathing"):
-			call("_apply_dynamic_pathing")
+		else:
+			_apply_dynamic_pathing()
 	return ok
 
 

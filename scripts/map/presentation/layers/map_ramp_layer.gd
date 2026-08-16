@@ -163,6 +163,7 @@ func _mount_groups(
 			# 本地 AABB；节点 transform 已含解旋，避免错误裁剪
 			mi.custom_aabb = local_aabb
 			mi.extra_cull_margin = 4.0
+			mi.layers = Wc3Coords.RENDER_LAYER_TERRAIN
 			add_child(mi)
 			mounted += 1
 

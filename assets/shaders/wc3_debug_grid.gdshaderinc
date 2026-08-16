@@ -4,7 +4,7 @@
 //   大=黄  tile*4 （512u）
 // 调用方须在 vertex() 内写：dbg_wc3_xy = vec2(world.x, -world.z) / world_scale;
 //
-// View→路径-地面：在最小寻路格上叠色（蓝不可走 / 粉不可建 / 紫两者）。
+// View→路径-地面：在最小寻路格上叠色（红不可走 / 蓝不可建 / 品红两者）。
 
 uniform bool dbg_grid_tile = false;
 uniform bool dbg_grid_path = false;

@@ -1,17 +1,25 @@
 class_name Wc3UberSplat
 extends RefCounted
 
-## 建筑 Art - Ground Texture：unitUI.uberSplat → UberSplatData → 地面贴花。
+## 建筑 Art - Ground Texture：unitUI.uberSplat → UberSplatData → 脚底贴花平面。
 ## 贴图优先 tileset 前缀（如 L_HumanTownHallUberSplat），回退无前缀默认图。
+## HiveWE / 原作：摆放时**不**改 heightfield，只靠 UberSplat 做脚印过渡。
+##
+## 用 PlaneMesh（非 Decal）：Mobile 渲染器对**同一 Mesh 资源**最多 8 个 Decal，
+## 整图地形是一块大 mesh 时脚印会整批消失/闪烁。
 
 const SPLAT_ROOT_NAME := "UberSplat"
 ## 略抬离地，减轻与地形 z-fight
 const Y_BIAS := 0.04
 ## 建筑贴地下沉上限（Godot）。过大（按完整 UberSplat geoset 高度）会把主城埋进地里。
-const FOOT_SINK_MAX := 0.06
+const FOOT_SINK_MAX := 0.02
+## 建筑整体略抬，避免脚底陷入地表（原作靠 moveHeight/贴地，不靠挖平地形）。
+const BUILDING_Y_LIFT := 0.08
+## SLK Scale 观感偏小（透明边 + 透视）；×2 接近原作脚印覆盖。
+const SIZE_MUL := 2.0
 
 
-static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> MeshInstance3D:
+static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Node3D:
 	if root == null or type_id.is_empty() or type_id == "sloc":
 		return null
 	var existing := root.get_node_or_null(SPLAT_ROOT_NAME)
@@ -23,14 +31,20 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Me
 	Wc3DefStore.ensure_table(UberSplatDef.TABLE_NAME)
 	var row: Resource = Wc3DefStore.get_row(UberSplatDef.TABLE_NAME, code)
 	if not (row is UberSplatDef):
+		push_warning("Wc3UberSplat: 无 UberSplatData 行 type=%s code=%s" % [type_id, code])
 		return null
 	var def := row as UberSplatDef
 	if def.file.is_empty() or def.scale <= 0.0:
 		return null
 	var tex := _load_splat_texture(def, tileset)
 	if tex == null:
+		push_warning(
+			"Wc3UberSplat: 贴图未找到 type=%s code=%s file=%s tileset=%s"
+			% [type_id, code, def.file, tileset]
+		)
 		return null
-	var size_g := def.scale * Wc3Coords.WORLD_SCALE
+	# Scale 为 WC3 世界边长（HTOW=230）；与模型同一 WORLD_SCALE，再乘观感倍率
+	var size_g := def.scale * Wc3Coords.WORLD_SCALE * SIZE_MUL
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(size_g, size_g)
 	plane.orientation = PlaneMesh.FACE_Y
@@ -42,7 +56,6 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Me
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mat.albedo_texture = tex
 	mat.albedo_color = Color.WHITE
-	# BlendMode 0 = Blend；其它少见，先按 alpha 混合
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	mat.render_priority = -8
 	plane.material = mat
@@ -52,8 +65,39 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Me
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = Vector3(0.0, Y_BIAS, 0.0)
 	mi.set_meta("uber_splat_code", code)
+	mi.set_meta("is_runtime_uber_splat", true)
+	# 与单位同层即可；不再依赖 Decal cull_mask / 地形 layer
+	mi.layers = Wc3Coords.RENDER_LAYER_UNITS
 	root.add_child(mi)
+	# GLB 根常带 MODEL_SCALE=0.01；plane.size 已是世界尺度，须抵消父缩放
+	_cancel_parent_model_scale(mi, root)
 	return mi
+
+
+## 把贴花缩回世界尺度（父链上累计 scale）。
+static func _cancel_parent_model_scale(mi: Node3D, root: Node3D) -> void:
+	if mi == null or root == null:
+		return
+	var sx := absf(root.scale.x)
+	var sy := absf(root.scale.y)
+	var sz := absf(root.scale.z)
+	if sx < 1e-8:
+		sx = 1.0
+	if sy < 1e-8:
+		sy = 1.0
+	if sz < 1e-8:
+		sz = 1.0
+	# 仅当父明显被模型缩放（远小于 1）时抵消；unit_data.scale≈1 不处理
+	if sx > 0.5 and sy > 0.5 and sz > 0.5:
+		return
+	mi.scale = Vector3(1.0 / sx, 1.0 / sy, 1.0 / sz)
+
+
+## 父节点做了 Y 下沉/抬升后，把贴花补偿回贴地高度。
+static func compensate_parent_y(mi: Node3D, parent_y_delta: float) -> void:
+	if mi == null:
+		return
+	mi.position.y = Y_BIAS - parent_y_delta
 
 
 ## 用模型内嵌 UberSplat geoset（即使已隐藏）估脚底高度，把建筑沉到贴地。
@@ -67,7 +111,7 @@ static func foot_sink_y(root: Node3D) -> float:
 		var mi := n as MeshInstance3D
 		if mi == null or mi.mesh == null:
 			continue
-		if str(mi.name) == SPLAT_ROOT_NAME:
+		if str(mi.name) == SPLAT_ROOT_NAME or bool(mi.get_meta("is_runtime_uber_splat", false)):
 			continue
 		if _is_under_pe2(mi):
 			continue

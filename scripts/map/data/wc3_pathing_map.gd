@@ -326,8 +326,6 @@ func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 		if not Wc3PathingTextures.is_valid_path_tex(path_tex):
 			continue
 		var img := Wc3PathingTextures.load_image(path_tex)
-		if img == null:
-			continue
 		var pos: Variant = d.get("position", {})
 		var wx := 0.0
 		var wy := 0.0
@@ -343,6 +341,40 @@ func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 		var ang := float(d.get("angle", d.get("facing", 4.71238898)))
 		# JSON 存弧度（≈±2π）；若已是度数（如编辑器笔刷）则原样
 		var ang_deg := rad_to_deg(ang) if absf(ang) <= TAU + 0.5 else ang
-		blit_pathing_at_world(wx, wy, ang_deg, img)
-		n += 1
+		if img != null:
+			blit_pathing_at_world(wx, wy, ang_deg, img)
+			n += 1
+		else:
+			# TGA 缺失时仍按文件名 WxH 画实心脚印，避免「建筑已放叠层不更新」
+			var cells: Vector2i = Wc3IdCatalog.parse_path_tex_cells(path_tex)
+			if cells.x > 0 and cells.y > 0:
+				blit_solid_footprint_at_world(
+					wx, wy, cells.x, cells.y, FLAG_NO_WALK | FLAG_NO_BUILD
+				)
+				n += 1
 	return n
+
+
+## 无 pathTex 图时：以世界点为中心填实心脚印（寻路格）。
+func blit_solid_footprint_at_world(
+	wc3_x: float,
+	wc3_y: float,
+	cells_w: int,
+	cells_h: int,
+	flags: int
+) -> void:
+	if not is_valid() or cells_w <= 0 or cells_h <= 0:
+		return
+	_ensure_dynamic()
+	var half_w := float(cells_w) * 0.5
+	var half_h := float(cells_h) * 0.5
+	var min_c := world_to_cell(wc3_x - half_w * cell_size, wc3_y - half_h * cell_size)
+	var f: int = flags & 0xFF
+	for dy in range(cells_h):
+		for dx in range(cells_w):
+			var xx: int = min_c.x + dx
+			var yy: int = min_c.y + dy
+			if xx < 0 or yy < 0 or xx >= width or yy >= height:
+				continue
+			var di: int = yy * width + xx
+			cells_dynamic[di] = int(cells_dynamic[di]) | f

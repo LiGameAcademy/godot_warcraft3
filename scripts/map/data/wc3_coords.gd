@@ -9,6 +9,10 @@ const PATHING_CELL := 32.0
 ## 与 tools/asset-convert 中 MODEL_SCALE 一致，便于日后挂 GLB。
 const WORLD_SCALE := 0.01
 
+## 渲染层：地形收 UberSplat Decal；单位不收，避免脚印印到墙体上。
+const RENDER_LAYER_TERRAIN := 1 ## bit 0（Godot 默认）
+const RENDER_LAYER_UNITS := 2 ## bit 1
+
 ## war3map.w3e tilepoint flags
 ## 位分配（不要冲突；改前先看这里）：
 ##   bit 0 (1)    FLAG_WATER

@@ -101,6 +101,7 @@ func build(ctx: MapBuildContext) -> void:
 		mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.layers = Wc3Coords.RENDER_LAYER_TERRAIN
 		add_child(mmi)
 		last_placed += transforms.size()
 
