@@ -119,6 +119,18 @@ static func get_collision(building_id: String) -> float:
 	return bal.collision if bal != null else 0.0
 
 
+## UnitBalance.preventPlace（如 unbuildable / unwalkable；`_` = 无）。
+static func get_prevent_place(building_id: String) -> String:
+	var bal := _get_balance(building_id)
+	return bal.prevent_place if bal != null else ""
+
+
+## UnitBalance.requirePlace（如 blighted；`_` = 无）。
+static func get_require_place(building_id: String) -> String:
+	var bal := _get_balance(building_id)
+	return bal.require_place if bal != null else ""
+
+
 # --- 内部 ---
 
 static func _get_balance(building_id: String) -> UnitBalanceDef:
