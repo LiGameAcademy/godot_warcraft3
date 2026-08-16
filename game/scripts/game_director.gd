@@ -7,23 +7,8 @@ extends Node
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready
 
-const MeleeRacePreviewScr = preload("res://game/scripts/data/melee_race_preview.gd")
-const MeleeBootstrapScr = preload("res://game/scripts/logic/melee_bootstrap.gd")
-const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
-const GameSessionScr = preload("res://game/scripts/session/game_session.gd")
-const PlayerStockScr = preload("res://game/scripts/session/player_stock.gd")
-const PathQueryScr = preload("res://game/scripts/logic/pathing/path_query.gd")
-const UnitNavigatorScr = preload("res://game/scripts/presentation/unit_navigator.gd")
-const UnitVisualScr = preload("res://game/scripts/presentation/unit_visual.gd")
-const UnitCrowdQueryScr = preload("res://game/scripts/logic/pathing/unit_crowd_query.gd")
-const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slots.gd")
-const FormationFollowScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
-const PathCellReservationScr = preload("res://game/scripts/logic/pathing/path_cell_reservation.gd")
-const PathDebugDrawScr = preload("res://game/scripts/presentation/path_debug_draw.gd")
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
-const TargetFlashFxScr = preload("res://game/scripts/presentation/target_flash_fx.gd")
-const GmDebugPanelScr = preload("res://game/scripts/presentation/gm_debug_panel.gd")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -86,6 +71,8 @@ var _tree_registry: TreeRegistry = null
 var _move_targeting: bool = false
 ## 点了「采集」或热键 G 后，等待左键点金矿/树
 var _harvest_targeting: bool = false
+## 点了「集结点」后，等待左键指定地点/矿/树
+var _rally_targeting: bool = false
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
@@ -98,6 +85,8 @@ var _build_menu_open: bool = false
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
 var _build_ghost: BuildPlacementGhost = null
+## 确认落点后、开工前：工地半透明幽灵仍钉在地上（农民走动期间）。
+var _site_ghost_pinned: bool = false
 ## 进入瞄准后须先移动鼠标再左键确认，避免点面板同一帧误提交。
 var _build_confirm_armed: bool = false
 ## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
@@ -114,6 +103,8 @@ var _build_sites_host: Node = null
 var _build_site_by_building: Dictionary = {}
 ## "%s_x_y" → BuildSite
 var _build_site_by_key: Dictionary = {}
+## 已接线的 TrainQueue instance_id（避免重复 connect）
+var _wired_train_queues: Dictionary = {}
 
 
 func _ready() -> void:
@@ -147,7 +138,7 @@ func _ensure_gm_panel() -> void:
 	if existing != null:
 		_gm_panel = existing
 		return
-	var gm: CanvasLayer = GmDebugPanelScr.new()
+	var gm: CanvasLayer = GmDebugPanel.new()
 	gm.name = "GmDebugPanel"
 	_gm_panel = gm
 	# _ready 期间父节点 blocked，必须延迟挂接
@@ -366,6 +357,19 @@ func _input(event: InputEvent) -> void:
 			return
 		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_RIGHT:
 			_set_harvest_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+	# 集结瞄准：左键设点（地面/金矿/树）
+	if _rally_targeting and event is InputEventMouseButton:
+		var mb_r := event as InputEventMouseButton
+		if mb_r.pressed and mb_r.button_index == MOUSE_BUTTON_LEFT:
+			if _issue_set_rally_at_screen(mb_r.position, UnitOrder.Source.TARGETING):
+				_flash_cursor_move()
+			_set_rally_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_r.pressed and mb_r.button_index == MOUSE_BUTTON_RIGHT:
+			_set_rally_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
 	# F2-4：建造瞄准 → 左键 commit / 右键 cancel / mousemove 跟手 ghost
@@ -595,6 +599,7 @@ func _ensure_path_debug() -> void:
 func _process(_delta: float) -> void:
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
+	_refresh_train_hud_tick()
 
 
 func _refresh_path_debug() -> void:
@@ -703,6 +708,10 @@ func _bootstrap_melee() -> void:
 		rts_camera.snap_to(hall_world)
 		rts_camera.focus_on_position(hall_world, 0.35)
 
+	# 开局刷兵后立刻同步动态 pathing（与叠层一致），避免瞄准时漏检脚印
+	_pathing = map_root.get_pathing_map() if map_root != null else null
+	_refresh_dynamic_pathing()
+
 
 func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary:
 	for s in slocs:
@@ -713,10 +722,16 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 func _unhandled_input(event: InputEvent) -> void:
 	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
-	if (_move_targeting or _harvest_targeting or _is_build_targeting()) and event is InputEventKey and event.pressed and not event.echo:
+	if (
+		(_move_targeting or _harvest_targeting or _rally_targeting or _is_build_targeting())
+		and event is InputEventKey
+		and event.pressed
+		and not event.echo
+	):
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_set_move_targeting(false)
 			_set_harvest_targeting(false)
+			_set_rally_targeting(false)
 			if _is_build_targeting():
 				_cancel_build_targeting()
 			get_viewport().set_input_as_handled()
@@ -738,7 +753,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			# Shift+RMB → 队形排开（F3）；RMB → 智能（master 框架：移动或采集）
 			if mb.shift_pressed:
-				if _issue_group_move_command(mb.position, FormationFollowScr.FORMATION_RECT):
+				if _issue_group_move_command(mb.position, FormationFollow.FORMATION_RECT):
 					get_viewport().set_input_as_handled()
 					return
 			if _issue_smart_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
@@ -816,6 +831,7 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 
 
 ## 右键智能：识别 SmartTarget → CommandRouter.issue_smart（按单位能力匹配）。
+## 仅选中可训建筑时：右键改为设集结点（WC3）。
 func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector == null or _command_router == null:
 		return false
@@ -824,6 +840,8 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	var selected: Array = unit_selector.call("get_selected")
 	if selected.is_empty():
 		return false
+	if _command_router.filter_movers(selected).is_empty():
+		return _issue_set_rally_at_screen(screen_pos, source)
 	var target := _resolve_smart_target(screen_pos, selected)
 	if target == null:
 		if game_hud:
@@ -842,9 +860,53 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	return true
 
 
+## 对当前选中的可训建筑写入集结点。
+func _issue_set_rally_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var buildings: Array[Node3D] = []
+	for n in selected:
+		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
+			buildings.append(n as Node3D)
+	if buildings.is_empty():
+		return false
+	var target := _resolve_smart_target(screen_pos, selected)
+	if target == null or target.goal_wc3 == Vector2.INF:
+		if game_hud:
+			game_hud.set_status("集结点：未点到有效地点")
+		return false
+	for b in buildings:
+		_apply_rally_from_smart(b, target)
+	_spawn_move_confirm(target.goal_wc3)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL or source == UnitOrder.Source.TARGETING else "右键"
+		match target.kind:
+			SmartTarget.Kind.GOLD_MINE:
+				game_hud.set_status("集结点 → 金矿（%s）" % src)
+			SmartTarget.Kind.TREE:
+				game_hud.set_status("集结点 → 树木（%s）" % src)
+			_:
+				game_hud.set_status(
+					"集结点 → (%.0f, %.0f)（%s）" % [target.goal_wc3.x, target.goal_wc3.y, src]
+				)
+	return true
+
+
+func _apply_rally_from_smart(building: Node3D, target: SmartTarget) -> void:
+	if building == null or target == null:
+		return
+	match target.kind:
+		SmartTarget.Kind.GOLD_MINE:
+			BuildingRally.set_gold_mine(building, target.node, target.goal_wc3)
+		SmartTarget.Kind.TREE:
+			BuildingRally.set_tree(building, target.tree_cn, target.goal_wc3)
+		_:
+			BuildingRally.set_ground(building, target.goal_wc3)
+
+
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
-## 金矿 / 树 / 送回点按「脚底屏幕距离」比分，避免主城 oversized 胶囊抢走远处树/矿。
-## 送回点 / 工地：须脚底足够近；空闲农民点主城不当送回（当地面移动）。
+## 拾取走 UnitSelector 脚底 2D 圆；送回点 / 工地另加脚底像素近距门槛。
 const SMART_BUILDING_FOOT_PX := 40.0
 
 
@@ -897,13 +959,45 @@ func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 				best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
 
 	if best != null:
-		# 树木：黄环 + emissive（原作点选反馈）；金矿不闪
-		if best.kind == SmartTarget.Kind.TREE:
-			_flash_tree_target(best.tree_cn)
+		_flash_smart_interact_target(best)
 		return best
 	if ground_goal == Vector2.INF:
 		return null
 	return SmartTarget.ground(ground_goal)
+
+
+## 右键交互反馈：金矿 / 建筑 / 树木统一闪选中环（不改左键选中集合）。
+func _flash_smart_interact_target(target: SmartTarget) -> void:
+	if target == null:
+		return
+	match target.kind:
+		SmartTarget.Kind.TREE:
+			_flash_tree_target(target.tree_cn)
+		SmartTarget.Kind.GOLD_MINE:
+			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.GOLD_MINE, false)
+		SmartTarget.Kind.DROPOFF:
+			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.DROPOFF, false)
+		SmartTarget.Kind.BUILD_SITE:
+			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.BUILD_SITE, false)
+		_:
+			pass
+
+
+func _flash_unit_interact_ring(node: Node3D, kind: int, flash_model: bool) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	InteractionSetup.attach(node, kind)
+	var ic := InteractionSetup.get_interactable(node)
+	if ic != null:
+		ic.flash(0.65, flash_model)
+
+
+func _flash_tree_target(creation_number: int) -> void:
+	if _tree_registry == null or creation_number < 0:
+		return
+	var node := _tree_registry.ensure_promoted(creation_number)
+	if node != null:
+		_flash_unit_interact_ring(node, InteractableComponent.SmartKind.TREE, true)
 
 
 func _screen_score_node(node: Node3D, screen_pos: Vector2) -> float:
@@ -945,15 +1039,6 @@ func _screen_score_tree(creation_number: int, screen_pos: Vector2) -> float:
 	if cam.is_position_behind(gpos):
 		return INF
 	return cam.unproject_position(gpos).distance_to(screen_pos)
-
-
-func _flash_tree_target(creation_number: int) -> void:
-	if _tree_registry == null or creation_number < 0:
-		return
-	var node := _tree_registry.ensure_promoted(creation_number)
-	if node != null:
-		# 原作感：黄环 + 树模 emissive 闪烁
-		TargetFlashFxScr.flash_target(node, 0.65, 1.15, true)
 
 
 func _screen_to_goal_wc3(screen_pos: Vector2) -> Vector2:
@@ -1097,7 +1182,7 @@ func _issue_group_move_command(
 		var node := n as Node3D
 		var d: Dictionary = node.get_meta("unit_data", {})
 		var tid := str(d.get("typeId", ""))
-		if BuildingVisualScr.is_building(tid):
+		if BuildingVisual.is_building(tid):
 			continue
 		movers.append(node)
 	if movers.is_empty():
@@ -1110,7 +1195,7 @@ func _issue_group_move_command(
 		leader.global_position.x * inv, -leader.global_position.z * inv
 	)
 	# 算 slot（F3 硬编码 heading=0，future 接 leader facing）
-	var slots: PackedVector2Array = FormationFollowScr.slot_positions(
+	var slots: PackedVector2Array = FormationFollow.slot_positions(
 		leader_pos, 0.0, movers.size(), formation, spacing
 	)
 	# leader 走 goal_center（slot[0] = leader_pos + (0,0) = leader_pos，但要走到 goal）
@@ -1211,6 +1296,7 @@ func _begin_move_targeting(source: int) -> void:
 			game_hud.set_status("移动：无可用单位")
 		return
 	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
 	_set_move_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
@@ -1227,10 +1313,32 @@ func _begin_harvest_targeting(source: int) -> void:
 		return
 	# 已有负金：面板若显示交回则不会进此；若空手瞄准
 	_set_move_targeting(false)
+	_set_rally_targeting(false)
 	_set_harvest_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
 		game_hud.set_status("采集瞄准（%s）· 左键点金矿 · Esc 取消" % src)
+
+
+func _begin_rally_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	var any := false
+	for n in selected:
+		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
+			any = true
+			break
+	if not any:
+		if game_hud:
+			game_hud.set_status("集结点：请选中可训练建筑")
+		return
+	_set_move_targeting(false)
+	_set_harvest_targeting(false)
+	_set_rally_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
+		game_hud.set_status("集结瞄准（%s）· 左键点地面/金矿/树 · Esc 取消" % src)
 
 
 func _set_move_targeting(active: bool) -> void:
@@ -1253,12 +1361,20 @@ func _set_harvest_targeting(active: bool) -> void:
 		game_cursor.call("set_move_targeting", active)
 
 
+func _set_rally_targeting(active: bool) -> void:
+	_rally_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		game_cursor.call("set_move_targeting", active)
+
+
 func _sync_selector_enabled_for_targeting() -> void:
 	if unit_selector == null:
 		return
 	# 任一瞄准态都关掉点选，避免抢左键
-	unit_selector.enabled = not (_move_targeting or _harvest_targeting or _is_build_targeting())
-
+	unit_selector.enabled = not (
+		_move_targeting or _harvest_targeting or _rally_targeting or _is_build_targeting()
+	)
 
 func _flash_cursor_move() -> void:
 	if game_cursor != null and game_cursor.has_method("flash_move"):
@@ -1354,6 +1470,8 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 	# 中断其他瞄准态
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
+	_clear_pinned_site_ghost()
 	_ensure_build_placement_objects()
 	_build_placement.begin(building_id)
 	_ensure_ghost_node(building_id)
@@ -1378,8 +1496,7 @@ func _cancel_build_targeting() -> void:
 		return
 	_build_placement.cancel()
 	_build_confirm_armed = false
-	if _build_ghost != null:
-		_build_ghost.set_visible_preview(false)
+	_clear_pinned_site_ghost()
 	_sync_selector_enabled_for_targeting()
 	if game_hud:
 		game_hud.set_status("建造取消")
@@ -1426,15 +1543,44 @@ func _commit_build_targeting(screen_pos: Vector2) -> void:
 	_build_confirm_armed = false
 	# 接 peasant 列表后下 issue_build
 	var peasants: Array = _command_router.filter_peasants(_get_selected_safe())
-	_command_router.issue_build(peasants, bid, site, UnitOrder.Source.TARGETING)
-	if _build_ghost != null:
-		_build_ghost.set_visible_preview(false)
+	var n := _command_router.issue_build(peasants, bid, site, UnitOrder.Source.TARGETING)
 	_sync_selector_enabled_for_targeting()
 	_refresh_command_card()
+	if n <= 0:
+		_clear_pinned_site_ghost()
+		if game_hud:
+			game_hud.set_status("建造下令失败（需选中空闲农民）")
+		return
+	# 农民走动期间：工地保留半透明建筑幽灵（开工刷半成品时再撤）
+	_pin_site_ghost(bid, site)
+	if game_hud:
+		game_hud.set_status("建造：农民前往工地")
+
+
+func _pin_site_ghost(building_id: String, site_wc3: Vector2) -> void:
+	_ensure_ghost_node(building_id)
+	if _build_ghost == null:
+		return
+	_site_ghost_pinned = true
+	var sample := PlacementRules.sample_footprint(building_id, site_wc3, _pathing)
+	_build_ghost.update_from_sample(sample, _pathing, _heightfield, site_wc3)
+	_build_ghost.set_valid(true)
+	_build_ghost.set_pinned_style(true)
+	_build_ghost.set_visible_preview(true)
+
+
+func _clear_pinned_site_ghost() -> void:
+	_site_ghost_pinned = false
+	if _build_ghost != null:
+		_build_ghost.set_pinned_style(false)
+		_build_ghost.set_visible_preview(false)
 
 
 func _apply_ghost_to_screen() -> void:
 	if _build_placement == null or _build_ghost == null:
+		return
+	# 已钉在工地的幽灵：不要被 HUD 挡鼠标逻辑关掉
+	if _site_ghost_pinned and not _build_placement.is_active():
 		return
 	if not _build_placement.is_active():
 		return
@@ -1465,7 +1611,8 @@ func _on_build_placement_changed(_bid: String, _site: Vector2, _valid: bool) -> 
 
 func _on_build_placement_cancelled() -> void:
 	_build_confirm_armed = false
-	if _build_ghost != null:
+	# 仅瞄准取消时藏幽灵；已钉工地的幽灵由 pin/开工/取消令 管理
+	if not _site_ghost_pinned and _build_ghost != null:
 		_build_ghost.set_visible_preview(false)
 	_sync_selector_enabled_for_targeting()
 
@@ -1568,6 +1715,52 @@ func _wire_build_signals(bc: BuildController) -> void:
 		bc.build_completed.connect(_on_build_completed)
 	if not bc.build_cancelled.is_connected(_on_build_cancelled):
 		bc.build_cancelled.connect(_on_build_cancelled)
+	if not bc.build_joined.is_connected(_on_build_joined):
+		bc.build_joined.connect(_on_build_joined)
+	# 协助农民轮询「首工到位后」登记的工地
+	bc.find_site_at = Callable(self, "_find_build_site")
+
+
+## 增派工人到位（半成品应已存在；此信号仅作进度/动画旁路，不再提前刷建筑）。
+func _on_build_joined(_site: BuildSite, _builder: Node3D) -> void:
+	pass
+
+
+## 0 工人：冻结 Birth/粒子；有人回来继续。
+func _on_construction_paused(paused: bool, key: String) -> void:
+	if not _active_construction.has(key):
+		return
+	var rec: Dictionary = _active_construction[key]
+	var node: Node3D = rec.get("node") as Node3D
+	if node == null or not is_instance_valid(node):
+		return
+	_set_construction_present_paused(node, str(rec.get("building_id", "")), paused)
+
+
+func _set_construction_present_paused(building: Node3D, building_id: String, paused: bool) -> void:
+	if building == null:
+		return
+	var ap := _find_anim_player(building)
+	if ap != null:
+		ap.speed_scale = 0.0 if paused else 1.0
+	for n in building.find_children("*", "GPUParticles3D", true, false):
+		(n as GPUParticles3D).emitting = not paused
+	for n2 in building.find_children("*", "CPUParticles3D", true, false):
+		(n2 as CPUParticles3D).emitting = not paused
+	if not paused and not building_id.is_empty():
+		var cache = map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null
+		if cache != null:
+			BuildingVisual.apply_phase(cache, building, building_id, BuildingVisual.Phase.BIRTH)
+
+
+func _find_anim_player(n: Node) -> AnimationPlayer:
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var f := _find_anim_player(c)
+		if f:
+			return f
+	return null
 
 
 ## 农民到位开工：立刻刷半成品建筑（低血 + under_construction），进度驱动血条/HUD。
@@ -1577,13 +1770,21 @@ func _on_build_started(order: BuildOrder) -> void:
 	var key := _construction_key(order)
 	if _active_construction.has(key):
 		return
+	# 半成品已刷出：撤掉落点幽灵
+	_clear_pinned_site_ghost()
 	var player_owner := 0
 	if order.builder != null:
 		var d: Dictionary = order.builder.get_meta("unit_data", {})
 		player_owner = int(d.get("owner", local_player))
+		# 仅当该农民已在工地施工时播锤子（join 先到时不要让还在路上的首工进入 Stand Work）
+		var bc0 := order.builder.get_node_or_null("BuildController") as BuildController
+		if bc0 != null and bc0.is_building():
+			var vis := _ensure_unit_visual(order.builder)
+			vis.set_building_work(true)
 	var cn := _alloc_runtime_cn()
 	var entry := _build_entry_for(order.building_id, order.site_wc3, player_owner, cn)
 	entry["hitPoints"] = 5.0
+	entry["under_construction"] = true
 	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
 	if node == null:
 		push_warning("GameDirector: 半成品建筑刷出失败 %s" % order.building_id)
@@ -1591,7 +1792,7 @@ func _on_build_started(order: BuildOrder) -> void:
 	UnitLife.ensure(node)
 	UnitLife.set_under_construction(node, true)
 	UnitLife.set_ratio(node, 0.05)
-	# Birth 建造动画
+	# Birth 建造动画（add 时若已按 under_construction 播过则再确保一次）
 	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
 	if cache != null:
 		BuildingVisual.apply_phase(cache, node, order.building_id, BuildingVisual.Phase.BIRTH)
@@ -1599,6 +1800,8 @@ func _on_build_started(order: BuildOrder) -> void:
 	if order.builder != null:
 		bc = order.builder.get_node_or_null("BuildController") as BuildController
 	var site: BuildSite = bc.current_site() if bc != null else null
+	if site == null:
+		site = _find_build_site(order.site_wc3, order.building_id)
 	_active_construction[key] = {
 		"cn": cn,
 		"node": node,
@@ -1606,16 +1809,66 @@ func _on_build_started(order: BuildOrder) -> void:
 		"site": site,
 	}
 	_register_build_site(site, node, order)
+	if site != null and not bool(site.get_meta("pause_wired", false)):
+		site.set_meta("pause_wired", true)
+		site.paused_changed.connect(_on_construction_paused.bind(key))
+	# 若开工时已有工人则确保非暂停表现；0 人不应发生
+	if site != null:
+		_set_construction_present_paused(node, order.building_id, site.is_paused())
 	if site != null:
 		var cb := _on_construction_progress.bind(key)
 		if not site.progress_changed.is_connected(cb):
 			site.progress_changed.connect(cb)
 	_refresh_dynamic_pathing()
+	# 半成品已占 pathing：把脚印内闲散单位推到外沿（施工工人除外）
+	_make_way_for_construction(order, node, site)
 	if health_bar_manager:
 		health_bar_manager.resync()
 	_sync_build_hud_for_selection()
 	if game_hud:
 		game_hud.set_status("开工：%s" % order.building_id)
+
+
+## 开工让位：脚印内可移动单位走开，避免卡在半成品 pathTex 上。
+func _make_way_for_construction(order: BuildOrder, building_node: Node3D, site: BuildSite) -> void:
+	if order == null or map_root == null or _pathing == null:
+		return
+	var layer := map_root.get_unit_layer()
+	if layer == null:
+		return
+	var exclude: Array = []
+	if building_node != null:
+		exclude.append(building_node)
+	if order.builder != null:
+		exclude.append(order.builder)
+	if site != null:
+		for b in site.active_builders():
+			exclude.append(b)
+	var blockers: Array[Node3D] = BuildFootprintClearance.collect_blockers(
+		layer, order.building_id, order.site_wc3, _pathing, _crowd_query, exclude
+	)
+	if blockers.is_empty():
+		return
+	var aabb: Rect2 = BuildFootprintClearance.footprint_aabb_wc3(
+		order.building_id, order.site_wc3, _pathing
+	)
+	for unit in blockers:
+		if unit == null or not is_instance_valid(unit):
+			continue
+		var tid := str(unit.get_meta("unit_data", {}).get("typeId", ""))
+		var pos := Wc3Coords.godot_to_wc3_xy(unit.global_position)
+		var goal: Vector2 = BuildFootprintClearance.resolve_outside(
+			unit, tid, pos, order.site_wc3, aabb, _path_query, _crowd_query
+		)
+		if goal == Vector2.INF:
+			continue
+		if _command_router != null:
+			_command_router.issue_move_to_wc3([unit], goal, UnitOrder.Source.UNKNOWN)
+		else:
+			var nav := _ensure_navigator(unit)
+			if nav != null:
+				nav.go_to_wc3(goal)
+
 
 func _on_construction_progress(elapsed: float, total: float, ratio: float, key: String) -> void:
 	if not _active_construction.has(key):
@@ -1668,6 +1921,7 @@ func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int
 
 
 func _on_build_cancelled(order: BuildOrder) -> void:
+	_clear_pinned_site_ghost()
 	if order != null:
 		var key := _construction_key(order)
 		if _active_construction.has(key):
@@ -1701,7 +1955,10 @@ func _construction_key(order: BuildOrder) -> String:
 func _refresh_dynamic_pathing() -> void:
 	if map_root == null:
 		return
-	if map_root.has_method("_apply_dynamic_pathing"):
+	# 动态脚印变更后：数据与叠层必须同源，否则会出现「蓝格可摆」或「叠层过期」
+	if bool(map_root.get("show_pathing_ground")) and map_root.has_method("_rebuild_pathing_overlay"):
+		map_root.call("_rebuild_pathing_overlay")
+	elif map_root.has_method("_apply_dynamic_pathing"):
 		map_root.call("_apply_dynamic_pathing")
 	elif map_root.has_method("set_pathing_map") and _pathing != null:
 		map_root.set_pathing_map(_pathing)
@@ -1712,11 +1969,228 @@ func _build_entry_for(building_id: String, site_wc3: Vector2, player_owner: int,
 	return {
 		"typeId": building_id,
 		"position": {"x": site_wc3.x, "y": site_wc3.y},
+		# 与 Melee 开局一致：默认朝南（bj_UNIT_FACING）；缺省 0 会让建筑「横着」
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
 		"owner": player_owner,
 		"creationNumber": creation_number,
 		"variation": 0,
 		"isBuilding": true,
 	}
+
+
+## 主城/兵营等可训建筑：命令卡带 training_unit 高亮。
+func _apply_building_train_card(building: Node3D, tid: String) -> void:
+	var state := {"include_locomotion": false}
+	if building != null:
+		var q := building.get_node_or_null("TrainQueue") as TrainQueue
+		if q != null and q.is_training():
+			state["training_unit"] = q.current_unit()
+	_apply_command_card(CommandCard.for_unit(tid, state))
+
+
+func _try_issue_train(unit_id: String) -> void:
+	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		if game_hud:
+			game_hud.set_status("请先选中可训练建筑")
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
+		if game_hud:
+			game_hud.set_status("当前选中无法训练")
+		return
+	if UnitLife.is_under_construction(primary):
+		if game_hud:
+			game_hud.set_status("建造中，无法训练")
+		return
+	var uid := unit_id.strip_edges()
+	var trains := CommandButtonCatalog.get_shared().get_trains(building_id)
+	if trains.find(uid) < 0:
+		if game_hud:
+			game_hud.set_status("%s 不能训练 %s" % [building_id, uid])
+		return
+	var stock := _local_stock()
+	var gold := BuildingCatalog.get_gold_cost(uid)
+	var lumber := BuildingCatalog.get_lumber_cost(uid)
+	var food := BuildingCatalog.get_food_used(uid)
+	if stock != null:
+		if food > 0 and not stock.can_afford_food(food):
+			if game_hud:
+				game_hud.set_status("人口不足（%d/%d）" % [stock.food_used, stock.food_cap])
+			return
+		if stock.gold < gold or stock.lumber < lumber:
+			if game_hud:
+				game_hud.set_status("资源不足（需 %d金 %d木）" % [gold, lumber])
+			return
+	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if existing != null and existing.is_training():
+		if game_hud:
+			game_hud.set_status("训练队列已满")
+		return
+	if not _command_router.issue_train(primary, uid):
+		if game_hud:
+			game_hud.set_status("无法训练 %s" % uid)
+		return
+	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
+	_wire_train_queue(queue)
+	_apply_building_train_card(primary, building_id)
+	_sync_build_hud_for_selection()
+	if game_hud:
+		game_hud.set_status("训练中：%s" % uid)
+
+
+func _wire_train_queue(queue: TrainQueue) -> void:
+	if queue == null or not is_instance_valid(queue):
+		return
+	var id := queue.get_instance_id()
+	if _wired_train_queues.has(id):
+		return
+	_wired_train_queues[id] = true
+	queue.training_completed.connect(_on_training_completed.bind(queue))
+	queue.training_cancelled.connect(_on_training_cancelled)
+
+
+func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queue: TrainQueue) -> void:
+	var building: Node3D = null
+	if queue != null and is_instance_valid(queue):
+		building = queue.get_parent() as Node3D
+	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
+	if node == null:
+		push_warning("GameDirector: 训练完成但刷单位失败 %s" % unit_id)
+		# 刷失败：释回人口（开训时已预占）
+		var stock := _local_stock()
+		if stock != null:
+			var food := BuildingCatalog.get_food_used(unit_id)
+			if food > 0:
+				stock.add_food_used(-food)
+		if game_hud:
+			game_hud.set_status("训练完成但刷出失败：%s" % unit_id)
+		return
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null and building != null and primary == building:
+			var tid := str(building.get_meta("unit_data", {}).get("typeId", ""))
+			if not tid.is_empty():
+				_apply_building_train_card(building, tid)
+			_sync_build_hud_for_selection()
+	if game_hud:
+		game_hud.set_status("训练完成：%s" % unit_id)
+
+
+func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int) -> void:
+	var stock := _local_stock()
+	if stock != null:
+		if refund_g > 0:
+			stock.add_gold(refund_g)
+		if refund_l > 0:
+			stock.add_lumber(refund_l)
+		var food := BuildingCatalog.get_food_used(unit_id)
+		if food > 0:
+			stock.add_food_used(-food)
+	if game_hud:
+		game_hud.set_status("取消训练：%s（退 %d金 %d木）" % [unit_id, refund_g, refund_l])
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null:
+			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
+			if BuildingCatalog.is_building(tid):
+				_apply_building_train_card(primary, tid)
+			_sync_build_hud_for_selection()
+
+
+## 训练完工刷单位：脚印四角（集结最近 / 默认左下）→ 重叠则自建筑中心挤位 → 再跟集结。
+func _spawn_trained_unit(
+	unit_id: String, site_wc3: Vector2, owner: int, from_building: Node3D = null
+) -> Node3D:
+	if map_root == null or _heightfield == null:
+		return null
+	var corner_xy := TrainSpawn.exit_xy_for_building(from_building, site_wc3)
+	var entry := {
+		"typeId": unit_id,
+		"position": {"x": corner_xy.x, "y": corner_xy.y, "z": 0.0},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"owner": owner,
+		"flags": 2,
+		"creationNumber": _alloc_runtime_cn(),
+		"variation": 0,
+	}
+	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if node == null:
+		return null
+	UnitLife.ensure(node)
+	var final_xy := TrainSpawn.resolve_with_displace(
+		corner_xy, site_wc3, node, unit_id, _path_query, _crowd_query
+	)
+	if final_xy != corner_xy:
+		_teleport_unit_wc3(node, final_xy)
+	_refresh_dynamic_pathing()
+	if health_bar_manager:
+		health_bar_manager.resync()
+	_dispatch_trained_rally(from_building, node)
+	return node
+
+
+## 新兵出门后跟集结点：地面→移动；金矿/树→采集（人族农民）。
+func _dispatch_trained_rally(building: Node3D, unit: Node3D) -> void:
+	if building == null or unit == null or _command_router == null:
+		return
+	if not BuildingRally.has_rally(building):
+		return
+	match BuildingRally.kind(building):
+		BuildingRally.KIND_GOLD_MINE:
+			var mine := BuildingRally.mine_node(building)
+			if mine != null:
+				_command_router.issue_harvest_gold([unit], mine, UnitOrder.Source.UNKNOWN)
+				return
+		BuildingRally.KIND_TREE:
+			var cn := BuildingRally.tree_cn(building)
+			if cn >= 0:
+				_command_router.issue_harvest_lumber([unit], cn, UnitOrder.Source.UNKNOWN)
+				return
+	var goal := BuildingRally.goal_wc3(building)
+	if goal != Vector2.INF:
+		_command_router.issue_move_to_wc3([unit], goal, UnitOrder.Source.UNKNOWN)
+
+
+## 训练刷兵后改坐标（挤位）；同步 unit_data 与贴地。
+func _teleport_unit_wc3(unit: Node3D, wc3_xy: Vector2) -> void:
+	if unit == null or not is_instance_valid(unit) or wc3_xy == Vector2.INF:
+		return
+	var z := 0.0
+	if _heightfield != null and _heightfield.is_valid():
+		z = _heightfield.interpolated_height(wc3_xy.x, wc3_xy.y)
+	unit.global_position = Wc3Coords.wc3_xy_to_godot(wc3_xy.x, wc3_xy.y, z)
+	if unit.has_meta("unit_data"):
+		var d: Dictionary = unit.get_meta("unit_data", {}).duplicate(true)
+		var pos: Dictionary = d.get("position", {})
+		if typeof(pos) != TYPE_DICTIONARY:
+			pos = {}
+		pos["x"] = wc3_xy.x
+		pos["y"] = wc3_xy.y
+		pos["z"] = z
+		d["position"] = pos
+		unit.set_meta("unit_data", d)
+
+
+func _refresh_train_hud_tick() -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		return
+	if UnitLife.is_under_construction(primary):
+		return
+	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if tq == null or not tq.is_training():
+		return
+	var r := tq.progress_ratio()
+	game_hud.set_build_progress(
+		true, r, "训练 %s %d%%" % [tq.current_unit(), int(round(r * 100.0))]
+	)
 
 
 func _local_stock() -> PlayerStock:
@@ -1805,17 +2279,32 @@ func _on_unit_locomotion_changed(_moving: bool) -> void:
 
 
 func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
-	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
-	if existing != null:
-		return existing
-	var vis := UnitVisual.new()
-	vis.name = "UnitVisual"
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
+	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
+	if existing != null:
+		existing.bind_cache(cache)
+		_ensure_interaction_components(unit)
+		return existing
+	var vis := UnitVisual.new()
+	vis.name = "UnitVisual"
 	vis.bind_cache(cache)
 	unit.add_child(vis)
+	_ensure_interaction_components(unit)
 	return vis
+
+
+## 刷单位时挂选框场景 + Selectable / Interactable，并注入依赖。
+func _ensure_interaction_components(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	var kind := InteractableComponent.SmartKind.NONE
+	if tid == "ngol":
+		kind = InteractableComponent.SmartKind.GOLD_MINE
+	InteractionSetup.attach(unit, kind)
 
 
 ## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
@@ -1987,8 +2476,7 @@ func _on_command_action(
 			if game_hud:
 				game_hud.set_status("战斗号召：逻辑待接（F3+）")
 		CommandCard.ACTION_SET_RALLY:
-			if game_hud:
-				game_hud.set_status("设置集结点：逻辑待接")
+			_begin_rally_targeting(source)
 		_:
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())
@@ -1996,8 +2484,7 @@ func _on_command_action(
 				return
 			if action_id.begins_with(CommandCard.ACTION_TRAIN_PREFIX):
 				var uid := action_id.substr(CommandCard.ACTION_TRAIN_PREFIX.length())
-				if game_hud:
-					game_hud.set_status("训练 %s：逻辑待接（F3–F4）" % uid)
+				_try_issue_train(uid)
 				return
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
@@ -2027,6 +2514,7 @@ func _clear_command_card_hotkeys() -> void:
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
 	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
 	_build_menu_open = false
 	if _is_build_targeting():
 		_cancel_build_targeting()
@@ -2065,8 +2553,8 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
 		_card_is_peasant = false
-		_apply_command_card(CommandCard.for_unit(tid, {"include_locomotion": false}))
-		game_hud.set_status("主城已选 · 命令卡见热键（Catalog）")
+		_apply_building_train_card(primary, tid)
+		game_hud.set_status("主城已选 · 训练见命令卡")
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
 		_refresh_command_card()
@@ -2147,6 +2635,15 @@ func _sync_build_hud_for_selection() -> void:
 		var order := site.current_order()
 		var bid := order.building_id if order != null else ""
 		game_hud.set_build_progress(true, ratio, "建造 %s %d%%" % [bid, int(round(ratio * 100.0))])
+		return
+	# 选中正在训练的建筑
+	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if tq != null and tq.is_training():
+		_unbind_hud_build_site()
+		var r := tq.progress_ratio()
+		game_hud.set_build_progress(
+			true, r, "训练 %s %d%%" % [tq.current_unit(), int(round(r * 100.0))]
+		)
 		return
 	_unbind_hud_build_site()
 	game_hud.clear_build_progress()
