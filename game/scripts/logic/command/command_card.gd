@@ -87,13 +87,14 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	if include_loco:
 		_place_locomotion(card, cat, bool(state.get("move_executing", false)))
 
+	var training_unit := str(state.get("training_unit", "")).strip_edges()
 	for tid in cat.get_trains(uid):
 		_place(
 			card,
 			cat.unit_hud_entry(
 				tid,
 				ACTION_TRAIN_PREFIX + tid,
-				{"enabled": true, "executing": false}
+				{"enabled": true, "executing": training_unit == tid}
 			)
 		)
 

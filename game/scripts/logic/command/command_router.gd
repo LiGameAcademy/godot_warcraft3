@@ -456,57 +456,72 @@ func _abort_build_leave(node: Node3D) -> void:
 		bc.leave_or_abort()
 
 
-## F2-6：建筑训练单位。building 是已建好的 Barracks/Altar 等 Node3D。
-## 行为：扣资源 + 挂 TrainQueue 子节点 + start。
-## 完工由 TrainQueue.training_completed signal 通知（Director 订阅刷单位）。
-## F2-6 简化：1 队列；fused 人口校验留 F3-F4。
+## F2-6：建筑训练单位。building 是已建好的 Barracks/Altar/TownHall 等 Node3D。
+## 行为：校验 Trains 列表 + 扣金木 + 预占 fused + 挂 TrainQueue + start。
+## 完工由 TrainQueue.training_completed 通知（Director 刷单位）；取消退 75% 金木并由 Director 释人口。
+## 简化：1 队列长度（训中不可再下单）。
 func issue_train(building: Node3D, unit_id: String) -> bool:
 	if building == null or not is_instance_valid(building):
 		return false
-	# 资源 / 时间从 UnitBalance 读
-	var time_sec: float = BuildingCatalog.get_build_time(unit_id)
-	var gold: int = BuildingCatalog.get_gold_cost(unit_id)
-	var lumber: int = BuildingCatalog.get_lumber_cost(unit_id)
-	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
-		# 非可训单位（或中立单位无时间）
+	if UnitLife.is_under_construction(building):
 		return false
-	# 资源扣减（需 router 持有 session）
-	if _session != null:
-		var stock: PlayerStock = _session.local_stock()
-		if stock == null or not stock.try_spend(gold, lumber):
-			return false
-	else:
-		# 兜底：未配 session 时不扣（验收集成时 F2-7 接 Director 配 session）
-		pass
-	# site/owner 从 building meta 读
+	var uid := unit_id.strip_edges()
+	if uid.is_empty():
+		return false
 	var d: Dictionary = building.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	var trains := CommandButtonCatalog.get_shared().get_trains(building_id)
+	if trains.find(uid) < 0:
+		return false
+	var time_sec: float = BuildingCatalog.get_build_time(uid)
+	var gold: int = BuildingCatalog.get_gold_cost(uid)
+	var lumber: int = BuildingCatalog.get_lumber_cost(uid)
+	var food: int = BuildingCatalog.get_food_used(uid)
+	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
+		return false
+	var stock: PlayerStock = null
+	if _session != null:
+		stock = _session.local_stock()
+	if stock != null:
+		if food > 0 and not stock.can_afford_food(food):
+			return false
+		if not stock.try_spend(gold, lumber):
+			return false
+		if food > 0:
+			stock.add_food_used(food)
 	var pos: Dictionary = d.get("position", {})
 	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
 	var owner: int = int(d.get("owner", 0))
-	# TrainQueue：复用已有（无则创建）；F2-6 简化：1 队列 = 已有则 noop
 	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
 	if queue == null:
 		queue = TrainQueue.new()
 		queue.name = "TrainQueue"
 		building.add_child(queue)
 	if queue.is_training():
-		# 已训中：尝试退款刚扣的（WC3：训练进行中不能叠加）
-		if _session != null:
-			var s: PlayerStock = _session.local_stock()
-			if s != null:
-				s.add_gold(gold)
-				s.add_lumber(lumber)
+		_refund_train_spend(stock, gold, lumber, food)
 		return false
-	if not queue.start(unit_id, time_sec, gold, lumber, site_wc3, owner):
+	if not queue.start(uid, time_sec, gold, lumber, site_wc3, owner):
+		_refund_train_spend(stock, gold, lumber, food)
 		return false
-	train_issued.emit(unit_id)
+	train_issued.emit(uid)
 	return true
 
 
+func _refund_train_spend(stock: PlayerStock, gold: int, lumber: int, food: int) -> void:
+	if stock == null:
+		return
+	if gold > 0:
+		stock.add_gold(gold)
+	if lumber > 0:
+		stock.add_lumber(lumber)
+	if food > 0:
+		stock.add_food_used(-food)
+
+
 ## F2-3：选中农民对工地 wc3_xy 发起 BUILD 令。
-## peasant 已在 CommandRouter.filter_peasants 过滤（仅 hpea）。
-## 契约：多选时只派 **1** 个农民开工（首单扣费）；其余不跟。
-## 再次对同一工地下令 / 右键半成品 → issue_join_build。
+## 原作：框选多农民下建造 → 仅 1 人响应并扣首单造价；半成品出现后，其余需右键工地才帮工。
+## 右键半成品 / 点到已有活跃工地 → issue_join_build（可多人）。
+## 人族：建造中再下新建造令 → 可打断换工地。
 func issue_build(
 	peasants: Array,
 	building_id: String,
@@ -517,31 +532,42 @@ func issue_build(
 		return 0
 	if not BuildingCatalog.is_building(building_id):
 		return 0
-	# 若该坐标已有活跃工地 → 改为 join（每次只再派 1 人）
+	# 已有活跃工地 → 选中农民全体 join（等同右键半成品帮工）
 	var existing: BuildSite = _find_site_at(site_wc3, building_id)
 	if existing != null and existing.is_active():
-		return issue_join_build_site(peasants, existing, building_id, site_wc3, source)
+		return issue_join_build_site(peasants, existing, building_id, site_wc3, source, 99, true)
 	var primary: Node3D = null
 	var bc: BuildController = null
 	for node in peasants:
 		if not (node is Node3D):
 			continue
-		var candidate: BuildController = _ensure_build.call(node) as BuildController
-		if candidate == null or candidate.is_active():
+		if not HarvestController.is_peasant(node):
 			continue
+		var candidate: BuildController = _ensure_build.call(node) as BuildController
+		if candidate == null:
+			continue
+		if candidate.is_active():
+			if not candidate.can_reassign_build():
+				continue
+			candidate.leave_or_abort()
+			if candidate.is_active():
+				continue
 		primary = node as Node3D
 		bc = candidate
 		break
 	if bc == null or primary == null:
 		return 0
+	if _ensure_navigator.is_valid():
+		_ensure_navigator.call(primary)
 	var order: BuildOrder = BuildOrder.create(building_id, site_wc3, primary)
 	if not bc.start_build(order):
 		return 0
+	# 多选其余人不动；帮工只走右键 / issue_join_build
 	build_issued.emit(1)
 	return 1
 
 
-## 对未完工建筑 join：选中农民里每次只派 1 个空闲的。
+## 对未完工建筑 join：派空闲农民；max_count 限制人数（1=点选增派，99=多选全派）。
 func issue_join_build(
 	selected: Array,
 	building_node: Node3D,
@@ -558,7 +584,7 @@ func issue_join_build(
 	var site: BuildSite = _find_site_for_building_node(building_node)
 	if site == null or not site.is_active():
 		return 0
-	return issue_join_build_site(selected, site, bid, site_wc3, source)
+	return issue_join_build_site(selected, site, bid, site_wc3, source, 99, true)
 
 
 func issue_join_build_site(
@@ -566,25 +592,43 @@ func issue_join_build_site(
 	site: BuildSite,
 	building_id: String,
 	site_wc3: Vector2,
-	source: int = UnitOrder.Source.PANEL
+	_source: int = UnitOrder.Source.PANEL,
+	max_count: int = 1,
+	do_emit: bool = true
 ) -> int:
 	if site == null or not site.is_active() or not _ensure_build.is_valid():
 		return 0
+	var issued := 0
+	var limit := maxi(max_count, 1)
 	for node in peasants:
+		if issued >= limit:
+			break
 		if not (node is Node3D):
 			continue
 		if not HarvestController.is_peasant(node):
 			continue
 		var bc: BuildController = _ensure_build.call(node) as BuildController
-		if bc == null or bc.is_active():
+		if bc == null:
 			continue
-		# 已在此工地
-		if site.active_builders().has(node):
+		if bc.is_active():
+			if not bc.can_reassign_build():
+				continue
+			if site.active_builders().has(node):
+				continue
+			if bc.current_site() == site:
+				continue
+			bc.leave_or_abort()
+			if bc.is_active():
+				continue
+		elif site.active_builders().has(node):
 			continue
+		if _ensure_navigator.is_valid():
+			_ensure_navigator.call(node)
 		if bc.start_join(site, building_id, site_wc3):
-			build_issued.emit(1)
-			return 1
-	return 0
+			issued += 1
+	if issued > 0 and do_emit:
+		build_issued.emit(issued)
+	return issued
 
 
 func _find_site_at(site_wc3: Vector2, building_id: String) -> BuildSite:

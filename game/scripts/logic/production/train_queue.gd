@@ -9,7 +9,7 @@ extends Node
 ## timer 跑完 → training_completed.emit → Director 刷单位到建筑门口
 ## cancel()：退款 75%（WC3 行为；建筑训练可取消）
 ##
-## 不扣 fused 人口（前置主城/农场已给够；F3-F4 接严格 fused 校验）
+## fused 由 CommandRouter 在 start 前预占；取消时 Director 释回。
 
 signal state_changed(state: int)
 signal training_started(unit_id: String, time_sec: float)
