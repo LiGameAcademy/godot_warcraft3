@@ -24,7 +24,8 @@ func _make_blank() -> Wc3Heightfield:
 
 func _test_ground_and_dirty() -> int:
 	var hf := _make_blank()
-	var logic := Wc3TerrainLogic.new().bind(hf)
+	var logic := Wc3TerrainLogic.new()
+	logic.bind(hf)
 	if not logic.set_ground_tex(1, 1, 1):
 		push_error("set_ground_tex failed")
 		return 1
@@ -54,7 +55,8 @@ func _test_ground_and_dirty() -> int:
 
 func _test_height_and_neighbors() -> int:
 	var hf := _make_blank()
-	var logic := Wc3TerrainLogic.new().bind(hf)
+	var logic := Wc3TerrainLogic.new()
+	logic.bind(hf)
 	if not logic.set_height(2, 2, 64.0):
 		push_error("set_height failed")
 		return 1
