@@ -1,43 +1,21 @@
 class_name UnitSelector
 extends Node
-## 单位点选 / 框选（编辑器与游戏共用骨架）。
+## 点选/框选中央裁决（输入 + 2D 脚底圆查询）。
+## 选中环 / 拾取半径数据在 SelectableComponent；交互闪环在 InteractableComponent。
 ##
 ## 输入：专用全屏 Control（gui_input），挂在低于 HUD 的 CanvasLayer。
-## 为何不用 `_unhandled_input` 做主路径：
-## - HUD/Panel 等 Control 会先吃掉鼠标，框选矩形经常画不出来；
-## - 全屏 STOP 层在 HUD 之下时，空白处进本层，按钮/小地图仍归 HUD。
-##
-## 点选：相机射线 vs 竖直胶囊（单位碰撞半径），不是屏幕 AABB。
-## AABB 投影失误多（贴花/隐藏 geoset/透视变形），只作框选辅助。
 
-const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
+## 建筑略大半径惩罚：同点多圆重叠时优先小单位 / 近圆心
+const BUILDING_RADIUS_SCORE_MUL := 0.35
+## 射线近乎水平时：脚底屏幕像素兜底
+const FOOT_FALLBACK_UNIT_PX := 52.0
+const FOOT_FALLBACK_BUILDING_PX := 28.0
 
-const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
-const SEL_RING_COLOR_OWN := Color(0.15, 1.0, 0.25, 1.0)
-const SEL_RING_COLOR_NEUTRAL := Color(1.0, 0.92, 0.15, 1.0)
-## 兼容旧名
-const SEL_RING_COLOR := SEL_RING_COLOR_OWN
-const SEL_RING_Y_BIAS := 0.06
-
+## 兼容旧 API
 enum RingKind {
 	OWN = 1,
 	NEUTRAL = 2,
 }
-## 无 SLK scale 时的默认拾取半径（Godot 单位 ≈ WC3 40）
-const DEFAULT_UNIT_RADIUS := 0.40
-const DEFAULT_BUILDING_RADIUS := 1.20
-const DEFAULT_UNIT_HEIGHT := 1.20
-const DEFAULT_BUILDING_HEIGHT := 3.50
-## 射线未中胶囊时，脚底屏幕像素兜底半径（建筑不再放大，避免远距误点主城）
-const FOOT_FALLBACK_PX := 32.0
-## 建筑相对单位的射线距离惩罚（同屏重叠时优先点到农民 / 金矿）
-const BUILDING_RAY_PENALTY := 2.25
-## 大建筑额外按半径加权，避免 mesh 膨胀胶囊「吸走」远处点击
-const BUILDING_RADIUS_SCORE_MUL := 0.55
-## mesh AABB 相对 collision/scale 的最大放宽倍数
-const MESH_RADIUS_EXPAND := 1.25
-const MAX_BUILDING_PICK_RADIUS := 2.20
-const MAX_UNIT_PICK_RADIUS := 0.85
 
 signal selection_changed(primary: Node3D, selected: Array)
 
@@ -63,9 +41,8 @@ var _input_root: Control = null
 var _marqueeing: bool = false
 var _selected: Array[Node3D] = []
 var _primary: Node3D = null
-var _ring_nodes: Dictionary = {} ## Node3D → MeshInstance3D
-## typeId → 拾取半径缓存（Godot）
-var _radius_cache: Dictionary = {}
+## 上一帧挂着选中环的宿主（用于取消选中时 hide）
+var _ring_hosts: Array[Node3D] = []
 
 
 func _ready() -> void:
@@ -341,8 +318,9 @@ func screen_foot_distance(node: Node3D, screen_pos: Vector2) -> float:
 	return camera.unproject_position(node.global_position).distance_to(screen_pos)
 
 
-## 点选：相机射线打竖直胶囊（高度用模型 AABB）；未命中再脚底像素兜底。
-## 半径权威：UnitBalance.collision → UnitUI.scale → 有限 mesh 放宽（禁止裸 mesh 吸点击）。
+## 点选：射线 ∩ 脚底水平面，世界 XZ 落在拾取圆内即命中（无高度胶囊）。
+## 半径：UnitBalance.collision → UnitUI.scale → 有限 mesh 放宽。
+## 优先级：单位圆 > 建筑圆；同分取距圆心更近 / 半径更小。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:
 		return null
@@ -352,142 +330,111 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 		return null
 	dir = dir.normalized()
 
-	var best_ray: Node3D = null
-	var best_t := INF
-	var best_foot: Node3D = null
-	var best_foot_d2 := INF
+	var best_unit: Node3D = null
+	var best_unit_score := INF
+	var best_bldg: Node3D = null
+	var best_bldg_score := INF
 
 	for n in _iter_unit_nodes():
-		var d: Dictionary = n.get_meta("unit_data", {})
-		var tid := str(d.get("typeId", ""))
-		var is_bldg := _looks_building(tid, d)
-		var radius := _pick_radius_world(n, tid, is_bldg)
-		var height := _pick_height_world(n, is_bldg)
-		var t := _ray_vertical_capsule(origin, dir, n.global_position, height, radius)
-		if t >= 0.0:
-			var score := t
-			if is_bldg:
-				score += BUILDING_RAY_PENALTY + radius * BUILDING_RADIUS_SCORE_MUL
-			if score < best_t:
-				best_t = score
-				best_ray = n
-
-		if camera.is_position_behind(n.global_position):
+		InteractionSetup.attach(n)
+		var sel := InteractionSetup.get_selectable(n)
+		if sel == null:
 			continue
-		var sp := camera.unproject_position(n.global_position)
-		var d2 := sp.distance_squared_to(screen_pos)
-		var foot_r := FOOT_FALLBACK_PX
-		if d2 > foot_r * foot_r:
+		var is_bldg := sel.is_building()
+		var radius := sel.pick_radius_world()
+		var hit := _ray_foot_plane_hit(origin, dir, n.global_position)
+		var score := INF
+		var hit_ok := false
+		if hit.t >= 0.0:
+			var dist_xz := Vector2(hit.pos.x, hit.pos.z).distance_to(
+				Vector2(n.global_position.x, n.global_position.z)
+			)
+			if dist_xz <= radius:
+				hit_ok = true
+				score = dist_xz + radius * (BUILDING_RADIUS_SCORE_MUL if is_bldg else 0.05)
+				score += hit.t * 0.02
+		# 近水平射线或圆未命中：脚底屏幕像素兜底（仍是 2D）
+		if not hit_ok:
+			if camera.is_position_behind(n.global_position):
+				continue
+			var sp := camera.unproject_position(n.global_position)
+			var d2 := sp.distance_squared_to(screen_pos)
+			var foot_px := FOOT_FALLBACK_BUILDING_PX if is_bldg else FOOT_FALLBACK_UNIT_PX
+			if d2 > foot_px * foot_px:
+				continue
+			hit_ok = true
+			score = 40.0 + sqrt(d2) * 0.02 + radius * (BUILDING_RADIUS_SCORE_MUL if is_bldg else 0.05)
+		if not hit_ok:
 			continue
-		var foot_score := d2
 		if is_bldg:
-			foot_score += 1200.0 + radius * 400.0
-		if foot_score < best_foot_d2:
-			best_foot_d2 = foot_score
-			best_foot = n
+			if score < best_bldg_score:
+				best_bldg_score = score
+				best_bldg = n
+		elif score < best_unit_score:
+			best_unit_score = score
+			best_unit = n
 
-	if best_ray != null:
-		return best_ray
-	return best_foot
-
-
-## 竖直胶囊（轴线 = 单位脚底沿 +Y）与射线求交，返回 t；未中返回 -1。
-## 圆柱段用完整高度，两端半球半径计入 Y 判定（含高度，避免「只看 XZ」误点远处建筑）。
-func _ray_vertical_capsule(
-	origin: Vector3, dir: Vector3, base: Vector3, height: float, radius: float
-) -> float:
-	var h := maxf(height, 0.05)
-	var r := maxf(radius, 0.05)
-	# 胶囊 = 圆柱 + 两端半球；先测圆柱（足够 RTS 点选）
-	var o := Vector2(origin.x, origin.z)
-	var d := Vector2(dir.x, dir.z)
-	var c := Vector2(base.x, base.z)
-	var a := d.dot(d)
-	var best_t := -1.0
-	if a > 1e-10:
-		var f := o - c
-		var b := 2.0 * f.dot(d)
-		var cc := f.dot(f) - r * r
-		var disc := b * b - 4.0 * a * cc
-		if disc >= 0.0:
-			var sdisc := sqrt(disc)
-			for ti in [( -b - sdisc) / (2.0 * a), ( -b + sdisc) / (2.0 * a)]:
-				if ti < 0.0:
-					continue
-				var y: float = origin.y + dir.y * ti
-				if y >= base.y - r and y <= base.y + h + r:
-					if best_t < 0.0 or ti < best_t:
-						best_t = ti
-	else:
-		# 射线近乎竖直：看 XZ 是否落在圆内
-		if o.distance_to(c) <= r:
-			var t_bottom := (base.y - origin.y) / dir.y if absf(dir.y) > 1e-6 else 0.0
-			var t_top := (base.y + h - origin.y) / dir.y if absf(dir.y) > 1e-6 else 0.0
-			var t0 := minf(t_bottom, t_top)
-			var t1 := maxf(t_bottom, t_top)
-			if t1 >= 0.0:
-				best_t = maxf(t0, 0.0)
-	return best_t
+	if best_unit != null:
+		return best_unit
+	return best_bldg
 
 
-func _pick_radius_world(node: Node3D, type_id: String, is_bldg: bool) -> float:
-	if _radius_cache.has(type_id):
-		return float(_radius_cache[type_id])
-	var r := DEFAULT_BUILDING_RADIUS if is_bldg else DEFAULT_UNIT_RADIUS
-	# 1) UnitBalance.collision（WC3）→ Godot
-	if not type_id.is_empty():
-		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-		var bal: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, type_id)
-		if bal is UnitBalanceDef:
-			var col := (bal as UnitBalanceDef).collision
-			if col > 0.0:
-				r = col * Wc3Coords.WORLD_SCALE
-		# 2) unitUI.scale ≈ 选中圈直径（WC3）
-		Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
-		var row: Resource = Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, type_id)
-		if row is UnitUiDef:
-			var sc := (row as UnitUiDef).scale
-			if sc > 1.0:
-				r = maxf(r, sc * Wc3Coords.WORLD_SCALE * 0.5)
-	# 3) mesh 仅允许有限放宽，禁止整模 AABB 吞点击（主城误吸金矿/树）
-	var mesh_r := _mesh_xz_diameter(node) * 0.45
-	if mesh_r > r:
-		r = minf(mesh_r, r * MESH_RADIUS_EXPAND)
-	var cap := MAX_BUILDING_PICK_RADIUS if is_bldg else MAX_UNIT_PICK_RADIUS
-	r = clampf(r, 0.12, cap)
-	_radius_cache[type_id] = r
-	return r
-
-
-func _pick_height_world(node: Node3D, is_bldg: bool) -> float:
-	var aabb := _local_visual_aabb(node)
-	if aabb.size.y > 0.05:
-		return maxf(aabb.size.y, 0.4)
-	return DEFAULT_BUILDING_HEIGHT if is_bldg else DEFAULT_UNIT_HEIGHT
+## 射线与脚底水平面（y = foot.y）求交；t < 0 表示在相机后方。
+func _ray_foot_plane_hit(origin: Vector3, dir: Vector3, foot: Vector3) -> Dictionary:
+	if absf(dir.y) < 1e-8:
+		return {"t": -1.0, "pos": Vector3.ZERO}
+	var t := (foot.y - origin.y) / dir.y
+	if t < 0.0:
+		return {"t": -1.0, "pos": Vector3.ZERO}
+	return {"t": t, "pos": origin + dir * t}
 
 
 func _select_in_rect(rect: Rect2) -> void:
 	var hits: Array[Node3D] = []
 	for n in _iter_unit_nodes():
-		if MarqueeSelection.world_in_rect(camera, n.global_position, rect):
-			hits.append(n)
+		InteractionSetup.attach(n)
+		var sel := InteractionSetup.get_selectable(n)
+		if sel == null:
 			continue
-		# 建筑脚底可能偏中心：屏幕盒相交作补充
-		var d: Dictionary = n.get_meta("unit_data", {})
-		if _looks_building(str(d.get("typeId", "")), d):
-			var box := _screen_aabb(n)
-			if box.has_area() and box.intersects(rect):
-				hits.append(n)
+		if not sel.allow_marquee:
+			continue
+		var radius := sel.pick_radius_world()
+		if _footprint_in_marquee(n, radius, rect):
+			hits.append(n)
 	# 框选：只收己方（中立金矿/敌对野怪不可多选）
 	if marquee_owner >= 0:
 		var owned: Array[Node3D] = []
 		for n in hits:
-			var ud: Dictionary = n.get_meta("unit_data", {})
-			if int(ud.get("owner", -1)) == marquee_owner:
+			var sel2 := InteractionSetup.get_selectable(n)
+			var oid := sel2.owner_id() if sel2 != null else int(n.get_meta("unit_data", {}).get("owner", -1))
+			if oid == marquee_owner:
 				owned.append(n)
 		hits = owned
 	# WC3：框选同时命中单位+建筑 → 只留单位；纯建筑框仍可选中建筑。
 	_set_selection(_prefer_units_over_buildings(hits))
+
+
+## 框选命中：脚底投影在框内，或脚底圆在屏幕上与框相交（不用 mesh AABB）。
+func _footprint_in_marquee(node: Node3D, radius: float, rect: Rect2) -> bool:
+	if camera == null or node == null:
+		return false
+	if MarqueeSelection.world_in_rect(camera, node.global_position, rect):
+		return true
+	if camera.is_position_behind(node.global_position):
+		return false
+	var foot_sp := camera.unproject_position(node.global_position)
+	var edge := node.global_position + Vector3(maxf(radius, 0.12), 0.0, 0.0)
+	if camera.is_position_behind(edge):
+		return false
+	var r_px := foot_sp.distance_to(camera.unproject_position(edge))
+	r_px = clampf(r_px, 4.0, 120.0)
+	return _distance_point_to_rect(foot_sp, rect) <= r_px
+
+
+func _distance_point_to_rect(p: Vector2, rect: Rect2) -> float:
+	var x := clampf(p.x, rect.position.x, rect.position.x + rect.size.x)
+	var y := clampf(p.y, rect.position.y, rect.position.y + rect.size.y)
+	return p.distance_to(Vector2(x, y))
 
 
 ## 混合命中时优先单位（对齐原作框选）；仅建筑则原样返回。
@@ -495,40 +442,17 @@ func _prefer_units_over_buildings(nodes: Array[Node3D]) -> Array[Node3D]:
 	var units: Array[Node3D] = []
 	var buildings: Array[Node3D] = []
 	for n in nodes:
-		var d: Dictionary = n.get_meta("unit_data", {})
-		if _looks_building(str(d.get("typeId", "")), d):
+		var sel := InteractionSetup.get_selectable(n)
+		var is_bldg := sel.is_building() if sel != null else BuildingVisual.is_building(
+			str(n.get_meta("unit_data", {}).get("typeId", ""))
+		)
+		if is_bldg:
 			buildings.append(n)
 		else:
 			units.append(n)
 	if not units.is_empty():
 		return units
 	return buildings
-
-
-func _screen_aabb(node: Node3D) -> Rect2:
-	var aabb := _local_visual_aabb(node)
-	if aabb.size.length() < 1e-5:
-		return Rect2()
-	var xf := node.global_transform
-	var min_s := Vector2(INF, INF)
-	var max_s := Vector2(-INF, -INF)
-	var any := false
-	for i in range(8):
-		var corner := aabb.position + aabb.size * Vector3(
-			float(i & 1),
-			float((i >> 1) & 1),
-			float((i >> 2) & 1)
-		)
-		var world := xf * corner
-		if camera.is_position_behind(world):
-			continue
-		var sp := camera.unproject_position(world)
-		min_s = min_s.min(sp)
-		max_s = max_s.max(sp)
-		any = true
-	if not any:
-		return Rect2()
-	return Rect2(min_s, max_s - min_s)
 
 
 func _iter_unit_nodes() -> Array[Node3D]:
@@ -550,17 +474,17 @@ func _iter_unit_nodes() -> Array[Node3D]:
 			continue
 		if owner_filter >= 0 and int(d.get("owner", -1)) != owner_filter:
 			continue
-		var is_bldg := _looks_building(tid, d)
+		var sel := InteractionSetup.get_selectable(n)
+		if sel == null:
+			InteractionSetup.attach(n)
+			sel = InteractionSetup.get_selectable(n)
+		var is_bldg := sel.is_building() if sel != null else BuildingVisual.is_building(tid)
 		if is_bldg and not allow_buildings:
 			continue
 		if not is_bldg and not allow_units:
 			continue
 		out.append(n)
 	return out
-
-
-func _looks_building(type_id: String, _d: Dictionary) -> bool:
-	return BuildingVisualScr.is_building(type_id)
 
 
 func _set_selection(nodes: Array) -> void:
@@ -572,7 +496,6 @@ func _set_selection(nodes: Array) -> void:
 	if _selected.is_empty():
 		_primary = null
 	else:
-		# 保留仍在集合内的旧 primary；否则取第一个
 		if _primary == null or not is_instance_valid(_primary) or not _selected.has(_primary):
 			_primary = _selected[0]
 	_refresh_rings()
@@ -623,138 +546,41 @@ func _ensure_overlay() -> void:
 
 func _refresh_rings() -> void:
 	var keep: Dictionary = {}
+	var multi := _selected.size()
 	for n in _selected:
 		if not is_instance_valid(n):
 			continue
 		keep[n] = true
-		if _ring_nodes.has(n) and is_instance_valid(_ring_nodes[n]):
-			_update_ring(_ring_nodes[n] as MeshInstance3D, n)
-		else:
-			_ring_nodes[n] = _make_ring(n)
-	var stale: Array = []
-	for k in _ring_nodes.keys():
-		if not keep.has(k) or not is_instance_valid(k):
-			stale.append(k)
-	for k in stale:
-		var ring: Node = _ring_nodes[k]
-		_ring_nodes.erase(k)
-		if is_instance_valid(ring):
-			ring.queue_free()
+		var sel := InteractionSetup.get_selectable(n)
+		if sel == null:
+			InteractionSetup.attach(n)
+			sel = InteractionSetup.get_selectable(n)
+		if sel != null:
+			sel.show_selected(n == _primary, multi)
+	for n2 in _ring_hosts:
+		if not is_instance_valid(n2) or keep.has(n2):
+			continue
+		var sel2 := InteractionSetup.get_selectable(n2)
+		if sel2 != null:
+			sel2.hide_selected()
+	_ring_hosts.clear()
+	for n3 in _selected:
+		if is_instance_valid(n3):
+			_ring_hosts.append(n3)
 
 
 func ring_kind_for(node: Node3D) -> int:
-	if node == null:
-		return RingKind.OWN
-	var ud: Dictionary = node.get_meta("unit_data", {})
-	var tid := str(ud.get("typeId", "")).strip_edges()
-	# 树不可左键选中；黄环仅中立金矿等单位
-	if tid == "ngol":
-		return RingKind.NEUTRAL
-	# 中立玩家（常见 12–15）选中也偏黄
-	var owner_id := int(ud.get("owner", 0))
-	if owner_id >= 12:
-		return RingKind.NEUTRAL
+	InteractionSetup.attach(node)
+	var sel := InteractionSetup.get_selectable(node)
+	if sel != null:
+		return sel.ring_kind()
 	return RingKind.OWN
 
 
-func _ring_color(kind: int) -> Color:
-	match kind:
-		RingKind.NEUTRAL:
-			return SEL_RING_COLOR_NEUTRAL
-		_:
-			return SEL_RING_COLOR_OWN
-
-
-func _make_ring(host: Node3D) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.name = "SelectionRing"
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var plane := PlaneMesh.new()
-	plane.size = Vector2.ONE
-	plane.orientation = PlaneMesh.FACE_Y
-	mi.mesh = plane
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.render_priority = 20
-	mat.albedo_color = _ring_color(ring_kind_for(host))
-	var tex: Texture2D = RuntimeAssets.load_converted_texture(SEL_CIRCLE_TEX)
-	if tex != null:
-		mat.albedo_texture = tex
-	mi.material_override = mat
-	host.add_child(mi)
-	_update_ring(mi, host)
-	return mi
-
-
-func _update_ring(mi: MeshInstance3D, host: Node3D) -> void:
-	if mi == null or host == null:
-		return
-	var diam := _mesh_xz_diameter(host)
-	if diam < 0.2:
-		diam = 0.8
-	var plane := mi.mesh as PlaneMesh
-	if plane == null:
-		plane = PlaneMesh.new()
-		plane.orientation = PlaneMesh.FACE_Y
-		mi.mesh = plane
-	plane.size = Vector2(diam, diam)
-	mi.position = Vector3(0.0, SEL_RING_Y_BIAS, 0.0)
-	var mat := mi.material_override as StandardMaterial3D
-	if mat != null:
-		var col := _ring_color(ring_kind_for(host))
-		# 多选时：当前选中全亮，其余略淡
-		if _selected.size() > 1 and host != _primary:
-			col.a *= 0.45
-		mat.albedo_color = col
-	mi.visible = true
-
-
-func _mesh_xz_diameter(node: Node3D) -> float:
-	var aabb := _local_visual_aabb(node)
-	if aabb.size.length() < 1e-5:
-		return 0.0
-	return maxf(aabb.size.x, aabb.size.z)
-
-
-func _local_visual_aabb(node: Node3D) -> AABB:
-	var aabb := AABB()
-	var first := true
-	for c in node.find_children("*", "VisualInstance3D", true, false):
-		var vi := c as VisualInstance3D
-		if vi == null or not vi.visible:
-			continue
-		var vname := str(vi.name)
-		if (
-			vname == "SelectionRing"
-			or vname == "DeathDropRing"
-			or vname == "UberSplat"
-		):
-			continue
-		if _is_under_named(vi, "Pe2Root"):
-			continue
-		var local := vi.get_aabb()
-		if local.size.length() < 1e-5:
-			continue
-		var xf: Transform3D = node.global_transform.affine_inverse() * vi.global_transform
-		var box := xf * local
-		if first:
-			aabb = box
-			first = false
-		else:
-			aabb = aabb.merge(box)
-	if first:
-		return AABB()
-	return aabb
-
-
-func _is_under_named(n: Node, root_name: String) -> bool:
-	var p := n.get_parent()
-	while p != null:
-		if str(p.name) == root_name:
-			return true
-		p = p.get_parent()
-	return false
+## 选中圈直径（世界单位）；供右键交互闪环复用。
+func selection_ring_diameter_for(host: Node3D) -> float:
+	InteractionSetup.attach(host)
+	var sel := InteractionSetup.get_selectable(host)
+	if sel != null:
+		return sel.ring_diameter_world()
+	return 1.1

@@ -1,7 +1,7 @@
 class_name MarqueeOverlay
 extends Control
-## 框选绿矩形绘制层（挂在 CanvasLayer 下，mouse_filter=IGNORE）。
 
+## 框选绿矩形绘制层（挂在 CanvasLayer 下，mouse_filter=IGNORE）。
 
 const FILL := Color(0.15, 1.0, 0.25, 0.12)
 const BORDER := Color(0.2, 1.0, 0.35, 0.95)

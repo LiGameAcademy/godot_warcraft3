@@ -1,12 +1,10 @@
 class_name TargetFlashFx
 extends RefCounted
 
-## 目标确认反馈：黄环 +（可选）模型高亮闪烁。不进 UnitSelector 选中列表。
+## 目标确认反馈：优先走单位上的 Interactable；仅保留模型闪烁工具。
 
-const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const RING_COLOR := Color(1.0, 0.92, 0.15, 1.0)
 const FLASH_EMISSION := Color(1.0, 0.88, 0.12)
-const Y_BIAS := 0.08
 const DEFAULT_DURATION := 0.65
 const DEFAULT_DIAM := 1.1
 
@@ -32,7 +30,7 @@ static func flash_on(
 	diameter: float = DEFAULT_DIAM
 ) -> MeshInstance3D:
 	flash_ring(host, duration, diameter)
-	return host.get_node_or_null("TargetFlashRing") as MeshInstance3D
+	return host.get_node_or_null("SelectionRing") as MeshInstance3D
 
 
 static func flash_ring(
@@ -40,34 +38,15 @@ static func flash_ring(
 	duration: float = DEFAULT_DURATION,
 	diameter: float = DEFAULT_DIAM
 ) -> MeshInstance3D:
-	if host == null or not is_instance_valid(host):
-		return null
-	var old := host.get_node_or_null("TargetFlashRing") as MeshInstance3D
-	if old != null:
-		old.queue_free()
-	var mi := MeshInstance3D.new()
-	mi.name = "TargetFlashRing"
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(maxf(diameter, 0.4), maxf(diameter, 0.4))
-	plane.orientation = PlaneMesh.FACE_Y
-	mi.mesh = plane
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.render_priority = 21
-	mat.albedo_color = RING_COLOR
-	var tex: Texture2D = RuntimeAssets.load_converted_texture(SEL_CIRCLE_TEX)
-	if tex != null:
-		mat.albedo_texture = tex
-	mi.material_override = mat
-	mi.position = Vector3(0.0, Y_BIAS, 0.0)
-	host.add_child(mi)
-	_animate_ring_fade(mi, maxf(duration, 0.15))
-	return mi
+	InteractionSetup.attach(host)
+	var ic := InteractionSetup.get_interactable(host)
+	if ic != null:
+		ic.flash(duration, false)
+		return host.get_node_or_null("SelectionRing") as MeshInstance3D
+	var ring := host.get_node_or_null("SelectionRing") as SelectionRing
+	if ring != null:
+		ring.play_interact_flash(diameter, duration, RING_COLOR)
+	return ring
 
 
 ## 模型 emissive 闪两下（原作点选反馈感）。
@@ -140,24 +119,6 @@ static func _restore_materials(touched: Array) -> void:
 		if mi == null or not is_instance_valid(mi):
 			continue
 		mi.material_override = rec.get("prev_override", null) as Material
-
-
-static func _animate_ring_fade(mi: MeshInstance3D, duration: float) -> void:
-	if mi == null or not is_instance_valid(mi):
-		return
-	var tree := mi.get_tree()
-	if tree == null:
-		mi.queue_free()
-		return
-	var tw := tree.create_tween()
-	tw.set_parallel(true)
-	var mat := mi.material_override as StandardMaterial3D
-	if mat != null:
-		var c0 := mat.albedo_color
-		var c1 := Color(c0.r, c0.g, c0.b, 0.0)
-		tw.tween_property(mat, "albedo_color", c1, duration).set_ease(Tween.EASE_IN)
-	tw.tween_property(mi, "scale", Vector3(1.25, 1.0, 1.25), duration).set_ease(Tween.EASE_OUT)
-	tw.chain().tween_callback(mi.queue_free)
 
 
 static func _is_under_named(n: Node, root_name: String) -> bool:

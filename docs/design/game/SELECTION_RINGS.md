@@ -1,9 +1,40 @@
 # 选中环与目标环（Selection / Target Rings）
 
 > 对齐 WC3：己方选中 **绿环**；中立金矿左键可选 **黄环**（树**不可**左键选中，只右键伐木）。  
-> 所属层：**Presentation**（环网格）+ **Logic/Session**（谁算「选中 / 目标」）。  
-> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · [HUD.md](HUD.md)（中栏肖像 / 当前选中）  
-> 最后更新：2026-08-14
+> 所属层：场景 `scenes/selection/`（环 / UnitSelector）+ 脚本 `scripts/shared/selection/`（组件 / 框选）；游戏与编辑器共用。  
+> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · [HUD.md](HUD.md)  
+> 最后更新：2026-08-16
+
+---
+
+## 1. 组件拆分
+
+```text
+scenes/selection/          # 带场景的节点
+  selection_ring.tscn/.gd
+  unit_selector.tscn/.gd
+
+scripts/shared/selection/  # 纯脚本组件
+  selectable / interactable / interaction_setup
+  marquee_selection / marquee_overlay
+
+InteractionSetup.attach(host)   # 刷单位 / promote 时
+  ├── SelectionRing（tscn 子节点，默认隐藏）
+  ├── SelectableComponent（注入 ring）
+  └── InteractableComponent（注入 ring + selectable）
+
+UnitSelector（中央：输入 / 2D 脚底圆 / 框选）
+  └── 只调 Selectable.show_selected / hide_selected
+```
+
+| 组件 | 职责 | 不负责 |
+|------|------|--------|
+| `SelectionRing` | 实例方法：选中显示 / 隐藏 / 交互闪 | 按节点名查找、静态工厂 |
+| `SelectableComponent` | 半径、环色、选中态 | 自行 new 环 |
+| `InteractableComponent` | `flash()` | SmartTarget 裁决 |
+| `InteractionSetup` | 装配并注入依赖 | 输入 |
+
+树木未 promote 前无 Node：仍由 `TreeRegistry` 拾取；promote 后 `InteractionSetup.attach(..., TREE)`。
 
 ---
 
@@ -37,6 +68,8 @@
 - API 可扩展敌/友色，但 P0 只落地绿 + 黄。  
 - **多选当前选中（primary）**：环可对 primary 更高亮、其余略淡（与 [HUD.md](HUD.md) §4 联动；Tab 切主选）。  
 - **框选人数**：不设原作 12 上限。
+
+- 右键交互目标（金矿 / 送回建筑 / 工地 / 树）：`TargetFlashFx` 黄环闪一下表示收到指令；不进左键选中集合。
 
 **非目标（P0）**
 
@@ -96,8 +129,8 @@ ALLY    ≈ Color(0.25, 0.55, 1.0)  ## 预留
 
 | 目标 | 拾取 | 环挂载 |
 |------|------|--------|
-| 单位 / 建筑（含 ngol） | 现有 `UnitSelector` 胶囊 / 脚底兜底 | 单位 Node |
-| 树木 | 对 `TreeInteract` / doodad 空间查询（见 [TREE_INTERACT.md](TREE_INTERACT.md)）；**不**对 MultiMesh GPU 拾取 | promote Node |
+| 单位 / 建筑（含 ngol） | `UnitSelector`：**脚底水平面 2D 圆**（非 3D 胶囊）；框选同圆/脚底 | 单位 Node |
+| 树木 | `TreeRegistry` 同款脚底圆；**不**对 MultiMesh GPU 拾取 | promote Node |
 
 左键选中树时：若仍为 MultiMesh，**先 promote 再挂黄环**（与受伤入口可共用 promote，见树文档 §4）。
 
@@ -108,7 +141,7 @@ ALLY    ≈ Color(0.25, 0.55, 1.0)  ## 预留
 1. `UnitSelector`：抽出 `RingKind` + `ring_kind_for`；`_make_ring` / `_update_ring` 吃 kind。  
 2. 金矿选中验收：点 ngol → 黄环；点农民 → 绿环。  
 3. 树：等 `TreeInteract.promote` 可用后，selector 增加 doodad 拾取分支 + 黄环。  
-4. （可选）把环网格创建挪到 `selection_ring.gd` 小模块，供编辑器复用黄/绿。
+4. ✅ 环 / UnitSelector 在 `scenes/selection/`；组件与框选在 `scripts/shared/selection/`。
 
 ---
 
@@ -126,7 +159,10 @@ ALLY    ≈ Color(0.25, 0.55, 1.0)  ## 预留
 
 | 路径 | 角色 |
 |------|------|
-| `scripts/shared/selection/unit_selector.gd` | 选中 + 环主路径 |
-| `game/scripts/game_director.gd` | `_setup_selector` |
+| `scenes/selection/` | SelectionRing、UnitSelector（场景 + 脚本） |
+| `scripts/shared/selection/` | Selectable / Interactable / InteractionSetup、框选 |
+| `game/scripts/game_director.gd` | `_setup_selector`、装配调用 |
+| `game/scripts/logic/selection_info_builder.gd` | HUD 选中信息（游戏侧，留在 game/） |
+| `game/scripts/presentation/target_flash_fx.gd` | 目标闪反馈（游戏侧） |
 | `game/scripts/presentation/move_confirm_fx.gd` | 命令确认（勿混） |
 | `editor/scripts/tools/doodad_brush.gd` | 编辑器 doodad 环（可暂保持绿） |

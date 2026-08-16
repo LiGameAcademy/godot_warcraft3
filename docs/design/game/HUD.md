@@ -1,7 +1,7 @@
 # 游戏 HUD
 
 > 场景：`game/scenes/game_hud.tscn` · 脚本：`game/scripts/presentation/game_hud.gd`  
-> 选中权威：`scripts/shared/selection/unit_selector.gd`  
+> 选中权威：`scenes/selection/unit_selector.gd`  
 > 命令卡：`game/scripts/logic/command/command_card.gd`  
 > 最后更新：2026-08-14
 

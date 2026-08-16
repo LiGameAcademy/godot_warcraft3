@@ -177,7 +177,10 @@ func ensure_promoted(creation_number: int) -> Node3D:
 		return null
 	if _map_loader == null or not _map_loader.has_method("ensure_doodad_promoted"):
 		return null
-	return _map_loader.call("ensure_doodad_promoted", creation_number) as Node3D
+	var node := _map_loader.call("ensure_doodad_promoted", creation_number) as Node3D
+	if node != null:
+		InteractionSetup.attach(node, InteractableComponent.SmartKind.TREE)
+	return node
 
 
 ## 统一受伤入口。返回 {ok, killed, life, taken}。
@@ -297,18 +300,28 @@ func pick_cn_at_screen(screen_pos: Vector2) -> int:
 		var p := Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
 		var z := float(pos.get("z", 0.0))
 		var gpos := Wc3Coords.wc3_xy_to_godot(p.x, p.y, z)
-		var t := _ray_sphere_t(origin, dir, gpos + Vector3(0.0, 0.6, 0.0), PICK_RADIUS_GODOT)
-		if t >= 0.0 and t < best_score:
-			best_score = t
-			best_cn = cn
-			continue
-		if _camera.is_position_behind(gpos):
-			continue
-		var sp := _camera.unproject_position(gpos)
-		var d2 := sp.distance_squared_to(screen_pos)
-		if d2 <= PICK_FOOT_PX * PICK_FOOT_PX and d2 < best_score:
-			# 脚底兜底：用较大分数避免压过射线命中
-			best_score = 1000.0 + d2
+		# 2D 脚底圆：射线 ∩ 水平面，再比 XZ 半径（与 UnitSelector 一致）
+		var hit_ok := false
+		var score := INF
+		if absf(dir.y) > 1e-8:
+			var t := (gpos.y - origin.y) / dir.y
+			if t >= 0.0:
+				var hit := origin + dir * t
+				var dist_xz := Vector2(hit.x, hit.z).distance_to(Vector2(gpos.x, gpos.z))
+				if dist_xz <= PICK_RADIUS_GODOT:
+					hit_ok = true
+					score = dist_xz + t * 0.02
+		if not hit_ok:
+			if _camera.is_position_behind(gpos):
+				continue
+			var sp := _camera.unproject_position(gpos)
+			var d2 := sp.distance_squared_to(screen_pos)
+			if d2 > PICK_FOOT_PX * PICK_FOOT_PX:
+				continue
+			score = 1000.0 + d2
+			hit_ok = true
+		if hit_ok and score < best_score:
+			best_score = score
 			best_cn = cn
 	return best_cn
 
@@ -511,16 +524,3 @@ func _nearby_cell_keys(pos: Vector2, radius_wc3: float) -> Array[Vector2i]:
 		for dx in range(-n, n + 1):
 			keys.append(Vector2i(c0.x + dx, c0.y + dy))
 	return keys
-
-
-func _ray_sphere_t(origin: Vector3, dir: Vector3, center: Vector3, radius: float) -> float:
-	var oc := origin - center
-	var b := oc.dot(dir)
-	var c := oc.dot(oc) - radius * radius
-	var disc := b * b - c
-	if disc < 0.0:
-		return -1.0
-	var t := -b - sqrt(disc)
-	if t < 0.0:
-		t = -b + sqrt(disc)
-	return t if t >= 0.0 else -1.0
