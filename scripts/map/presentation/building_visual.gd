@@ -23,6 +23,9 @@ const TOWN_HALL_TIER := {
 	"hcas": " Upgrade Second",
 }
 
+## typeId → is_building；点选遍历全图时避免反复查 DefStore。
+static var _is_building_cache: Dictionary = {}
+
 
 static func _wc3_def_store() -> Node:
 	var ml := Engine.get_main_loop()
@@ -37,16 +40,20 @@ static func _wc3_def_store() -> Node:
 static func is_building(type_id: String) -> bool:
 	if type_id.is_empty() or type_id == "sloc":
 		return false
+	if _is_building_cache.has(type_id):
+		return bool(_is_building_cache[type_id])
+	var result := false
 	if AnimSequenceResolver.TOWN_HALL_STANCE.has(type_id):
-		return true
-	var store: Node = _wc3_def_store()
-	if store == null or not store.has_method("ensure_table"):
-		return false
-	store.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var row: Resource = store.get_row(UnitBalanceDef.TABLE_NAME, type_id)
-	if row is UnitBalanceDef:
-		return (row as UnitBalanceDef).isbldg
-	return false
+		result = true
+	else:
+		var store: Node = _wc3_def_store()
+		if store != null and store.has_method("ensure_table"):
+			store.ensure_table(UnitBalanceDef.TABLE_NAME)
+			var row: Resource = store.get_row(UnitBalanceDef.TABLE_NAME, type_id)
+			if row is UnitBalanceDef:
+				result = (row as UnitBalanceDef).isbldg
+	_is_building_cache[type_id] = result
+	return result
 
 
 static func town_hall_tier_suffix(type_id: String) -> String:

@@ -143,12 +143,18 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 		var tid := str(entry.get("typeId", ""))
 		var variation := int(entry.get("variation", 0))
 		var glb := _catalog.converted_glb_path(tid, variation)
-		if glb.is_empty() or seen.has(glb):
-			continue
-		seen[glb] = true
-		unique_paths.append(glb)
-		if RuntimeAssets.resolve_model_scene(glb) == "":
-			missing_scn.append("%s v%d → %s" % [tid, variation, glb.get_file()])
+		if not glb.is_empty() and not seen.has(glb):
+			seen[glb] = true
+			unique_paths.append(glb)
+			if RuntimeAssets.resolve_model_scene(glb) == "":
+				missing_scn.append("%s v%d → %s" % [tid, variation, glb.get_file()])
+		# HUD 肖像与战场体不同路径，一并预载以免点选卡顿
+		var portrait := _catalog.portrait_glb_path(tid)
+		if not portrait.is_empty() and not seen.has(portrait):
+			seen[portrait] = true
+			unique_paths.append(portrait)
+			if RuntimeAssets.resolve_model_scene(portrait) == "":
+				missing_scn.append("%s portrait → %s" % [tid, portrait.get_file()])
 	if not missing_scn.is_empty():
 		AppLog.warn(
 			AppLog.Layer.LOAD,

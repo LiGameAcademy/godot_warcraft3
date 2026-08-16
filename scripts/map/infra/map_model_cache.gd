@@ -33,15 +33,25 @@ func reset_load_stats() -> void:
 
 
 func instance_glb(path: String) -> Node3D:
+	return _instance_glb_internal(path, true)
+
+
+## HUD 肖像热路径：跳过材质修正 / mesh 消毒（bake 过的 .scn 已处理）。
+## 战场单位仍走 instance_glb，保证旧资产也安全。
+func instance_glb_hud(path: String) -> Node3D:
+	return _instance_glb_internal(path, false)
+
+
+func _instance_glb_internal(path: String, sanitize: bool) -> Node3D:
 	if has_cached(path):
 		last_cache_hits += 1
 	var packed: PackedScene = _ensure_packed(path)
 	if packed != null:
 		var inst := packed.instantiate()
 		if inst is Node3D:
-			# .scn 可能在材质修正前烘焙；每次实例化都再修一次
-			_fix_wc3_blend_materials(inst as Node3D)
-			_sanitize_triangle_meshes(inst as Node3D)
+			if sanitize:
+				_fix_wc3_blend_materials(inst as Node3D)
+				_sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
@@ -49,7 +59,7 @@ func instance_glb(path: String) -> Node3D:
 	if proto == null:
 		return null
 	var dup := proto.duplicate() as Node3D
-	if dup != null:
+	if dup != null and sanitize:
 		_fix_wc3_blend_materials(dup)
 		_sanitize_triangle_meshes(dup)
 	return dup

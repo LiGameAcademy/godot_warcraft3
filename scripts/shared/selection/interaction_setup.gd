@@ -7,6 +7,7 @@ extends RefCounted
 const RING_SCENE := preload("res://scenes/selection/selection_ring.tscn")
 
 ## 装配：SelectionRing 场景 + Selectable + Interactable，并注入依赖。
+## 幂等；已有 Selectable 时用 type_id 短路，避免重复 BuildingVisual/DefStore。
 static func attach(host: Node3D, smart_kind: int = 0) -> void:
 	if host == null or not is_instance_valid(host):
 		push_error("InteractionSetup.attach: host is null or not is_instance_valid")
@@ -14,13 +15,15 @@ static func attach(host: Node3D, smart_kind: int = 0) -> void:
 	var ring := _ensure_ring(host)
 	var sel := _ensure_selectable(host, ring)
 	var kind_none := 0
-	var need_interact := (
-		smart_kind != kind_none
-		or BuildingVisual.is_building(sel.type_id())
-		or sel.type_id() == "ngol"
-		or host.has_meta("tree_runtime")
-		or host.has_meta("doodad_data")
-	)
+	var tid := sel.type_id()
+	var need_interact := smart_kind != kind_none
+	if not need_interact:
+		need_interact = (
+			tid == "ngol"
+			or host.has_meta("tree_runtime")
+			or host.has_meta("doodad_data")
+			or BuildingVisual.is_building(tid)
+		)
 	if need_interact:
 		_ensure_interactable(host, ring, sel, smart_kind)
 

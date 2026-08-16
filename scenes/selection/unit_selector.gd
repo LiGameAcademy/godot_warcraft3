@@ -59,6 +59,9 @@ func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = nu
 	if p_overlay_parent != null:
 		overlay_parent = p_overlay_parent
 	set_process_input(true)
+	# 预热表，避免首次点选 ensure_table 尖峰
+	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
+	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
 	if camera != null and not camera.is_inside_tree():
 		pass
 	elif camera != null:
@@ -321,6 +324,7 @@ func screen_foot_distance(node: Node3D, screen_pos: Vector2) -> float:
 ## 点选：射线 ∩ 脚底水平面，世界 XZ 落在拾取圆内即命中（无高度胶囊）。
 ## 半径：UnitBalance.collision → UnitUI.scale → 有限 mesh 放宽。
 ## 优先级：单位圆 > 建筑圆；同分取距圆心更近 / 半径更小。
+## 注意：热路径不调用 InteractionSetup.attach——否则首次点击会给全图单位实例化 SelectionRing。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:
 		return null
@@ -336,12 +340,8 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 	var best_bldg_score := INF
 
 	for n in _iter_unit_nodes():
-		InteractionSetup.attach(n)
-		var sel := InteractionSetup.get_selectable(n)
-		if sel == null:
-			continue
-		var is_bldg := sel.is_building()
-		var radius := sel.pick_radius_world()
+		var is_bldg := _node_is_building(n)
+		var radius := _pick_radius_of(n)
 		var hit := _ray_foot_plane_hit(origin, dir, n.global_position)
 		var score := INF
 		var hit_ok := false
@@ -392,21 +392,17 @@ func _ray_foot_plane_hit(origin: Vector3, dir: Vector3, foot: Vector3) -> Dictio
 func _select_in_rect(rect: Rect2) -> void:
 	var hits: Array[Node3D] = []
 	for n in _iter_unit_nodes():
-		InteractionSetup.attach(n)
-		var sel := InteractionSetup.get_selectable(n)
-		if sel == null:
+		# 框选热路径不 attach；allow_marquee 用 owner/中立启发式
+		if not _allows_marquee(n):
 			continue
-		if not sel.allow_marquee:
-			continue
-		var radius := sel.pick_radius_world()
+		var radius := _pick_radius_of(n)
 		if _footprint_in_marquee(n, radius, rect):
 			hits.append(n)
 	# 框选：只收己方（中立金矿/敌对野怪不可多选）
 	if marquee_owner >= 0:
 		var owned: Array[Node3D] = []
 		for n in hits:
-			var sel2 := InteractionSetup.get_selectable(n)
-			var oid := sel2.owner_id() if sel2 != null else int(n.get_meta("unit_data", {}).get("owner", -1))
+			var oid := _owner_of(n)
 			if oid == marquee_owner:
 				owned.append(n)
 		hits = owned
@@ -442,11 +438,7 @@ func _prefer_units_over_buildings(nodes: Array[Node3D]) -> Array[Node3D]:
 	var units: Array[Node3D] = []
 	var buildings: Array[Node3D] = []
 	for n in nodes:
-		var sel := InteractionSetup.get_selectable(n)
-		var is_bldg := sel.is_building() if sel != null else BuildingVisual.is_building(
-			str(n.get_meta("unit_data", {}).get("typeId", ""))
-		)
-		if is_bldg:
+		if _node_is_building(n):
 			buildings.append(n)
 		else:
 			units.append(n)
@@ -474,17 +466,80 @@ func _iter_unit_nodes() -> Array[Node3D]:
 			continue
 		if owner_filter >= 0 and int(d.get("owner", -1)) != owner_filter:
 			continue
-		var sel := InteractionSetup.get_selectable(n)
-		if sel == null:
-			InteractionSetup.attach(n)
-			sel = InteractionSetup.get_selectable(n)
-		var is_bldg := sel.is_building() if sel != null else BuildingVisual.is_building(tid)
+		var is_bldg := _node_is_building(n, tid)
 		if is_bldg and not allow_buildings:
 			continue
 		if not is_bldg and not allow_units:
 			continue
 		out.append(n)
 	return out
+
+
+## 不触发 attach / mesh 遍历；有 Selectable 则用其缓存半径。
+func _pick_radius_of(n: Node3D) -> float:
+	var sel := InteractionSetup.get_selectable(n)
+	if sel != null:
+		return sel.pick_radius_world()
+	return _estimate_pick_radius(n)
+
+
+func _estimate_pick_radius(n: Node3D) -> float:
+	var tid := _type_id_of(n)
+	var is_bldg := BuildingVisual.is_building(tid)
+	var r := (
+		SelectableComponent.DEFAULT_BUILDING_RADIUS
+		if is_bldg
+		else SelectableComponent.DEFAULT_UNIT_RADIUS
+	)
+	if not tid.is_empty():
+		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
+		var bal: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid)
+		if bal is UnitBalanceDef:
+			var col := (bal as UnitBalanceDef).collision
+			if col > 0.0:
+				r = col * Wc3Coords.WORLD_SCALE
+	var cap := (
+		SelectableComponent.MAX_BUILDING_PICK_RADIUS
+		if is_bldg
+		else SelectableComponent.MAX_UNIT_PICK_RADIUS
+	)
+	return clampf(r, 0.12, cap)
+
+
+func _node_is_building(n: Node3D, tid: String = "") -> bool:
+	var sel := InteractionSetup.get_selectable(n)
+	if sel != null:
+		return sel.is_building()
+	if tid.is_empty():
+		tid = _type_id_of(n)
+	return BuildingVisual.is_building(tid)
+
+
+func _type_id_of(n: Node3D) -> String:
+	if n == null:
+		return ""
+	var d: Dictionary = n.get_meta("unit_data", {})
+	return str(d.get("typeId", "")).strip_edges()
+
+
+func _owner_of(n: Node3D) -> int:
+	var sel := InteractionSetup.get_selectable(n)
+	if sel != null:
+		return sel.owner_id()
+	if n == null:
+		return -1
+	return int(n.get_meta("unit_data", {}).get("owner", -1))
+
+
+func _allows_marquee(n: Node3D) -> bool:
+	var sel := InteractionSetup.get_selectable(n)
+	if sel != null:
+		return sel.allow_marquee
+	# 无 Selectable：中立不可框选（与 SelectableComponent._refresh_allow_marquee 一致）
+	var oid := _owner_of(n)
+	if oid >= 12 or _type_id_of(n) == "ngol":
+		return false
+	return true
 
 
 func _set_selection(nodes: Array) -> void:
