@@ -41,6 +41,7 @@ func instance_glb(path: String) -> Node3D:
 		if inst is Node3D:
 			# .scn 可能在材质修正前烘焙；每次实例化都再修一次
 			_fix_wc3_blend_materials(inst as Node3D)
+			_sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
@@ -50,6 +51,7 @@ func instance_glb(path: String) -> Node3D:
 	var dup := proto.duplicate() as Node3D
 	if dup != null:
 		_fix_wc3_blend_materials(dup)
+		_sanitize_triangle_meshes(dup)
 	return dup
 
 
@@ -266,6 +268,7 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 		var inst := packed.instantiate()
 		if inst is Node3D:
 			_fix_wc3_blend_materials(inst as Node3D)
+			_sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
@@ -281,6 +284,7 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 	var dup := proto.duplicate() as Node3D
 	if dup != null:
 		_fix_wc3_blend_materials(dup)
+		_sanitize_triangle_meshes(dup)
 	return dup
 
 
@@ -438,6 +442,7 @@ func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true
 	else:
 		last_scn_hits += 1
 	_fix_wc3_blend_materials(loaded)
+	_sanitize_triangle_meshes(loaded)
 	# 原型上清掉 autoplay，避免实例化瞬间播 Attack
 	var ap := _find_animation_player(loaded)
 	if ap != null:
@@ -917,7 +922,63 @@ func _looks_like_team_glow(mi: MeshInstance3D, body_aabb: AABB) -> bool:
 	return glow_size > body_size * 1.15
 
 
+## 旧 .scn / 错误拆 mesh：PRIMITIVE_TRIANGLES 但顶点数非 3 倍数 → 引擎每帧刷 ERROR。
+## 丢掉非法 surface；全非法则隐藏该 MeshInstance。
+func _sanitize_triangle_meshes(root: Node) -> void:
+	if root == null:
+		return
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		if bool(mi.get_meta("is_runtime_uber_splat", false)):
+			continue
+		if not (mi.mesh is ArrayMesh):
+			continue
+		var am := mi.mesh as ArrayMesh
+		var sc := am.get_surface_count()
+		if sc <= 0:
+			continue
+		var kept := 0
+		var rebuilt := ArrayMesh.new()
+		var any_bad := false
+		for si in range(sc):
+			var arrays: Array = am.surface_get_arrays(si)
+			if arrays.is_empty() or arrays[Mesh.ARRAY_VERTEX] == null:
+				any_bad = true
+				continue
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var indices_v: Variant = arrays[Mesh.ARRAY_INDEX]
+			var ok := false
+			if indices_v is PackedInt32Array and (indices_v as PackedInt32Array).size() > 0:
+				var indices := indices_v as PackedInt32Array
+				ok = indices.size() >= 3 and indices.size() % 3 == 0
+			else:
+				ok = verts.size() >= 3 and verts.size() % 3 == 0
+			if not ok:
+				any_bad = true
+				continue
+			var mat: Material = am.surface_get_material(si)
+			rebuilt.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			if mat != null:
+				rebuilt.surface_set_material(kept, mat)
+			kept += 1
+		if not any_bad:
+			continue
+		if kept <= 0:
+			mi.visible = false
+			mi.mesh = null
+		else:
+			mi.mesh = rebuilt
+
+
 func _should_hide_preview_mesh(mi: MeshInstance3D) -> bool:
+	# 运行时挂上的地面贴花（Art - Ground Texture）必须保留
+	if mi != null and (
+		bool(mi.get_meta("is_runtime_uber_splat", false))
+		or str(mi.name) == "UberSplat"
+	):
+		return false
 	for si in range(mi.mesh.get_surface_count()):
 		var mat: Material = mi.get_active_material(si)
 		if mat == null or not (mat is StandardMaterial3D):
@@ -929,6 +990,7 @@ func _should_hide_preview_mesh(mi: MeshInstance3D) -> bool:
 			blob += " " + str(tex.resource_path).to_lower()
 			blob += " " + str(tex.resource_name).to_lower()
 		# 建筑脚底 UberSplat / 死亡烟雾 / 肖像背景板 — 游戏与 WE 场景不展示
+		# （仅隐藏模型内嵌 geoset；运行时贴花见上方 early-out）
 		if (
 			blob.contains("ubersplat")
 			or blob.contains("/splats/")
@@ -1062,8 +1124,10 @@ func play_animation(root: Node, anim_name: String, loop: bool = true) -> bool:
 		return false
 	ap.active = true
 	var anim := ap.get_animation(anim_name)
-	if anim != null and loop:
-		anim.loop_mode = Animation.LOOP_LINEAR
+	if anim != null:
+		anim.loop_mode = (
+			Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
+		)
 	ap.play(anim_name)
 	return true
 
@@ -1347,6 +1411,13 @@ func snap_stand_geoset_visibility(root: Node) -> void:
 		if not picked.is_empty():
 			leaf = _anim_leaf_name(picked)
 	_snap_geoset_visibility_pose(root, leaf)
+
+
+## 按任意 Sequence（如 Stand_Work）t=0 的 :visible 轨定格 geoset（建造锤子等）。
+func snap_geoset_visibility_for(root: Node, anim_name: String) -> void:
+	if root == null or anim_name.is_empty():
+		return
+	_snap_geoset_visibility_pose(root, anim_name)
 
 
 func _collect_mesh_parts(n: Node, out: Array) -> void:

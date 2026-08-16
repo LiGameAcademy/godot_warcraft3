@@ -77,37 +77,66 @@ static func split(proto: Node, att_data: Dictionary) -> int:
 			var vert_indices_raw = group.get("vertex_indices", [])
 			if vert_indices_raw.size() == 0:
 				continue
-			var vert_indices := PackedInt32Array()
+			var vert_set: Dictionary = {} # old_idx → true（本 group 原始顶点）
 			for v in vert_indices_raw:
-				vert_indices.append(int(v))
-			# subset 顶点
+				vert_set[int(v)] = true
+			# subset 顶点（先放本 group；跨 group 三角面再补齐缺失角点）
 			var new_verts := PackedVector3Array()
 			var new_normals := PackedVector3Array()
 			var new_tangents := PackedFloat32Array()
 			var new_uvs := PackedVector2Array()
 			var old_to_new := {}
-			for old_idx in vert_indices:
-				if old_to_new.has(old_idx):
-					continue
-				old_to_new[old_idx] = new_verts.size()
-				new_verts.append(src_verts[old_idx])
-				if src_normals.size() > old_idx:
-					new_normals.append(src_normals[old_idx])
-				if src_tangents.size() > old_idx * 4:
-					for t in range(4):
-						new_tangents.append(src_tangents[old_idx * 4 + t])
-				if src_uvs.size() > old_idx:
-					new_uvs.append(src_uvs[old_idx])
 			var new_indices := PackedInt32Array()
 			if has_indices:
+				# 任一角点属本 group 即收录该三角；缺角点补进 subset。
+				# 旧逻辑要求三角三顶点都在 group 内 → 缝上三角全丢 → 身体破洞 + 非法面。
 				for i in range(0, src_indices.size(), 3):
+					if i + 2 >= src_indices.size():
+						break
 					var i0 := src_indices[i]
 					var i1 := src_indices[i + 1]
 					var i2 := src_indices[i + 2]
-					if old_to_new.has(i0) and old_to_new.has(i1) and old_to_new.has(i2):
-						new_indices.append(old_to_new[i0])
-						new_indices.append(old_to_new[i1])
-						new_indices.append(old_to_new[i2])
+					if not (vert_set.has(i0) or vert_set.has(i1) or vert_set.has(i2)):
+						continue
+					for old_idx in [i0, i1, i2]:
+						if old_to_new.has(old_idx):
+							continue
+						if old_idx < 0 or old_idx >= src_verts.size():
+							continue
+						old_to_new[old_idx] = new_verts.size()
+						new_verts.append(src_verts[old_idx])
+						if src_normals.size() > old_idx:
+							new_normals.append(src_normals[old_idx])
+						if src_tangents.size() > old_idx * 4:
+							for t in range(4):
+								new_tangents.append(src_tangents[old_idx * 4 + t])
+						if src_uvs.size() > old_idx:
+							new_uvs.append(src_uvs[old_idx])
+					if not (old_to_new.has(i0) and old_to_new.has(i1) and old_to_new.has(i2)):
+						continue
+					new_indices.append(old_to_new[i0])
+					new_indices.append(old_to_new[i1])
+					new_indices.append(old_to_new[i2])
+			else:
+				for old_idx_v in vert_set.keys():
+					var old_idx: int = int(old_idx_v)
+					if old_idx < 0 or old_idx >= src_verts.size():
+						continue
+					old_to_new[old_idx] = new_verts.size()
+					new_verts.append(src_verts[old_idx])
+					if src_normals.size() > old_idx:
+						new_normals.append(src_normals[old_idx])
+					if src_tangents.size() > old_idx * 4:
+						for t in range(4):
+							new_tangents.append(src_tangents[old_idx * 4 + t])
+					if src_uvs.size() > old_idx:
+						new_uvs.append(src_uvs[old_idx])
+			# 无合法三角则跳过：避免 PRIMITIVE_TRIANGLES + 非 3 倍数顶点刷屏
+			if has_indices:
+				if new_indices.size() < 3:
+					continue
+			elif new_verts.size() < 3 or new_verts.size() % 3 != 0:
+				continue
 			var new_mesh := ArrayMesh.new()
 			var new_arrays := []
 			new_arrays.resize(Mesh.ARRAY_MAX)

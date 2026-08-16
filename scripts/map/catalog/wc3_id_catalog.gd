@@ -792,9 +792,9 @@ static func selection_diameter_wc3(info: Dictionary) -> float:
 		return float(maxi(cells.x, cells.y)) * Wc3Coords.PATHING_CELL
 	var collision: float = float(info.get("collision", 0.0))
 	var from_col: float = collision * 2.0 if collision > 0.0 else 0.0
-	# UnitUI.scale = Art - Selection Scale
+	# UnitUI.scale = Art - Selection Scale；1.0 为默认，不当作 ×72（否则农民圈≈2 格）
 	var sel_scale: float = float(info.get("def_scale", 0.0))
-	var from_scale: float = sel_scale * UNIT_SELECTION_SCALE_BASE if sel_scale > 0.0 else 0.0
+	var from_scale: float = sel_scale * UNIT_SELECTION_SCALE_BASE if sel_scale > 1.0 else 0.0
 	var diam: float = maxf(from_col, from_scale)
 	if diam > 1.0:
 		return diam

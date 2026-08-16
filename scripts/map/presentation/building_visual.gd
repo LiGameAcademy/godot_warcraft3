@@ -85,7 +85,13 @@ static func apply_phase(cache: MapModelCache, root: Node, type_id: String, phase
 		ok = cache.autoplay_stand(root, false)
 		want = "Stand"
 	else:
-		var loop := phase == Phase.IDLE or phase == Phase.WORK
+		# Birth 在长施工期内循环，避免播完一帧就停在中途姿势；完工后再切 Stand
+		var loop := (
+			phase == Phase.IDLE
+			or phase == Phase.WORK
+			or phase == Phase.BIRTH
+			or phase == Phase.UPGRADE_BIRTH
+		)
 		ok = cache.play_animation(root, resolved, loop)
 	_Pe2.apply_sequence(root, want)
 	return ok
