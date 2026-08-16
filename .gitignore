@@ -36,6 +36,11 @@ assets/map-parsed/**
 # 老李 D3：去 CSV（slk-export package.json 已只有 export JSON）
 assets/slk-exported/**
 
+# 本地模型沙箱（从 asset-converted 复制，供编辑器查看；含 Blizzard 衍生资源）
+dev/model_sandbox/**
+!dev/model_sandbox/**/
+!dev/model_sandbox/**/README.md
+
 # Node.js (tools/*)
 node_modules/
 # StormLib：npm postinstall / fetch-stormlib 下载，勿提交二进制与解压头文件
@@ -62,3 +67,5 @@ _ref/
 .claude/settings.json
 
 tmp/
+
+dev/model_sandbox/**

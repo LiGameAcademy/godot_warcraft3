@@ -29,14 +29,14 @@ static func build_texture_array(ground_tilesets: Array, tiles: Wc3TerrainTileCat
 	var tex := Texture2DArray.new()
 	var err := tex.create_from_images(images)
 	if err != OK:
-		MapLog.error(
-			MapLog.Layer.CATALOG,
+		AppLog.error(
+			AppLog.Layer.CATALOG,
 			"GroundTiles",
 			"Texture2DArray 失败 %s" % error_string(err)
 		)
 		return null
-	MapLog.info(
-		MapLog.Layer.CATALOG,
+	AppLog.info(
+		AppLog.Layer.CATALOG,
 		"GroundTiles",
 		"Texture2DArray layers=%d" % tex.get_layers()
 	)

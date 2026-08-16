@@ -1,5 +1,5 @@
 /**
- * 共享：定位 Godot 可执行文件，并 headless 跑 `res://tools/*.gd`。
+ * 共享：定位 Godot 可执行文件，并 headless 跑 `res://scripts/tool/*.gd`。
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -54,7 +54,7 @@ export function findGodotExecutable(explicit = "") {
 
 /**
  * @param {object} opts
- * @param {string} opts.scriptRes  如 res://tools/export_pe2_scenes.gd
+ * @param {string} opts.scriptRes  如 res://scripts/tool/export_pe2_scenes.gd
  * @param {string[]} [opts.userArgs]  -- 之后传给脚本的参数
  * @param {string} [opts.godot]
  * @param {boolean} [opts.required] 找不到 Godot 时是否失败（默认 true）

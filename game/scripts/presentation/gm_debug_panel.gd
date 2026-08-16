@@ -36,7 +36,7 @@ func set_open(on: bool) -> void:
 	if on:
 		_resolve_refs()
 		_sync_from_world()
-	MapLog.info(MapLog.Layer.GM, "GM", "panel=%s" % ("open" if on else "closed"))
+	AppLog.info(AppLog.Layer.GM, "GM", "panel=%s" % ("open" if on else "closed"))
 	toggled.emit(on)
 
 
@@ -152,7 +152,7 @@ func _on_grid_selected(idx: int) -> void:
 		_map.set_view_grid_level(level)
 	if _director != null:
 		_director.set("view_grid_level", level)
-	MapLog.info(MapLog.Layer.GM, "GM", "view_grid_level=%d" % level)
+	AppLog.info(AppLog.Layer.GM, "GM", "view_grid_level=%d" % level)
 
 
 func _on_pathing_toggled(on: bool) -> void:
@@ -161,7 +161,7 @@ func _on_pathing_toggled(on: bool) -> void:
 		_map.set_show_pathing_ground(on)
 	if _director != null:
 		_director.set("show_pathing_ground", on)
-	MapLog.info(MapLog.Layer.GM, "GM", "pathing_ground=%s" % on)
+	AppLog.info(AppLog.Layer.GM, "GM", "pathing_ground=%s" % on)
 
 
 func _on_ramp_toggled(on: bool) -> void:
@@ -170,7 +170,7 @@ func _on_ramp_toggled(on: bool) -> void:
 		_map.set_show_ramp_debug(on)
 	if _director != null:
 		_director.set("show_ramp_debug", on)
-	MapLog.info(MapLog.Layer.GM, "GM", "ramp_debug=%s" % on)
+	AppLog.info(AppLog.Layer.GM, "GM", "ramp_debug=%s" % on)
 
 
 func _on_path_dbg_toggled(on: bool) -> void:
@@ -179,11 +179,11 @@ func _on_path_dbg_toggled(on: bool) -> void:
 		_director.set("show_path_debug", on)
 		if _director.has_method("_apply_path_debug_visibility"):
 			_director.call("_apply_path_debug_visibility")
-	MapLog.info(MapLog.Layer.GM, "GM", "path_debug=%s" % on)
+	AppLog.info(AppLog.Layer.GM, "GM", "path_debug=%s" % on)
 
 
 func _on_hp_bar_toggled(on: bool) -> void:
 	_resolve_refs()
 	if _health_bars != null:
 		_health_bars.set_always_show(on)
-	MapLog.info(MapLog.Layer.GM, "GM", "hp_bars_always=%s" % on)
+	AppLog.info(AppLog.Layer.GM, "GM", "hp_bars_always=%s" % on)

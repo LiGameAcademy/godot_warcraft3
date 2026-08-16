@@ -4,8 +4,8 @@ extends SceneTree
 ##   instance 基座 .scn + ModelVisualSync + 可选 instance pe2-prefabs。
 ##
 ## 用法:
-##   godot --headless --path . -s res://tools/export_visual_scenes.gd
-##   godot --headless --path . -s res://tools/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force
+##   godot --headless --path . -s res://scripts/tool/export_visual_scenes.gd
+##   godot --headless --path . -s res://scripts/tool/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force
 ##
 ## 运行时 MapModelCache 优先 visuals；ExtResource 基座若因 .gdignore 加载失败则运行时拼装。
 

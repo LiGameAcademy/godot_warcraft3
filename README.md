@@ -79,9 +79,9 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
 等价于依次调用：
 
-- `tools/export_model_scenes.gd`（GLB→`.scn`）
-- `tools/export_pe2_scenes.gd`（`*.pe2.json`→`assets/pe2-prefabs/`）
-- `tools/export_visual_scenes.gd`（→`assets/visuals/`）
+- `scripts/tool/export_model_scenes.gd`（GLB→`.scn`）
+- `scripts/tool/export_pe2_scenes.gd`（`*.pe2.json`→`assets/pe2-prefabs/`）
+- `scripts/tool/export_visual_scenes.gd`（→`assets/visuals/`）
 
 ---
 

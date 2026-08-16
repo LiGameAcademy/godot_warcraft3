@@ -55,12 +55,12 @@ func build(ctx: MapBuildContext) -> void:
 
 	var hf: Wc3Heightfield = ctx.heightfield
 	if hf == null or not hf.is_valid():
-		MapLog.warn(MapLog.Layer.PRESENT, "Terrain", "heightfield 无效")
+		AppLog.warn(AppLog.Layer.PRESENT, "Terrain", "heightfield 无效")
 		return
 
 	var ground_tilesets: Array = hf.ground_tilesets
 	if ground_tilesets.is_empty():
-		MapLog.warn(MapLog.Layer.PRESENT, "Terrain", "groundTilesets 为空")
+		AppLog.warn(AppLog.Layer.PRESENT, "Terrain", "groundTilesets 为空")
 		return
 
 	ctx.ensure_cliff_topology()
@@ -87,11 +87,11 @@ func build(ctx: MapBuildContext) -> void:
 		ground_tilesets, ctx.tiles
 	)
 	if tex_array == null:
-		MapLog.error(MapLog.Layer.PRESENT, "Terrain", "Texture2DArray 失败")
+		AppLog.error(AppLog.Layer.PRESENT, "Terrain", "Texture2DArray 失败")
 		return
 
 	if ground_material == null:
-		MapLog.error(MapLog.Layer.PRESENT, "Terrain", "未配置 ground_material")
+		AppLog.error(AppLog.Layer.PRESENT, "Terrain", "未配置 ground_material")
 		return
 
 	_ground.apply_from_template(
@@ -106,8 +106,8 @@ func build(ctx: MapBuildContext) -> void:
 	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ground.layers = Wc3Coords.RENDER_LAYER_TERRAIN
 
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"Terrain",
 		"mesh OK gaps=%d tiles=%d layers=%d mat=%s"
 		% [

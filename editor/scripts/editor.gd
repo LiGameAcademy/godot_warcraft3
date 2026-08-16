@@ -389,8 +389,8 @@ func _refresh_undo_redo_menu() -> void:
 
 
 func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool) -> void:
-	MapLog.info(
-		MapLog.Layer.EDITOR,
+	AppLog.info(
+		AppLog.Layer.EDITOR,
 		"History",
 		"%s rebuild=%s cliff=%s doodad=%s unit=%s — %s"
 		% [
@@ -423,7 +423,7 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 	if _rebuilding:
 		_pending_history_rebuild = true
 		_pending_history_cliff = _pending_history_cliff or cliff
-		MapLog.debug(MapLog.Layer.EDITOR, "History", "rebuild deferred (busy)")
+		AppLog.debug(AppLog.Layer.EDITOR, "History", "rebuild deferred (busy)")
 		return
 	_run_history_rebuild(cliff)
 
@@ -1040,7 +1040,7 @@ func _refresh_hud_props() -> void:
 
 func _on_brush_rebuild() -> void:
 	if _rebuilding:
-		MapLog.debug(MapLog.Layer.EDITOR, "Brush", "rebuild skipped (busy)")
+		AppLog.debug(AppLog.Layer.EDITOR, "Brush", "rebuild skipped (busy)")
 		_pending_history_rebuild = true
 		_pending_history_cliff = (
 			_pending_history_cliff
@@ -1049,8 +1049,8 @@ func _on_brush_rebuild() -> void:
 		return
 	_rebuilding = true
 	var cliff := brush != null and bool(brush.get("cliff_dirty"))
-	MapLog.info(
-		MapLog.Layer.EDITOR,
+	AppLog.info(
+		AppLog.Layer.EDITOR,
 		"Brush",
 		"rebuild cliff_path=%s" % cliff
 	)

@@ -57,14 +57,14 @@ func build(ctx: MapBuildContext) -> void:
 	if terrain_layer != null:
 		# 传 romp 让 corner_texture 能看 a_romp（对齐 HivEWE real_tile_texture）
 		terrain_layer.apply_ramp_dig(dig, entrances, boost, ramp_data.romp)
-		MapLog.info(
-			MapLog.Layer.PRESENT,
+		AppLog.info(
+			AppLog.Layer.PRESENT,
 			"Ramp",
 			"terrain gaps after dig=%d (plan_dig=%d footprint应各2格)"
 			% [terrain_layer.last_gap_count, last_dig_count]
 		)
 	else:
-		MapLog.warn(MapLog.Layer.PRESENT, "Ramp", "terrain 未接线，romp 探出格不会挖洞")
+		AppLog.warn(AppLog.Layer.PRESENT, "Ramp", "terrain 未接线，romp 探出格不会挖洞")
 
 	var ramp_placements: Array[Wc3RampPlacement] = []
 	for p in ramp_data.placements:
@@ -73,8 +73,8 @@ func build(ctx: MapBuildContext) -> void:
 
 	if ramp_placements.is_empty() or ctx.cliff_catalog == null:
 		last_placement_count = 0
-		MapLog.info(
-			MapLog.Layer.PRESENT,
+		AppLog.info(
+			AppLog.Layer.PRESENT,
 			"Ramp",
 			"dig=%d entrances=%d boost=%d no CliffTrans"
 			% [last_dig_count, last_entrance_count, last_boost_count]
@@ -94,8 +94,8 @@ func build(ctx: MapBuildContext) -> void:
 	_mount_groups(collected, ctx, hf)
 	last_placement_count = collected.placed_cliffs
 
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"Ramp",
 		"placed=%d missing=%d dig=%d entrances=%d boost=%d"
 		% [
@@ -138,8 +138,8 @@ func _mount_groups(
 			_ramp_mats.append(mat)
 			mesh = _mesh_with_material(ctx.cache, glb, mat)
 			if mesh == null:
-				MapLog.warn(
-					MapLog.Layer.PRESENT,
+				AppLog.warn(
+					AppLog.Layer.PRESENT,
 					"Ramp",
 					"mesh null %s" % glb.get_file()
 				)
@@ -168,8 +168,8 @@ func _mount_groups(
 			mounted += 1
 
 	if mounted != collected.placed_cliffs:
-		MapLog.warn(
-			MapLog.Layer.PRESENT,
+		AppLog.warn(
+			AppLog.Layer.PRESENT,
 			"Ramp",
 			"mounted=%d placed=%d (mesh skip?)" % [mounted, collected.placed_cliffs]
 		)

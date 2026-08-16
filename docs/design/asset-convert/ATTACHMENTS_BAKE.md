@@ -1,7 +1,7 @@
 # 小件 / 特效烘焙拼装方案（m2g attachments.json + export_model_scenes 拼装 + AnimationPlayer 统一管理）
 
 > **关联 commit**：C-1（extract_attachments + write_attachments_sidecar + selftest 5/5）→ C-2（export_model_scenes 拼装 + selftest 5/5）→ C-3（AnimationPlayer 合并 + selftest 5/5）
-> **关联代码**：`tools/asset-convert/src/convert-mdx.js` + `tools/asset-convert/src/cli.js` + `tools/export_model_scenes.gd` + `tests/unit/selftest_attachments.gd` + `selftest_attachment_bake.gd` + `selftest_animation_merge.gd`
+> **关联代码**：`tools/asset-convert/src/convert-mdx.js` + `tools/asset-convert/src/cli.js` + `scripts/tool/export_model_scenes.gd` + `tests/unit/selftest_attachments.gd` + `selftest_attachment_bake.gd` + `selftest_animation_merge.gd`
 > **触发问题**：TownHall .scn 实际只有 35 个 MeshInstance3D，缺 15 面旗子 + 4 时针 + 4 分针 + 2 铃铛 + 1 平面（Skeletal Mesh 全有，BoneAttachment 全丢）；Footman 缺 26 个 box / cantine / gutz 装饰物；所有 200+ WC3 模型都受影响
 > **最后更新**：2026-08-11
 

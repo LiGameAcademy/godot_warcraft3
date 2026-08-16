@@ -495,4 +495,5 @@ func _set_work_anim(on: bool) -> void:
 		vis = UnitVisual.new()
 		vis.name = "UnitVisual"
 		_peasant.add_child(vis)
+		vis.bind_animation_player(AnimPlayback.find_animation_player(_peasant))
 	vis.set_building_work(on)

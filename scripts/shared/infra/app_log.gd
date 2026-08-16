@@ -1,9 +1,9 @@
-class_name MapLog
+class_name AppLog
 extends Object
 
-## 地图 / 游戏调试日志：分层 + 彩色 print_rich + 配置开关。
+## 全项目调试日志：分层 + 彩色 print_rich + 配置开关。
 ## 配置：res://game/config/debug_log.json（可被 user://debug_log.json 覆盖）
-## 用法：MapLog.info(MapLog.Layer.PRESENT, "Terrain", "gaps=%d" % n)
+## 用法：AppLog.info(AppLog.Layer.PRESENT, "Terrain", "gaps=%d" % n)
 
 enum Layer { DATA, CATALOG, LOGIC, PRESENT, EDITOR, LOAD, GAME, GM }
 enum Level { DEBUG, INFO, WARN, ERROR }

@@ -75,7 +75,7 @@ func png_for_ground_index(ground_tilesets: Array, index: int) -> String:
 func _rebuild_tile_png_cache() -> void:
 	var store := _def_store()
 	if store == null:
-		MapLog.warn(MapLog.Layer.CATALOG, "TerrainTileCatalog", "DefStore 不可用，无法解析地表贴图")
+		AppLog.warn(AppLog.Layer.CATALOG, "TerrainTileCatalog", "DefStore 不可用，无法解析地表贴图")
 		return
 	store.ensure_table(TerrainTileDef.TABLE_NAME)
 	for id in store.get_ids(TerrainTileDef.TABLE_NAME):
@@ -83,8 +83,8 @@ func _rebuild_tile_png_cache() -> void:
 		if d == null or d.dir.is_empty() or d.file.is_empty():
 			continue
 		_tile_to_png[id] = RuntimeAssets.converted_path("%s/%s.png" % [d.dir, d.file])
-	MapLog.debug(
-		MapLog.Layer.CATALOG,
+	AppLog.debug(
+		AppLog.Layer.CATALOG,
 		"TerrainTileCatalog",
 		"tile png cache from DefStore count=%d" % _tile_to_png.size()
 	)

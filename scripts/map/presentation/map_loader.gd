@@ -191,8 +191,8 @@ func _apply_ramp_cliff_filter(ctx: MapBuildContext) -> int:
 	)
 	var removed: int = before - ctx.cliff_placements.size()
 	if removed > 0:
-		MapLog.info(
-			MapLog.Layer.PRESENT,
+		AppLog.info(
+			AppLog.Layer.PRESENT,
 			"MapLoader",
 			"ramp filtered cliffs=%d (kept=%d)" % [removed, ctx.cliff_placements.size()]
 		)
@@ -310,8 +310,8 @@ func _apply_dynamic_pathing() -> void:
 	var n: int = _pathing_map.apply_entity_pathing(merged, get_id_catalog())
 	if n > 0:
 		print("Pathing: blit pathTex ×%d (units=%d doodads=%d)" % [n, _pathing_unit_entries.size(), _pathing_doodad_entries.size()])
-		MapLog.info(
-			MapLog.Layer.PRESENT,
+		AppLog.info(
+			AppLog.Layer.PRESENT,
 			"Pathing",
 			"blit pathTex ×%d (units=%d doodads=%d)" % [n, _pathing_unit_entries.size(), _pathing_doodad_entries.size()]
 		)
@@ -516,7 +516,7 @@ func update_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
 ## 仅重建地面（笔刷脏更新）；不重载装饰/单位。
 func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
-		MapLog.warn(MapLog.Layer.PRESENT, "MapLoader", "rebuild_terrain_only: hf 空")
+		AppLog.warn(AppLog.Layer.PRESENT, "MapLoader", "rebuild_terrain_only: hf 空")
 		return
 	_external_hf = hf
 	if not info.is_empty():
@@ -530,8 +530,8 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 		_cache,
 		_cliff_catalog
 	)
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"MapLoader",
 		"rebuild_terrain_only %dx%d" % [ctx.width(), ctx.height()]
 	)
@@ -553,7 +553,7 @@ func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 ## 地表 + 悬崖 + 水面（悬崖笔刷脏更新）。
 func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
-		MapLog.warn(MapLog.Layer.PRESENT, "MapLoader", "rebuild_cliffs_water: hf 空")
+		AppLog.warn(AppLog.Layer.PRESENT, "MapLoader", "rebuild_cliffs_water: hf 空")
 		return
 	_external_hf = hf
 	if not info.is_empty():
@@ -567,8 +567,8 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		_cache,
 		_cliff_catalog
 	)
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"MapLoader",
 		"rebuild_cliffs_water %dx%d" % [ctx.width(), ctx.height()]
 	)
@@ -685,7 +685,7 @@ func _load_all() -> void:
 			await get_tree().process_frame
 		await get_tree().process_frame
 		timing["units"] = Time.get_ticks_msec() - t0
-		MapLog.info(MapLog.Layer.LOAD, "Units", "batched done in %dms" % int(timing["units"]))
+		AppLog.info(AppLog.Layer.LOAD, "Units", "batched done in %dms" % int(timing["units"]))
 	else:
 		_pathing_unit_entries = []
 		timing["units"] = 0
@@ -753,8 +753,8 @@ func _load_all() -> void:
 			ms,
 		]
 	)
-	MapLog.info(
-		MapLog.Layer.LOAD,
+	AppLog.info(
+		AppLog.Layer.LOAD,
 		"MapLoader",
 		"read=%d terrain=%d cliffs=%d ramps=%d water=%d units=%d doodads=%d pathing=%d total=%d"
 		% [

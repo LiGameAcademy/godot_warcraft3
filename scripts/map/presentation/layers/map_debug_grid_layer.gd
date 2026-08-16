@@ -26,8 +26,8 @@ func build(_ctx: MapBuildContext = null) -> void:
 	_resolve_layers()
 	_override = null
 	_apply()
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"DebugGrid",
 		"tile=%s path=%s fine=%s mats=%d"
 		% [_eff_tile(), _eff_path(), _eff_fine(), _collect_materials().size()]
@@ -79,8 +79,8 @@ func _apply() -> void:
 	var mats := _collect_materials()
 	if mats.is_empty() and (t or p or f):
 		# 地图尚未 build 时 active_material 为空属正常（Director 会在加载后再 apply）。
-		MapLog.debug(
-			MapLog.Layer.PRESENT,
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
 			"DebugGrid",
 			"暂无材质（地形未生成），跳过本次 apply"
 		)
@@ -89,8 +89,8 @@ func _apply() -> void:
 		mat.set_shader_parameter("dbg_grid_tile", t)
 		mat.set_shader_parameter("dbg_grid_path", p)
 		mat.set_shader_parameter("dbg_grid_fine", f)
-	MapLog.debug(
-		MapLog.Layer.PRESENT,
+	AppLog.debug(
+		AppLog.Layer.PRESENT,
 		"DebugGrid",
 		"apply tile=%s path=%s fine=%s → %d mats" % [t, p, f, mats.size()]
 	)

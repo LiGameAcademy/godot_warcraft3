@@ -79,8 +79,8 @@ func rebuild(pathing: Wc3PathingMap, hf: Wc3Heightfield = null) -> void:
 		Vector2(float(w), float(h)),
 		pathing.cell_size
 	)
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"Pathing",
 		"overlay %dx%d blocked=%d origin=%s"
 		% [w, h, blocked, pathing.origin_wc3]
@@ -133,4 +133,4 @@ func _apply_uniforms(
 		mat.set_shader_parameter("pathing_size_cells", size_cells)
 		mat.set_shader_parameter("pathing_cell", cell)
 	if on and mats.is_empty():
-		MapLog.warn(MapLog.Layer.PRESENT, "Pathing", "无可用地表材质，路径-地面无法显示")
+		AppLog.warn(AppLog.Layer.PRESENT, "Pathing", "无可用地表材质，路径-地面无法显示")

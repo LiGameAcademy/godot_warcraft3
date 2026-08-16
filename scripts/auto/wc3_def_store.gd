@@ -73,7 +73,7 @@ func _register_builtin_tables() -> void:
 ## [param row_factory] Callable(Dictionary) -> Resource
 func register_table(table_name: String, slk_rel_path: String, primary_key_field: String, row_factory: Callable) -> void:
 	if table_name.is_empty() or not row_factory.is_valid():
-		MapLog.warn(MapLog.Layer.CATALOG, "DefStore", "register_table 参数无效: %s" % table_name)
+		AppLog.warn(AppLog.Layer.CATALOG, "DefStore", "register_table 参数无效: %s" % table_name)
 		return
 	_registry[table_name] = {
 		"path": slk_rel_path,
@@ -115,7 +115,7 @@ func is_table_loaded(table_name: String) -> bool:
 ## [return int] 行数
 func load_table(table_name: String) -> int:
 	if not _registry.has(table_name):
-		MapLog.warn(MapLog.Layer.CATALOG, "DefStore", "未注册表: %s" % table_name)
+		AppLog.warn(AppLog.Layer.CATALOG, "DefStore", "未注册表: %s" % table_name)
 		return -1
 	var spec: Dictionary = _registry[table_name]
 	var path := RuntimeAssets.slk_path(str(spec["path"]))
@@ -124,7 +124,7 @@ func load_table(table_name: String) -> int:
 	var by_id: Dictionary = {}
 	var order: Array[String] = []
 	if not FileAccess.file_exists(path):
-		MapLog.warn(MapLog.Layer.CATALOG, "DefStore", "缺少 %s" % path)
+		AppLog.warn(AppLog.Layer.CATALOG, "DefStore", "缺少 %s" % path)
 		_tables[table_name] = by_id
 		_orders[table_name] = order
 		return 0
@@ -152,8 +152,8 @@ func load_table(table_name: String) -> int:
 		order.append(id)
 	_tables[table_name] = by_id
 	_orders[table_name] = order
-	MapLog.info(
-		MapLog.Layer.CATALOG,
+	AppLog.info(
+		AppLog.Layer.CATALOG,
 		"DefStore",
 		"loaded %s count=%d" % [table_name, by_id.size()]
 	)

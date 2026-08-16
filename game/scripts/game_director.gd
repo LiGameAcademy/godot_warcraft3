@@ -109,7 +109,7 @@ var _wired_train_queues: Dictionary = {}
 
 func _ready() -> void:
 	_rng.randomize()
-	MapLog.reload_config()
+	AppLog.reload_config()
 	_resolve_exports()
 	if map_root == null:
 		push_error("GameDirector: 未绑定 map_root")
@@ -2285,11 +2285,13 @@ func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
 	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
 	if existing != null:
 		existing.bind_cache(cache)
+		existing.bind_animation_player(AnimPlayback.find_animation_player(unit))
 		_ensure_interaction_components(unit)
 		return existing
 	var vis := UnitVisual.new()
 	vis.name = "UnitVisual"
 	vis.bind_cache(cache)
+	vis.bind_animation_player(AnimPlayback.find_animation_player(unit))
 	unit.add_child(vis)
 	_ensure_interaction_components(unit)
 	return vis

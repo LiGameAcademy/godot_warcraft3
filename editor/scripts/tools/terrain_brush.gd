@@ -383,8 +383,8 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 			cliff_dirty = true
 		painted.emit()
 		var brush_tex: int = int(document.brush_tile_index) if document != null else -1
-		MapLog.info(
-			MapLog.Layer.EDITOR,
+		AppLog.info(
+			AppLog.Layer.EDITOR,
 			"Brush",
 			"paint @(%d,%d) brush_tex=%d cliff=%s tex=%s special=%d tool=%s"
 			% [vert.x, vert.y, brush_tex, cliff_any, apply_texture, special_texture, cliff_tool_id]
@@ -407,8 +407,8 @@ func _erase_ramp_at_mouse(screen_pos: Vector2) -> void:
 		_dirty_paint = true
 		cliff_dirty = true
 		ramp_feedback.emit("已删斜坡 %d 点 @(ix=%d,iy=%d)" % [n, vert.x, vert.y])
-		MapLog.info(
-			MapLog.Layer.EDITOR,
+		AppLog.info(
+			AppLog.Layer.EDITOR,
 			"Brush",
 			"erase ramp @(%d,%d) cleared=%d radius=%d"
 			% [vert.x, vert.y, n, RAMP_ERASE_RADIUS]
@@ -438,14 +438,14 @@ func _end_stroke() -> void:
 		label = "Ground"
 	var cmd: PaintStrokeCommand = _stroke.finish(label)
 	if cmd != null:
-		MapLog.info(
-			MapLog.Layer.EDITOR,
+		AppLog.info(
+			AppLog.Layer.EDITOR,
 			"Brush",
 			"record %s verts=%d cliff=%s" % [label, cmd.after.size(), cmd.affects_cliffs_water()]
 		)
 		history.record(cmd)
 	else:
-		MapLog.debug(MapLog.Layer.EDITOR, "Brush", "stroke empty（无数据变化）")
+		AppLog.debug(AppLog.Layer.EDITOR, "Brush", "stroke empty（无数据变化）")
 
 
 func _request_rebuild(force: bool) -> void:

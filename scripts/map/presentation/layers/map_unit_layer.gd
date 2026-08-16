@@ -86,15 +86,15 @@ func build(ctx: MapBuildContext) -> void:
 		"Units: glb=%d placeholder=%d unique=%d scnDisk=%d/%d loadMs=%d cacheHit=%d scnLoad=%d gltfParse=%d"
 		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
 	)
-	MapLog.info(
-		MapLog.Layer.LOAD,
+	AppLog.info(
+		AppLog.Layer.LOAD,
 		"Units",
 		"placed=%d ph=%d unique=%d scnDisk=%d/%d ms=%d cache=%d scn=%d gltf=%d"
 		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
 	)
 	if not missing_scn.is_empty():
-		MapLog.warn(
-			MapLog.Layer.LOAD,
+		AppLog.warn(
+			AppLog.Layer.LOAD,
 			"Units",
 			"缺旁路 .scn（%d/%d，同步将 GLTF 解析）: %s"
 			% [missing_scn.size(), unique, ", ".join(missing_scn)]
@@ -150,8 +150,8 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 		if RuntimeAssets.resolve_model_scene(glb) == "":
 			missing_scn.append("%s v%d → %s" % [tid, variation, glb.get_file()])
 	if not missing_scn.is_empty():
-		MapLog.warn(
-			MapLog.Layer.LOAD,
+		AppLog.warn(
+			AppLog.Layer.LOAD,
 			"Units",
 			"缺可用旁路 .scn（%d/%d，将分帧 GLTF）：%s"
 			% [missing_scn.size(), unique_paths.size(), ", ".join(missing_scn)]
@@ -289,8 +289,8 @@ func _process(_delta: float) -> void:
 		set_process(false)
 		print("Units threaded: glb=%d placeholder=%d" % [last_placed, last_placeholder])
 		if _cache != null:
-			MapLog.info(
-				MapLog.Layer.LOAD,
+			AppLog.info(
+				AppLog.Layer.LOAD,
 				"Units",
 				"threaded placed=%d ph=%d cache=%d scn=%d gltf=%d"
 				% [

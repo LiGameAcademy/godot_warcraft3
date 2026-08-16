@@ -1,7 +1,7 @@
 class_name Wc3RampPaint
 extends RefCounted
 
-const MapLogScript = preload("res://scripts/map/infra/map_log.gd")
+const AppLogScript = preload("res://scripts/shared/infra/app_log.gd")
 
 ## 低侧 fallback 搜索半径（格）
 const LOW_SIDE_SEARCH_RADIUS := 2
@@ -291,8 +291,8 @@ static func _plan_phase_d(
 	ramp: PackedByteArray
 ) -> Dictionary:
 	if not allow_h and not allow_v and not allow_d and lst != LRampState.FILL_ONLY:
-		MapLogScript.debug(
-			MapLogScript.Layer.LOGIC, "RampPaint",
+		AppLogScript.debug(
+			AppLogScript.Layer.LOGIC, "RampPaint",
 			"reject @(ix=%d,iy=%d) hx=%d hy=%d origin=%d target=%d allow_h=%s allow_v=%s allow_d=%s had_arm=%s"
 			% [ix, iy, hx, hy, target_level + 1, target_level,
 			   str(allow_h), str(allow_v), str(allow_d), str(had_arm)]
@@ -339,8 +339,8 @@ static func _plan_phase_d(
 		axis = Wc3RampLogic.AXIS_V
 		variant = Wc3RampLogic.VARIANT_STRAIGHT
 
-	MapLogScript.debug(
-		MapLogScript.Layer.LOGIC, "RampPaint",
+	AppLogScript.debug(
+		AppLogScript.Layer.LOGIC, "RampPaint",
 		"ok @(ix=%d,iy=%d) hx=%d hy=%d variant=%s allow_h=%s allow_v=%s allow_d=%s filled_l=%d marked=%s"
 		% [ix, iy, hx, hy, variant, str(allow_h), str(allow_v), str(allow_d),
 		   filled_l, str(marked)]
@@ -427,8 +427,8 @@ static func plan_from_pointer(
 		ix, iy, layers, flags, tp_w, tp_h, horizontal, vertical
 	)
 	if bool(resolved.get("ok", false)):
-		MapLogScript.debug(
-			MapLogScript.Layer.LOGIC, "RampPaint",
+		AppLogScript.debug(
+			AppLogScript.Layer.LOGIC, "RampPaint",
 			"low_side_fallback ok @(click=%d,%d) origin=(%d,%d) variant=%s"
 			% [ix, iy, resolved.get("sx", 0), resolved.get("sy", 0), resolved.get("variant", "")]
 		)

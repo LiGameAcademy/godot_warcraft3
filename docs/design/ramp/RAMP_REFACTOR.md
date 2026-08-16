@@ -142,7 +142,7 @@ static func _compute_l_state(ctx: Dictionary, gates: Dictionary) -> LRampState:
 ```gdscript
 ## plan_from_pointer 内
 if bool(resolved.get("ok", false)):
-    MapLogScript.debug(MapLogScript.Layer.LOGIC, "RampPaint",
+    AppLogScript.debug(AppLogScript.Layer.LOGIC, "RampPaint",
         "low_side_fallback ok @(cx=%d,cy=%d) → origin=(%d,%d)"
         % [resolved.get("sx"), resolved.get("sy"), resolved.get("sx"), resolved.get("sy")])
     return resolved

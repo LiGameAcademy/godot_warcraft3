@@ -192,11 +192,12 @@ scripts/map/
 │       ├── wc3_shoreline_builder.gd
 │       └── wc3_shore_foam.gd
 │
-└── infra/                         # 基建
-    ├── map_log.gd
+└── infra/                         # 地图基建
     ├── runtime_assets.gd
     ├── map_model_cache.gd
     └── map_placeholders.gd
+
+# 全项目日志：scripts/shared/infra/app_log.gd（AppLog）
 ```
 
 **`MapBuildContext`：** 单次构建会话（tiles / catalog / cache / 崖拓扑缓存），**不是**数据权威。权威地形态是 `Wc3Heightfield`。`hf`/`meta` 字典视图为过渡兼容，Layer 优先读 `ctx.heightfield`。

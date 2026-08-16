@@ -122,16 +122,16 @@ func neighbor_layers(ix: int, iy: int) -> PackedInt32Array:
 ## [return bool] 是否成功
 func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true) -> bool:
 	if not is_bound() or not heightfield.in_bounds(ix, iy):
-		MapLog.debug(
-			MapLog.Layer.LOGIC,
+		AppLog.debug(
+			AppLog.Layer.LOGIC,
 			"TerrainLogic",
 			"set_ground_tex OOB/unbound (%d,%d)" % [ix, iy]
 		)
 		return false
 	var gs: Array = heightfield.ground_tilesets
 	if tex_index < 0 or tex_index >= gs.size():
-		MapLog.warn(
-			MapLog.Layer.LOGIC,
+		AppLog.warn(
+			AppLog.Layer.LOGIC,
 			"TerrainLogic",
 			"tex_index=%d 越界 tilesets=%d" % [tex_index, gs.size()]
 		)
@@ -147,8 +147,8 @@ func set_ground_tex(ix: int, iy: int, tex_index: int, randomize_var: bool = true
 		changed = true
 	if changed:
 		_mark_dirty(ix, iy)
-		MapLog.debug(
-			MapLog.Layer.LOGIC,
+		AppLog.debug(
+			AppLog.Layer.LOGIC,
 			"TerrainLogic",
 			"paint (%d,%d) %d→%d var_rand=%s"
 			% [ix, iy, old_tex, tex_index, randomize_var]
@@ -178,8 +178,8 @@ func set_blight(ix: int, iy: int, v: bool, force: bool = false) -> bool:
 				if not heightfield.in_bounds(tx, ty):
 					continue
 				if Wc3CliffLogic.is_cliff_tile(heightfield.layer_heights, tp_w, tx, ty):
-					MapLog.debug(
-						MapLog.Layer.LOGIC,
+					AppLog.debug(
+						AppLog.Layer.LOGIC,
 						"TerrainLogic",
 						"set_blight(%d,%d) 邻接 cliff @(%d,%d)，跳过" % [ix, iy, tx, ty]
 					)

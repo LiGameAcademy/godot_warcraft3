@@ -160,8 +160,8 @@ func paint_corner(
 			ix, iy, tp_w, tp_h, layers, cliff_tex, cliff_var, ground_tex, ground_var, ctype, gti, touched
 		):
 			changed_any = true
-			MapLog.debug(
-				MapLog.Layer.LOGIC,
+			AppLog.debug(
+				AppLog.Layer.LOGIC,
 				"CliffLogic",
 				"sync ground @(%d,%d) gti=%d ctype=%d" % [ix, iy, gti, ctype]
 			)

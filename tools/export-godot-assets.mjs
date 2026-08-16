@@ -141,7 +141,7 @@ function main() {
   if (!opts.skipBake) {
     console.log("\n=== [1/3] bake GLB → .scn ===");
     code = runGodotScript({
-      scriptRes: "res://tools/export_model_scenes.gd",
+      scriptRes: "res://scripts/tool/export_model_scenes.gd",
       userArgs: ua,
       godot,
     });
@@ -151,7 +151,7 @@ function main() {
   if (!opts.skipPe2) {
     console.log("\n=== [2/3] export PE2 prefabs ===");
     code = runGodotScript({
-      scriptRes: "res://tools/export_pe2_scenes.gd",
+      scriptRes: "res://scripts/tool/export_pe2_scenes.gd",
       userArgs: ua,
       godot,
     });
@@ -161,7 +161,7 @@ function main() {
   if (!opts.skipVisuals) {
     console.log("\n=== [3/3] export visuals ===");
     code = runGodotScript({
-      scriptRes: "res://tools/export_visual_scenes.gd",
+      scriptRes: "res://scripts/tool/export_visual_scenes.gd",
       userArgs: ua,
       godot,
     });

@@ -281,14 +281,14 @@ static func from_dict(d: Dictionary) -> Wc3UnitList:
 		if typeof(item) == TYPE_DICTIONARY:
 			list.append_dict(item as Dictionary)
 	if not list.is_valid():
-		MapLog.warn(
-			MapLog.Layer.DATA,
+		AppLog.warn(
+			AppLog.Layer.DATA,
 			"UnitList",
 			"from_dict 长度不一致 count=%d" % list.count()
 		)
 	else:
-		MapLog.debug(
-			MapLog.Layer.DATA,
+		AppLog.debug(
+			AppLog.Layer.DATA,
 			"UnitList",
 			"from_dict n=%d ver=%d" % [list.count(), list.format_version]
 		)

@@ -10,5 +10,5 @@
 		"GAME": true,
 		"GM": true
 	},
-	"comment": "分类日志开关。min_level: DEBUG|INFO|WARN|ERROR。改后进局或 MapLog.reload_config() 生效。也可放 user://debug_log.json 覆盖。"
+	"comment": "分类日志开关。min_level: DEBUG|INFO|WARN|ERROR。改后进局或 AppLog.reload_config() 生效。也可放 user://debug_log.json 覆盖。"
 }

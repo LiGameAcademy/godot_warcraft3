@@ -64,7 +64,7 @@ func build(ctx: MapBuildContext) -> void:
 
 	last_cell_count = cell_count
 	if verts.is_empty():
-		MapLog.debug(MapLog.Layer.PRESENT, "Boundary", "无不可玩格")
+		AppLog.debug(AppLog.Layer.PRESENT, "Boundary", "无不可玩格")
 		return
 
 	var arrays: Array = []
@@ -87,8 +87,8 @@ func build(ctx: MapBuildContext) -> void:
 	_mesh_inst.material_override = mat
 	_mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	MapLog.info(
-		MapLog.Layer.PRESENT,
+	AppLog.info(
+		AppLog.Layer.PRESENT,
 		"Boundary",
 		"unplayable cells=%d" % cell_count
 	)

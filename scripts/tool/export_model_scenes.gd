@@ -3,14 +3,14 @@ extends SceneTree
 ## .scn 与模型同属 gitignore 的 asset-converted；免主线程 GLTF 解析。
 ##
 ## 用法:
-##   godot --headless --path . -s res://tools/export_model_scenes.gd
-##   godot --headless --path . -s res://tools/export_model_scenes.gd -- --include Units/Human/ --force
+##   godot --headless --path . -s res://scripts/tool/export_model_scenes.gd
+##   godot --headless --path . -s res://scripts/tool/export_model_scenes.gd -- --include Units/Human/ --force
 ##
 ## 通常由 tools/asset-convert（npm run convert）在转完模型后自动调用。
 ## 若环境变量 PIPELINE_LOG 已设，进度/警告/错误会追加到该 Markdown 文档。
 
 # SplitMeshesByGroup 是 class_name，全局可用
-const SplitMeshesByGroupScript := preload("res://tools/split_meshes_by_group.gd")
+const SplitMeshesByGroupScript := preload("res://scripts/tool/split_meshes_by_group.gd")
 
 
 func _initialize() -> void:
@@ -133,6 +133,10 @@ func _run() -> void:
 			# 拆组后原 Geoset_N 节点已删；必须重注 :visible → Geoset_N_Group_*
 			if cache.has_method("reinject_geoset_vis_tracks"):
 				cache.reinject_geoset_vis_tracks(glb_res)
+			# Stand_Work*：腰带斧 hide-scale 会把 AxHandle 上的施工锤一起缩没 → 对齐左手并取消 hide
+			var work_fix := _fix_work_tool_anims(proto)
+			if work_fix > 0:
+				_plog("INFO", "fix_work_tool_anims: %d sequences (%s)" % [work_fix, logical_glb])
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
@@ -219,12 +223,146 @@ func _read_attachments(logical_glb: String) -> Dictionary:
 	return data
 
 
-## C-3: 按 VertexGroup 拆 geoset mesh（实现抽到 tools/split_meshes_by_group.gd）
+## C-3: 按 VertexGroup 拆 geoset mesh（实现抽到 scripts/tool/split_meshes_by_group.gd）
 func _split_meshes_by_group(proto: Node, att_data: Dictionary) -> int:
 	var n: int = SplitMeshesByGroupScript.split(proto, att_data)
 	if n > 0:
 		_plog("INFO", "split_meshes_by_group: groups=%d" % n)
 	return n
+
+
+## Stand_Work*：MDX 用 AxHandle01.scale≈0 藏腰带斧，但施工锤同骨 → Godot 里锤消失。
+## 若存在绑在 AxHandle01 上的 Geoset BA：把 Work 动画里 AxHandle 的位姿对齐 Bone_Hand_L，scale 置 1。
+func _fix_work_tool_anims(proto: Node) -> int:
+	if proto == null or not _has_axhandle_tool_ba(proto):
+		return 0
+	var ap := _find_animation_player(proto)
+	if ap == null:
+		return 0
+	var fixed := 0
+	for anim_name in ap.get_animation_list():
+		if not _is_stand_work_anim(str(anim_name)):
+			continue
+		var anim: Animation = ap.get_animation(anim_name)
+		if anim == null:
+			continue
+		if _patch_stand_work_anim(anim):
+			fixed += 1
+	return fixed
+
+
+func _has_axhandle_tool_ba(proto: Node) -> bool:
+	for c in proto.find_children("*", "BoneAttachment3D", true, false):
+		var ba := c as BoneAttachment3D
+		if ba == null:
+			continue
+		if ba.bone_name != "AxHandle01":
+			continue
+		var nm := str(ba.name)
+		if nm.begins_with("Geoset_") or nm.contains("Weapon"):
+			return true
+	return false
+
+
+func _is_stand_work_anim(anim_name: String) -> bool:
+	var leaf := _anim_leaf_name(anim_name).replace(" ", "_").to_lower()
+	return (
+		leaf == "stand_work"
+		or leaf == "stand_work_gold"
+		or leaf == "stand_work_lumber"
+	)
+
+
+func _anim_leaf_name(anim_path: String) -> String:
+	var i := anim_path.rfind("/")
+	return anim_path.substr(i + 1) if i >= 0 else anim_path
+
+
+func _find_animation_player(n: Node) -> AnimationPlayer:
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	var found: Array[Node] = n.find_children("*", "AnimationPlayer", true, false)
+	if found.is_empty():
+		return null
+	return found[0] as AnimationPlayer
+
+
+## 从轨路径解析骨名（`Skeleton3D:AxHandle01` / `...:AxHandle01:scale`）。
+func _bone_name_from_track_path(path: NodePath) -> String:
+	var parts := str(path).split(":")
+	if parts.is_empty():
+		return ""
+	var last := str(parts[parts.size() - 1])
+	if last in ["position", "rotation", "scale", "visible", "transform"]:
+		if parts.size() >= 2:
+			return str(parts[parts.size() - 2])
+		return ""
+	return last
+
+
+func _patch_stand_work_anim(anim: Animation) -> bool:
+	var ax_pos := -1
+	var ax_rot := -1
+	var ax_scale := -1
+	var hand_pos := -1
+	var hand_rot := -1
+	for i in range(anim.get_track_count()):
+		var bone := _bone_name_from_track_path(anim.track_get_path(i))
+		var ttype := anim.track_get_type(i)
+		var is_pos := (
+			ttype == Animation.TYPE_POSITION_3D
+			or str(anim.track_get_path(i)).ends_with(":position")
+		)
+		var is_rot := (
+			ttype == Animation.TYPE_ROTATION_3D
+			or str(anim.track_get_path(i)).ends_with(":rotation")
+		)
+		var is_scale := (
+			ttype == Animation.TYPE_SCALE_3D
+			or str(anim.track_get_path(i)).ends_with(":scale")
+		)
+		if bone == "AxHandle01":
+			if is_pos:
+				ax_pos = i
+			elif is_rot:
+				ax_rot = i
+			elif is_scale:
+				ax_scale = i
+		elif bone == "Bone_Hand_L":
+			if is_pos:
+				hand_pos = i
+			elif is_rot:
+				hand_rot = i
+	var changed := false
+	if ax_scale >= 0:
+		for ki in range(anim.track_get_key_count(ax_scale)):
+			anim.track_set_key_value(ax_scale, ki, Vector3.ONE)
+		changed = true
+	if ax_pos >= 0 and hand_pos >= 0 and _copy_track_key_values(anim, hand_pos, ax_pos):
+		changed = true
+	if ax_rot >= 0 and hand_rot >= 0 and _copy_track_key_values(anim, hand_rot, ax_rot):
+		changed = true
+	return changed
+
+
+## 将 src 轨关键帧值拷到 dst（按时间对齐；dst 关键数不足则插入）。
+func _copy_track_key_values(anim: Animation, src_track: int, dst_track: int) -> bool:
+	var src_n := anim.track_get_key_count(src_track)
+	var dst_n := anim.track_get_key_count(dst_track)
+	if src_n <= 0 or dst_n <= 0:
+		return false
+	if src_n == dst_n:
+		for ki in range(src_n):
+			anim.track_set_key_value(dst_track, ki, anim.track_get_key_value(src_track, ki))
+		return true
+	# 时间轴不一致：按 src 时间重写 dst
+	while anim.track_get_key_count(dst_track) > 0:
+		anim.track_remove_key(dst_track, 0)
+	for ki in range(src_n):
+		var t := anim.track_get_key_time(src_track, ki)
+		var v: Variant = anim.track_get_key_value(src_track, ki)
+		anim.track_insert_key(dst_track, t, v)
+	return true
 
 
 ## C-2: 拼装 attachments 到 proto（_scene_cache 里的 Node3D）。

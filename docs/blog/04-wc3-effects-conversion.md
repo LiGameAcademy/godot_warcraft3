@@ -116,7 +116,7 @@
 批量导出预制：
 
 ```bash
-godot --headless --path . -s res://tools/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force
+godot --headless --path . -s res://scripts/tool/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force
 ```
 
 ### 4.3 和「技能特效」的关系
@@ -206,7 +206,7 @@ Godot 里打开地图或编辑器，选中主城：应能看到模型；训练/�
 |------|------|
 | MDX 转换 + 写 pe2/geosetvis/attachments | `tools/asset-convert/src/convert-mdx.js` |
 | 粒子运行时 | `scripts/map/presentation/effects/wc3_pe2_particles.gd` |
-| 导出 pe2 预制 | `tools/export_pe2_scenes.gd` |
-| 模型 .scn 烘焙 / 拼装 | `tools/export_model_scenes.gd` |
+| 导出 pe2 预制 | `scripts/tool/export_pe2_scenes.gd` |
+| 模型 .scn 烘焙 / 拼装 | `scripts/tool/export_model_scenes.gd` |
 | 小件方案长文 | `docs/design/asset-convert/ATTACHMENTS_BAKE.md` |
 | 资产车道 | `docs/architecture/ASSET_LANES.md` |

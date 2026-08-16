@@ -1,12 +1,13 @@
 class_name BuildingVisual
 extends RefCounted
 
-## 建筑模型视觉状态：按 typeId / 建造·升级阶段选 Sequence。
-## 人族主城 htow/hkee/hcas 共用 TownHall.mdx，靠 Stand / Stand Upgrade First|Second 切换 geoset。
-## 同步 PE2：`Wc3Pe2Particles.apply_sequence`（训练烟、建造尘、死亡爆等）。
-## 放在 map/Presentation，编辑器与游戏共用（勿放 game/ 以免 map→game 反向依赖）。
+## 建筑模型视觉：typeId 档位姿态 + 建造/训练阶段 → Sequence。
+## 人族主城 htow/hkee/hcas 共用 TownHall.mdx（Stance = Upgrade First|Second）。
+## 命名/播放委托 AnimSequenceResolver / AnimPlayback（编辑器与游戏共用）。
+## 勿放 game/，避免 map→game 反向依赖。
 
-const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
+const _TAG := "BuildingVisual"
+
 
 enum Phase {
 	IDLE = 0,
@@ -15,7 +16,7 @@ enum Phase {
 	UPGRADE_BIRTH = 3,
 }
 
-## 主城三档 → 动画名后缀（转换器把空格换成 _）。
+## 兼容旧调用。
 const TOWN_HALL_TIER := {
 	"htow": "",
 	"hkee": " Upgrade First",
@@ -23,16 +24,11 @@ const TOWN_HALL_TIER := {
 }
 
 
-## 静态函数不能直接调 autoload Wc3DefStore（GDScript 编译时序问题，
-## autoload 全局变量需 editor 完整 import 后才注册；--headless selftest 跑
-## import 阶段可能未完成）。改用 Engine.get_main_loop() 运行时查找。
-## 返回 null 表示 autoload 未就绪（selftest 阶段预期）。
 static func _wc3_def_store() -> Node:
 	var ml := Engine.get_main_loop()
 	if ml == null or not (ml is SceneTree):
 		return null
 	var tree := ml as SceneTree
-	# SceneTree.root 是属性，不是 method；has_method("root") 恒为 false
 	if tree.root == null:
 		return null
 	return tree.root.get_node_or_null("Wc3DefStore")
@@ -41,7 +37,7 @@ static func _wc3_def_store() -> Node:
 static func is_building(type_id: String) -> bool:
 	if type_id.is_empty() or type_id == "sloc":
 		return false
-	if TOWN_HALL_TIER.has(type_id):
+	if AnimSequenceResolver.TOWN_HALL_STANCE.has(type_id):
 		return true
 	var store: Node = _wc3_def_store()
 	if store == null or not store.has_method("ensure_table"):
@@ -54,46 +50,63 @@ static func is_building(type_id: String) -> bool:
 
 
 static func town_hall_tier_suffix(type_id: String) -> String:
-	return str(TOWN_HALL_TIER.get(type_id, ""))
+	return AnimSequenceResolver.town_hall_tier_suffix(type_id)
 
 
-## 逻辑动画名（WC3 Sequence 名，空格版）；播放时再解析 GLB 里的 _ 变体。
-static func sequence_name(type_id: String, phase: int) -> String:
-	var suffix := town_hall_tier_suffix(type_id)
+static func _phase_to_activity(phase: int) -> int:
 	match phase:
 		Phase.BIRTH, Phase.UPGRADE_BIRTH:
-			if suffix.is_empty():
-				return "Birth"
-			return "Birth" + suffix
+			return AnimSequenceResolver.Activity.BIRTH
 		Phase.WORK:
-			if suffix.is_empty():
-				return "Stand Work"
-			return "Stand Work" + suffix
+			return AnimSequenceResolver.Activity.WORK
 		_:
-			if suffix.is_empty():
-				return "Stand"
-			return "Stand" + suffix
+			return AnimSequenceResolver.Activity.IDLE
 
 
-static func apply_phase(cache: MapModelCache, root: Node, type_id: String, phase: int = Phase.IDLE) -> bool:
+## 逻辑动画名（WC3 Sequence 名，空格版）。
+static func sequence_name(type_id: String, phase: int) -> String:
+	var stance: int = AnimSequenceResolver.stance_for_building_type(type_id)
+	var activity: int = _phase_to_activity(phase)
+	return AnimSequenceResolver.sequence_name(activity, stance)
+
+
+static func apply_phase(
+	cache: MapModelCache, root: Node, type_id: String, phase: int = Phase.IDLE
+) -> bool:
 	if cache == null or root == null:
+		AppLog.warn(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"apply_phase 忽略：cache/root 空 type=%s phase=%s" % [type_id, phase]
+		)
 		return false
 	var want := sequence_name(type_id, phase)
-	var resolved := resolve_animation(root, want)
-	var ok := false
-	if resolved.is_empty():
-		ok = cache.autoplay_stand(root, false)
-		want = "Stand"
-	else:
-		# Birth 在长施工期内循环，避免播完一帧就停在中途姿势；完工后再切 Stand
-		var loop := (
-			phase == Phase.IDLE
-			or phase == Phase.WORK
-			or phase == Phase.BIRTH
-			or phase == Phase.UPGRADE_BIRTH
+	var activity: int = _phase_to_activity(phase)
+	AppLog.debug(
+		AppLog.Layer.PRESENT,
+		_TAG,
+		"apply_phase type=%s phase=%s want=%s" % [type_id, phase, want]
+	)
+	var played: Dictionary = AnimPlayback.play_logical(
+		root, want, 0.0, cache, activity, ["Stand"]
+	)
+	if bool(played.get("ok", false)):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"apply_phase ok type=%s → %s" % [type_id, str(played.get("played_as", want))]
 		)
-		ok = cache.play_animation(root, resolved, loop)
-	_Pe2.apply_sequence(root, want)
+		return true
+	var ok := cache.autoplay_stand(root, false)
+	if ok:
+		AppLog.debug(AppLog.Layer.PRESENT, _TAG, "apply_phase Stand fallback type=%s" % type_id)
+		Wc3Pe2Particles.apply_sequence(root, "Stand")
+	else:
+		AppLog.warn(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"apply_phase 失败 type=%s want=%s" % [type_id, want]
+		)
 	return ok
 
 
@@ -101,58 +114,5 @@ static func apply_idle(cache: MapModelCache, root: Node, type_id: String) -> boo
 	return apply_phase(cache, root, type_id, Phase.IDLE)
 
 
-## 在 AnimationPlayer 中解析「Stand Upgrade First」↔「Stand_Upgrade_First」。
 static func resolve_animation(root: Node, logical_name: String) -> String:
-	if root == null or logical_name.is_empty():
-		return ""
-	var ap := _find_animation_player(root)
-	if ap == null:
-		return ""
-	var candidates: Array[String] = [
-		logical_name,
-		logical_name.replace(" ", "_"),
-		logical_name.replace(" ", ""),
-	]
-	var names := ap.get_animation_list()
-	for cand in candidates:
-		var cand_l := cand.to_lower()
-		for n in names:
-			var leaf := _anim_leaf(str(n))
-			if leaf == cand or leaf.to_lower() == cand_l:
-				return str(n)
-	# 无精确 Stand：回退 Stand - 1 / Stand_1（地精商店、酒馆等）
-	var want_l := logical_name.to_lower().strip_edges()
-	if want_l == "stand":
-		for n in names:
-			var leaf2 := _anim_leaf(str(n)).to_lower()
-			if leaf2 == "stand":
-				return str(n)
-			if not leaf2.begins_with("stand"):
-				continue
-			# 排除 Stand Work / Ready / Upgrade / Channel 等业务态
-			if (
-				leaf2.begins_with("stand_work")
-				or leaf2.begins_with("standwork")
-				or leaf2.contains("upgrade")
-				or leaf2.contains("ready")
-				or leaf2.contains("channel")
-				or leaf2.contains("hit")
-			):
-				continue
-			return str(n)
-	return ""
-
-
-static func _anim_leaf(anim_path: String) -> String:
-	var i := anim_path.rfind("/")
-	return anim_path.substr(i + 1) if i >= 0 else anim_path
-
-
-static func _find_animation_player(n: Node) -> AnimationPlayer:
-	if n is AnimationPlayer:
-		return n as AnimationPlayer
-	for c in n.get_children():
-		var found := _find_animation_player(c)
-		if found:
-			return found
-	return null
+	return AnimPlayback.resolve(root, logical_name)

@@ -217,17 +217,17 @@ static func _is_cliff_tag(tag: String) -> bool:
 func _rebuild_cliff_png_cache() -> void:
 	var store := _def_store()
 	if store == null:
-		MapLog.warn(MapLog.Layer.CATALOG, "CliffCatalog", "DefStore 不可用，无法解析悬崖贴图")
+		AppLog.warn(AppLog.Layer.CATALOG, "CliffCatalog", "DefStore 不可用，无法解析悬崖贴图")
 		return
 	store.ensure_table(CliffTypeDef.TABLE_NAME)
 	for id in store.get_ids(CliffTypeDef.TABLE_NAME):
 		var d: CliffTypeDef = store.get_row(CliffTypeDef.TABLE_NAME, id) as CliffTypeDef
 		if d == null or d.tex_dir.is_empty() or d.tex_file.is_empty():
-			MapLog.warn(MapLog.Layer.CATALOG, "CliffCatalog", "悬崖类型定义不可用，无法解析悬崖贴图：%s" % id)
+			AppLog.warn(AppLog.Layer.CATALOG, "CliffCatalog", "悬崖类型定义不可用，无法解析悬崖贴图：%s" % id)
 			continue
 		_cliff_to_png[id] = resolve_cliff_png(d.tex_dir, d.tex_file, id)
-	MapLog.debug(
-		MapLog.Layer.CATALOG,
+	AppLog.debug(
+		AppLog.Layer.CATALOG,
 		"CliffCatalog",
 		"cliff png cache count=%d" % _cliff_to_png.size()
 	)

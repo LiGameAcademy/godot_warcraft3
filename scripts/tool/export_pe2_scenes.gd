@@ -3,8 +3,8 @@ extends SceneTree
 ## pe2-prefabs 可提交 git；asset-converted（贴图/网格）仍不入库。
 ##
 ## 用法:
-##   godot --headless --path . -s res://tools/export_pe2_scenes.gd
-##   godot --headless --path . -s res://tools/export_pe2_scenes.gd -- --include Buildings/Human/ --force
+##   godot --headless --path . -s res://scripts/tool/export_pe2_scenes.gd
+##   godot --headless --path . -s res://scripts/tool/export_pe2_scenes.gd -- --include Buildings/Human/ --force
 ##
 ## 运行时 attach_to 优先实例化 pe2-prefabs；没有则回退动态读 pe2.json。
 

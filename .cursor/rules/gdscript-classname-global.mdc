@@ -1,0 +1,41 @@
+---
+description: Godot class_name 全局类型——优先用全局名，勿因未注册改用 preload
+globs: **/*.gd
+alwaysApply: true
+---
+
+# Godot `class_name` 与全局类型
+
+有 `class_name` 的脚本应通过**全局类型名**引用，不要用 `preload("res://.../*.gd")` 再当类型用。
+
+## 正确
+
+```gdscript
+# ✅ 直接用全局类
+var played: Dictionary = AnimPlayback.play_logical(root, want, 0.0, cache)
+Wc3Pe2Particles.apply_sequence(root, "Stand")
+```
+
+## 错误
+
+```gdscript
+# ❌ 仅为绕过「未声明」而 preload 同项目 class_name 脚本
+const _Resolver := preload("res://scripts/map/presentation/anim_sequence_resolver.gd")
+_Resolver.sequence_name(...)
+```
+
+`preload` 仅用于：无 `class_name` 的脚本、PackedScene、Resource、刻意延迟加载。
+
+## 新建 `class_name` 后必跑 Godot
+
+Godot 把 `class_name` 写入全局类缓存（`.godot/global_script_class_cache.cfg`）。
+
+1. 新建或重命名带 `class_name` 的 `.gd`
+2. **运行一次 Godot**（编辑器打开项目，或 `--headless --path . --quit-after 1`）
+3. 缓存更新后，其它脚本才能解析该全局名
+
+在缓存更新前，headless / 分析器可能报 `Identifier "Xxx" not declared`。这是**预期现象**，不是改用 `preload` 的理由。应先跑 Godot 注册，再继续改调用方。
+
+## 默认参数注意
+
+跨文件枚举作**默认实参**可能加重编译序问题；优先写字面量（如 `stance: int = 0`），在函数体内再用 `AnimSequenceResolver.Stance.DEFAULT` 语义。

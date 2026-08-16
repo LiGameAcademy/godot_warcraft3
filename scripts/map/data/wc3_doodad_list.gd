@@ -198,14 +198,14 @@ static func from_dict(d: Dictionary) -> Wc3DoodadList:
 		if typeof(item) == TYPE_DICTIONARY:
 			list.append_dict(item as Dictionary)
 	if not list.is_valid():
-		MapLog.warn(
-			MapLog.Layer.DATA,
+		AppLog.warn(
+			AppLog.Layer.DATA,
 			"DoodadList",
 			"from_dict 长度不一致 count=%d" % list.count()
 		)
 	else:
-		MapLog.debug(
-			MapLog.Layer.DATA,
+		AppLog.debug(
+			AppLog.Layer.DATA,
 			"DoodadList",
 			"from_dict n=%d special=%d ver=%d"
 			% [list.count(), list.special_doodads.size(), list.format_version]

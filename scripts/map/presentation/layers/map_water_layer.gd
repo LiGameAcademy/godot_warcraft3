@@ -39,7 +39,7 @@ func build(ctx) -> void:
 	var built := Wc3WaterMesh.build(ctx.hf, params, height_bias_wc3, ctx.meta)
 	var ms_mesh := Time.get_ticks_msec() - t0
 	if built.is_empty():
-		MapLog.debug(MapLog.Layer.PRESENT, "Water", "无水面网格（地图无水时正常）")
+		AppLog.debug(AppLog.Layer.PRESENT, "Water", "无水面网格（地图无水时正常）")
 		print("Water timing: params=%dms mesh=%dms (no water) total=%dms" % [ms_params, ms_mesh, Time.get_ticks_msec() - t_all])
 		return
 
@@ -59,7 +59,7 @@ func build(ctx) -> void:
 	var tex_cache_hit := bool(tex_pack.get("cache_hit", false))
 	var ms_tex := Time.get_ticks_msec() - t0
 	if tex_array == null:
-		MapLog.warn(MapLog.Layer.PRESENT, "Water", "水面贴图数组为空（检查 I_Water00.png …）")
+		AppLog.warn(AppLog.Layer.PRESENT, "Water", "水面贴图数组为空（检查 I_Water00.png …）")
 		print(
 			"Water timing: params=%dms mesh=%dms tex=%dms (fail) total=%dms"
 			% [ms_params, ms_mesh, ms_tex, Time.get_ticks_msec() - t_all]

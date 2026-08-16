@@ -422,7 +422,7 @@ func paint_tile(tx: int, ty: int, tex_index: int = -1) -> bool:
 ## 写单个中级栅格顶点（tilepoint）的地表索引。对齐 WE / HiveWE 角点笔刷。
 func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if is_empty():
-		MapLog.warn(MapLog.Layer.EDITOR, "Document", "paint_corner: 文档空")
+		AppLog.warn(AppLog.Layer.EDITOR, "Document", "paint_corner: 文档空")
 		return false
 	var idx: int = tex_index if tex_index >= 0 else brush_tile_index
 	var i: int = heightfield.index_at(ix, iy) if heightfield != null and heightfield.in_bounds(ix, iy) else -1
@@ -430,8 +430,8 @@ func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if not terrain.paint_corner(ix, iy, idx):
 		return false
 	var new_tex: int = int(heightfield.ground_textures[i]) if i >= 0 else -1
-	MapLog.debug(
-		MapLog.Layer.EDITOR,
+	AppLog.debug(
+		AppLog.Layer.EDITOR,
 		"Document",
 		"paint_corner (%d,%d) %d→%d (brush=%d)" % [ix, iy, old_tex, new_tex, idx]
 	)

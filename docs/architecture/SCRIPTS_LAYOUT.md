@@ -11,6 +11,11 @@ scripts/
 ├── auto/                          Autoload 全局单例脚本
 ├── definitions/                   静态 SLK 表 → Resource（按 SLK 表名分目录）
 │   └── terrain_art/               TerrainArt 四表
+├── shared/                        游戏/编辑器共用
+│   ├── infra/                     AppLog 等
+│   ├── selection/
+│   └── world/
+├── tool/                          Godot headless 工具（导出 .scn / pe2 / visuals）
 └── map/                           地图相关
     ├── catalog/                   Catalog（资源映射）
     ├── data/                      Data（纯数据类）
@@ -26,6 +31,22 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 | `AssetProvider` | [`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd) | 逻辑路径解析（mods → converted → .cache） |
 | `EditorI18n` | [`editor/ui/editor_i18n.gd`](../../editor/ui/editor_i18n.gd) | 编辑器字符串 i18n |
 | `Wc3DefStore` | `scripts/auto/wc3_def_store.gd` | SLK 静态表缓存（TerrainArt 四表预加载） |
+
+---
+
+## 1b. `scripts/tool/` — Godot headless 工具
+
+> 由 Node 管线（`tools/*.mjs`）调用：`godot --headless -s res://scripts/tool/...`。  
+> **不要**再往 `tools/` 放 `.gd`；`tools/` 只放外部工具（js / mjs / ps1）。
+
+| 脚本 | 职责 |
+|------|------|
+| `export_model_scenes.gd` | `asset-converted` 下 gltf/glb → 同目录 `.scn` |
+| `export_pe2_scenes.gd` | `*.pe2.json` → `assets/pe2-prefabs/` |
+| `export_visual_scenes.gd` | bake → `assets/visuals/` |
+| `split_meshes_by_group.gd` | C-3：按 VertexGroup 拆 geoset mesh |
+
+编辑器笔刷仍在 `editor/scripts/tools/`（运行时编辑器工具，不是 headless 导出）。
 
 ---
 
@@ -110,14 +131,23 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 
 ---
 
-## 6. `scripts/map/infra/` — 基础设施
+## 6. `scripts/map/infra/` — 地图基础设施
 
 | 脚本 | 职责 |
 |------|------|
 | `runtime_assets.gd` | 路径 resolve；`project_abs(res_path)` / `converted_path(rel)` / `slk_path(rel)` / `load_image(path)` / `file_exists(path)` |
 | `map_model_cache.gd` | GLB 场景/网格缓存（单位/装饰按 type_id 缓存） |
 | `map_placeholders.gd` | 缺模灰盒（`MeshInstance3D` + 简单几何） |
-| `map_log.gd` | 统一日志；按层分组（`MapLog.Layer.CATALOG` / `LOGIC` / `PRESENT` …） |
+
+全项目日志见 `scripts/shared/infra/app_log.gd`（`AppLog`）。
+
+---
+
+## 6b. `scripts/shared/infra/` — 共享基础设施
+
+| 脚本 | 职责 |
+|------|------|
+| `app_log.gd` | 统一调试日志；按层分组（`AppLog.Layer.CATALOG` / `LOGIC` / `PRESENT` / `GAME` / `GM` …） |
 
 ---
 

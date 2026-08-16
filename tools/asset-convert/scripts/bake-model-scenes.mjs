@@ -106,7 +106,7 @@ export function bakeModelScenes(opts = {}) {
 
   if (workers === 1) {
     return runGodotScript({
-      scriptRes: "res://tools/export_model_scenes.gd",
+      scriptRes: "res://scripts/tool/export_model_scenes.gd",
       userArgs: baseUserArgs,
       godot,
       required: false,
@@ -119,7 +119,7 @@ export function bakeModelScenes(opts = {}) {
     "--path",
     PROJECT_ROOT,
     "-s",
-    "res://tools/export_model_scenes.gd",
+    "res://scripts/tool/export_model_scenes.gd",
   ];
   if (baseUserArgs.length) baseArgs.push("--", ...baseUserArgs);
 

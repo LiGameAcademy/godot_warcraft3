@@ -12,7 +12,7 @@
 | 类型 | 入 git | 说明 |
 |------|--------|------|
 | 源码 | ✅ | GDScript / JS / 配置文件 |
-| 工具源码 | ✅ | `tools/` 下 .js / .mjs / .gd（不含 vendor / node_modules）|
+| 工具源码 | ✅ | `tools/` 下 .js / .mjs / .ps1（不含 vendor / node_modules）；Godot 工具脚本在 `scripts/tool/` |
 | 文档 | ✅ | `docs/` 下 |
 | WC3 原文件（MPQ） | ❌ | `tools/mpq-extract/tmp/` 中转 |
 | 解包后文件（war3 / mdx / blp / slk） | ❌ | 同上 |

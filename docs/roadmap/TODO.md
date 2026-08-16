@@ -207,7 +207,7 @@
 
 - [x] **薄封装层**（2026-08-04）  
   可提交 `assets/visuals/**/*.tscn`：继承 bake `.scn`，挂 `Pe2Root`，根脚本 `ModelVisualSync`（`animation_started` → PE2）。  
-  导出：`godot --headless -s res://tools/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force`  
+  导出：`godot --headless -s res://scripts/tool/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force`  
   运行时 `MapModelCache` 优先 visuals → `.scn` → GLB；`attach_to` 遇已有 Pe2Root 跳过。
 
 ### 建筑队伍色（双层垫底）
