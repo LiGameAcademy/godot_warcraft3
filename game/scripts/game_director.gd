@@ -1546,10 +1546,17 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 		if game_hud:
 			game_hud.set_status("建造：无农民")
 		return
-	# 资源检查
-	if not _can_afford(building_id):
+	var missing := TechPresence.missing_requires(
+		_owned_buildings_for_local(),
+		UnitRequiresCatalog.get_shared().get_requires(building_id)
+	)
+	if not missing.is_empty():
 		if game_hud:
-			game_hud.set_status("资源不足，无法建造 %s" % building_id)
+			game_hud.set_status(TechPresence.requires_tip(missing))
+		return
+	# 资源检查：不置灰，点下提示
+	if not _can_afford(building_id):
+		_notify_cannot_afford_build(building_id)
 		return
 	# 选建筑后收起二级面板，进入瞄准
 	_build_menu_open = false
@@ -1620,8 +1627,7 @@ func _commit_build_targeting(screen_pos: Vector2) -> void:
 	var site := _build_placement.current_site_wc3()
 	# 资源复检（资源可能在瞄准中被花掉）
 	if not _can_afford(bid):
-		if game_hud:
-			game_hud.set_status("资源不足，无法建造")
+		_notify_cannot_afford_build(bid)
 		_cancel_build_targeting()
 		return
 	if not _build_placement.commit():
@@ -1768,6 +1774,23 @@ func _can_afford(building_id: String) -> bool:
 	var g: int = BuildingCatalog.get_gold_cost(building_id)
 	var l: int = BuildingCatalog.get_lumber_cost(building_id)
 	return stock.gold >= g and stock.lumber >= l
+
+
+func _notify_cannot_afford_build(building_id: String) -> void:
+	if game_hud == null:
+		return
+	var g := BuildingCatalog.get_gold_cost(building_id)
+	var l := BuildingCatalog.get_lumber_cost(building_id)
+	var msg := "资源不够"
+	if g > 0 or l > 0:
+		msg = "资源不够（需 %d金" % g
+		if l > 0:
+			msg += " %d木" % l
+		msg += "）"
+	if game_hud.has_method("show_command_tip"):
+		game_hud.show_command_tip(msg)
+	else:
+		game_hud.set_status(msg)
 
 
 func _get_selected_safe() -> Array:
@@ -2064,15 +2087,35 @@ func _build_entry_for(building_id: String, site_wc3: Vector2, player_owner: int,
 	}
 
 
-## 主城/兵营等可训建筑：命令卡带 training_unit 高亮。
+## 主城/兵营等可训建筑：命令卡带 training_unit 高亮 + Requires 置灰。
+## 建造中：隐藏训兵按钮，保留集结点。
 func _apply_building_train_card(building: Node3D, tid: String) -> void:
-	var state := {"include_locomotion": false}
-	if building != null:
+	var owner_id := 0
+	if _session != null:
+		owner_id = int(_session.local_player)
+	var under := building != null and UnitLife.is_under_construction(building)
+	var state := {
+		"include_locomotion": false,
+		"owned_buildings": _owned_buildings_for_local(),
+		"hero_slots_full": (
+			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
+			>= TechPresence.MAX_HEROES_PER_PLAYER
+		),
+		"hide_trains": under,
+	}
+	if building != null and not under:
 		var q := building.get_node_or_null("TrainQueue") as TrainQueue
 		if q != null and q.is_training():
 			state["training_unit"] = q.current_unit()
 			state["train_queue"] = q.snapshot()
 	_apply_command_card(CommandCard.for_unit(tid, state))
+
+
+func _owned_buildings_for_local() -> Dictionary:
+	var owner_id := 0
+	if _session != null:
+		owner_id = int(_session.local_player)
+	return TechPresence.collect_owned_buildings(_unit_host(), owner_id)
 
 
 func _try_issue_train(unit_id: String) -> void:
@@ -2094,11 +2137,30 @@ func _try_issue_train(unit_id: String) -> void:
 			game_hud.set_status("建造中，无法训练")
 		return
 	var uid := unit_id.strip_edges()
-	var trains := CommandButtonCatalog.get_shared().get_trains(building_id)
+	var trains := TechPresence.filter_vertical_trains(
+		building_id, CommandButtonCatalog.get_shared().get_trains(building_id)
+	)
 	if trains.find(uid) < 0:
 		if game_hud:
 			game_hud.set_status("%s 不能训练 %s" % [building_id, uid])
 		return
+	var owned := _owned_buildings_for_local()
+	var missing := TechPresence.missing_requires(
+		owned, UnitRequiresCatalog.get_shared().get_requires(uid)
+	)
+	if not missing.is_empty():
+		if game_hud:
+			game_hud.set_status(TechPresence.requires_tip(missing))
+		return
+	if TechPresence.is_hero_id(uid):
+		var owner_id := int(d.get("owner", 0))
+		if (
+			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
+			>= TechPresence.MAX_HEROES_PER_PLAYER
+		):
+			if game_hud:
+				game_hud.set_status("每位玩家同时只能拥有 %d 名英雄" % TechPresence.MAX_HEROES_PER_PLAYER)
+			return
 	var stock := _local_stock()
 	var gold := BuildingCatalog.get_gold_cost(uid)
 	var lumber := BuildingCatalog.get_lumber_cost(uid)
@@ -2109,8 +2171,7 @@ func _try_issue_train(unit_id: String) -> void:
 				game_hud.set_status("人口不足（%d/%d）" % [stock.food_used, stock.food_cap])
 			return
 		if stock.gold < gold or stock.lumber < lumber:
-			if game_hud:
-				game_hud.set_status("资源不足（需 %d金 %d木）" % [gold, lumber])
+			_notify_cannot_afford_build(uid)
 			return
 	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
 	if existing != null and existing.is_full():
@@ -2140,9 +2201,37 @@ func _wire_train_queue(queue: TrainQueue) -> void:
 	queue.training_completed.connect(_on_training_completed.bind(queue))
 	queue.training_cancelled.connect(_on_training_cancelled)
 	if not queue.queue_changed.is_connected(_on_train_queue_changed):
-		queue.queue_changed.connect(_on_train_queue_changed)
+		queue.queue_changed.connect(_on_train_queue_changed.bind(queue))
 	if not queue.progress_changed.is_connected(_on_train_progress_changed):
 		queue.progress_changed.connect(_on_train_progress_changed.bind(queue))
+	if not queue.training_started.is_connected(_on_train_started_visual):
+		queue.training_started.connect(_on_train_started_visual.bind(queue))
+	_sync_building_train_visual(queue.get_parent() as Node3D)
+
+
+func _on_train_started_visual(_unit_id: String, _time_sec: float, queue: TrainQueue) -> void:
+	if queue == null or not is_instance_valid(queue):
+		return
+	_sync_building_train_visual(queue.get_parent() as Node3D)
+
+
+## 训练中切 Stand Work（门开 + 门光）；队列空回 Stand。
+func _sync_building_train_visual(building: Node3D) -> void:
+	if building == null or not is_instance_valid(building) or map_root == null:
+		return
+	var tid := str(building.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	if tid.is_empty() or not BuildingCatalog.is_building(tid):
+		return
+	if UnitLife.is_under_construction(building):
+		return
+	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
+	if cache == null:
+		return
+	var q := building.get_node_or_null("TrainQueue") as TrainQueue
+	var phase := (
+		BuildingVisual.Phase.WORK if q != null and q.is_training() else BuildingVisual.Phase.IDLE
+	)
+	BuildingVisual.apply_phase(cache, building, tid, phase)
 
 
 func _on_train_progress_changed(_progress: float, _remaining_sec: float, queue: TrainQueue) -> void:
@@ -2175,13 +2264,16 @@ func _on_train_queue_cancel(slot_index: int) -> void:
 	_wire_train_queue(tq)
 	if not tq.cancel_at(slot_index):
 		return
+	_sync_building_train_visual(primary)
 	var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
 	if not tid.is_empty():
 		_apply_building_train_card(primary, tid)
 	_sync_build_hud_for_selection()
 
 
-func _on_train_queue_changed() -> void:
+func _on_train_queue_changed(queue: TrainQueue = null) -> void:
+	if queue != null and is_instance_valid(queue):
+		_sync_building_train_visual(queue.get_parent() as Node3D)
 	_sync_build_hud_for_selection()
 	if unit_selector != null and unit_selector.has_method("get_primary"):
 		var primary: Node3D = unit_selector.call("get_primary") as Node3D
@@ -2195,6 +2287,7 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 	var building: Node3D = null
 	if queue != null and is_instance_valid(queue):
 		building = queue.get_parent() as Node3D
+	_sync_building_train_visual(building)
 	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
 	if node == null:
 		push_warning("GameDirector: 训练完成但刷单位失败 %s" % unit_id)
@@ -2692,7 +2785,10 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		_card_supports_move = false
 		_card_is_peasant = false
 		_apply_building_train_card(primary, tid)
-		game_hud.set_status("已选 %s · 训练见命令卡" % tid)
+		if UnitLife.is_under_construction(primary):
+			game_hud.set_status("建造中：%s · 可设集结点" % tid)
+		else:
+			game_hud.set_status("已选 %s · 训练见命令卡" % tid)
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
 		_refresh_command_card()
@@ -2884,18 +2980,33 @@ func _update_build_hud_if_relevant(key: String, ratio: float, elapsed: float, to
 		_apply_unit_info_to_hud(primary, bid)
 
 
-## F2-4：可建造列表 = UnitFunc Builds ∩ F2 锁死表（槽位顺序跟 F2 表）。
+## 竖切可造列表 = UnitFunc Builds ∩ VERTICAL_BUILDING_IDS。
 func _build_building_ids(worker_type_id: String = "hpea") -> PackedStringArray:
 	var allow := PackedStringArray()
-	for bid in BuildingCatalog.F2_BUILDING_IDS:
+	for bid in BuildingCatalog.VERTICAL_BUILDING_IDS:
 		allow.append(str(bid))
 	return CommandButtonCatalog.get_shared().filter_builds(worker_type_id, allow)
 
 
-func _build_can_afford_flags(building_ids: PackedStringArray) -> PackedInt32Array:
+## 建造按钮启用：仅 Requires 解锁；资源不足不置灰，点下再提示。
+func _build_unlocked_flags(building_ids: PackedStringArray) -> PackedInt32Array:
+	var owned := _owned_buildings_for_local()
+	var req_cat := UnitRequiresCatalog.get_shared()
 	var arr := PackedInt32Array()
 	for bid in building_ids:
-		arr.append(1 if _can_afford(str(bid)) else 0)
+		var missing := TechPresence.missing_requires(owned, req_cat.get_requires(str(bid)))
+		arr.append(0 if not missing.is_empty() else 1)
+	return arr
+
+
+## 置灰原因：仅未解锁（Requires）；资源不足不走这里。
+func _build_disabled_reasons(building_ids: PackedStringArray) -> PackedStringArray:
+	var owned := _owned_buildings_for_local()
+	var req_cat := UnitRequiresCatalog.get_shared()
+	var arr := PackedStringArray()
+	for bid in building_ids:
+		var missing := TechPresence.missing_requires(owned, req_cat.get_requires(str(bid)))
+		arr.append(TechPresence.requires_tip(missing) if not missing.is_empty() else "")
 	return arr
 
 
@@ -2948,9 +3059,21 @@ func _refresh_command_card() -> void:
 		var tid := _primary_type_id(selected)
 		if tid.is_empty():
 			_apply_command_card(CommandCard.basic_locomotion(moving))
+		elif BuildingCatalog.is_building(tid) and not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
+			var primary_b: Node3D = null
+			if unit_selector != null and unit_selector.has_method("get_primary"):
+				primary_b = unit_selector.call("get_primary") as Node3D
+			_apply_building_train_card(primary_b, tid)
 		else:
 			_apply_command_card(
-				CommandCard.for_unit(tid, {"move_executing": moving, "include_locomotion": true})
+				CommandCard.for_unit(
+					tid,
+					{
+						"move_executing": moving,
+						"include_locomotion": true,
+						"owned_buildings": _owned_buildings_for_local(),
+					}
+				)
 			)
 
 
@@ -2974,7 +3097,8 @@ func _apply_peasant_command_card(
 				"harvest_executing": harvesting and not carrying,
 				"return_executing": returning,
 				"building_ids": build_ids,
-				"can_afford": _build_can_afford_flags(build_ids),
+				"can_afford": _build_unlocked_flags(build_ids),
+				"build_disabled_reasons": _build_disabled_reasons(build_ids),
 				"building_executing": _build_executing_flags(build_ids),
 				"build_menu_open": _build_menu_open,
 				"worker_race": "human",

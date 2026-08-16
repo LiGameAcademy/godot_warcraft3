@@ -217,7 +217,10 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		tooltip += "\n|cff00ff00当前：执行中|r"
 	var enabled := bool(opts.get("enabled", true))
 	if not enabled:
-		tooltip += "\n|cffff6060资源不足|r"
+		var reason := str(opts.get("disabled_reason", "")).strip_edges()
+		if reason.is_empty():
+			reason = "资源不足"
+		tooltip += "\n|cffff6060%s|r" % reason
 	var icon := icon_path(art)
 	return {
 		"id": action_id,

@@ -10,11 +10,13 @@ extends RefCounted
 ## - Wc3IdCatalog：编辑器 UI 用（id → display + file + num_var + is_building）
 ## - BuildingCatalog：游戏建造管线用（id → 造价/时间/占地/path_tex 强类型接口）
 ##
-## F2 锁死 3 建筑：hhou（Farm）+ halt（Altar）+ hbar（Barracks）。
-## 不做"建筑"自动判定以外的接口（如训练 / 升级 → F3-F4 另开）。
+## 人族竖切可造：Farm / Altar / Barracks / Lumber Mill / Blacksmith。
+## 命令卡 = UnitFunc Builds ∩ 本表；科技升级建筑后置。
 
-## F2 本步锁死的 3 建筑 id。
-const F2_BUILDING_IDS := ["hhou", "halt", "hbar"]
+## 人族竖切可造建筑（Builds ∩ 本表）。
+const VERTICAL_BUILDING_IDS := ["hhou", "halt", "hbar", "hlum", "hbla"]
+## 兼容旧名（= VERTICAL_BUILDING_IDS）。
+const F2_BUILDING_IDS := VERTICAL_BUILDING_IDS
 
 
 ## id 是否在 def 中存在（UnitBalance + UnitData 都有行）。

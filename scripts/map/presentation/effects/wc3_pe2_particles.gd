@@ -10,6 +10,8 @@ const PE2_ROOT_NAME := "Pe2Root"
 const MODEL_SCALE := 0.01
 const META_ACTIVE_SEQS := "pe2_active_sequences"
 const META_ALWAYS_ON := "pe2_always_on"
+const META_PIVOT := "pe2_pivot"
+const META_PIVOT_BY_SEQ := "pe2_pivot_by_sequence"
 
 
 static func pe2_path_from_glb(glb_path: String) -> String:
@@ -123,8 +125,35 @@ static func _apply_sequence_to_node(n: Node, want_key: String) -> void:
 		else:
 			var seqs: PackedStringArray = p.get_meta(META_ACTIVE_SEQS, PackedStringArray()) as PackedStringArray
 			p.emitting = _seqs_match(seqs, want_key)
+		_apply_pivot_for_sequence(p, want_key)
 	for c in n.get_children():
 		_apply_sequence_to_node(c, want_key)
+
+
+## Stand Work 等会移动发射器（兵营门光）；按 pivot_by_sequence 改 position。
+static func _apply_pivot_for_sequence(p: GPUParticles3D, want_key: String) -> void:
+	var by_seq: Variant = p.get_meta(META_PIVOT_BY_SEQ, {})
+	var fallback: Variant = p.get_meta(META_PIVOT, p.position)
+	var pos := _pivot_from_meta(fallback)
+	if by_seq is Dictionary and not want_key.is_empty():
+		var d: Dictionary = by_seq as Dictionary
+		for k in d.keys():
+			if _normalize_seq_key(str(k)) == want_key:
+				pos = _pivot_from_meta(d[k])
+				break
+	p.position = pos
+
+
+static func _pivot_from_meta(raw: Variant) -> Vector3:
+	if raw is Vector3:
+		return raw as Vector3
+	if raw is Array and (raw as Array).size() >= 3:
+		var a: Array = raw as Array
+		return Vector3(float(a[0]), float(a[1]), float(a[2]))
+	if raw is PackedFloat32Array and (raw as PackedFloat32Array).size() >= 3:
+		var pf: PackedFloat32Array = raw as PackedFloat32Array
+		return Vector3(pf[0], pf[1], pf[2])
+	return Vector3.ZERO
 
 
 static func _normalize_seq_key(s: String) -> String:
@@ -216,6 +245,17 @@ static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
 	var pivot: Array = em.get("pivot", [0, 0, 0]) as Array
 	if pivot.size() >= 3:
 		p.position = Vector3(float(pivot[0]), float(pivot[1]), float(pivot[2]))
+	p.set_meta(META_PIVOT, p.position)
+	var by_seq_raw: Variant = em.get("pivot_by_sequence", null)
+	if by_seq_raw is Dictionary:
+		var store: Dictionary = {}
+		for k in (by_seq_raw as Dictionary).keys():
+			var arr: Variant = (by_seq_raw as Dictionary)[k]
+			if arr is Array and (arr as Array).size() >= 3:
+				var a: Array = arr as Array
+				store[str(k)] = Vector3(float(a[0]), float(a[1]), float(a[2]))
+		if not store.is_empty():
+			p.set_meta(META_PIVOT_BY_SEQ, store)
 
 	var scale_seg: Array = em.get("particle_scaling", [10, 10, 10]) as Array
 	var s0 := maxf(0.1, float(scale_seg[0]) if scale_seg.size() > 0 else 10.0)

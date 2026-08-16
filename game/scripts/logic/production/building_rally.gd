@@ -96,10 +96,9 @@ static func tree_cn(building: Node3D) -> int:
 
 ## 该建筑是否可设集结点（有 Trains 列表）。
 ## 以 Trains 为准；勿仅靠 BuildingCatalog.is_building（Def 未就绪时 htow 会误判 false）。
+## 建造中也可设（与命令卡保留集结点一致）。
 static func can_set_rally(building: Node3D) -> bool:
 	if building == null or not is_instance_valid(building):
-		return false
-	if UnitLife.is_under_construction(building):
 		return false
 	var tid := str(building.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
 	if tid.is_empty():

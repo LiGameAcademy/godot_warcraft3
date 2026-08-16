@@ -270,8 +270,9 @@ func clear_build_progress() -> void:
 
 
 ## 训练队列：
-## 上行 = 当前生产图标 + 长进度条（叠「剩余 Ns」）；
-## 下行 = 整队 7 槽（含当前）。slots=[{unit_id, icon, progress, active, remaining_sec, tooltip}, ...]
+## 上行 = 当前生产图标 + 长进度条；
+## 下行 = 排队槽（不含当前在训，避免与上行重复）。
+## slots=[{unit_id, icon, progress, active, remaining_sec, tooltip}, ...]（[0]=在训）
 func set_train_queue(slots: Array, filled: int = -1, max_slots: int = _TRAIN_MAX_SLOTS) -> void:
 	if _train_row == null:
 		return
@@ -292,12 +293,17 @@ func set_train_queue(slots: Array, filled: int = -1, max_slots: int = _TRAIN_MAX
 		active = slots[0] as Dictionary
 	_update_train_active_row(active)
 
-	var sig := _train_slots_signature(slots, cap)
-	if sig != _train_slot_sig or _train_strip == null or _train_strip.get_child_count() != cap:
+	# 下行只展示排队（跳过 slots[0]）；槽位索引仍对应 TrainQueue.cancel_at
+	var waiting: Array = []
+	for i in range(1, slots.size()):
+		waiting.append(slots[i])
+	var wait_cap := maxi(cap - 1, 0)
+	var sig := _train_slots_signature(waiting, wait_cap)
+	if sig != _train_slot_sig or _train_strip == null or _train_strip.get_child_count() != wait_cap:
 		_train_slot_sig = sig
-		_rebuild_train_strip(slots, cap)
+		_rebuild_train_strip(waiting, wait_cap, 1)
 	else:
-		_refresh_train_strip_styles(slots, cap)
+		_refresh_train_strip_styles(waiting, wait_cap)
 
 
 func clear_train_queue() -> void:
@@ -330,7 +336,8 @@ func _train_slots_signature(slots: Array, cap: int) -> String:
 	return "|".join(parts)
 
 
-func _rebuild_train_strip(slots: Array, cap: int) -> void:
+## cancel_index_base：排队槽对应 TrainQueue 下标起点（通常 1，0 留给上行在训）。
+func _rebuild_train_strip(slots: Array, cap: int, cancel_index_base: int = 0) -> void:
 	if _train_strip == null:
 		return
 	while _train_strip.get_child_count() > 0:
@@ -339,7 +346,7 @@ func _rebuild_train_strip(slots: Array, cap: int) -> void:
 		c.queue_free()
 	for i in range(cap):
 		var data: Dictionary = slots[i] if i < slots.size() else {}
-		_train_strip.add_child(_make_train_slot(i, data, false))
+		_train_strip.add_child(_make_train_slot(cancel_index_base + i, data, false))
 
 
 func _refresh_train_strip_styles(slots: Array, cap: int) -> void:
@@ -627,6 +634,39 @@ func set_command_executing(action_id: String, executing: bool) -> void:
 func set_status(text: String) -> void:
 	if _status:
 		_status.text = text
+
+
+## 命令面板上方飘字（资源不够等）；同时写入状态栏。
+func show_command_tip(text: String) -> void:
+	set_status(text)
+	if _command_panel == null:
+		return
+	var tip := _command_panel.get_node_or_null("CommandFloatTip") as Label
+	if tip == null:
+		tip = Label.new()
+		tip.name = "CommandFloatTip"
+		tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tip.add_theme_color_override("font_color", Color(1.0, 0.35, 0.28))
+		tip.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		tip.add_theme_constant_override("outline_size", 4)
+		tip.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		tip.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		tip.offset_top = -28.0
+		tip.offset_bottom = -4.0
+		_command_panel.add_child(tip)
+	tip.text = text
+	tip.modulate = Color(1, 1, 1, 1)
+	tip.visible = true
+	var tw := tip.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(tip, "modulate:a", 0.0, 1.35).set_delay(0.55)
+	tw.tween_property(tip, "offset_top", -48.0, 1.35).set_delay(0.55)
+	tw.chain().tween_callback(func() -> void:
+		if is_instance_valid(tip):
+			tip.visible = false
+			tip.offset_top = -28.0
+	)
 
 
 func set_portrait_texture(_tex: Texture2D) -> void:

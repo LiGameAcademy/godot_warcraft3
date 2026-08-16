@@ -10,6 +10,9 @@ const DEFAULT_S = new Float32Array([1, 1, 1]);
 
 /**
  * Interpolate AnimVector at frame (WC3 millis). Linear between keys; clamp outside.
+ * Prefer {@link sampleAnimVectorInSequence} when baking a Sequence — WC3 only
+ * honors keys inside the playing interval; outside keys must not clamp in
+ * (Barracks Door00 only keys Stand Work → global clamp wrongly opens doors in Stand).
  * @param {import('war3-model').AnimVector | undefined} anim
  * @param {number} frame
  * @param {Float32Array} fallback
@@ -52,21 +55,55 @@ export function sampleAnimVector(anim, frame, fallback) {
 }
 
 /**
+ * Sequence-scoped bone TRS (WC3 runtime semantics).
+ * Only Keys with Frame in [seqStart, seqEnd] apply; if none → fallback (bind/default).
+ * Before the first in-sequence key → fallback.
+ * @param {import('war3-model').AnimVector | undefined} anim
+ * @param {number} frame
+ * @param {number} seqStart
+ * @param {number} seqEnd
+ * @param {Float32Array} fallback
+ * @returns {Float32Array}
+ */
+export function sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback) {
+  if (!anim?.Keys?.length) return fallback;
+  const keys = anim.Keys.filter((k) => k.Frame >= seqStart && k.Frame <= seqEnd);
+  if (!keys.length) return fallback;
+  return sampleAnimVector({ ...anim, Keys: keys }, frame, fallback);
+}
+
+/**
  * Evaluate WC3 node world matrices at frame (same rules as war3-model updateNode, no billboards).
+ * When seqStart/seqEnd are provided, bone TRS uses sequence-scoped sampling.
  * @param {import('war3-model').Node[]} nodes
  * @param {number} frame
+ * @param {number} [seqStart]
+ * @param {number} [seqEnd]
  * @returns {Float32Array[]} world matrices indexed by ObjectId
  */
-export function evaluateNodeWorldMatrices(nodes, frame) {
+export function evaluateNodeWorldMatrices(nodes, frame, seqStart, seqEnd) {
   /** @type {Map<number, import('war3-model').Node>} */
   const byId = new Map();
   for (const n of nodes) {
     if (n) byId.set(n.ObjectId, n);
   }
 
+  const scoped =
+    typeof seqStart === "number" &&
+    typeof seqEnd === "number" &&
+    Number.isFinite(seqStart) &&
+    Number.isFinite(seqEnd);
+
   /** @type {Float32Array[]} */
   const worlds = [];
   const visiting = new Set();
+
+  function sampleTrs(anim, fallback) {
+    if (scoped) {
+      return sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback);
+    }
+    return sampleAnimVector(anim, frame, fallback);
+  }
 
   function evalNode(id) {
     if (worlds[id]) return worlds[id];
@@ -81,9 +118,9 @@ export function evaluateNodeWorldMatrices(nodes, frame) {
       return worlds[id];
     }
 
-    const t = sampleAnimVector(node.Translation, frame, DEFAULT_T);
-    const r = sampleAnimVector(node.Rotation, frame, DEFAULT_R);
-    const s = sampleAnimVector(node.Scaling, frame, DEFAULT_S);
+    const t = sampleTrs(node.Translation, DEFAULT_T);
+    const r = sampleTrs(node.Rotation, DEFAULT_R);
+    const s = sampleTrs(node.Scaling, DEFAULT_S);
     const pivot = node.PivotPoint || DEFAULT_T;
 
     const local = mat4FromRotationTranslationScaleOrigin(

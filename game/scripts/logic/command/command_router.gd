@@ -487,7 +487,7 @@ func _abort_build_leave(node: Node3D) -> void:
 
 
 ## F2-6：建筑训练单位。building 是已建好的 Barracks/Altar/TownHall 等 Node3D。
-## 行为：校验 Trains 列表 + 扣金木 + 预占 fused + 挂 TrainQueue + enqueue。
+## 行为：校验竖切 Trains + Requires + 扣金木 + 预占 fused + 挂 TrainQueue + enqueue。
 ## 完工由 TrainQueue.training_completed 通知（Director 刷单位）；取消退款并由 Director 释人口。
 ## 队列上限 = TrainQueue.MAX_QUEUE（原作 7）。
 func issue_train(building: Node3D, unit_id: String) -> bool:
@@ -500,9 +500,25 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		return false
 	var d: Dictionary = building.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
-	var trains := CommandButtonCatalog.get_shared().get_trains(building_id)
+	var trains := TechPresence.filter_vertical_trains(
+		building_id, CommandButtonCatalog.get_shared().get_trains(building_id)
+	)
 	if trains.find(uid) < 0:
 		return false
+	var owner: int = int(d.get("owner", 0))
+	var unit_host: Node = building.get_parent()
+	var owned := TechPresence.collect_owned_buildings(unit_host, owner)
+	var missing := TechPresence.missing_requires(
+		owned, UnitRequiresCatalog.get_shared().get_requires(uid)
+	)
+	if not missing.is_empty():
+		return false
+	if TechPresence.is_hero_id(uid):
+		if (
+			TechPresence.count_heroes_with_queues(unit_host, owner)
+			>= TechPresence.MAX_HEROES_PER_PLAYER
+		):
+			return false
 	var time_sec: float = BuildingCatalog.get_build_time(uid)
 	var gold: int = BuildingCatalog.get_gold_cost(uid)
 	var lumber: int = BuildingCatalog.get_lumber_cost(uid)
@@ -521,7 +537,6 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 			stock.add_food_used(food)
 	var pos: Dictionary = d.get("position", {})
 	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
-	var owner: int = int(d.get("owner", 0))
 	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
 	if queue == null:
 		queue = TrainQueue.new()

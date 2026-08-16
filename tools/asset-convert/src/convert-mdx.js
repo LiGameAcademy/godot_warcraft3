@@ -185,6 +185,7 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
   const emittersIn = model.ParticleEmitters2 ?? [];
   const textures = model.Textures ?? [];
   const sequences = model.Sequences ?? [];
+  const allNodes = model.Nodes ?? [];
   const emitters = [];
 
   for (const pe of emittersIn) {
@@ -231,6 +232,12 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     };
     if (visKeys) entry.visibility_keys = visKeys;
     if (rateKeys) entry.emission_rate_keys = rateKeys;
+    // 发射器节点常有 Translation/Rotation（兵营门光在 Stand Work 才挪到门口）。
+    // 按 Sequence 烤 W*pivot → glTF，供运行时/编辑器切动画时改 position。
+    const pivotsBySeq = bakePe2PivotsBySequence(allNodes, pe, sequences);
+    if (pivotsBySeq && Object.keys(pivotsBySeq).length > 0) {
+      entry.pivot_by_sequence = pivotsBySeq;
+    }
     emitters.push(entry);
   }
 
@@ -248,6 +255,46 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
   // P3-10：原子写盘（.tmp → rename）—— 中途崩溃不留半成品 .pe2.json
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
+}
+
+/**
+ * 每个 Sequence 中点：发射器节点 worldMatrix * PivotPoint → glTF。
+ * @param {import('war3-model').Node[]} allNodes
+ * @param {object} pe
+ * @param {Array<{ Name?: string, Interval: ArrayLike<number> }>} sequences
+ * @returns {Record<string, number[]> | null}
+ */
+function bakePe2PivotsBySequence(allNodes, pe, sequences) {
+  const objectId = pe.ObjectId;
+  if (typeof objectId !== "number" || objectId < 0) return null;
+  const node = (allNodes || []).find((n) => n && n.ObjectId === objectId);
+  if (!node) return null;
+  const hasAnim =
+    Boolean(node.Translation?.Keys?.length) ||
+    Boolean(node.Rotation?.Keys?.length) ||
+    Boolean(node.Scaling?.Keys?.length);
+  if (!hasAnim) return null;
+  const pivot = node.PivotPoint || pe.PivotPoint || [0, 0, 0];
+  /** @type {Record<string, number[]>} */
+  const out = {};
+  for (const seq of sequences || []) {
+    const name = String(seq.Name || "").trim();
+    if (!name) continue;
+    const start = Number(seq.Interval?.[0]) || 0;
+    const end = Number(seq.Interval?.[1]) || 0;
+    const frame = start + (end - start) * 0.5;
+    const worlds = evaluateNodeWorldMatrices(allNodes, frame, start, end);
+    const m = worlds[objectId];
+    if (!m) continue;
+    const wx =
+      m[0] * pivot[0] + m[4] * pivot[1] + m[8] * pivot[2] + m[12];
+    const wy =
+      m[1] * pivot[0] + m[5] * pivot[1] + m[9] * pivot[2] + m[13];
+    const wz =
+      m[2] * pivot[0] + m[6] * pivot[1] + m[10] * pivot[2] + m[14];
+    out[name] = wc3ToGltfVec3(wx, wy, wz);
+  }
+  return out;
 }
 
 /**
@@ -1045,7 +1092,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       }
 
       for (const frame of frames) {
-        const worlds = evaluateNodeWorldMatrices(allNodes, frame);
+        const worlds = evaluateNodeWorldMatrices(allNodes, frame, start, end);
         const timeSec = (frame - start) / 1000;
         for (const bone of boneNodes) {
           const world = worlds[bone.ObjectId] || mat4Identity();

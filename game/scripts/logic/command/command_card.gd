@@ -69,7 +69,11 @@ static func _place(card: Array[Dictionary], entry: Dictionary) -> void:
 ##   include_locomotion（默认：非建筑 true）
 ##   build_allowlist / building_ids（可造列表；主卡只显示 Build 入口）
 ##   build_menu_open（true → 二级建筑面板）
-##   can_afford / building_executing（与 building_ids 等长）
+##   can_afford（历史名）：建造按钮是否解锁/可点；仅 Requires，不含资源
+##   building_executing（与 building_ids 等长）
+##   build_disabled_reasons（与 building_ids 等长；未解锁 tip）
+##   owned_buildings（typeId→count；训练 Requires 判定）
+##   hide_trains（true：隐藏训兵按钮，仍可显示集结点；建造中用）
 ##   worker_race（可选；空则按 human）
 static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionary]:
 	var uid := unit_id.strip_edges()
@@ -98,16 +102,26 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			if qid.is_empty():
 				continue
 			queued[qid] = int(queued.get(qid, 0)) + 1
-	for tid in cat.get_trains(uid):
-		var exec := training_unit == tid or queued.has(tid)
-		_place(
-			card,
-			cat.unit_hud_entry(
-				tid,
-				ACTION_TRAIN_PREFIX + tid,
-				{"enabled": true, "executing": exec}
+	var owned: Dictionary = state.get("owned_buildings", {}) as Dictionary
+	if owned == null:
+		owned = {}
+	var hero_slots_full := bool(state.get("hero_slots_full", false))
+	var hide_trains := bool(state.get("hide_trains", false))
+	var trains := TechPresence.filter_vertical_trains(uid, cat.get_trains(uid))
+	if not hide_trains:
+		for tid in trains:
+			var exec := training_unit == tid or queued.has(tid)
+			var missing := TechPresence.missing_requires(
+				owned, UnitRequiresCatalog.get_shared().get_requires(tid)
 			)
-		)
+			var train_ok := missing.is_empty()
+			var opts := {"enabled": train_ok, "executing": exec}
+			if not train_ok:
+				opts["disabled_reason"] = TechPresence.requires_tip(missing)
+			elif TechPresence.is_hero_id(tid) and hero_slots_full:
+				opts["enabled"] = false
+				opts["disabled_reason"] = "英雄数量已达上限"
+			_place(card, cat.unit_hud_entry(tid, ACTION_TRAIN_PREFIX + tid, opts))
 
 	var carrying := bool(state.get("carrying", false))
 	for abil_id in cat.get_abil_list(uid):
@@ -116,8 +130,8 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	if not building_ids.is_empty():
 		_place_build_opener(card, cat, str(state.get("worker_race", "human")))
 
-	# 可训练建筑：集结点（CmdRally）
-	if not cat.get_trains(uid).is_empty():
+	# 可训练建筑：集结点（CmdRally）；建造中也保留
+	if not trains.is_empty():
 		_place(
 			card,
 			cat.command_hud_entry(
@@ -140,25 +154,32 @@ static func for_build_menu(
 	var building_executing: PackedInt32Array = state.get(
 		"building_executing", PackedInt32Array()
 	) as PackedInt32Array
+	var disabled_reasons: PackedStringArray = state.get(
+		"build_disabled_reasons", PackedStringArray()
+	) as PackedStringArray
 	if can_afford == null:
 		can_afford = PackedInt32Array()
 	if building_executing == null:
 		building_executing = PackedInt32Array()
+	if disabled_reasons == null:
+		disabled_reasons = PackedStringArray()
 	for i in range(building_ids.size()):
 		var bid := str(building_ids[i])
 		var ok := i < can_afford.size() and int(can_afford[i]) != 0
 		var exec := i < building_executing.size() and int(building_executing[i]) != 0
-		var entry := cat.unit_hud_entry(
-			bid,
-			ACTION_BUILD_PREFIX + bid,
-			{
-				"enabled": ok,
-				"executing": exec,
-				"cost_line": _building_cost_line(bid),
-			}
-		)
+		var reason := ""
+		if i < disabled_reasons.size():
+			reason = str(disabled_reasons[i]).strip_edges()
+		var opts := {
+			"enabled": ok,
+			"executing": exec,
+			"cost_line": _building_cost_line(bid),
+		}
+		if not ok and not reason.is_empty():
+			opts["disabled_reason"] = reason
+		var entry := cat.unit_hud_entry(bid, ACTION_BUILD_PREFIX + bid, opts)
 		if entry.is_empty():
-			entry = _build_button_fallback(bid, ok, exec, -1)
+			entry = _build_button_fallback(bid, ok, exec, -1, reason)
 		_place(card, entry)
 	_place_build_cancel(card, cat)
 	return card
@@ -327,11 +348,11 @@ static func peasant_with_build(
 	unit_id: String = "hpea",
 	build_menu_open: bool = false
 ) -> Array[Dictionary]:
-	## building_ids 为空：Builds ∩ F2 锁死表（顺序跟 UnitFunc Builds）
+	## building_ids 为空：Builds ∩ 竖切可造表（顺序跟 UnitFunc Builds）
 	var ids := building_ids
 	if ids.is_empty():
 		var allow := PackedStringArray()
-		for bid in BuildingCatalog.F2_BUILDING_IDS:
+		for bid in BuildingCatalog.VERTICAL_BUILDING_IDS:
 			allow.append(str(bid))
 		ids = _cat().filter_builds(unit_id, allow)
 	return for_unit(
@@ -362,11 +383,18 @@ static func _building_cost_line(building_id: String) -> String:
 
 ## Catalog 缺 UI 行时的极简兜底（不再写死中文名/图标表；显示 id）
 static func _build_button_fallback(
-	building_id: String, can_afford: bool, executing: bool, slot: int
+	building_id: String,
+	can_afford: bool,
+	executing: bool,
+	slot: int,
+	disabled_reason: String = ""
 ) -> Dictionary:
 	var tip := "建造 %s\n%s" % [building_id, _building_cost_line(building_id)]
 	if not can_afford:
-		tip += "\n|cffff6060资源不足|r"
+		var reason := disabled_reason.strip_edges()
+		if reason.is_empty():
+			reason = "资源不足"
+		tip += "\n|cffff6060%s|r" % reason
 	elif executing:
 		tip += "\n|cff00ff00当前：执行中|r"
 	var resolved_slot := slot

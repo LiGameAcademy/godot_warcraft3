@@ -3,8 +3,8 @@
 > 目标：按**真实开局游玩顺序**，在 Echo Isles 上跑通「采矿伐木 → 基建 → 英雄 → 兵营产兵 → 科技分支 → 大法师技能」闭环。  
 > 范围：**仅人族 Melee 最小集**；不做完整科技树、不做多族、不做联机。  
 > 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [HUD.md](HUD.md)  
-> 最后更新：2026-08-09  
-> **当前进度：F0 + F1 已落地 → 下一步 F2 建造**
+> 最后更新：2026-08-16  
+> **当前进度：F0–F6 已接线。下一步优先补战斗框架（C0–C3：攻击 / 攻移 / 射程 / 攻防类型与伤害），再 F8 顶盾 → F10 技能。Keep 与铁匠武器升级后置。**
 
 ---
 
@@ -16,14 +16,15 @@
 | Melee 开局 | `melee_bootstrap.gd` + `GameSession` + `PlayerStock` | 主城/农民/金木/人口已有 |
 | 选中 / 移动 / Stop | `UnitSelector` + `PathQuery` + `UnitNavigator` | 阶段 D 够用 |
 | 命令层 | `CommandRouter` + `UnitOrder` + `SmartTarget` | 右键智能按能力匹配 |
-| 采集金/木 | `HarvestController` + `CarrySlot` + `TreeRegistry` | F1 闭环；智能送回主城 |
+| 采集金/木 | `HarvestController` + `CarrySlot` + `TreeRegistry` | F1 闭环；智能送回主城 / Mill |
+| 建造 | BuildSite + 人族 Strategy | `hhou/halt/hbar/hlum/hbla` |
+| 训练 + 集结 | `TrainQueue` + `BuildingRally` | 祭坛 `Hamg`；兵营 `hfoo`/`hrif` |
+| Requires | `UnitRequiresCatalog` + `TechPresence` | 按钮置灰 +「需要：…」 |
 | 资源 HUD | `GameHud.set_resources` / `bind_stock` | 金木人口可刷 |
-| 命令格 | `CommandCard` + 面板交付/采集/移动 | 主城仍有调试标签 |
-| 建造判定雏形 | `unit_placement_rules.gd`（编辑器侧） | **游戏侧需抽/复用 → F2** |
-| 数值权威 | `UnitBalanceDef` / `UnitDataDef` / `UnitUiDef` / `UnitAbilitiesDef` | 造价、人口、技能表 |
-| 金矿 / 可伐树 | `ngol` · `TreeRegistry` + doodad promote | 树桩 geosetvis 已对齐 |
+| 命令格 | `CommandCard` | 建造二级面板 / 训练格 |
+| 数值权威 | `UnitBalanceDef` / `UnitWeaponsDef` / … | 造价、人口、武器表（战斗待接） |
 
-**下一步缺口：** 建造队列（F2）→ 训练（F3–F4）→ 科技/技能。  
+**下一步缺口：** **战斗框架 C0–C3**（见 §1）→ 顶盾 F8–F9 → 大法师技能 F10。  
 **Present 并行：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `snap_stand_geoset_visibility`，见 §5）。
 
 ---
@@ -33,18 +34,23 @@
 ```text
 F0  命令与单位运行时骨架     ✅ Order / Smart / Router
 F1  采集金币 + 采集木材      ✅ 农民 ↔ 金矿 / 树木 / 送回
-F2  建造祭坛、农场、兵营     ← 下一步：农民建造 + 占位 + 完工
-F3  召唤大法师               祭坛训练英雄
-F4  训练步兵                 兵营产 hfoo
-F5  建造伐木场               木材回收点（效率/路径）
-F6  建造铁匠铺 → 解锁火枪手  需求建筑 + 训练 hrif
-F7  主城升级                 htow → hkee（本竖切到 Keep 即可）
-F8  研究顶盾科技             Barracks 研究 Rhde
+F2  建造祭坛、农场、兵营     ✅
+F3  召唤大法师               ✅ 祭坛训 Hamg（英雄上限 1）
+F4  训练步兵                 ✅ 兵营产 hfoo
+F5  建造伐木场               ✅ hlum；收木
+F6  建造铁匠铺 → 解锁火枪手  ✅ Requires + hrif（铁匠科技后置）
+─── 战斗插入（优先于科技/技能）───
+C0  攻击命令 + 自动接敌      ← 下一步
+C1  攻击移动（Attack-Move）
+C2  射程 / 冷却 / 面向 / 弹道壳
+C3  攻防类型 + 伤害公式（读 UnitWeapons / UnitBalance）
+F7  主城升级                 后置 htow → hkee
+F8  研究顶盾科技             Barracks 研究 Rhde（依赖 C*）
 F9  步兵切换顶盾             Adef 开/关
-F10 大法师技能               先原生子集，再评估 AbilitySystem 插件
+F10 大法师技能               先原生子集（依赖 C3 伤害管线）
 ```
 
-编号即推荐实现顺序；**F0/F1 已完成，主线进入 F2**。
+编号即推荐实现顺序；**主线进入 C0**。铁匠铺武器/护甲升级不挡竖切，后置。
 
 游玩验收剧本（人工点一遍）：
 
@@ -55,9 +61,10 @@ F10 大法师技能               先原生子集，再评估 AbilitySystem 插�
 5. 兵营训出 Footman  
 6. 造 Lumber Mill；伐木仍可交回（或效率可见差异）  
 7. 造 Blacksmith 后兵营出现 Rifleman  
-8. 主城升 Keep  
-9. 兵营研究 Defend；步兵可切换顶盾  
-10. 大法师能放至少 1 个主动技能（建议先 Water Elemental 或 Blizzard）
+8. **攻击 / 攻移：步兵可攻击野怪或敌单位，按射程与伤害公式扣血致死**  
+9. 主城升 Keep（后置可跳）  
+10. 兵营研究 Defend；步兵可切换顶盾  
+11. 大法师能放至少 1 个主动技能（建议先 Water Elemental 或 Blizzard）
 
 ---
 
@@ -74,7 +81,7 @@ F10 大法师技能               先原生子集，再评估 AbilitySystem 插�
 | 铁匠铺 | `hbla` | 解锁火枪手（建筑需求） |
 | 步兵 | `hfoo` | 顶盾载体 |
 | 火枪手 | `hrif` | 需 Barracks + Blacksmith |
-| 大法师 | `hamg` | 英雄 |
+| 大法师 | `Hamg` | 英雄（UnitFunc/Balance 主键大小写敏感） |
 | 金矿 | `ngol` | 中立可采集 |
 | 顶盾科技 | `Rhde` | UpgradeData |
 | 顶盾技能 | `Adef` | 步兵姿态 |
@@ -306,13 +313,13 @@ game/scripts/
 
 **玩法**
 
-- 选中 `halt` → 训练 `hamg`  
+- 选中 `halt` → 训练 `Hamg`  
 - 条件：金木、人口（英雄 `fused`）、祭坛空闲、**每位玩家限 1 英雄**（Melee 简化：先限 1）  
 - 训练时间读 Balance；完成后祭坛旁刷出英雄并选中  
 
 **验收**
 
-- 祭坛可训出一只 `hamg`；资源/人口正确；训练中命令卡显示进度  
+- 祭坛可训出一只 `Hamg`；资源/人口正确；训练中命令卡显示进度  
 
 **依赖**：F2（有祭坛 + 足够 Farm）
 
@@ -363,6 +370,74 @@ game/scripts/
 - 无铁匠铺时不能训火枪手；有铁匠铺后可训，造价/时间正确  
 
 **依赖**：F2 建造 + F4 训练框架
+
+---
+
+### C0–C3 · 战斗框架（插入 · 优先于 F8）
+
+> **主线下一步。** 顶盾与技能都依赖「能打出真实伤害」；先补战斗再回头做 F8–F10。
+
+#### C0 · 攻击命令 + 自动接敌
+
+**玩法**
+
+- 命令卡 / 快捷键：`Attack`（点目标）  
+- Smart 右键敌方单位 → `Attack`  
+- 目标超出射程：追击直至进入 `range`（+ `rngBuff` 容差）  
+- 目标死亡 / 不可见 / 失效：停攻或按 WC3 简化为 Stop  
+
+**验收**
+
+- 步兵对野怪或敌农民：下 Attack 后走入射程并反复出手；选中目标可被取消（Stop / 新命令）
+
+#### C1 · 攻击移动（Attack-Move）
+
+**玩法**
+
+- `Attack-Move` 到地面点：沿途索敌（读 `acquire`），有敌则切入 Attack，清场后继续走向目标点  
+- 与普通 Move 区分：Move 不主动攻击  
+
+**验收**
+
+- 农民/步兵 A 键点地面，途经野怪会停下打；打完继续走
+
+#### C2 · 射程 / 冷却 / 面向 / 弹道壳
+
+**玩法**
+
+- 读 `UnitWeaponsDef`：`rangeN1`、`cool1`、`minRange`、`weapTp1`  
+- 近战 `instant`：冷却到点瞬时结算  
+- 远程 `missile`：可先直线假弹道或瞬时+音效，完整弹道 P1  
+- 出手时面向目标（yaw）  
+
+**验收**
+
+- 步兵近战贴身才打；火枪手在射程外追击、进距后开火；冷却可见（不连发）
+
+#### C3 · 攻防类型 + 伤害公式
+
+**玩法**
+
+- 攻击类型 `atkType1` × 护甲类型 `defType` → 伤害倍率表（对齐 WC3）  
+- 基础伤害：`dice × sides` 骰 + `dmgplus`（读武器表）；再乘攻防表、护甲减伤  
+- 结算写入 `UnitLife`；HP≤0 → 死亡（清选中；播 Death / 尸体 Geoset 可接 Present）  
+
+**验收**
+
+- 同武器打不同护甲，伤害差异符合表；单位可被打死并从可点选中移除  
+
+**复用锚点**
+
+| 已有 | 用途 |
+|------|------|
+| `UnitWeaponsDef` / `UnitBalanceDef` | 射程、冷却、攻防类型、骰伤害 |
+| `UnitLife` | 扣血权威 |
+| `CommandRouter` + `UnitOrder` + `SmartTarget` | 新 Order：Attack / AttackMove |
+| 树木 `apply_damage` 模式 | 伤害管线参考（单位版） |
+
+**代码落点**：`game/scripts/logic/combat/`（新建）
+
+**依赖**：F0 命令骨架；建议有可训 `hfoo`/`hrif`（F4/F6）便于验收
 
 ---
 
@@ -471,8 +546,8 @@ game/scripts/
 | 需求检查（建筑/科技） | F6/F8 | `Requirements` 查询 |
 | Rally point | F4 P1 | 右键设集结点 |
 | 单位 Geoset 显隐 | Present 并行 | Stand 藏尸体；Death 显尸体（同树桩管线） |
-| 死亡与尸体逻辑 | 战斗前 | 玩法层可后置；**Present 须先藏好** |
-| 攻击与伤害 | F10 前可无 | 暴风雪可先「只特效+假数字」 |
+| 死亡与尸体逻辑 | C3 后 | 扣血致死 → 清选中；Present 尸体 Geoset 已就绪 |
+| 攻击与伤害 | **C0–C3（优先）** | Attack / Attack-Move；射程；`atkType`×`defType`；读 `UnitWeaponsDef` |
 
 ### 5.1 野怪 / 小动物尸体 Geoset（Present）
 
@@ -510,11 +585,12 @@ WC3 单位 MDX 常把**活体 + 尸体 + 武器变体**放在同一模型，用 
 | G1 | Order 骨架 + 智能右键 | F0 | ✅ |
 | G2 | 采矿 + 伐木 + 交货 + CarrySlot | F1 | ✅ |
 | G2.5 | 野怪/小动物 Stand 藏尸体 Geoset | Present | ✅ 代码+Echo 资产；其余 Creeps 按需补转 |
-| G3 | 建造三件套 + Farm 人口 | F2 | ← 玩法主线下一步 |
-| G4 | 祭坛训英雄 + 兵营训步兵 | F3–F4 | |
-| G5 | Mill + Blacksmith + 火枪手 | F5–F6 | |
-| G6 | Keep 升级 + Defend 研究/切换 | F7–F9 | |
-| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 | |
+| G3 | 建造三件套 + Farm 人口 | F2 | ✅ |
+| G4 | 祭坛训英雄 + 兵营训步兵 | F3–F4 | ✅ |
+| G5 | Mill + Blacksmith + 火枪手 Requires | F5–F6 | ✅ |
+| **G5.5** | **战斗：Attack / Attack-Move / 射程 / 攻防伤害** | **C0–C3** | **← 下一步** |
+| G6 | Keep 升级 + Defend 研究/切换 | F7–F9 | 依赖 C* |
+| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 | 依赖 C3 |
 
 每迭代验收以 §1 剧本对应条目为准；合并前 F6 跑 `game_main` 不破现有移动。
 
@@ -530,13 +606,15 @@ game/scripts/logic/
   economy/          # Harvest、Dropoff
   construction/     # BuildOrder、Placement（可调用 map/logic 纯函数）
   production/       # TrainQueue
-  tech/             # Upgrade research
+  tech/             # Upgrade research + TechPresence
+  combat/           # AttackOrder、DamageFormula、Acquire（C0–C3）
   ability/          # 原生技能；插件适配器也放这
 ```
 
 数据继续：
 
 - 造价/时间/人口 → `UnitBalanceDef` / `UpgradeDataDef`  
+- 武器/射程/伤害骰 → `UnitWeaponsDef`；护甲类型 → `UnitBalanceDef.defType`  
 - 技能列表 → `UnitAbilitiesDef` + `AbilityDataDef`  
 - 模型/命令卡艺术 → `UnitUiDef` + 既有 Func/Strings（Catalog）  
 
@@ -556,3 +634,4 @@ game/scripts/logic/
 | 2026-08-08 | 右键智能：`SmartTarget` + `issue_smart`；混选时能采的采、不能的走目标点；完整 UnitCapability 后置 |
 | 2026-08-09 | F0+F1 验收通过；玩法主线进 F2；野怪/小动物尸体 Geoset 走 geosetvis+Stand snap（与树桩同管线） |
 | 2026-08-09 | F2 拆 7 commit（docs/data/logic×3/present/test）；锁 3 建筑 `hhou`/`halt`/`hbar`；开 `feature/building-system` 分支 |
+| 2026-08-16 | F0–F6 竖切接线完成；下一步插入 **C0–C3 战斗框架**（攻击/攻移/射程/攻防伤害），再 F8 顶盾与 F10 技能 |
