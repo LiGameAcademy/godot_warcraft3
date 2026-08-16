@@ -3,7 +3,9 @@ extends RefCounted
 
 ## 命令层入口：合法 UnitOrder → 可移动单位 → UnitNavigator / HarvestController。
 ## 不读 InputEvent；输入由 GameDirector 解析目标后调用本类。
-## 右键智能：issue_smart(SmartTarget) — 全体下发，按单位能力匹配动作（不能则降级 Move）。
+##
+## 右键智能 `issue_smart`：调度 SmartHandlerRegistry（能力 × 目标）。
+## 优先级：送回/采集/加入建造 → 集结 → 移动。新能力加 Handler，勿改本类 match。
 
 signal stop_issued(count: int)
 signal move_issued(moved: int, failed: int, goal_wc3: Vector2)
@@ -14,6 +16,7 @@ signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
 signal train_issued(unit_id: String) ## F2-6: 训练令下给建筑
 
 const META_ORDER_QUEUE := "order_queue"
+const _SmartHandlers := preload("res://game/scripts/logic/command/smart_handler_registry.gd")
 
 var _path_query: PathQuery = null
 var _crowd_query: UnitCrowdQuery = null
@@ -63,18 +66,35 @@ func queue_for(unit: Node) -> OrderQueue:
 	return nq
 
 
-## 过滤可接受移动/停止的单位（跳过建筑、无效节点）。
+## 过滤可接受移动/停止的单位（跳过建筑、可训建筑、无效节点）。
 func filter_movers(selected: Array) -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	for n in selected:
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var node := n as Node3D
+		# 可训建筑 / 建造中训练建筑 一律不进移动池（避免主城右键被当成移动）
+		if BuildingRally.can_set_rally(node):
+			continue
 		var d: Dictionary = node.get_meta("unit_data", {})
 		var tid := str(d.get("typeId", ""))
-		if BuildingVisual.is_building(tid):
+		if BuildingVisual.is_building(tid) or BuildingCatalog.is_building(tid):
+			continue
+		if not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
 			continue
 		out.append(node)
+	return out
+
+
+## 过滤可设集结点的建筑。
+func filter_rally_buildings(selected: Array) -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		if BuildingRally.can_set_rally(node):
+			out.append(node)
 	return out
 
 
@@ -151,8 +171,8 @@ func issue_stop(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 	return n_stop
 
 
-## 智能交互：同一 SmartTarget 广播给框选单位，各自按能力匹配具体 Order。
-## 返回 { ok, kind, harvested, returned, moved, failed, goal_wc3 }。
+## 智能交互：同一 SmartTarget → Handler 按优先级认领并执行。
+## 返回 { ok, kind, harvested, returned, moved, failed, rallied, built, goal_wc3 }。
 func issue_smart(
 	selected: Array,
 	target: SmartTarget,
@@ -165,56 +185,66 @@ func issue_smart(
 		"returned": 0,
 		"moved": 0,
 		"failed": 0,
+		"rallied": 0,
+		"built": 0,
 		"goal_wc3": Vector2.INF,
 	}
 	if target == null:
 		return empty
 	var movers := filter_movers(selected)
-	if movers.is_empty():
+	var rally_bldgs := filter_rally_buildings(selected)
+	if movers.is_empty() and rally_bldgs.is_empty():
 		return empty
 	var out := empty.duplicate()
 	out["kind"] = target.kind_name()
 	out["goal_wc3"] = target.goal_wc3
-	match target.kind:
-		SmartTarget.Kind.GROUND:
-			var mr := _issue_move_subset(movers, target.goal_wc3, source)
-			out["moved"] = int(mr.get("moved", 0))
-			out["failed"] = int(mr.get("failed", 0))
-			out["ok"] = out["moved"] > 0 or out["failed"] > 0
-		SmartTarget.Kind.GOLD_MINE:
-			var parts := _split_can_harvest(movers)
-			out["harvested"] = issue_harvest_gold(parts["special"], target.node, source)
-			var mr2 := _issue_move_subset(parts["fallback"], target.goal_wc3, source)
-			out["moved"] = int(mr2.get("moved", 0))
-			out["failed"] = int(mr2.get("failed", 0))
-			out["ok"] = out["harvested"] > 0 or out["moved"] > 0 or out["failed"] > 0
-		SmartTarget.Kind.TREE:
-			var parts_t := _split_can_harvest(movers)
-			out["harvested"] = issue_harvest_lumber(parts_t["special"], target.tree_cn, source)
-			var mr3 := _issue_move_subset(parts_t["fallback"], target.goal_wc3, source)
-			out["moved"] = int(mr3.get("moved", 0))
-			out["failed"] = int(mr3.get("failed", 0))
-			out["ok"] = out["harvested"] > 0 or out["moved"] > 0 or out["failed"] > 0
-		SmartTarget.Kind.DROPOFF:
-			var parts_d := _split_can_return_to(movers, target.node)
-			out["returned"] = issue_return_goods(parts_d["special"], source, target.node)
-			var mr4 := _issue_move_subset(parts_d["fallback"], target.goal_wc3, source)
-			out["moved"] = int(mr4.get("moved", 0))
-			out["failed"] = int(mr4.get("failed", 0))
-			out["ok"] = out["returned"] > 0 or out["moved"] > 0 or out["failed"] > 0
-		SmartTarget.Kind.BUILD_SITE:
-			var joined := issue_join_build(movers, target.node, source)
-			out["built"] = joined
-			if joined <= 0:
-				var mr5 := _issue_move_subset(movers, target.goal_wc3, source)
-				out["moved"] = int(mr5.get("moved", 0))
-				out["failed"] = int(mr5.get("failed", 0))
-			out["ok"] = joined > 0 or out["moved"] > 0 or out["failed"] > 0
-		_:
-			return empty
+	for h in _SmartHandlers.all_sorted():
+		if not h.applies_to(target):
+			continue
+		var claimed: Dictionary = h.claim(movers, rally_bldgs, target, self)
+		var cm: Array = claimed.get("movers", [])
+		var cr: Array = claimed.get("rally", [])
+		if cm.is_empty() and cr.is_empty():
+			continue
+		_merge_smart_partial(out, h.execute(cm, cr, target, source, self))
+	out["ok"] = (
+		int(out["harvested"]) > 0
+		or int(out["returned"]) > 0
+		or int(out["moved"]) > 0
+		or int(out["failed"]) > 0
+		or int(out["rallied"]) > 0
+		or int(out["built"]) > 0
+	)
 	if out["ok"]:
 		smart_issued.emit(out)
 	return out
+
+
+func _merge_smart_partial(out: Dictionary, part: Dictionary) -> void:
+	if part.is_empty():
+		return
+	for k in ["harvested", "returned", "moved", "failed", "rallied", "built"]:
+		out[k] = int(out.get(k, 0)) + int(part.get(k, 0))
+
+
+## 对可训建筑写入集结 meta（按目标 Kind）。返回实际写入成功数。
+func issue_rally_subset(buildings: Array[Node3D], target: SmartTarget) -> int:
+	if target == null or target.goal_wc3 == Vector2.INF:
+		return 0
+	var n := 0
+	for b in buildings:
+		if b == null or not is_instance_valid(b):
+			continue
+		match target.kind:
+			SmartTarget.Kind.GOLD_MINE:
+				BuildingRally.set_gold_mine(b, target.node, target.goal_wc3)
+			SmartTarget.Kind.TREE:
+				BuildingRally.set_tree(b, target.tree_cn, target.goal_wc3)
+			_:
+				BuildingRally.set_ground(b, target.goal_wc3)
+		if BuildingRally.has_rally(b):
+			n += 1
+	return n
 
 
 ## 群体散开落点后各自 A*。返回 { moved, failed, goal_wc3, movers }。
@@ -394,7 +424,7 @@ func _same_owner(a: Node, b: Node) -> bool:
 
 
 ## 能采（农民）vs 仅移动。远期可换成 UnitCapability。
-func _split_can_harvest(movers: Array[Node3D]) -> Dictionary:
+func split_can_harvest(movers: Array[Node3D]) -> Dictionary:
 	var special: Array = []
 	var fallback: Array = []
 	for node in movers:
@@ -406,7 +436,7 @@ func _split_can_harvest(movers: Array[Node3D]) -> Dictionary:
 
 
 ## 能向该建筑送回负重 vs 仅移动。
-func _split_can_return_to(movers: Array[Node3D], building: Node3D) -> Dictionary:
+func split_can_return_to(movers: Array[Node3D], building: Node3D) -> Dictionary:
 	var special: Array = []
 	var fallback: Array = []
 	for node in movers:
@@ -430,7 +460,7 @@ func _split_can_return_to(movers: Array[Node3D], building: Node3D) -> Dictionary
 	return {"special": special, "fallback": fallback}
 
 
-func _issue_move_subset(
+func issue_move_subset(
 	units: Array,
 	goal_wc3: Vector2,
 	source: int

@@ -34,7 +34,7 @@ enum Mode {
 ## 初始种族；开局后可由 GameDirector.set_race() 覆盖
 @export var race: String = "human"
 ## true：本节点自己吃右键闪 MOVE（开发期）；正式应由命令层调 flash_move
-@export var auto_flash_move_on_rmb: bool = true
+@export var auto_flash_move_on_rmb: bool = false
 
 var _sheet: Texture2D
 var _atlas: AtlasTexture

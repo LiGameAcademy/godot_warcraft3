@@ -73,6 +73,8 @@ var _move_targeting: bool = false
 var _harvest_targeting: bool = false
 ## 点了「集结点」后，等待左键指定地点/矿/树
 var _rally_targeting: bool = false
+## 选中可训建筑时显示的集结旗（长驻，复用）
+var _rally_flag: RallyFlagFx = null
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
@@ -363,8 +365,7 @@ func _input(event: InputEvent) -> void:
 	if _rally_targeting and event is InputEventMouseButton:
 		var mb_r := event as InputEventMouseButton
 		if mb_r.pressed and mb_r.button_index == MOUSE_BUTTON_LEFT:
-			if _issue_set_rally_at_screen(mb_r.position, UnitOrder.Source.TARGETING):
-				_flash_cursor_move()
+			_issue_set_rally_at_screen(mb_r.position, UnitOrder.Source.TARGETING)
 			_set_rally_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
@@ -747,12 +748,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_set_build_menu_open(false)
 		get_viewport().set_input_as_handled()
 		return
-	# 右键智能命令优先于调试热键：金矿→采集，空地→移动。
-	if enable_move_command and event is InputEventMouseButton:
+	# 右键智能：解析目标 → CommandRouter.issue_smart（能力优先级：采集/送回/建造 → 集结 → 移动）。
+	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			# Shift+RMB → 队形排开（F3）；RMB → 智能（master 框架：移动或采集）
-			if mb.shift_pressed:
+			if mb.shift_pressed and enable_move_command:
 				if _issue_group_move_command(mb.position, FormationFollow.FORMATION_RECT):
 					get_viewport().set_input_as_handled()
 					return
@@ -830,8 +830,8 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	return n_stop > 0
 
 
-## 右键智能：识别 SmartTarget → CommandRouter.issue_smart（按单位能力匹配）。
-## 仅选中可训建筑时：右键改为设集结点（WC3）。
+## 右键智能：屏幕点 → SmartTarget → CommandRouter.issue_smart。
+## 能力优先级在 Router 内：特殊交互 → 移动 → 集结（可并行）。
 func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector == null or _command_router == null:
 		return false
@@ -840,20 +840,28 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	var selected: Array = unit_selector.call("get_selected")
 	if selected.is_empty():
 		return false
-	if _command_router.filter_movers(selected).is_empty():
-		return _issue_set_rally_at_screen(screen_pos, source)
 	var target := _resolve_smart_target(screen_pos, selected)
-	if target == null:
+	if target == null or target.goal_wc3 == Vector2.INF:
 		if game_hud:
 			game_hud.set_status("命令：未点到有效目标")
 		return false
 	var result := _command_router.issue_smart(selected, target, source)
 	if not bool(result.get("ok", false)):
+		# 仅选可训建筑却未写出集结时给明确提示（避免「右键无反应」）
+		if _command_router != null and not _command_router.filter_rally_buildings(selected).is_empty():
+			if game_hud:
+				game_hud.set_status("集结点：未能设置（目标无效？）")
 		return false
-	_flash_cursor_move()
 	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
-	if int(result.get("moved", 0)) > 0 and goal != Vector2.INF:
-		_spawn_move_confirm(goal)
+	var moved := int(result.get("moved", 0))
+	var rallied := int(result.get("rallied", 0))
+	# 移动反馈与集结反馈分离：纯集结只出旗，不播移动确认箭/光标
+	if moved > 0:
+		_flash_cursor_move()
+		if goal != Vector2.INF:
+			_spawn_move_confirm(goal)
+	if rallied > 0:
+		_sync_rally_flag_for_selection()
 	if game_hud:
 		game_hud.set_status(_format_smart_status(result))
 	_refresh_command_card()
@@ -878,7 +886,7 @@ func _issue_set_rally_at_screen(screen_pos: Vector2, source: int) -> bool:
 		return false
 	for b in buildings:
 		_apply_rally_from_smart(b, target)
-	_spawn_move_confirm(target.goal_wc3)
+	_sync_rally_flag_for_selection()
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL or source == UnitOrder.Source.TARGETING else "右键"
 		match target.kind:
@@ -1087,7 +1095,9 @@ func _format_smart_status(result: Dictionary) -> String:
 	var harvested := int(result.get("harvested", 0))
 	var returned := int(result.get("returned", 0))
 	var moved := int(result.get("moved", 0))
+	var rallied := int(result.get("rallied", 0))
 	var kind := str(result.get("kind", ""))
+	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
 	match kind:
 		"GoldMine":
 			if harvested > 0 and moved > 0:
@@ -1108,7 +1118,16 @@ func _format_smart_status(result: Dictionary) -> String:
 			var built := int(result.get("built", 0))
 			if built > 0:
 				return "加入建造 · %d 单位" % built
-	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
+	if rallied > 0 and moved > 0 and goal != Vector2.INF:
+		return "智能 · 集结 %d · 移动 %d → (%.0f, %.0f)" % [rallied, moved, goal.x, goal.y]
+	if rallied > 0 and goal != Vector2.INF:
+		match kind:
+			"GoldMine":
+				return "集结点 → 金矿 · %d 建筑" % rallied
+			"Tree":
+				return "集结点 → 树木 · %d 建筑" % rallied
+			_:
+				return "集结点 → (%.0f, %.0f) · %d 建筑" % [goal.x, goal.y, rallied]
 	if moved > 0 and goal != Vector2.INF:
 		return "移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved]
 	if int(result.get("failed", 0)) > 0 and goal != Vector2.INF:
@@ -1364,8 +1383,11 @@ func _set_harvest_targeting(active: bool) -> void:
 func _set_rally_targeting(active: bool) -> void:
 	_rally_targeting = active
 	_sync_selector_enabled_for_targeting()
+	# 不用移动瞄准光标，避免「集结=移动」观感；仅靠状态栏提示
 	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
-		game_cursor.call("set_move_targeting", active)
+		game_cursor.call("set_move_targeting", false)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call("set_mode", Wc3GameCursor.Mode.IDLE)
 
 
 func _sync_selector_enabled_for_targeting() -> void:
@@ -1392,6 +1414,69 @@ func _spawn_move_confirm(goal_wc3: Vector2) -> void:
 	fx.setup(cache)
 	# 当前只有移动命令；攻击移动接上后改传 MoveConfirmFx.Kind.ATTACK
 	fx.play_at_wc3(goal_wc3, _heightfield, MoveConfirmFx.Kind.MOVE)
+
+
+func _ensure_rally_flag() -> RallyFlagFx:
+	if _rally_flag != null and is_instance_valid(_rally_flag):
+		return _rally_flag
+	if map_root == null:
+		return null
+	var fx := RallyFlagFx.new()
+	fx.name = "RallyFlagFx"
+	map_root.add_child(fx)
+	var cache: MapModelCache = null
+	if map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	fx.setup(cache)
+	_rally_flag = fx
+	return fx
+
+
+## 选中集合里：优先主选可训建筑；否则任一已设集结的可训建筑 → 显示种族旗。
+func _sync_rally_flag_for_selection() -> void:
+	var building := _rally_flag_source_building()
+	if building == null:
+		if _rally_flag != null and is_instance_valid(_rally_flag):
+			_rally_flag.hide_flag()
+		return
+	var fx := _ensure_rally_flag()
+	if fx == null:
+		return
+	var d: Dictionary = building.get_meta("unit_data", {})
+	var race := str(d.get("race", "")).strip_edges().to_lower()
+	if race.is_empty() and _session != null:
+		race = str(_session.local_race).to_lower()
+	if race.is_empty():
+		race = preview_race.strip_edges().to_lower()
+	var owner_id := int(d.get("owner", local_player))
+	var tid := str(d.get("typeId", ""))
+	var color_i := MapUnitLayer.resolve_team_color_index(tid, owner_id)
+	fx.show_at_wc3(BuildingRally.goal_wc3(building), race, color_i, _heightfield)
+
+
+## 集结旗数据源：主选可训且已设 → 主选；否则选中里第一个已设集结的可训建筑。
+func _rally_flag_source_building() -> Node3D:
+	if unit_selector == null:
+		return null
+	var primary: Node3D = null
+	if unit_selector.has_method("get_primary"):
+		primary = unit_selector.call("get_primary") as Node3D
+	if (
+		primary != null
+		and BuildingRally.can_set_rally(primary)
+		and BuildingRally.has_rally(primary)
+	):
+		return primary
+	if not unit_selector.has_method("get_selected"):
+		return null
+	var selected: Array = unit_selector.call("get_selected")
+	for n in selected:
+		if not (n is Node3D):
+			continue
+		var b := n as Node3D
+		if BuildingRally.can_set_rally(b) and BuildingRally.has_rally(b):
+			return b
+	return null
 
 
 func _ensure_navigator(unit: Node3D) -> UnitNavigator:
@@ -2523,6 +2608,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	if health_bar_manager:
 		health_bar_manager.set_selection(selected)
 	if game_hud == null:
+		_sync_rally_flag_for_selection()
 		return
 	if primary == null or selected.is_empty():
 		_card_supports_move = false
@@ -2533,6 +2619,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		game_hud.clear_build_progress()
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
+		_sync_rally_flag_for_selection()
 		return
 	_apply_selection_info_to_hud(primary, selected)
 	var d: Dictionary = primary.get_meta("unit_data", {})
@@ -2551,6 +2638,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		elif gold_left < 0:
 			gold_left = 12500
 		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
+		_sync_rally_flag_for_selection()
 		return
 	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
 		_card_supports_move = false
@@ -2574,6 +2662,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		else:
 			game_hud.set_status("已选 %s" % tid)
 	_sync_build_hud_for_selection()
+	_sync_rally_flag_for_selection()
 
 
 func _apply_selection_info_to_hud(primary: Node3D, selected: Array) -> void:

@@ -888,9 +888,17 @@ func _is_exclusive_team_color_mesh(mi: MeshInstance3D) -> bool:
 		return false
 	for si in range(mi.mesh.get_surface_count()):
 		var mat: Material = mi.get_active_material(si)
-		if mat == null or not (mat is StandardMaterial3D):
+		if mat == null:
 			return false
-		if not _is_team_color_material(mat as StandardMaterial3D):
+		# 队色垫底（漫反射+队色，如人族集结旗）：有实体贴图，不是纯 Team Glow
+		if mat is ShaderMaterial and _is_team_color_underlay_shader(mat as ShaderMaterial):
+			return false
+		if not (mat is StandardMaterial3D):
+			return false
+		var sm := mat as StandardMaterial3D
+		if _is_team_color_underlay_material(sm):
+			return false
+		if not _is_team_color_material(sm):
 			return false
 	return true
 
