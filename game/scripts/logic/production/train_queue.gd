@@ -1,45 +1,130 @@
 class_name TrainQueue
 extends Node
 
-## 建筑训练队列（最小：1 队列长度；F2-6 不支持队列叠加）。
-## 挂 Barracks / Altar / Town Hall 等能训兵/英雄的建筑子节点。
+## 建筑训练队列（对齐 WC3：每建筑最多 7 槽）。
+## 挂 Barracks / Altar / Town Hall 等可训建筑子节点。
 ##
-## 状态机 IDLE → TRAINING → IDLE
-## start()：扣资源（外部 pre-validate） + 启动 timer
-## timer 跑完 → training_completed.emit → Director 刷单位到建筑门口
-## cancel()：退款 75%（WC3 行为；建筑训练可取消）
-##
-## fused 由 CommandRouter 在 start 前预占；取消时 Director 释回。
+## 槽 0 为正在训练；1..N-1 为等待。点训兵按钮 enqueue；满 7 拒单。
+## 取消：训练单位一律退 100%（原作；建造取消才是 ~75%）。完工自动开下一槽。
 
 signal state_changed(state: int)
+signal queue_changed
 signal training_started(unit_id: String, time_sec: float)
 signal training_completed(unit_id: String, site_wc3: Vector2, owner: int)
-signal training_cancelled(unit_id: String, refund_g: int, refund_l: int)
+signal training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int)
+## 当前槽进度（约 10Hz）；HUD 订阅，勿让 Director 每帧轮询。
+signal progress_changed(progress: float, remaining_sec: float)
 
 
 const STATE_IDLE := 0
 const STATE_TRAINING := 1
 
-## 取消训练退款比例（WC3：训练可取消，退 75%）。
-const CANCEL_REFUND_RATIO := 0.75
+## 原作建筑生产队列上限。
+const MAX_QUEUE := 7
+## 取消训练退款比例（WC3：Canceled Units = 100%）。
+const CANCEL_REFUND_RATIO := 1.0
 
 
-var _unit_id: String = ""
-var _time_sec: float = 0.0
-var _elapsed: float = 0.0
-var _gold_spent: int = 0
-var _lumber_spent: int = 0
-var _site_wc3: Vector2 = Vector2.INF
-var _owner: int = 0
+## 每项：unit_id, time_sec, gold, lumber, food, site_wc3, owner, elapsed
+var _entries: Array[Dictionary] = []
 var _state: int = STATE_IDLE
+var _progress_emit_accum: float = 0.0
+const PROGRESS_EMIT_INTERVAL := 0.1
 
 
 func _ready() -> void:
 	set_process(false)
 
 
-## 训练 unit_id（hfoo/hkni/hamg）。返回 true = 资源已扣 + timer 启动。
-## 调用方需先 validate：资源 / 建筑能训该单位 / fused 人口（fused 校验留 F3-F4）。
+## 是否已满（不可再下单）。
+func is_full() -> bool:
+	return _entries.size() >= MAX_QUEUE
+
+
+func queue_count() -> int:
+	return _entries.size()
+
+
+func is_training() -> bool:
+	return not _entries.is_empty()
+
+
+func current_unit() -> String:
+	if _entries.is_empty():
+		return ""
+	return str(_entries[0].get("unit_id", ""))
+
+
+func progress_ratio() -> float:
+	if _entries.is_empty():
+		return 0.0
+	var t := float(_entries[0].get("time_sec", 0.0))
+	if t <= 0.0:
+		return 1.0
+	return clampf(float(_entries[0].get("elapsed", 0.0)) / t, 0.0, 1.0)
+
+
+## HUD / 命令卡：[{ unit_id, progress, active, remaining_sec, gold, lumber, food }, ...]
+func snapshot() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for i in range(_entries.size()):
+		var e: Dictionary = _entries[i]
+		var t := float(e.get("time_sec", 0.0))
+		var elapsed := float(e.get("elapsed", 0.0))
+		var prog := 0.0
+		if i == 0 and t > 0.0:
+			prog = clampf(elapsed / t, 0.0, 1.0)
+		var remain := 0.0
+		if i == 0 and t > 0.0:
+			remain = maxf(t - elapsed, 0.0)
+		elif t > 0.0:
+			remain = t
+		out.append({
+			"unit_id": str(e.get("unit_id", "")),
+			"progress": prog,
+			"active": i == 0,
+			"remaining_sec": remain,
+			"gold": int(e.get("gold", 0)),
+			"lumber": int(e.get("lumber", 0)),
+			"food": int(e.get("food", 0)),
+		})
+	return out
+
+
+## 入队。已满 / 参数非法 → false（调用方负责退资源）。
+func enqueue(
+	unit_id: String,
+	time_sec: float,
+	gold: int,
+	lumber: int,
+	food: int,
+	site_wc3: Vector2,
+	player_owner: int
+) -> bool:
+	if is_full():
+		return false
+	if unit_id.is_empty() or time_sec <= 0.0:
+		return false
+	var entry := {
+		"unit_id": unit_id,
+		"time_sec": time_sec,
+		"gold": gold,
+		"lumber": lumber,
+		"food": food,
+		"site_wc3": site_wc3,
+		"owner": player_owner,
+		"elapsed": 0.0,
+	}
+	var was_empty := _entries.is_empty()
+	_entries.append(entry)
+	if was_empty:
+		_begin_active()
+	else:
+		queue_changed.emit()
+	return true
+
+
+## 兼容旧 API：空闲时入队并立刻开工。已有队列时失败（请用 enqueue）。
 func start(
 	unit_id: String,
 	time_sec: float,
@@ -48,63 +133,89 @@ func start(
 	site_wc3: Vector2,
 	player_owner: int
 ) -> bool:
-	if _state != STATE_IDLE:
+	if not _entries.is_empty():
 		return false
-	if unit_id.is_empty() or time_sec <= 0.0:
+	return enqueue(unit_id, time_sec, gold, lumber, 0, site_wc3, player_owner)
+
+
+## 取消进行中的一槽（index 0）。
+func cancel() -> bool:
+	return cancel_at(0)
+
+
+## 取消指定槽。训练单位一律全额退款（原作 Canceled Units = 100%）。
+func cancel_at(index: int) -> bool:
+	if index < 0 or index >= _entries.size():
 		return false
-	_unit_id = unit_id
-	_time_sec = time_sec
-	_elapsed = 0.0
-	_gold_spent = gold
-	_lumber_spent = lumber
-	_site_wc3 = site_wc3
-	_owner = player_owner
+	var e: Dictionary = _entries[index]
+	var uid := str(e.get("unit_id", ""))
+	var gold := int(e.get("gold", 0))
+	var lumber := int(e.get("lumber", 0))
+	var food := int(e.get("food", 0))
+	var refund_g: int = int(round(float(gold) * CANCEL_REFUND_RATIO))
+	var refund_l: int = int(round(float(lumber) * CANCEL_REFUND_RATIO))
+	_entries.remove_at(index)
+	if _entries.is_empty():
+		_state = STATE_IDLE
+		set_process(false)
+		state_changed.emit(_state)
+	elif index == 0:
+		# 取消当前 → 下一槽立刻开工
+		_begin_active()
+	queue_changed.emit()
+	training_cancelled.emit(uid, refund_g, refund_l, food)
+	return true
+
+
+func _begin_active() -> void:
+	if _entries.is_empty():
+		_state = STATE_IDLE
+		set_process(false)
+		state_changed.emit(_state)
+		queue_changed.emit()
+		return
+	_entries[0]["elapsed"] = 0.0
+	_progress_emit_accum = 0.0
 	_state = STATE_TRAINING
 	set_process(true)
 	state_changed.emit(_state)
-	training_started.emit(_unit_id, _time_sec)
-	return true
+	queue_changed.emit()
+	training_started.emit(str(_entries[0].get("unit_id", "")), float(_entries[0].get("time_sec", 0.0)))
+	_emit_progress()
 
 
-## 取消：退款 75%。
-func cancel() -> bool:
-	if _state != STATE_TRAINING:
-		return false
-	_state = STATE_IDLE
-	set_process(false)
-	var refund_g: int = int(round(float(_gold_spent) * CANCEL_REFUND_RATIO))
-	var refund_l: int = int(round(float(_lumber_spent) * CANCEL_REFUND_RATIO))
-	var u: String = _unit_id
-	_unit_id = ""
-	state_changed.emit(_state)
-	training_cancelled.emit(u, refund_g, refund_l)
-	return true
-
-
-func is_training() -> bool:
-	return _state == STATE_TRAINING
-
-
-func current_unit() -> String:
-	return _unit_id
-
-
-func progress_ratio() -> float:
-	if _time_sec <= 0.0:
-		return 1.0
-	return clampf(_elapsed / _time_sec, 0.0, 1.0)
+func _emit_progress() -> void:
+	if _entries.is_empty():
+		return
+	var t := float(_entries[0].get("time_sec", 0.0))
+	var elapsed := float(_entries[0].get("elapsed", 0.0))
+	var prog := 1.0 if t <= 0.0 else clampf(elapsed / t, 0.0, 1.0)
+	var remain := 0.0 if t <= 0.0 else maxf(t - elapsed, 0.0)
+	progress_changed.emit(prog, remain)
 
 
 func _process(delta: float) -> void:
-	if _state != STATE_TRAINING:
+	if _entries.is_empty():
 		return
-	_elapsed += delta
-	if _elapsed >= _time_sec:
+	var e: Dictionary = _entries[0]
+	e["elapsed"] = float(e.get("elapsed", 0.0)) + delta
+	_entries[0] = e
+	var t := float(e.get("time_sec", 0.0))
+	_progress_emit_accum += delta
+	if _progress_emit_accum >= PROGRESS_EMIT_INTERVAL:
+		_progress_emit_accum = 0.0
+		_emit_progress()
+	if float(e.get("elapsed", 0.0)) < t:
+		return
+	var uid := str(e.get("unit_id", ""))
+	var site: Vector2 = e.get("site_wc3", Vector2.INF) as Vector2
+	var o := int(e.get("owner", 0))
+	_entries.remove_at(0)
+	training_completed.emit(uid, site, o)
+	if _entries.is_empty():
 		_state = STATE_IDLE
 		set_process(false)
-		var u: String = _unit_id
-		var site: Vector2 = _site_wc3
-		var o: int = _owner
-		_unit_id = ""
 		state_changed.emit(_state)
-		training_completed.emit(u, site, o)
+		queue_changed.emit()
+	else:
+		_begin_active()

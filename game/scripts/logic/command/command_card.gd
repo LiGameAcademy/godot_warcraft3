@@ -88,13 +88,24 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 		_place_locomotion(card, cat, bool(state.get("move_executing", false)))
 
 	var training_unit := str(state.get("training_unit", "")).strip_edges()
+	var queued: Dictionary = {}
+	var tq_raw: Variant = state.get("train_queue", [])
+	if tq_raw is Array:
+		for e in tq_raw as Array:
+			if typeof(e) != TYPE_DICTIONARY:
+				continue
+			var qid := str((e as Dictionary).get("unit_id", ""))
+			if qid.is_empty():
+				continue
+			queued[qid] = int(queued.get(qid, 0)) + 1
 	for tid in cat.get_trains(uid):
+		var exec := training_unit == tid or queued.has(tid)
 		_place(
 			card,
 			cat.unit_hud_entry(
 				tid,
 				ACTION_TRAIN_PREFIX + tid,
-				{"enabled": true, "executing": training_unit == tid}
+				{"enabled": true, "executing": exec}
 			)
 		)
 

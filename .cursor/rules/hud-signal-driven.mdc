@@ -1,0 +1,62 @@
+---
+description: HUD/游戏 UI 优先 signal 事件驱动，禁止用 Director 每帧轮询刷表现
+globs: game/scripts/presentation/game_hud.gd,game/scripts/game_director.gd,game/scripts/logic/production/**/*.gd,game/scripts/logic/construction/**/*.gd,game/scenes/game_hud.tscn
+alwaysApply: false
+---
+
+# HUD / UI：Signal 优先，少用帧轮询
+
+## 原则
+
+- **逻辑层**（`TrainQueue` / `BuildSite` / Stock…）在状态变化时 **emit signal**
+- **Director / HUD** **订阅** signal 再刷新；不要在 `GameDirector._process` 里轮询再 `set_*`
+- Present 控件自身的短动画（光标闪、确认箭 lifetime）可用本地 `_process`，但**不要**为此让 Director 每帧扫全选中集
+
+## 禁止
+
+```gdscript
+# ❌ BAD：Director 每帧刷训练条
+func _process(_delta):
+	_refresh_train_hud_tick()  # get_primary → 读队列 → set_train_queue
+```
+
+```gdscript
+# ❌ BAD：为刷新进度每帧拆掉并重建整排按钮（点不中 + 浪费）
+func set_train_queue(slots):
+	_clear_all_slot_buttons()
+	_rebuild_all_slot_buttons(slots)
+```
+
+## 正确做法
+
+```gdscript
+# ✅ Logic：进度变化时发信号（可节流，如 ~10Hz）
+signal progress_changed(progress: float, remaining_sec: float)
+signal queue_changed
+
+# ✅ Director：只在主选对应该源时更新
+func _on_train_progress_changed(p, rem, queue):
+	if queue.get_parent() != _primary():
+		return
+	_push_train_queue_hud(queue)
+
+# ✅ HUD：组成未变只改进度/文案；组成变了再重建槽
+func set_train_queue(slots, ...):
+	_update_active_progress_row(slots[0])
+	if _signature(slots) != _last_sig:
+		_rebuild_strip(slots)
+```
+
+## 已有对标
+
+| 数据 | Signal | 订阅方 |
+|------|--------|--------|
+| 建造进度 | `BuildSite.progress_changed` | Director → `set_build_progress` |
+| 训练进度 | `TrainQueue.progress_changed` | Director → `set_train_queue`（轻量） |
+| 训练队列 | `TrainQueue.queue_changed` | Director → 命令卡 + HUD |
+| 资源 | `PlayerStock` 变更 | HUD `bind_stock` |
+
+## 例外（仍可帧驱动）
+
+- 调试叠加层（路径线）且仅 `enabled` 时
+- 命令卡「执行中」高亮若尚无 navigator/harvest 完成信号：可暂轮询，但应标 TODO 并尽快改 signal

@@ -285,6 +285,8 @@ func _wire_hud() -> void:
 		game_hud.command_action.connect(_on_command_action)
 	if game_hud.has_signal("multi_select_clicked") and not game_hud.multi_select_clicked.is_connected(_on_multi_select_clicked):
 		game_hud.multi_select_clicked.connect(_on_multi_select_clicked)
+	if game_hud.has_signal("train_queue_cancel") and not game_hud.train_queue_cancel.is_connected(_on_train_queue_cancel):
+		game_hud.train_queue_cancel.connect(_on_train_queue_cancel)
 
 
 func _setup_portrait_hud() -> void:
@@ -600,7 +602,6 @@ func _ensure_path_debug() -> void:
 func _process(_delta: float) -> void:
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
-	_refresh_train_hud_tick()
 
 
 func _refresh_path_debug() -> void:
@@ -2070,6 +2071,7 @@ func _apply_building_train_card(building: Node3D, tid: String) -> void:
 		var q := building.get_node_or_null("TrainQueue") as TrainQueue
 		if q != null and q.is_training():
 			state["training_unit"] = q.current_unit()
+			state["train_queue"] = q.snapshot()
 	_apply_command_card(CommandCard.for_unit(tid, state))
 
 
@@ -2111,9 +2113,9 @@ func _try_issue_train(unit_id: String) -> void:
 				game_hud.set_status("资源不足（需 %d金 %d木）" % [gold, lumber])
 			return
 	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if existing != null and existing.is_training():
+	if existing != null and existing.is_full():
 		if game_hud:
-			game_hud.set_status("训练队列已满")
+			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
 		return
 	if not _command_router.issue_train(primary, uid):
 		if game_hud:
@@ -2124,7 +2126,8 @@ func _try_issue_train(unit_id: String) -> void:
 	_apply_building_train_card(primary, building_id)
 	_sync_build_hud_for_selection()
 	if game_hud:
-		game_hud.set_status("训练中：%s" % uid)
+		var n := queue.queue_count() if queue != null else 1
+		game_hud.set_status("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
 
 
 func _wire_train_queue(queue: TrainQueue) -> void:
@@ -2136,6 +2139,56 @@ func _wire_train_queue(queue: TrainQueue) -> void:
 	_wired_train_queues[id] = true
 	queue.training_completed.connect(_on_training_completed.bind(queue))
 	queue.training_cancelled.connect(_on_training_cancelled)
+	if not queue.queue_changed.is_connected(_on_train_queue_changed):
+		queue.queue_changed.connect(_on_train_queue_changed)
+	if not queue.progress_changed.is_connected(_on_train_progress_changed):
+		queue.progress_changed.connect(_on_train_progress_changed.bind(queue))
+
+
+func _on_train_progress_changed(_progress: float, _remaining_sec: float, queue: TrainQueue) -> void:
+	# 仅当该队列所属建筑是当前主选时刷 HUD（事件驱动，非 Director 轮询）
+	if queue == null or not is_instance_valid(queue):
+		return
+	if not _is_primary_train_queue(queue):
+		return
+	_push_train_queue_hud(queue)
+
+
+func _is_primary_train_queue(queue: TrainQueue) -> bool:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		return false
+	return queue.get_parent() == primary
+
+
+func _on_train_queue_cancel(slot_index: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if tq == null:
+		return
+	_wire_train_queue(tq)
+	if not tq.cancel_at(slot_index):
+		return
+	var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
+	if not tid.is_empty():
+		_apply_building_train_card(primary, tid)
+	_sync_build_hud_for_selection()
+
+
+func _on_train_queue_changed() -> void:
+	_sync_build_hud_for_selection()
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null:
+			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
+			if not tid.is_empty() and not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
+				_apply_building_train_card(primary, tid)
 
 
 func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queue: TrainQueue) -> void:
@@ -2165,18 +2218,25 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 		game_hud.set_status("训练完成：%s" % unit_id)
 
 
-func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int) -> void:
+func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int = -1) -> void:
 	var stock := _local_stock()
 	if stock != null:
 		if refund_g > 0:
 			stock.add_gold(refund_g)
 		if refund_l > 0:
 			stock.add_lumber(refund_l)
-		var food := BuildingCatalog.get_food_used(unit_id)
-		if food > 0:
-			stock.add_food_used(-food)
+		var food_n := food if food >= 0 else BuildingCatalog.get_food_used(unit_id)
+		if food_n > 0:
+			stock.add_food_used(-food_n)
 	if game_hud:
 		game_hud.set_status("取消训练：%s（退 %d金 %d木）" % [unit_id, refund_g, refund_l])
+	_sync_build_hud_for_selection()
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null:
+			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
+			if not tid.is_empty() and not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
+				_apply_building_train_card(primary, tid)
 	if unit_selector != null and unit_selector.has_method("get_primary"):
 		var primary: Node3D = unit_selector.call("get_primary") as Node3D
 		if primary != null:
@@ -2259,23 +2319,6 @@ func _teleport_unit_wc3(unit: Node3D, wc3_xy: Vector2) -> void:
 		pos["z"] = z
 		d["position"] = pos
 		unit.set_meta("unit_data", d)
-
-
-func _refresh_train_hud_tick() -> void:
-	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		return
-	if UnitLife.is_under_construction(primary):
-		return
-	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if tq == null or not tq.is_training():
-		return
-	var r := tq.progress_ratio()
-	game_hud.set_build_progress(
-		true, r, "训练 %s %d%%" % [tq.current_unit(), int(round(r * 100.0))]
-	)
 
 
 func _local_stock() -> PlayerStock:
@@ -2617,6 +2660,8 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		_unbind_hud_build_site()
 		game_hud.set_selection_info(SelectionInfoBuilder.build_empty())
 		game_hud.clear_build_progress()
+		if game_hud.has_method("clear_train_queue"):
+			game_hud.clear_train_queue()
 		game_hud.clear_command_labels()
 		game_hud.set_status("未选中")
 		_sync_rally_flag_for_selection()
@@ -2630,6 +2675,8 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		_card_is_peasant = false
 		_unbind_hud_build_site()
 		game_hud.clear_build_progress()
+		if game_hud.has_method("clear_train_queue"):
+			game_hud.clear_train_queue()
 		game_hud.clear_command_labels()
 		var gold_left := int(d.get("goldAmount", -1))
 		var rt := GoldMineRuntime.ensure(primary)
@@ -2640,11 +2687,12 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
 		_sync_rally_flag_for_selection()
 		return
-	if BuildingVisual.is_building(tid) and (tid == "htow" or tid == "hkee" or tid == "hcas"):
+	# 可训建筑（主城/兵营/祭坛等）：训练命令卡
+	if not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
 		_card_supports_move = false
 		_card_is_peasant = false
 		_apply_building_train_card(primary, tid)
-		game_hud.set_status("主城已选 · 训练见命令卡")
+		game_hud.set_status("已选 %s · 训练见命令卡" % tid)
 	elif _command_router != null and not _command_router.filter_movers(selected).is_empty():
 		_card_supports_move = true
 		_refresh_command_card()
@@ -2713,6 +2761,8 @@ func _sync_build_hud_for_selection() -> void:
 		var r := UnitLife.ratio(primary)
 		var d: Dictionary = primary.get_meta("unit_data", {})
 		var tid := str(d.get("typeId", ""))
+		if game_hud.has_method("clear_train_queue"):
+			game_hud.clear_train_queue()
 		game_hud.set_build_progress(true, r, "建造 %s %d%%" % [tid, int(round(r * 100.0))])
 		_unbind_hud_build_site()
 		return
@@ -2720,6 +2770,8 @@ func _sync_build_hud_for_selection() -> void:
 	var bc := primary.get_node_or_null("BuildController") as BuildController
 	var site: BuildSite = bc.current_site() if bc != null else null
 	if site != null and site.is_active():
+		if game_hud.has_method("clear_train_queue"):
+			game_hud.clear_train_queue()
 		_bind_hud_build_site(site)
 		var total := site.total()
 		var ratio := 0.0 if total <= 0.0 else clampf(site.elapsed() / total, 0.0, 1.0)
@@ -2727,17 +2779,40 @@ func _sync_build_hud_for_selection() -> void:
 		var bid := order.building_id if order != null else ""
 		game_hud.set_build_progress(true, ratio, "建造 %s %d%%" % [bid, int(round(ratio * 100.0))])
 		return
-	# 选中正在训练的建筑
+	# 选中正在训练的建筑 → 独立生产队列 HUD（不用建造进度条）
 	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
 	if tq != null and tq.is_training():
 		_unbind_hud_build_site()
-		var r := tq.progress_ratio()
-		game_hud.set_build_progress(
-			true, r, "训练 %s %d%%" % [tq.current_unit(), int(round(r * 100.0))]
-		)
+		game_hud.clear_build_progress()
+		_wire_train_queue(tq)
+		_push_train_queue_hud(tq)
 		return
 	_unbind_hud_build_site()
 	game_hud.clear_build_progress()
+	if game_hud.has_method("clear_train_queue"):
+		game_hud.clear_train_queue()
+
+
+func _push_train_queue_hud(tq: TrainQueue) -> void:
+	if game_hud == null or tq == null:
+		return
+	if not game_hud.has_method("set_train_queue"):
+		return
+	var slots: Array = []
+	var cat := CommandButtonCatalog.get_shared()
+	for e in tq.snapshot():
+		var uid := str(e.get("unit_id", ""))
+		var entry := cat.unit_hud_entry(uid, "train:" + uid, {})
+		slots.append({
+			"unit_id": uid,
+			"name": str(entry.get("name", uid)),
+			"icon": str(entry.get("icon", "")),
+			"progress": float(e.get("progress", 0.0)),
+			"active": bool(e.get("active", false)),
+			"remaining_sec": float(e.get("remaining_sec", 0.0)),
+			"tooltip": "%s · 点击取消" % str(entry.get("name", uid)),
+		})
+	game_hud.set_train_queue(slots, tq.queue_count(), TrainQueue.MAX_QUEUE)
 
 
 func _bind_hud_build_site(site: BuildSite) -> void:

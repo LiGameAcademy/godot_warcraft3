@@ -212,6 +212,89 @@ layout_mode = 2
 max_value = 100.0
 show_percentage = false
 
+[node name="TrainQueueRow" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1451336601]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TrainQueueHeader" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336602]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainQueueTitle" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader" unique_id=1451336603]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = "训练"
+
+[node name="TrainQueueCount" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader" unique_id=1451336604]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.68, 1)
+theme_override_font_sizes/font_size = 11
+text = "0/7"
+
+[node name="TrainActiveRow" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336610]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainActiveIcon" type="Button" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow" unique_id=1451336611]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+focus_mode = 0
+flat = true
+expand_icon = true
+
+[node name="TrainActiveBarHost" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow" unique_id=1451336612]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TrainActiveBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost" unique_id=1451336613]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="TrainActiveLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost" unique_id=1451336614]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.98, 0.96, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.05, 0.05, 0.85)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "剩余 0s"
+
+[node name="TrainQueueStrip" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336605]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TrainQueueHint" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336606]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.58, 0.55, 1)
+theme_override_font_sizes/font_size = 10
+text = "点击图标取消 · 全额退款"
+
 [node name="StatusLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=105278050]
 unique_name_in_owner = true
 layout_mode = 2

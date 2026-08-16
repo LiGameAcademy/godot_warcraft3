@@ -12,7 +12,7 @@ extends SceneTree
 ## 2. 人口上限：add_food_cap 后 food_cap 增加（Farm +6）
 ## 3. 建筑数据：hhou 80g/20l/6food/35s（SLK 真实值；防 SLK 漂移用 BuildingCatalog 实读）
 ## 4. 取消退款 50%（BuildController.CANCEL_REFUND_RATIO = 0.5）
-## 5. 取消退款 75%（TrainQueue.CANCEL_REFUND_RATIO = 0.75）
+## 5. 取消退款 100%（TrainQueue.CANCEL_REFUND_RATIO = 1.0，原作训练全额退）
 
 var failed := 0
 
@@ -149,22 +149,21 @@ func _test_refund_50pct() -> void:
 	print("  refund_50pct OK (hhou 80/50 → 退 40/25；stock 60/75)")
 
 
-# 5. TrainQueue 取消退款 75%（WC3 行为：训练可取消退 75%）
+# 5. TrainQueue 取消退款 100%（WC3：Canceled Units 全额退）
 func _test_refund_75pct() -> void:
-	# hfoo 135g 取消退 101g（135*0.75=101.25→round=101）
+	# 函数名保留兼容；断言改为全额
 	var spent_g: int = 135
 	var spent_l: int = 0
-	var refund_ratio := 0.75
+	var refund_ratio := 1.0
 	var refund_g: int = int(round(float(spent_g) * refund_ratio))
-	if refund_g != 101:
-		_fail("hfoo 135g 取消退款 应 = 101，实际 %d" % refund_g)
+	if refund_g != 135:
+		_fail("hfoo 135g 取消退款 应 = 135，实际 %d" % refund_g)
 		return
-	# 训练 Footman 135g → 退 101g，stock 应从 200 变成 200-135+101=166
 	var s := PlayerStock.new()
 	s.gold = 200
 	s.gold -= spent_g
 	s.add_gold(refund_g)
-	if s.gold != 166:
-		_fail("退款后 stock 应 = 166（200-135+101），实际 %d" % s.gold)
+	if s.gold != 200:
+		_fail("退款后 stock 应 = 200（200-135+135），实际 %d" % s.gold)
 		return
-	print("  refund_75pct OK (hfoo 135 → 退 101；stock 200→166)")
+	print("  refund_100pct OK (hfoo 135 → 退 135；stock 200→200)")

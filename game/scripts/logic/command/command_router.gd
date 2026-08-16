@@ -487,9 +487,9 @@ func _abort_build_leave(node: Node3D) -> void:
 
 
 ## F2-6：建筑训练单位。building 是已建好的 Barracks/Altar/TownHall 等 Node3D。
-## 行为：校验 Trains 列表 + 扣金木 + 预占 fused + 挂 TrainQueue + start。
-## 完工由 TrainQueue.training_completed 通知（Director 刷单位）；取消退 75% 金木并由 Director 释人口。
-## 简化：1 队列长度（训中不可再下单）。
+## 行为：校验 Trains 列表 + 扣金木 + 预占 fused + 挂 TrainQueue + enqueue。
+## 完工由 TrainQueue.training_completed 通知（Director 刷单位）；取消退款并由 Director 释人口。
+## 队列上限 = TrainQueue.MAX_QUEUE（原作 7）。
 func issue_train(building: Node3D, unit_id: String) -> bool:
 	if building == null or not is_instance_valid(building):
 		return false
@@ -527,10 +527,10 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		queue = TrainQueue.new()
 		queue.name = "TrainQueue"
 		building.add_child(queue)
-	if queue.is_training():
+	if queue.is_full():
 		_refund_train_spend(stock, gold, lumber, food)
 		return false
-	if not queue.start(uid, time_sec, gold, lumber, site_wc3, owner):
+	if not queue.enqueue(uid, time_sec, gold, lumber, food, site_wc3, owner):
 		_refund_train_spend(stock, gold, lumber, food)
 		return false
 	train_issued.emit(uid)

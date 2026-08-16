@@ -8,6 +8,8 @@ signal command_action(action_id: String)
 signal minimap_clicked(uv: Vector2)
 ## 多选条点击：instance_id → Director 设 primary
 signal multi_select_clicked(instance_id: int)
+## 训练队列槽点击取消：slot_index
+signal train_queue_cancel(slot_index: int)
 
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 @export var console_height_ratio: float = 0.2
@@ -29,6 +31,15 @@ signal multi_select_clicked(instance_id: int)
 @onready var _build_row: Control = %BuildProgressRow
 @onready var _build_bar: ProgressBar = %BuildProgressBar
 @onready var _build_label: Label = %BuildProgressLabel
+@onready var _train_row: Control = %TrainQueueRow
+@onready var _train_title: Label = %TrainQueueTitle
+@onready var _train_count: Label = %TrainQueueCount
+@onready var _train_active_row: Control = %TrainActiveRow
+@onready var _train_active_icon: Button = %TrainActiveIcon
+@onready var _train_active_bar: ProgressBar = %TrainActiveBar
+@onready var _train_active_label: Label = %TrainActiveLabel
+@onready var _train_strip: HBoxContainer = %TrainQueueStrip
+@onready var _train_hint: Label = %TrainQueueHint
 @onready var _minimap: GameMinimap = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _command_panel: Control = $Root/MarginContainer3/CommandPanel
@@ -41,6 +52,10 @@ signal multi_select_clicked(instance_id: int)
 ## slot → action_id（空=无动作）
 var _slot_action_ids: PackedStringArray = PackedStringArray()
 var _icon_cache: Dictionary = {} ## path → Texture2D
+const _TRAIN_SLOT_SIZE := 40
+const _TRAIN_MAX_SLOTS := 7
+## 上次建槽用的 unit_id 序列；组成未变时只刷进度，避免每帧重建导致点不中
+var _train_slot_sig: String = ""
 
 
 func _ready() -> void:
@@ -53,6 +68,7 @@ func _ready() -> void:
 	set_resources(0, 0, 0, 0)
 	set_selection_info(SelectionInfoBuilder.build_empty())
 	clear_build_progress()
+	clear_train_queue()
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
 	if not map_dir.is_empty():
@@ -253,6 +269,247 @@ func clear_build_progress() -> void:
 	set_build_progress(false)
 
 
+## 训练队列：
+## 上行 = 当前生产图标 + 长进度条（叠「剩余 Ns」）；
+## 下行 = 整队 7 槽（含当前）。slots=[{unit_id, icon, progress, active, remaining_sec, tooltip}, ...]
+func set_train_queue(slots: Array, filled: int = -1, max_slots: int = _TRAIN_MAX_SLOTS) -> void:
+	if _train_row == null:
+		return
+	_train_row.visible = true
+	var cap := clampi(max_slots, 1, _TRAIN_MAX_SLOTS)
+	var n_filled := filled if filled >= 0 else slots.size()
+	n_filled = clampi(n_filled, 0, cap)
+	if _train_count:
+		_train_count.text = "%d/%d" % [n_filled, cap]
+	if _train_title:
+		_train_title.text = "训练"
+	if _train_hint:
+		_train_hint.visible = n_filled > 0
+		_train_hint.text = "点击图标取消 · 全额退款"
+
+	var active: Dictionary = {}
+	if not slots.is_empty():
+		active = slots[0] as Dictionary
+	_update_train_active_row(active)
+
+	var sig := _train_slots_signature(slots, cap)
+	if sig != _train_slot_sig or _train_strip == null or _train_strip.get_child_count() != cap:
+		_train_slot_sig = sig
+		_rebuild_train_strip(slots, cap)
+	else:
+		_refresh_train_strip_styles(slots, cap)
+
+
+func clear_train_queue() -> void:
+	_train_slot_sig = ""
+	if _train_row:
+		_train_row.visible = false
+	if _train_active_icon:
+		_train_active_icon.icon = null
+		_train_active_icon.text = ""
+		_train_active_icon.disabled = true
+	if _train_active_bar:
+		_train_active_bar.value = 0.0
+	if _train_active_label:
+		_train_active_label.text = ""
+	if _train_strip == null:
+		return
+	while _train_strip.get_child_count() > 0:
+		var c := _train_strip.get_child(0)
+		_train_strip.remove_child(c)
+		c.queue_free()
+
+
+func _train_slots_signature(slots: Array, cap: int) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	for i in range(cap):
+		if i < slots.size():
+			parts.append(str((slots[i] as Dictionary).get("unit_id", "")))
+		else:
+			parts.append("")
+	return "|".join(parts)
+
+
+func _rebuild_train_strip(slots: Array, cap: int) -> void:
+	if _train_strip == null:
+		return
+	while _train_strip.get_child_count() > 0:
+		var c := _train_strip.get_child(0)
+		_train_strip.remove_child(c)
+		c.queue_free()
+	for i in range(cap):
+		var data: Dictionary = slots[i] if i < slots.size() else {}
+		_train_strip.add_child(_make_train_slot(i, data, false))
+
+
+func _refresh_train_strip_styles(slots: Array, cap: int) -> void:
+	if _train_strip == null:
+		return
+	for i in range(mini(cap, _train_strip.get_child_count())):
+		var host := _train_strip.get_child(i) as PanelContainer
+		if host == null:
+			continue
+		var data: Dictionary = slots[i] if i < slots.size() else {}
+		var active := bool(data.get("active", false))
+		var has_unit := not str(data.get("unit_id", "")).is_empty()
+		var sb := StyleBoxFlat.new()
+		if active:
+			sb.bg_color = Color(0.18, 0.14, 0.06, 0.95)
+			sb.border_color = Color(0.95, 0.72, 0.22, 1.0)
+			sb.set_border_width_all(2)
+		elif has_unit:
+			sb.bg_color = Color(0.12, 0.13, 0.15, 0.92)
+			sb.border_color = Color(0.55, 0.58, 0.52, 0.85)
+			sb.set_border_width_all(1)
+		else:
+			sb.bg_color = Color(0.08, 0.09, 0.1, 0.55)
+			sb.border_color = Color(0.35, 0.38, 0.36, 0.45)
+			sb.set_border_width_all(1)
+		sb.set_corner_radius_all(4)
+		host.add_theme_stylebox_override("panel", sb)
+
+
+func _update_train_active_row(active: Dictionary) -> void:
+	var has := not active.is_empty() and (
+		not str(active.get("unit_id", "")).is_empty() or not str(active.get("icon", "")).is_empty()
+	)
+	if _train_active_row:
+		_train_active_row.visible = has
+	if not has:
+		return
+	if _train_active_bar:
+		_style_train_active_bar(_train_active_bar)
+		_train_active_bar.value = clampf(float(active.get("progress", 0.0)), 0.0, 1.0) * 100.0
+	var rem := float(active.get("remaining_sec", 0.0))
+	var name_s := str(active.get("name", "")).strip_edges()
+	if name_s.is_empty():
+		name_s = str(active.get("unit_id", ""))
+	if _train_active_label:
+		_train_active_label.text = "%s · 剩余 %.0fs" % [name_s, rem]
+	if _train_active_icon:
+		_train_active_icon.disabled = false
+		_train_active_icon.focus_mode = Control.FOCUS_NONE
+		_train_active_icon.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_train_active_icon.tooltip_text = str(active.get("tooltip", "点击取消"))
+		var icon_path := str(active.get("icon", ""))
+		var tex := _load_icon(icon_path) if not icon_path.is_empty() else null
+		if tex != null:
+			_train_active_icon.icon = tex
+			_train_active_icon.expand_icon = true
+			_train_active_icon.text = ""
+		else:
+			_train_active_icon.icon = null
+			_train_active_icon.text = name_s.substr(0, 3)
+		if not _train_active_icon.pressed.is_connected(_on_train_active_icon_pressed):
+			_train_active_icon.pressed.connect(_on_train_active_icon_pressed)
+
+
+func _on_train_active_icon_pressed() -> void:
+	train_queue_cancel.emit(0)
+
+
+func _make_train_slot(index: int, data: Dictionary, show_mini_progress: bool = false) -> Control:
+	var host := PanelContainer.new()
+	host.custom_minimum_size = Vector2(_TRAIN_SLOT_SIZE, _TRAIN_SLOT_SIZE)
+	host.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	var active := bool(data.get("active", false))
+	var has_unit := not str(data.get("unit_id", "")).is_empty() or not str(data.get("icon", "")).is_empty()
+	if active:
+		sb.bg_color = Color(0.18, 0.14, 0.06, 0.95)
+		sb.border_color = Color(0.95, 0.72, 0.22, 1.0)
+		sb.set_border_width_all(2)
+	elif has_unit:
+		sb.bg_color = Color(0.12, 0.13, 0.15, 0.92)
+		sb.border_color = Color(0.55, 0.58, 0.52, 0.85)
+		sb.set_border_width_all(1)
+	else:
+		sb.bg_color = Color(0.08, 0.09, 0.1, 0.55)
+		sb.border_color = Color(0.35, 0.38, 0.36, 0.45)
+		sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	host.add_theme_stylebox_override("panel", sb)
+
+	var stack := Control.new()
+	stack.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(stack)
+
+	if has_unit:
+		var btn := Button.new()
+		btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		btn.flat = true
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		btn.tooltip_text = str(data.get("tooltip", "点击取消"))
+		var icon_path := str(data.get("icon", ""))
+		var tex := _load_icon(icon_path) if not icon_path.is_empty() else null
+		if tex != null:
+			btn.icon = tex
+			btn.expand_icon = true
+			btn.text = ""
+		else:
+			btn.text = str(data.get("unit_id", "?")).substr(0, 3)
+		btn.pressed.connect(_on_train_slot_pressed.bind(index))
+		stack.add_child(btn)
+		if show_mini_progress and active:
+			var bar := ProgressBar.new()
+			bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+			bar.offset_top = -6
+			bar.offset_bottom = 0
+			bar.min_value = 0.0
+			bar.max_value = 100.0
+			bar.value = clampf(float(data.get("progress", 0.0)), 0.0, 1.0) * 100.0
+			bar.show_percentage = false
+			bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_style_train_progress_bar(bar)
+			stack.add_child(bar)
+	else:
+		var empty := Label.new()
+		empty.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty.text = "·"
+		empty.add_theme_color_override("font_color", Color(0.4, 0.42, 0.4, 0.6))
+		empty.add_theme_font_size_override("font_size", 14)
+		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stack.add_child(empty)
+	return host
+
+
+func _style_train_active_bar(bar: ProgressBar) -> void:
+	if bar == null:
+		return
+	bar.min_value = 0.0
+	bar.max_value = 100.0
+	bar.show_percentage = false
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.09, 0.1, 0.92)
+	bg.set_corner_radius_all(4)
+	bg.set_border_width_all(1)
+	bg.border_color = Color(0.45, 0.4, 0.25, 0.7)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.88, 0.62, 0.14, 0.95)
+	fill.set_corner_radius_all(3)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+
+
+func _style_train_progress_bar(bar: ProgressBar) -> void:
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05, 0.05, 0.05, 0.75)
+	bg.set_corner_radius_all(0)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.95, 0.75, 0.2, 1.0)
+	fill.set_corner_radius_all(0)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+
+
+func _on_train_slot_pressed(index: int) -> void:
+	train_queue_cancel.emit(index)
+
+
 func _style_center_panel() -> void:
 	if _center_host == null:
 		return
@@ -286,6 +543,8 @@ func _style_center_panel() -> void:
 		_build_bar.max_value = 100.0
 		_build_bar.show_percentage = false
 		_build_bar.custom_minimum_size = Vector2(0, 14)
+	if _train_active_bar:
+		_style_train_active_bar(_train_active_bar)
 	_style_resource_bar(_portrait_hp, Color(0.2, 0.55, 0.22), Color(0.12, 0.14, 0.12))
 	_style_resource_bar(_portrait_mana, Color(0.25, 0.4, 0.85), Color(0.1, 0.12, 0.18))
 
