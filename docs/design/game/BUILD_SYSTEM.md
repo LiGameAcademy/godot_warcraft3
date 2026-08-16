@@ -252,11 +252,10 @@ issue_build：
   2. 校验 Builds 列表含 building_id
   3. PlacementRules.can_build_at
   4. 扣费一次（仅 primary；禁止对每个选中农民各扣一次）
-  5. 创建 BuildSite + strategy.on_order_accepted
-  6. 按 profile：
-       - human: 所有选中农民 path 到工地，arrived → try_join
-       - orc/ne: 仅 primary path；其余忽略或改派
-       - undead: primary path 到点，arrived 即开始召唤并释放侍僧
+  5. **仅 primary** path 到工地；到位后创建 BuildSite（半成品）
+  6. 框选中的其余农民**不**自动帮工；半成品出现后需再选中并右键工地 → `issue_join_build`
+  7. Powerbuild 附加费按进度周期扣（造价×Ahrp DataC×(N-1)×Δratio），非 join 时整笔扣费
+  8. orc/ne/undead：按各族 Profile/Strategy（非人族竖切路径）
 ```
 
 与采集一致：`GameDirector.ensure_build` 注入 session/pathing；**工地完成信号由 Director 刷建筑**。
@@ -279,7 +278,7 @@ issue_build：
 F2 验收剧本应改为：
 
 1. 选农民 → 建 Farm → ghost 绿/红 → 扣费 → 农民走过去并 **仍可见** 施工  
-2. 再派第二农民到同一工地 → 进度加快（P0 可先做「第二人 join 即加速系数」；P1 对齐真实 Repair 曲线）  
+2. 框选多农民建造 → **仅 1 人**前往；半成品出现后另选农民右键工地 → 加速；附加费按进度累计（非 join 整扣）  
 3. 完工刷建筑、人口 +`fmade`；农民释放  
 4. 取消：退款比例按 Profile（建议先钉 **0.75** 并与实测对照）+ 农民恢复
 
@@ -385,7 +384,7 @@ game/scripts/
 | BuildPlacementController | ✅ | begin / update_screen / confirm / cancel |
 | BuildPlacementGhost | ✅ | 寻路格吸附；逐格贴地绿/红；半透明建筑模型 |
 | BuildController | ✅ | 走位、扣费、按 profile hide、退款 |
-| BuildSite | ✅ | timer + **F2-C** `add_builder`；0 人暂停；N 人速率 ∝ N；≥2 人扣 goldRep/lumberRep |
+| BuildSite | ✅ | 首工到位后创建；0 人暂停；速率 `1+(N-1)×0.6`；帮工附加费按进度累计 `造价×0.15×(N-1)×Δ进度`（非整次 join 扣） |
 | HumanConstructionStrategy | ✅ | 人族策略接线 |
 | CommandCard `ubuild` | ✅ | builds 展开 → `begin_placement` |
 | GameDirector 接线 | ✅ | `_ensure_build_placement_objects` |
@@ -413,7 +412,7 @@ game/scripts/
 | 项 | 现状 | 优先级 |
 |----|------|--------|
 | 人族可见施工 / Profile 退款 | ✅ 已按 `hides_builder` / `cancel_refund_ratio` | — |
-| 多工加速（BuildSite） | ✅ 0 人暂停；N∝速率；≥2 扣 goldRep；右键半成品 / 再下令 join | — |
+| 多工加速（BuildSite） | ✅ 多选建造只派 1 人；半成品后右键 join；速率 `1+(N-1)×0.6`；附加费按进度累计（Ahrp DataC 0.15） | — |
 | WorldMembership.exit/enter | 流程文档曾写；当前人族路径未强制依赖 | P1（亡灵必做） |
 | `requirePlace` / `preventPlace` | PlacementRules 未接 | P2（亡灵） |
 | Birth / 工地幼体视觉 | ✅ 开工播 Birth；完工回 Stand | — |
