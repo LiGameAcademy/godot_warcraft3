@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dx7xrwhgbslll"]
+
+[ext_resource type="Script" uid="uid://di30i1n45rvxf" path="res://game/scripts/presentation/rally_flag_fx.gd" id="1_fx"]
+
+[node name="RallyFlagFx" type="Node3D" unique_id=4794170]
+script = ExtResource("1_fx")
+
+[node name="VisualRoot" type="Node3D" parent="." unique_id=1469556278]

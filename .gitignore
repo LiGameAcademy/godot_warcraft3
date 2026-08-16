@@ -12,6 +12,13 @@ logs/
 *.mpq
 *.MPQ
 
+# 误落在 assets 根下的 Blizzard 衍生树（正式车道是 asset-converted / slk-exported）
+assets/Textures/
+assets/units/
+assets/ui/
+assets/objects/
+assets/_placeholders/
+
 # Converted Godot-ready assets (PNG/GLTF/SCN + synced editor UI txt) — regenerate via tools
 # Do NOT commit Blizzard content (see docs/data/LEGAL.md)
 # .gdignore 例外：必须入库，否则 Godot 会 auto-import 并生成 baseColor / .import 副产物
