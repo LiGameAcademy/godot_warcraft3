@@ -125,6 +125,15 @@ func set_move_targeting(active: bool) -> void:
 		set_mode(Mode.IDLE)
 
 
+## 攻击 / 技能瞄准：白圈，直到 cancel。
+func set_attack_targeting(active: bool) -> void:
+	_move_sticky = false
+	if active:
+		set_mode(Mode.TARGET)
+	else:
+		set_mode(Mode.IDLE)
+
+
 ## 右键下移动令时闪一下蓝色箭头，然后回到 IDLE。
 func flash_move() -> void:
 	_move_sticky = false

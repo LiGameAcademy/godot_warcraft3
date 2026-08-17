@@ -80,5 +80,13 @@ static func tilepoint_wc3(
 
 
 static func yaw_wc3_to_godot(angle_rad: float) -> float:
-	## WC3 绕 Z 的朝向 → Godot 绕 Y；再补偿 -Y 镜像。
+	## Doodad / 装饰物：WC3 绕 Z → Godot 绕 Y，并补偿 -Y 镜像（-a+π）。
+	## 单位模型请用 yaw_wc3_unit_to_godot（MDX→GLTF 后前进轴为本地 +X）。
 	return -angle_rad + PI
+
+
+static func yaw_wc3_unit_to_godot(angle_rad: float) -> float:
+	## 单位 / 建筑：与 UnitNavigator._face_dir 一致。
+	## 转换后模型本地前进为 +X；yaw = WC3 facing（atan2(dy,dx)），勿再 -a+π。
+	## -a+π 会在东/西向（0°/180°）多转 180°，北/南向碰巧一致。
+	return angle_rad

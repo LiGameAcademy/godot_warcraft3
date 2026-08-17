@@ -2,9 +2,9 @@
 
 > 目标：按**真实开局游玩顺序**，在 Echo Isles 上跑通「采矿伐木 → 基建 → 英雄 → 兵营产兵 → 科技分支 → 大法师技能」闭环。  
 > 范围：**仅人族 Melee 最小集**；不做完整科技树、不做多族、不做联机。  
-> 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [HUD.md](HUD.md)  
-> 最后更新：2026-08-16  
-> **当前进度：F0–F6 已接线。下一步优先补战斗框架（C0–C3：攻击 / 攻移 / 射程 / 攻防类型与伤害），再 F8 顶盾 → F10 技能。Keep 与铁匠武器升级后置。**
+> 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [HUD.md](HUD.md)  
+> 最后更新：2026-08-17  
+> **当前进度：F0–F6 已接线。下一步优先补战斗框架（C0–C3）；契约见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)。再 F8 顶盾 → F10 技能。Keep 与铁匠武器升级后置。**
 
 ---
 
@@ -375,69 +375,20 @@ game/scripts/
 
 ### C0–C3 · 战斗框架（插入 · 优先于 F8）
 
-> **主线下一步。** 顶盾与技能都依赖「能打出真实伤害」；先补战斗再回头做 F8–F10。
+> **主线下一步。** 顶盾与技能都依赖「能打出真实伤害」；先补战斗再回头做 F8–F10。  
+> **设计契约（落地前必读）：** [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) — Attack 订单 · `DamagePipeline` · 攻防表 · 分 commit 路线 · 与 `CombatSteering`/树伤边界。
 
-#### C0 · 攻击命令 + 自动接敌
+#### 摘要
 
-**玩法**
+| 步 | 内容 | 验收一句话 |
+|----|------|------------|
+| C0 | Attack 命令 + 追击 + 近战出手 | 步兵右键野怪能打死 |
+| C1 | Attack-Move + `acquire` | A 键点地途经会打，Move 不惹怪 |
+| C2 | 射程 / 冷却 / 面向 / 弹道壳 | 火枪远程不连发 |
+| C3 | 攻防表 + 骰伤 + 死亡离场 | 公式可单测；尸体/清选中 |
 
-- 命令卡 / 快捷键：`Attack`（点目标）  
-- Smart 右键敌方单位 → `Attack`  
-- 目标超出射程：追击直至进入 `range`（+ `rngBuff` 容差）  
-- 目标死亡 / 不可见 / 失效：停攻或按 WC3 简化为 Stop  
-
-**验收**
-
-- 步兵对野怪或敌农民：下 Attack 后走入射程并反复出手；选中目标可被取消（Stop / 新命令）
-
-#### C1 · 攻击移动（Attack-Move）
-
-**玩法**
-
-- `Attack-Move` 到地面点：沿途索敌（读 `acquire`），有敌则切入 Attack，清场后继续走向目标点  
-- 与普通 Move 区分：Move 不主动攻击  
-
-**验收**
-
-- 农民/步兵 A 键点地面，途经野怪会停下打；打完继续走
-
-#### C2 · 射程 / 冷却 / 面向 / 弹道壳
-
-**玩法**
-
-- 读 `UnitWeaponsDef`：`rangeN1`、`cool1`、`minRange`、`weapTp1`  
-- 近战 `instant`：冷却到点瞬时结算  
-- 远程 `missile`：可先直线假弹道或瞬时+音效，完整弹道 P1  
-- 出手时面向目标（yaw）  
-
-**验收**
-
-- 步兵近战贴身才打；火枪手在射程外追击、进距后开火；冷却可见（不连发）
-
-#### C3 · 攻防类型 + 伤害公式
-
-**玩法**
-
-- 攻击类型 `atkType1` × 护甲类型 `defType` → 伤害倍率表（对齐 WC3）  
-- 基础伤害：`dice × sides` 骰 + `dmgplus`（读武器表）；再乘攻防表、护甲减伤  
-- 结算写入 `UnitLife`；HP≤0 → 死亡（清选中；播 Death / 尸体 Geoset 可接 Present）  
-
-**验收**
-
-- 同武器打不同护甲，伤害差异符合表；单位可被打死并从可点选中移除  
-
-**复用锚点**
-
-| 已有 | 用途 |
-|------|------|
-| `UnitWeaponsDef` / `UnitBalanceDef` | 射程、冷却、攻防类型、骰伤害 |
-| `UnitLife` | 扣血权威 |
-| `CommandRouter` + `UnitOrder` + `SmartTarget` | 新 Order：Attack / AttackMove |
-| 树木 `apply_damage` 模式 | 伤害管线参考（单位版） |
-
-**代码落点**：`game/scripts/logic/combat/`（新建）
-
-**依赖**：F0 命令骨架；建议有可训 `hfoo`/`hrif`（F4/F6）便于验收
+**代码落点**：`game/scripts/logic/combat/`（见 COMBAT_SYSTEM §8）  
+**依赖**：F0；建议已有 `hfoo`/`hrif`（F4/F6）
 
 ---
 
@@ -635,3 +586,4 @@ game/scripts/logic/
 | 2026-08-09 | F0+F1 验收通过；玩法主线进 F2；野怪/小动物尸体 Geoset 走 geosetvis+Stand snap（与树桩同管线） |
 | 2026-08-09 | F2 拆 7 commit（docs/data/logic×3/present/test）；锁 3 建筑 `hhou`/`halt`/`hbar`；开 `feature/building-system` 分支 |
 | 2026-08-16 | F0–F6 竖切接线完成；下一步插入 **C0–C3 战斗框架**（攻击/攻移/射程/攻防伤害），再 F8 顶盾与 F10 技能 |
+| 2026-08-17 | 战斗契约单列 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)；实现按 C0-0～C3 分 commit，单位扣血唯一入口 `DamagePipeline` |

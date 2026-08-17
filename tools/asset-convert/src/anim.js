@@ -209,8 +209,10 @@ export function sampleGeosetAlpha(geosetAnims, geosetId, frame) {
 
 /**
  * Sequence-scoped GeosetAnim alpha (WC3 runtime semantics).
- * Only Keys with Frame in [seqStart, seqEnd] apply; if none → visible (1).
- * Before the first in-sequence key → visible (1).
+ * Only Keys with Frame in [seqStart, seqEnd] drive the curve.
+ * - 无 in-sequence keys → 可见 (1)（主城 Stand 主体无轨时依赖此默认）
+ * - 首 key 之前 → 用 seqStart 之前的最后一帧全局值（carry-in）；若无则 hold 首 key
+ *   （禁止一律 1：否则 Altar Stand_Work 脚手架在仅有结尾 hide key 时会整段闪现）
  * @param {import('war3-model').GeosetAnim[] | undefined} geosetAnims
  * @param {number} geosetId
  * @param {number} frame
@@ -231,7 +233,15 @@ export function sampleGeosetAlphaInSequence(
   if (!allKeys.length) return 1;
   const keys = allKeys.filter((k) => k.Frame >= seqStart && k.Frame <= seqEnd);
   if (!keys.length) return 1;
-  if (frame < keys[0].Frame) return 1;
+  if (frame < keys[0].Frame) {
+    let carry = null;
+    for (const key of allKeys) {
+      if (key.Frame < seqStart) carry = key.Vector[0];
+      else break;
+    }
+    if (carry !== null) return carry;
+    return keys[0].Vector[0];
+  }
   let value = keys[0].Vector[0];
   for (const key of keys) {
     if (key.Frame <= frame) value = key.Vector[0];

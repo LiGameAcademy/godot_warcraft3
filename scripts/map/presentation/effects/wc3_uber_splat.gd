@@ -1,22 +1,26 @@
 class_name Wc3UberSplat
 extends RefCounted
 
-## 建筑 Art - Ground Texture：unitUI.uberSplat → UberSplatData → 脚底贴花平面。
+## 建筑 Art - Ground Texture：unitUI.uberSplat → UberSplatData → 脚底 Decal。
 ## 贴图优先 tileset 前缀（如 L_HumanTownHallUberSplat），回退无前缀默认图。
 ## HiveWE / 原作：摆放时**不**改 heightfield，只靠 UberSplat 做脚印过渡。
 ##
-## 用 PlaneMesh（非 Decal）：Mobile 渲染器对**同一 Mesh 资源**最多 8 个 Decal，
-## 整图地形是一块大 mesh 时脚印会整批消失/闪烁。
+## Forward+ 下用 Decal 投到地形（cull_mask=TERRAIN），避免印到建筑墙体。
+## （曾用 Mobile+PlaneMesh：同 mesh 最多 8 Decal，整图地形会丢脚印。）
 
 const SPLAT_ROOT_NAME := "UberSplat"
-## 略抬离地，减轻与地形 z-fight
-const Y_BIAS := 0.04
+## Decal 盒中心相对脚底；投影深度一半左右，保证盖住起伏地表
+const Y_BIAS := 0.12
+## 投影盒高度（Godot 单位）：过大易打到邻建筑，过小贴不稳坡地
+const PROJECTION_DEPTH := 0.5
 ## 建筑贴地下沉上限（Godot）。过大（按完整 UberSplat geoset 高度）会把主城埋进地里。
 const FOOT_SINK_MAX := 0.02
 ## 建筑整体略抬，避免脚底陷入地表（原作靠 moveHeight/贴地，不靠挖平地形）。
 const BUILDING_Y_LIFT := 0.08
 ## SLK Scale 观感偏小（透明边 + 透视）；×2 接近原作脚印覆盖。
 const SIZE_MUL := 2.0
+## 贴花相对建筑本地 yaw（PlaneMesh 时代试过 π / +π/2；Decal 先沿用 +90°）
+const YAW_LOCAL := PI * 0.5
 
 
 static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Node3D:
@@ -45,38 +49,27 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> No
 		return null
 	# Scale 为 WC3 世界边长（HTOW=230）；与模型同一 WORLD_SCALE，再乘观感倍率
 	var size_g := def.scale * Wc3Coords.WORLD_SCALE * SIZE_MUL
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(size_g, size_g)
-	plane.orientation = PlaneMesh.FACE_Y
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	mat.albedo_texture = tex
-	mat.albedo_color = Color.WHITE
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
-	mat.render_priority = -8
-	plane.material = mat
-	var mi := MeshInstance3D.new()
-	mi.name = SPLAT_ROOT_NAME
-	mi.mesh = plane
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = Vector3(0.0, Y_BIAS, 0.0)
-	mi.set_meta("uber_splat_code", code)
-	mi.set_meta("is_runtime_uber_splat", true)
-	# 与单位同层即可；不再依赖 Decal cull_mask / 地形 layer
-	mi.layers = Wc3Coords.RENDER_LAYER_UNITS
-	root.add_child(mi)
-	# GLB 根常带 MODEL_SCALE=0.01；plane.size 已是世界尺度，须抵消父缩放
-	_cancel_parent_model_scale(mi, root)
-	return mi
+	var decal := Decal.new()
+	decal.name = SPLAT_ROOT_NAME
+	decal.texture_albedo = tex
+	decal.modulate = Color.WHITE
+	decal.albedo_mix = 1.0
+	# Godot Decal：size.x/z = 水平范围，size.y = 沿本地 -Y 的投影深度
+	decal.size = Vector3(size_g, PROJECTION_DEPTH, size_g)
+	decal.cull_mask = Wc3Coords.RENDER_LAYER_TERRAIN
+	decal.position = Vector3(0.0, Y_BIAS, 0.0)
+	decal.rotation.y = YAW_LOCAL
+	decal.set_meta("uber_splat_code", code)
+	decal.set_meta("is_runtime_uber_splat", true)
+	root.add_child(decal)
+	# GLB 根常带 MODEL_SCALE=0.01；size 按世界尺度写，须抵消父缩放
+	_cancel_parent_model_scale(decal, root)
+	return decal
 
 
 ## 把贴花缩回世界尺度（父链上累计 scale）。
-static func _cancel_parent_model_scale(mi: Node3D, root: Node3D) -> void:
-	if mi == null or root == null:
+static func _cancel_parent_model_scale(node: Node3D, root: Node3D) -> void:
+	if node == null or root == null:
 		return
 	var sx := absf(root.scale.x)
 	var sy := absf(root.scale.y)
@@ -90,14 +83,14 @@ static func _cancel_parent_model_scale(mi: Node3D, root: Node3D) -> void:
 	# 仅当父明显被模型缩放（远小于 1）时抵消；unit_data.scale≈1 不处理
 	if sx > 0.5 and sy > 0.5 and sz > 0.5:
 		return
-	mi.scale = Vector3(1.0 / sx, 1.0 / sy, 1.0 / sz)
+	node.scale = Vector3(1.0 / sx, 1.0 / sy, 1.0 / sz)
 
 
 ## 父节点做了 Y 下沉/抬升后，把贴花补偿回贴地高度。
-static func compensate_parent_y(mi: Node3D, parent_y_delta: float) -> void:
-	if mi == null:
+static func compensate_parent_y(node: Node3D, parent_y_delta: float) -> void:
+	if node == null:
 		return
-	mi.position.y = Y_BIAS - parent_y_delta
+	node.position.y = Y_BIAS - parent_y_delta
 
 
 ## 用模型内嵌 UberSplat geoset（即使已隐藏）估脚底高度，把建筑沉到贴地。

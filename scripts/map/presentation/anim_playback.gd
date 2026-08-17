@@ -107,12 +107,37 @@ static func resolve(
 			):
 				continue
 			return str(n)
+	# WC3 变体名：Attack_-_1 / Walk Defend…；逻辑名只写 Attack / Walk
+	if want_l == "attack" or want_l == "walk":
+		var picked := _resolve_family_prefix(names, want_l)
+		if not picked.is_empty():
+			return picked
 	AppLog.debug(
 		AppLog.Layer.PRESENT,
 		_TAG,
 		"resolve 未匹配 logical=%s（已试 %s）" % [logical_name, str(candidates)]
 	)
 	return ""
+
+
+## Attack / Walk 族：叶名以 base 开头，跳过 Defend/Gold/Lumber 变体。
+static func _resolve_family_prefix(names: PackedStringArray, base_lower: String) -> String:
+	var prefer: String = ""
+	for n in names:
+		var leaf := anim_leaf(str(n)).to_lower().replace(" ", "_")
+		if not leaf.begins_with(base_lower):
+			continue
+		if (
+			leaf.contains("defend")
+			or leaf.contains("gold")
+			or leaf.contains("lumber")
+			or leaf.contains("work")
+		):
+			continue
+		# 优先编号最小的变体（Attack_-_1 优于 Attack_-_2）
+		if prefer.is_empty() or str(n) < prefer:
+			prefer = str(n)
+	return prefer
 
 
 ## 按 activity+stance 解析；失败时按回退链再试。
@@ -195,6 +220,8 @@ static func play(
 			Animation.LOOP_NONE if ping or not loop else Animation.LOOP_LINEAR
 		)
 	ap.play(anim_name, maxf(blend, 0.0))
+	# 立刻应用第 0 帧姿态（建筑门/旗等常量骨骼轨，避免从上一段姿态卡住）
+	ap.seek(0.0, true)
 	out["ok"] = true
 	AppLog.debug(
 		AppLog.Layer.PRESENT,
@@ -243,7 +270,17 @@ static func play_logical(
 			% [logical, str(fallbacks)]
 		)
 		return out
-	var played := play(root, resolved, blend, cache, -1, ap)
+	# 战斗默认 Attack 单次；伐木 Attack Lumber / Attack Gold 仍要 LOOP
+	var force_loop := -1
+	if activity_hint == AnimSequenceResolver.Activity.ATTACK:
+		var leaf := logical.replace("_", " ").strip_edges().to_lower()
+		if leaf == "attack" or (
+			leaf.begins_with("attack")
+			and not leaf.contains("lumber")
+			and not leaf.contains("gold")
+		):
+			force_loop = 0
+	var played := play(root, resolved, blend, cache, force_loop, ap)
 	out["ok"] = bool(played.get("ok", false))
 	out["ping_pong"] = bool(played.get("ping_pong", false))
 	if out["ok"]:

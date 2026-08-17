@@ -11,6 +11,9 @@ extends RefCounted
 
 const ACTION_MOVE := "move"
 const ACTION_STOP := "stop"
+const ACTION_HOLD := "hold"
+const ACTION_ATTACK := "attack"
+const ACTION_PATROL := "patrol"
 const ACTION_HARVEST_GOLD := "harvest_gold"
 const ACTION_RETURN_GOODS := "return_goods"
 const ACTION_BUILD_PREFIX := "build:" ## 建造按钮 action_id 前缀
@@ -22,6 +25,9 @@ const ACTION_SET_RALLY := "set_rally"
 
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
+const CMD_HOLD := "CmdHoldPos"
+const CMD_ATTACK := "CmdAttack"
+const CMD_PATROL := "CmdPatrol"
 const CMD_RALLY := "CmdRally"
 const CMD_CANCEL_BUILD := "CmdCancelBuild"
 
@@ -204,6 +210,7 @@ static func build_ability_id(race: String) -> String:
 	return str(_RACE_BUILD_ABIL.get(key, "AHbu"))
 
 
+## 常规机动四键 + 攻击：Move/Stop/Hold/Attack + Patrol（槽位来自 CommandFunc Buttonpos）。
 static func _place_locomotion(card: Array[Dictionary], cat: CommandButtonCatalog, move_executing: bool) -> void:
 	_place(
 		card,
@@ -218,6 +225,30 @@ static func _place_locomotion(card: Array[Dictionary], cat: CommandButtonCatalog
 		cat.command_hud_entry(
 			CMD_STOP,
 			ACTION_STOP,
+			{"executing": false, "enabled": true}
+		)
+	)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_HOLD,
+			ACTION_HOLD,
+			{"executing": false, "enabled": true}
+		)
+	)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_ATTACK,
+			ACTION_ATTACK,
+			{"executing": false, "enabled": true}
+		)
+	)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_PATROL,
+			ACTION_PATROL,
 			{"executing": false, "enabled": true}
 		)
 	)

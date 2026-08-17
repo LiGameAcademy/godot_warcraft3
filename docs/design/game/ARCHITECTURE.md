@@ -224,3 +224,4 @@ MeleeBootstrap.run()    →      ActionExecutor 注册同一批 Handler
 | 2026-08-03 | **暂缓**完整触发器 VM；先 MeleeBootstrap + 游戏场景壳 |
 | 2026-08-03 | 触发器与 Bootstrap 共用 Action Handler，避免双实现 |
 | 2026-08-05 | 玩法主线转入人族游玩竖切 F0–F10，见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) |
+| 2026-08-17 | F0–F6 后插入战斗主线 C0–C3；契约见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) |

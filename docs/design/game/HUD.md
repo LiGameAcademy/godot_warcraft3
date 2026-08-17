@@ -109,6 +109,10 @@ UnitSelector
 
 - 工人主卡：**一个**建造入口（`AHbu` → `open_build`），不摊平建筑。
 - 二级：`Builds ∩ F2 allowlist` + `CmdCancelBuild`；Esc 回主卡。
+- 可移动单位常规键（`CommandFunc` 槽位）：**Move / Stop / Hold / Attack / Patrol**（热键 M/S/H/A/P）。  
+  - Hold：停步 + `hold_position`（日后射程内打不追）。  
+  - Attack：瞄准态 — 点单位追击目标，点地面 Attack-Move（索敌扣血见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)）。  
+  - Patrol：瞄准另一端，当前位置↔目标往返。
 
 ---
 

@@ -233,7 +233,9 @@ func _read_json_sidecar(logical_glb: String, suffix: String) -> Dictionary:
 	return data
 
 
-## 把 *.cameras.json 写成场景内 Camera3D（current=false，由 HUD 启用）。
+## 把 *.cameras.json 写成场景内 Camera3D（current=false）。
+## 注意：HUD 肖像框不再启用这些相机（见 UnitPortraitView._fit_camera），
+## 仅作编辑器预览 / 将来机位参考；坐标与 convert sidecar 一致（已 × MODEL_SCALE）。
 func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 	if proto == null:
 		return 0
@@ -244,11 +246,13 @@ func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 	var cams: Array = cams_v
 	if cams.is_empty():
 		return 0
-	# 清掉旧注入，避免 --force 重烤叠节点
 	for c in proto.find_children("*", "Camera3D", true, false):
 		var cam0 := c as Camera3D
 		if cam0 != null and bool(cam0.get_meta("wc3_mdx_camera", false)):
 			cam0.queue_free()
+	var old_host := proto.get_node_or_null("MdxCameras")
+	if old_host != null:
+		old_host.queue_free()
 	var host := Node3D.new()
 	host.name = "MdxCameras"
 	proto.add_child(host)
@@ -284,7 +288,6 @@ func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 		cam.owner = proto
 		cam.position = pos
 		if pos.distance_squared_to(tgt) > 1e-8:
-			# proto 尚未入树，不能用 look_at()
 			cam.look_at_from_position(pos, tgt, Vector3.UP)
 		n += 1
 	if n == 0:

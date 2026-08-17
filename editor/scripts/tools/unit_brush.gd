@@ -644,7 +644,7 @@ func _poll_ghost_from_mouse() -> void:
 
 func _refresh_ghost_facing() -> void:
 	if _ghost != null and is_instance_valid(_ghost) and _ghost.visible:
-		_ghost.rotation.y = Wc3Coords.yaw_wc3_to_godot(deg_to_rad(angle_deg))
+		_ghost.rotation.y = Wc3Coords.yaw_wc3_unit_to_godot(deg_to_rad(angle_deg))
 		return
 	_poll_ghost_from_mouse()
 
@@ -655,7 +655,7 @@ func _show_ghost_at(world_pos: Vector3) -> void:
 		return
 	_ghost.visible = true
 	_ghost.global_position = world_pos
-	_ghost.rotation.y = Wc3Coords.yaw_wc3_to_godot(deg_to_rad(angle_deg))
+	_ghost.rotation.y = Wc3Coords.yaw_wc3_unit_to_godot(deg_to_rad(angle_deg))
 
 
 func _hide_ghost() -> void:

@@ -7,6 +7,8 @@ extends Control
 ## 加载：预载 + 轻量 instance + 小池复用；取消选中隐藏 Viewport 清残帧。
 
 const PORTRAIT_SIZE := Vector2i(96, 96)
+## 相对 MDX/启发式机位再推近：约看满原画面的 90%（略放大，减少边框穿帮）
+const _FRAMING_FILL := 0.90
 const _EMPTY_BG := Color(0.12, 0.12, 0.14, 1.0)
 ## 中立（owner≥12）肖像底：黑灰，不用队色条。
 const _NEUTRAL_BG := Color(0.1, 0.1, 0.11, 1.0)
@@ -267,10 +269,18 @@ func _apply_team_bg(type_id: String, owner_id: int) -> void:
 		_bg.color = _NEUTRAL_BG
 		return
 	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
+	var base: Color
 	if color_i >= 0 and color_i < MapPlaceholders.PLAYER_COLORS.size():
-		_bg.color = MapPlaceholders.PLAYER_COLORS[color_i]
+		base = MapPlaceholders.PLAYER_COLORS[color_i]
 	else:
-		_bg.color = MapPlaceholders.color_for(type_id, owner_id, true)
+		base = MapPlaceholders.color_for(type_id, owner_id, true)
+	# 比模型队色更深，避免与肖像上的 TeamColor 糊成一块
+	_bg.color = _darken_portrait_bg(base)
+
+
+## 肖像底板：保留色相，明显压暗（相对模型队色）。
+func _darken_portrait_bg(c: Color) -> Color:
+	return Color(c.r * 0.38, c.g * 0.38, c.b * 0.38, 1.0)
 
 
 func _clear_model() -> void:
@@ -296,28 +306,31 @@ func _disconnect_anim_only() -> void:
 func _fit_camera(root: Node3D, model_path: String) -> void:
 	if root == null or _world == null:
 		return
-	# 1) 肖像 .scn 内 bake 的 Camera3D —— 唯一「正式」机位
-	var baked := _find_baked_camera(root)
-	if baked != null:
-		if _fallback_cam != null and is_instance_valid(_fallback_cam):
-			_fallback_cam.current = false
-		baked.current = true
-		return
-	# 2) 无 bake 相机：用 HUD 回退相机 + sidecar / AABB
+	# 禁止用模型树内 bake 的 Camera3D：挂在 scale=0.01 根下时 SubViewport 常黑屏
+	# （金矿等旧 .scn 偶发能看，人族重烤后全滅）。统一用 PortraitWorld 下的回退相机。
+	_set_model_cameras_current(root, false)
 	var cam := _ensure_fallback_camera()
 	cam.current = true
 	if _apply_mdx_camera_sidecar(cam, model_path):
 		return
-	var aabb := _visual_aabb(root)
+	var aabb := _visual_aabb_global(root)
 	if aabb.size.length() < 1e-4:
-		aabb = AABB(Vector3(-0.4, 0.0, -0.4), Vector3(0.8, 1.2, 0.8))
-	var center := aabb.position + aabb.size * 0.5
+		aabb = AABB(root.global_position + Vector3(-0.4, 0.0, -0.4), Vector3(0.8, 1.2, 0.8))
+	var center := aabb.get_center()
 	center.y = aabb.position.y + aabb.size.y * 0.62
 	var radius := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z)) * 0.5
 	radius = maxf(radius, 0.35)
 	var dist := radius / maxf(tan(deg_to_rad(cam.fov * 0.5)), 0.05) * 1.15
+	dist *= _FRAMING_FILL
 	cam.global_position = center + Vector3(0.0, radius * 0.08, dist)
 	cam.look_at(center, Vector3.UP)
+
+
+func _visual_aabb_global(root: Node3D) -> AABB:
+	var local := _visual_aabb(root)
+	if local.size.length() < 1e-8:
+		return AABB()
+	return root.global_transform * local
 
 
 func _ensure_fallback_camera() -> Camera3D:
@@ -344,6 +357,7 @@ func _find_baked_camera(root: Node) -> Camera3D:
 	return found[0] as Camera3D
 
 
+## HUD 回退相机在 PortraitWorld（无额外 scale）；sidecar 坐标已是世界尺度。
 func _apply_mdx_camera_sidecar(cam: Camera3D, model_path: String) -> bool:
 	var data := _load_cameras_sidecar(model_path)
 	if data.is_empty():
@@ -372,8 +386,10 @@ func _apply_mdx_camera_sidecar(cam: Camera3D, model_path: String) -> bool:
 		cam.near = near_v
 	if far_v > near_v:
 		cam.far = far_v
-	cam.position = pos
-	if pos.distance_squared_to(tgt) > 1e-8:
+	# 向注视点拉近约 10%，主体略放大（看满原画面 ~90%）
+	var eye := pos.lerp(tgt, 1.0 - _FRAMING_FILL)
+	cam.global_position = eye
+	if eye.distance_squared_to(tgt) > 1e-8:
 		cam.look_at(tgt, Vector3.UP)
 	return true
 

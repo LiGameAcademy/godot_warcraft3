@@ -66,9 +66,15 @@ var _crowd_query: UnitCrowdQuery = null
 var _cell_reservation: PathCellReservation = null
 var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
+var _damage_pipeline: DamagePipeline = null
+var _death_service: DeathService = null
 var _tree_registry: TreeRegistry = null
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
+## 攻击瞄准：左键单位=Attack，地面=Attack-Move
+var _attack_targeting: bool = false
+## 巡逻瞄准：左键指定另一端点
+var _patrol_targeting: bool = false
 ## 点了「采集」或热键 G 后，等待左键点金矿/树
 var _harvest_targeting: bool = false
 ## 点了「集结点」后，等待左键指定地点/矿/树
@@ -351,6 +357,29 @@ func _input(event: InputEvent) -> void:
 			_set_move_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
+	if _attack_targeting and event is InputEventMouseButton:
+		var mb_a := event as InputEventMouseButton
+		if mb_a.pressed and mb_a.button_index == MOUSE_BUTTON_LEFT:
+			_issue_attack_at_screen(mb_a.position, UnitOrder.Source.TARGETING)
+			_set_attack_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_a.pressed and mb_a.button_index == MOUSE_BUTTON_RIGHT:
+			_set_attack_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+	if _patrol_targeting and event is InputEventMouseButton:
+		var mb_p := event as InputEventMouseButton
+		if mb_p.pressed and mb_p.button_index == MOUSE_BUTTON_LEFT:
+			if _issue_patrol_at_screen(mb_p.position, UnitOrder.Source.TARGETING):
+				_flash_cursor_move()
+			_set_patrol_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_p.pressed and mb_p.button_index == MOUSE_BUTTON_RIGHT:
+			_set_patrol_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
 	# 采集瞄准：左键点金矿
 	if _harvest_targeting and event is InputEventMouseButton:
 		var mb_h := event as InputEventMouseButton
@@ -469,6 +498,10 @@ func _setup_pathing() -> void:
 		map_root.get_id_catalog()
 	)
 	_command_router = CommandRouter.new()
+	_death_service = DeathService.new()
+	_death_service.on_before_exit = Callable(self, "_on_unit_dying")
+	_damage_pipeline = DamagePipeline.new()
+	_damage_pipeline.death = _death_service
 	_ensure_build_sites_host()
 	_command_router.configure(
 		_path_query,
@@ -478,7 +511,8 @@ func _setup_pathing() -> void:
 		Callable(self, "_ensure_build_controller"),
 		_session,
 		Callable(self, "_find_build_site"),
-		Callable(self, "_find_build_site_by_node")
+		Callable(self, "_find_build_site_by_node"),
+		Callable(self, "_ensure_attack_controller")
 	)
 	_setup_tree_registry()
 	_ensure_path_debug()
@@ -725,13 +759,22 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 func _unhandled_input(event: InputEvent) -> void:
 	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
 	if (
-		(_move_targeting or _harvest_targeting or _rally_targeting or _is_build_targeting())
+		(
+			_move_targeting
+			or _attack_targeting
+			or _patrol_targeting
+			or _harvest_targeting
+			or _rally_targeting
+			or _is_build_targeting()
+		)
 		and event is InputEventKey
 		and event.pressed
 		and not event.echo
 	):
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_set_move_targeting(false)
+			_set_attack_targeting(false)
+			_set_patrol_targeting(false)
 			_set_harvest_targeting(false)
 			_set_rally_targeting(false)
 			if _is_build_targeting():
@@ -829,6 +872,94 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 		game_hud.set_status("停止 · %d 单位" % n_stop)
 	_refresh_command_card()
 	return n_stop > 0
+
+
+func _issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	var n := _command_router.issue_hold(selected, source)
+	if n > 0 and game_hud:
+		game_hud.set_status("保持原位 · %d 单位" % n)
+	elif game_hud:
+		game_hud.set_status("保持原位：无可用单位")
+	_refresh_command_card()
+	return n > 0
+
+
+## 攻击瞄准落点：单位 → Attack（P0 追击）；地面 → Attack-Move。
+func _issue_attack_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return false
+	var picked: Node3D = null
+	if unit_selector.has_method("pick_at"):
+		picked = unit_selector.call("pick_at", screen_pos) as Node3D
+	if picked != null and CombatQuery.any_can_attack(selected, picked):
+		var n := _command_router.issue_attack_target(selected, picked, source)
+		if game_hud:
+			if n > 0:
+				game_hud.set_status("攻击 · %d 单位" % n)
+			else:
+				game_hud.set_status("攻击：无合法目标")
+		_refresh_command_card()
+		return n > 0
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		if game_hud:
+			game_hud.set_status("攻击：未点到地面或目标")
+		return false
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
+	var result := _command_router.issue_attack_move(selected, goal_center, source)
+	var moved: int = int(result.get("moved", 0))
+	if moved > 0:
+		_spawn_move_confirm(goal_center, MoveConfirmFx.Kind.ATTACK)
+	if game_hud:
+		if moved > 0:
+			game_hud.set_status(
+				"攻击移动 → (%.0f, %.0f) · %d 单位" % [goal_center.x, goal_center.y, moved]
+			)
+		else:
+			game_hud.set_status("攻击移动：无法到达")
+	_refresh_command_card()
+	return moved > 0
+
+
+func _issue_patrol_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _command_router == null or unit_selector == null or _path_query == null:
+		return false
+	if not unit_selector.has_method("get_selected"):
+		return false
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return false
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		if game_hud:
+			game_hud.set_status("巡逻：未点到地面")
+		return false
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
+	var result := _command_router.issue_patrol(selected, goal_center, source)
+	var moved: int = int(result.get("moved", 0))
+	if moved > 0:
+		_spawn_move_confirm(goal_center)
+	if game_hud:
+		if moved > 0:
+			game_hud.set_status(
+				"巡逻 ↔ (%.0f, %.0f) · %d 单位" % [goal_center.x, goal_center.y, moved]
+			)
+		else:
+			game_hud.set_status("巡逻：无法开始")
+	_refresh_command_card()
+	return moved > 0
 
 
 ## 右键智能：屏幕点 → SmartTarget → CommandRouter.issue_smart。
@@ -966,6 +1097,13 @@ func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 			if s4 < best_score:
 				best_score = s4
 				best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
+
+	# 敌对单位 → Attack（优先于纯地面，低于矿/树/交货/工地）；友军不走智能攻击
+	if picked != null and CombatQuery.any_can_auto_attack(selected, picked):
+		var s5 := _screen_score_node(picked, screen_pos)
+		if s5 < best_score:
+			best_score = s5
+			best = SmartTarget.enemy_unit(picked, _node_goal_wc3(picked, ground_goal))
 
 	if best != null:
 		_flash_smart_interact_target(best)
@@ -1315,12 +1453,50 @@ func _begin_move_targeting(source: int) -> void:
 		if game_hud:
 			game_hud.set_status("移动：无可用单位")
 		return
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
 	_set_move_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
 		game_hud.set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
+
+
+func _begin_attack_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_movers(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("攻击：无可用单位")
+		return
+	_set_move_targeting(false)
+	_set_patrol_targeting(false)
+	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
+	_set_attack_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 A"
+		game_hud.set_status("攻击瞄准（%s）· 左键单位/地面 · Esc 取消" % src)
+
+
+func _begin_patrol_targeting(source: int) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if _command_router == null or _command_router.filter_movers(selected).is_empty():
+		if game_hud:
+			game_hud.set_status("巡逻：无可用单位")
+		return
+	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
+	_set_patrol_targeting(true)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 P"
+		game_hud.set_status("巡逻瞄准（%s）· 左键指定另一端 · Esc 取消" % src)
 
 
 func _begin_harvest_targeting(source: int) -> void:
@@ -1333,6 +1509,8 @@ func _begin_harvest_targeting(source: int) -> void:
 		return
 	# 已有负金：面板若显示交回则不会进此；若空手瞄准
 	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
 	_set_rally_targeting(false)
 	_set_harvest_targeting(true)
 	if game_hud:
@@ -1354,6 +1532,8 @@ func _begin_rally_targeting(source: int) -> void:
 			game_hud.set_status("集结点：请选中可训练建筑")
 		return
 	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(true)
 	if game_hud:
@@ -1371,6 +1551,25 @@ func _set_move_targeting(active: bool) -> void:
 			"set_mode",
 			Wc3GameCursor.Mode.MOVE if active else Wc3GameCursor.Mode.IDLE
 		)
+
+
+func _set_attack_targeting(active: bool) -> void:
+	_attack_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_attack_targeting"):
+		game_cursor.call("set_attack_targeting", active)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call(
+			"set_mode",
+			Wc3GameCursor.Mode.TARGET if active else Wc3GameCursor.Mode.IDLE
+		)
+
+
+func _set_patrol_targeting(active: bool) -> void:
+	_patrol_targeting = active
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_move_targeting"):
+		game_cursor.call("set_move_targeting", active)
 
 
 func _set_harvest_targeting(active: bool) -> void:
@@ -1396,7 +1595,12 @@ func _sync_selector_enabled_for_targeting() -> void:
 		return
 	# 任一瞄准态都关掉点选，避免抢左键
 	unit_selector.enabled = not (
-		_move_targeting or _harvest_targeting or _rally_targeting or _is_build_targeting()
+		_move_targeting
+		or _attack_targeting
+		or _patrol_targeting
+		or _harvest_targeting
+		or _rally_targeting
+		or _is_build_targeting()
 	)
 
 func _flash_cursor_move() -> void:
@@ -1404,7 +1608,7 @@ func _flash_cursor_move() -> void:
 		game_cursor.call("flash_move")
 
 
-func _spawn_move_confirm(goal_wc3: Vector2) -> void:
+func _spawn_move_confirm(goal_wc3: Vector2, kind: int = MoveConfirmFx.Kind.MOVE) -> void:
 	if map_root == null:
 		return
 	var fx := MoveConfirmFxScene.instantiate() as MoveConfirmFx
@@ -1413,8 +1617,7 @@ func _spawn_move_confirm(goal_wc3: Vector2) -> void:
 	if map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
 	fx.setup(cache)
-	# 当前只有移动命令；攻击移动接上后改传 MoveConfirmFx.Kind.ATTACK
-	fx.play_at_wc3(goal_wc3, _heightfield, MoveConfirmFx.Kind.MOVE)
+	fx.play_at_wc3(goal_wc3, _heightfield, kind)
 
 
 func _ensure_rally_flag() -> RallyFlagFx:
@@ -1529,6 +1732,44 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	return hc
 
 
+func _ensure_attack_controller(unit: Node3D) -> AttackController:
+	_ensure_unit_visual(unit)
+	UnitLife.ensure(unit)
+	var existing := unit.get_node_or_null("AttackController") as AttackController
+	if existing != null:
+		existing.configure(
+			Callable(self, "_ensure_navigator"),
+			Callable(self, "_unit_host"),
+			_damage_pipeline
+		)
+		return existing
+	var ac := AttackController.new()
+	ac.name = "AttackController"
+	ac.configure(
+		Callable(self, "_ensure_navigator"),
+		Callable(self, "_unit_host"),
+		_damage_pipeline
+	)
+	unit.add_child(ac)
+	return ac
+
+
+func _on_unit_dying(unit: Node3D) -> void:
+	if unit == null:
+		return
+	if unit_selector != null and unit_selector.has_method("deselect_unit"):
+		unit_selector.call("deselect_unit", unit)
+	var hc := unit.get_node_or_null("HarvestController") as HarvestController
+	if hc != null:
+		hc.abort()
+	var ac := unit.get_node_or_null("AttackController") as AttackController
+	if ac != null:
+		ac.cancel()
+	var pc := unit.get_node_or_null("PatrolController") as PatrolController
+	if pc != null:
+		pc.cancel()
+
+
 func _is_build_targeting() -> bool:
 	return _build_placement != null and _build_placement.is_active()
 
@@ -1562,6 +1803,8 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 	_build_menu_open = false
 	# 中断其他瞄准态
 	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
 	_clear_pinned_site_ghost()
@@ -1603,6 +1846,8 @@ func _set_build_menu_open(open: bool) -> void:
 	_build_menu_open = open
 	if open:
 		_set_move_targeting(false)
+		_set_attack_targeting(false)
+		_set_patrol_targeting(false)
 		_set_harvest_targeting(false)
 		if _is_build_targeting():
 			_cancel_build_targeting()
@@ -2686,6 +2931,15 @@ func _on_command_action(
 		CommandCard.ACTION_STOP:
 			if enable_move_command:
 				_issue_stop(source)
+		CommandCard.ACTION_HOLD:
+			if enable_move_command:
+				_issue_hold(source)
+		CommandCard.ACTION_ATTACK:
+			if enable_move_command:
+				_begin_attack_targeting(source)
+		CommandCard.ACTION_PATROL:
+			if enable_move_command:
+				_begin_patrol_targeting(source)
 		CommandCard.ACTION_HARVEST_GOLD:
 			_begin_harvest_targeting(source)
 		CommandCard.ACTION_RETURN_GOODS:
@@ -2736,6 +2990,8 @@ func _clear_command_card_hotkeys() -> void:
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
 	_build_menu_open = false

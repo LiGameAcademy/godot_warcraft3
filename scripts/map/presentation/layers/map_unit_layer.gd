@@ -21,9 +21,6 @@ signal batch_finished(placed: int, placeholders: int)
 const DROP_RING_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const DROP_RING_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const DROP_RING_Y_BIAS := 0.15
-const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
-const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
-const _UberSplat := preload("res://scripts/map/presentation/effects/wc3_uber_splat.gd")
 
 var _catalog: Wc3IdCatalog
 var _cache: MapModelCache
@@ -360,22 +357,23 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 		node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
 	node.name = "%s_%s" % [type_id, str(u.get("creationNumber", 0))]
 	node.position = gpos
-	node.rotation.y = Wc3Coords.yaw_wc3_to_godot(angle)
+	# 单位前进轴 = 本地 +X（与 UnitNavigator 一致）；勿用 doodad 的 -a+π
+	node.rotation.y = Wc3Coords.yaw_wc3_unit_to_godot(angle)
 	node.set_meta("unit_data", u.duplicate(true))
 	add_child(node)
 	if not node.get_meta("is_placeholder", false) and _cache != null:
 		var glb := _unit_glb_path(u)
-		if not glb.is_empty() and _Pe2.has_emitters(glb):
-			_Pe2.attach_to(node, glb)
+		if not glb.is_empty() and Wc3Pe2Particles.has_emitters(glb):
+			Wc3Pe2Particles.attach_to(node, glb)
 		# 建筑（含主城升本档）按 typeId 选 Stand / Stand Upgrade*；单位仍走普通 Stand
-		if BuildingVisualScr.is_building(type_id):
+		if BuildingVisual.is_building(type_id):
 			# 仅明确半成品播 Birth。地图 hitPoints=-1 表示「用默认满血」，切勿当成残血开工。
 			# 金矿等中立建筑始终 Stand（Birth 很长且带尘效，会整图错乱）。
 			var under := bool(u.get("under_construction", false))
 			if under and type_id != "ngol":
-				BuildingVisualScr.apply_phase(_cache, node, type_id, BuildingVisualScr.Phase.BIRTH)
+				BuildingVisual.apply_phase(_cache, node, type_id, BuildingVisual.Phase.BIRTH)
 			else:
-				BuildingVisualScr.apply_idle(_cache, node, type_id)
+				BuildingVisual.apply_idle(_cache, node, type_id)
 			_apply_building_ground(node, type_id, hf)
 		else:
 			# Stand + geosetvis 定格：藏尸体/无关 Geoset（羊、野猪、野怪等同建筑/树）
@@ -383,7 +381,7 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 			if _cache.has_method("snap_stand_geoset_visibility"):
 				_cache.call("snap_stand_geoset_visibility", node)
 			if not glb.is_empty():
-				_Pe2.apply_sequence(node, "Stand")
+				Wc3Pe2Particles.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
 	UnitLife.ensure(node)
 	_apply_unit_render_layers(node)
@@ -413,15 +411,15 @@ func _apply_building_ground(node: Node3D, type_id: String, hf: Wc3Heightfield) -
 	if hf != null:
 		tileset = str(hf.main_tileset)
 	# 先估下沉再挂贴花，便于把贴花补偿回地表
-	var sink := _UberSplat.foot_sink_y(node)
-	var y_delta := _UberSplat.BUILDING_Y_LIFT - sink
+	var sink := Wc3UberSplat.foot_sink_y(node)
+	var y_delta := Wc3UberSplat.BUILDING_Y_LIFT - sink
 	node.set_meta("building_foot_sink", sink)
 	node.set_meta("building_y_delta", y_delta)
 	if absf(y_delta) > 1e-5:
 		node.position.y += y_delta
-	var splat := _UberSplat.attach_to(node, type_id, tileset)
+	var splat := Wc3UberSplat.attach_to(node, type_id, tileset)
 	if splat != null:
-		_UberSplat.compensate_parent_y(splat, y_delta)
+		Wc3UberSplat.compensate_parent_y(splat, y_delta)
 
 
 func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
@@ -440,12 +438,12 @@ func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
 	if absf(y_delta) <= 1e-5:
 		# 兼容旧 meta：仅有 foot_sink
 		var sink := float(n3.get_meta("building_foot_sink", 0.0))
-		y_delta = _UberSplat.BUILDING_Y_LIFT - sink
+		y_delta = Wc3UberSplat.BUILDING_Y_LIFT - sink
 	if absf(y_delta) > 1e-5:
 		n3.position.y += y_delta
-	var splat := n3.get_node_or_null(_UberSplat.SPLAT_ROOT_NAME) as Node3D
+	var splat := n3.get_node_or_null(Wc3UberSplat.SPLAT_ROOT_NAME) as Node3D
 	if splat != null:
-		_UberSplat.compensate_parent_y(splat, y_delta)
+		Wc3UberSplat.compensate_parent_y(splat, y_delta)
 	pos = pos.duplicate()
 	pos["z"] = new_z_wc3
 	d = d.duplicate(true)

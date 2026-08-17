@@ -206,12 +206,46 @@ class RallyHandler extends SmartInteractHandler:
 		return {"rallied": int(router.issue_rally_subset(typed, target))}
 
 
+class AttackHandler extends SmartInteractHandler:
+	func priority() -> int:
+		return 50
+
+	func applies_to(target: SmartTarget) -> bool:
+		return target != null and target.kind == SmartTarget.Kind.ENEMY_UNIT
+
+	func claim(
+		movers: Array[Node3D],
+		_rally: Array[Node3D],
+		target: SmartTarget,
+		_router: Variant
+	) -> Dictionary:
+		var taken: Array[Node3D] = []
+		for n in movers.duplicate():
+			if n is Node3D and CombatQuery.is_auto_acquire_target(n, target.node) and CombatQuery.has_weapon(n):
+				taken.append(n as Node3D)
+				movers.erase(n)
+		return {"movers": taken, "rally": []}
+
+	func execute(
+		claimed_movers: Array,
+		_claimed_rally: Array,
+		target: SmartTarget,
+		source: int,
+		router: Variant
+	) -> Dictionary:
+		if claimed_movers.is_empty() or target.node == null:
+			return {}
+		var n: int = int(router.issue_attack_target(claimed_movers, target.node, source))
+		return {"moved": n}
+
+
 static func all_sorted() -> Array[SmartInteractHandler]:
 	var list: Array[SmartInteractHandler] = [
 		ReturnHandler.new(),
 		HarvestGoldHandler.new(),
 		HarvestLumberHandler.new(),
 		JoinBuildHandler.new(),
+		AttackHandler.new(),
 		MoveHandler.new(),
 		RallyHandler.new(),
 	]

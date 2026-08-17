@@ -98,15 +98,20 @@ static func apply_phase(
 		root, want, 0.0, cache, activity, ["Stand"]
 	)
 	if bool(played.get("ok", false)):
+		var played_as := str(played.get("played_as", want))
+		if cache != null and cache.has_method("snap_geoset_visibility_for"):
+			cache.call("snap_geoset_visibility_for", root, played_as)
 		AppLog.debug(
 			AppLog.Layer.PRESENT,
 			_TAG,
-			"apply_phase ok type=%s → %s" % [type_id, str(played.get("played_as", want))]
+			"apply_phase ok type=%s → %s" % [type_id, played_as]
 		)
 		return true
 	var ok := cache.autoplay_stand(root, false)
 	if ok:
 		AppLog.debug(AppLog.Layer.PRESENT, _TAG, "apply_phase Stand fallback type=%s" % type_id)
+		if cache.has_method("snap_stand_geoset_visibility"):
+			cache.call("snap_stand_geoset_visibility", root)
 		Wc3Pe2Particles.apply_sequence(root, "Stand")
 	else:
 		AppLog.warn(

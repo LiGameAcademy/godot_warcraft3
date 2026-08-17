@@ -10,6 +10,8 @@ enum Kind {
 	DROPOFF = 3,
 	## 未完工建筑：农民可 join 建造
 	BUILD_SITE = 4,
+	## 敌对 / 可攻击单位
+	ENEMY_UNIT = 5,
 }
 
 
@@ -61,6 +63,14 @@ static func build_site(building: Node3D, goal: Vector2) -> SmartTarget:
 	return t
 
 
+static func enemy_unit(unit: Node3D, goal: Vector2) -> SmartTarget:
+	var t := SmartTarget.new()
+	t.kind = Kind.ENEMY_UNIT
+	t.node = unit
+	t.goal_wc3 = goal
+	return t
+
+
 func kind_name() -> String:
 	match kind:
 		Kind.GROUND:
@@ -73,5 +83,7 @@ func kind_name() -> String:
 			return "Dropoff"
 		Kind.BUILD_SITE:
 			return "BuildSite"
+		Kind.ENEMY_UNIT:
+			return "EnemyUnit"
 		_:
 			return "Unknown"

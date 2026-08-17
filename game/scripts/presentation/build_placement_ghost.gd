@@ -279,7 +279,7 @@ func _rebuild_model() -> void:
 	add_child(inst)
 	_model_root = inst
 	# 与完工建筑同一默认朝向（bj_UNIT_FACING = 270°）
-	_model_root.rotation.y = Wc3Coords.yaw_wc3_to_godot(deg_to_rad(270.0))
+	_model_root.rotation.y = Wc3Coords.yaw_wc3_unit_to_godot(deg_to_rad(270.0))
 	_model_root.visible = true
 	_ghostify_meshes(inst)
 	_apply_model_tint()

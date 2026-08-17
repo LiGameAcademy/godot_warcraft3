@@ -27,6 +27,7 @@ var _ap: AnimationPlayer = null ## 动画播放器。
 var _stance: int = AnimSequenceResolver.Stance.DEFAULT ## 姿态。
 var _moving: bool = false ## 是否移动。
 var _chopping: bool = false ## 是否砍伐。
+var _combat_attack: bool = false ## 是否战斗出手。
 var _building_work: bool = false ## 是否施工。
 var _logical: String = "" ## 逻辑名。
 var _activity: int = AnimSequenceResolver.Activity.IDLE ## 活动。
@@ -96,11 +97,11 @@ func set_stance(stance: int, force: bool = false) -> void:
 	var stance_changed := _stance != stance
 	_stance = stance
 	_logical = ""
-	if _chopping or _building_work:
+	if _chopping or _building_work or _combat_attack:
 		AppLog.debug(
 			AppLog.Layer.PRESENT,
 			_TAG,
-			"set_stance=%s 延迟（chop/work）" % stance
+			"set_stance=%s 延迟（chop/work/attack）" % stance
 		)
 		return
 	var blend := BLEND_CARRY_SWITCH if stance_changed or force else (
@@ -116,11 +117,13 @@ func set_stance(stance: int, force: bool = false) -> void:
 
 ## 设置移动。
 func set_locomotion(moving: bool) -> void:
-	if (_chopping or _building_work) and moving:
+	if (_chopping or _building_work or _combat_attack) and moving:
 		_chopping = false
 		_building_work = false
+		_combat_attack = false
 		_logical = ""
-	elif _chopping or _building_work:
+	elif _chopping or _building_work or _combat_attack:
+		# 砍伐 / 施工 / 战斗出手中：只记移动态，不抢播 Walk/Stand。
 		_moving = moving
 		return
 	var activity := (
@@ -171,6 +174,25 @@ func set_chopping(active: bool) -> void:
 	_chopping = active
 	AppLog.debug(AppLog.Layer.PRESENT, _TAG, "set_chopping=%s" % active)
 	if active:
+		_combat_attack = false
+		_moving = false
+		_logical = ""
+		_play_current(0.08)
+	else:
+		_logical = ""
+		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
+
+
+## 战斗出手动画（非伐木）。
+func set_combat_attack(active: bool) -> void:
+	if _combat_attack == active:
+		if active and _activity == AnimSequenceResolver.Activity.ATTACK:
+			return
+		if not active:
+			return
+	_combat_attack = active
+	if active:
+		_chopping = false
 		_moving = false
 		_logical = ""
 		_play_current(0.08)
@@ -181,7 +203,7 @@ func set_chopping(active: bool) -> void:
 
 ## 获取当前活动。
 func _current_activity() -> int:
-	if _chopping:
+	if _chopping or _combat_attack:
 		return AnimSequenceResolver.Activity.ATTACK
 	if _building_work:
 		return AnimSequenceResolver.Activity.WORK
@@ -253,10 +275,14 @@ func _play_current(blend: float) -> void:
 	else:
 		if _soft_loop != null:
 			_soft_loop.clear()
-	# Work：立刻定格 geosetvis，避免首帧闪一下旧显隐
-	if activity == AnimSequenceResolver.Activity.WORK and _cache != null:
-		if _cache.has_method("snap_geoset_visibility_for"):
-			_cache.call("snap_geoset_visibility_for", body, _logical)
+	# Work / 负资源：立刻定格 geosetvis（斧/金袋/木材），避免沿用上一动画末帧显隐
+	if _cache != null and _cache.has_method("snap_geoset_visibility_for"):
+		if (
+			activity == AnimSequenceResolver.Activity.WORK
+			or stance == AnimSequenceResolver.Stance.GOLD
+			or stance == AnimSequenceResolver.Stance.LUMBER
+		):
+			_cache.call("snap_geoset_visibility_for", body, resolved if not resolved.is_empty() else _logical)
 
 
 ## 软循环是否继续。

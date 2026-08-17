@@ -16,7 +16,6 @@ signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
 signal train_issued(unit_id: String) ## F2-6: 训练令下给建筑
 
 const META_ORDER_QUEUE := "order_queue"
-const _SmartHandlers := preload("res://game/scripts/logic/command/smart_handler_registry.gd")
 
 var _path_query: PathQuery = null
 var _crowd_query: UnitCrowdQuery = null
@@ -27,12 +26,14 @@ var _ensure_navigator: Callable = Callable()
 var _ensure_harvest: Callable = Callable()
 ## Callable(unit: Node3D) -> BuildController（F2-3）
 var _ensure_build: Callable = Callable()
+## Callable(unit: Node3D) -> AttackController
+var _ensure_attack: Callable = Callable()				## 确保攻击控制器
 ## Callable(site_wc3: Vector2, building_id: String) -> BuildSite
-var _find_build_site: Callable = Callable()
+var _find_build_site: Callable = Callable()				## 查找建筑站点
 ## Callable(building_node: Node3D) -> BuildSite
-var _find_build_site_by_node: Callable = Callable()
+var _find_build_site_by_node: Callable = Callable()		## 查找建筑站点
 
-
+## 配置
 func configure(
 	path_query: PathQuery,
 	crowd_query: UnitCrowdQuery,
@@ -41,7 +42,8 @@ func configure(
 	ensure_build: Callable = Callable(),
 	session: GameSession = null,
 	find_build_site: Callable = Callable(),
-	find_build_site_by_node: Callable = Callable()
+	find_build_site_by_node: Callable = Callable(),
+	ensure_attack: Callable = Callable()
 ) -> void:
 	_path_query = path_query
 	_crowd_query = crowd_query
@@ -49,6 +51,7 @@ func configure(
 	_ensure_navigator = ensure_navigator
 	_ensure_harvest = ensure_harvest
 	_ensure_build = ensure_build
+	_ensure_attack = ensure_attack
 	_find_build_site = find_build_site
 	_find_build_site_by_node = find_build_site_by_node
 
@@ -155,6 +158,9 @@ func issue_stop(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 	for node in movers:
 		_abort_harvest(node)
 		_abort_build_leave(node)
+		_abort_patrol(node)
+		_abort_attack(node)
+		_clear_hold(node)
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
@@ -169,6 +175,189 @@ func issue_stop(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 	if n_stop > 0:
 		stop_issued.emit(n_stop)
 	return n_stop
+
+
+## 保持原位：停步 + Hold；有武器则 AttackController 仅打射程内。
+func issue_hold(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
+	var movers := filter_movers(selected)
+	var order := UnitOrder.hold(source)
+	var n := 0
+	for node in movers:
+		_abort_harvest(node)
+		_abort_build_leave(node)
+		_abort_patrol(node)
+		var q := queue_for(node)
+		if q:
+			q.set_current(order)
+		var nav: UnitNavigator = null
+		if _ensure_navigator.is_valid():
+			nav = _ensure_navigator.call(node) as UnitNavigator
+		else:
+			nav = node.get_node_or_null("UnitNavigator") as UnitNavigator
+		if nav != null:
+			nav.stop()
+		node.set_meta("hold_position", true)
+		if CombatQuery.has_weapon(node) and _ensure_attack.is_valid():
+			var ac := _ensure_attack.call(node) as AttackController
+			if ac != null:
+				ac.start_hold()
+		else:
+			_abort_attack(node)
+		n += 1
+	return n
+
+
+## 攻击移动：AttackController 索敌 + 走向目标点。
+func issue_attack_move(
+	selected: Array,
+	goal_center_wc3: Vector2,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> Dictionary:
+	var movers := filter_movers(selected)
+	var result := {
+		"moved": 0,
+		"failed": 0,
+		"goal_wc3": goal_center_wc3,
+		"movers": movers,
+	}
+	if movers.is_empty() or goal_center_wc3 == Vector2.INF:
+		return result
+	if not _ensure_attack.is_valid():
+		return issue_move_to_wc3(selected, goal_center_wc3, source)
+	var radii := PackedFloat32Array()
+	for node in movers:
+		_abort_harvest(node)
+		_abort_build_leave(node)
+		_abort_patrol(node)
+		_clear_hold(node)
+		var r := 16.0
+		if _crowd_query != null:
+			r = _crowd_query.radius_for_unit(node)
+		radii.append(r)
+	var goals: PackedVector2Array = UnitMoveSlots.assign_goals(
+		movers, radii, goal_center_wc3, _path_query
+	)
+	var moved := 0
+	var failed := 0
+	for i in range(movers.size()):
+		var node: Node3D = movers[i]
+		var slot: Vector2 = goals[i] if i < goals.size() else goal_center_wc3
+		var order := UnitOrder.attack_move(slot, source)
+		var q := queue_for(node)
+		if q:
+			q.set_current(order)
+		node.set_meta("attack_move", true)
+		var ac := _ensure_attack.call(node) as AttackController
+		if ac != null and ac.start_attack_move(slot):
+			moved += 1
+		else:
+			failed += 1
+	result["moved"] = moved
+	result["failed"] = failed
+	return result
+
+
+## 指定目标攻击：AttackController 追击并出手。
+func issue_attack_target(
+	selected: Array,
+	target: Node3D,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> int:
+	if target == null or not is_instance_valid(target):
+		return 0
+	if not _ensure_attack.is_valid():
+		return 0
+	var movers := filter_movers(selected)
+	var n_ok := 0
+	for node in movers:
+		if not CombatQuery.is_valid_attack_target(node, target):
+			continue
+		if not CombatQuery.has_weapon(node):
+			continue
+		_abort_harvest(node)
+		_abort_build_leave(node)
+		_abort_patrol(node)
+		_clear_hold(node)
+		node.set_meta("attack_move", false)
+		var order := UnitOrder.attack(target, source)
+		var q := queue_for(node)
+		if q:
+			q.set_current(order)
+		var ac := _ensure_attack.call(node) as AttackController
+		if ac != null and ac.start_attack(target):
+			n_ok += 1
+	return n_ok
+
+
+## 巡逻：当前位置 ↔ goal。
+func issue_patrol(
+	selected: Array,
+	goal_center_wc3: Vector2,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> Dictionary:
+	var movers := filter_movers(selected)
+	var result := {"moved": 0, "failed": 0, "goal_wc3": goal_center_wc3, "movers": movers}
+	if movers.is_empty() or goal_center_wc3 == Vector2.INF:
+		return result
+	if not _ensure_navigator.is_valid():
+		return result
+	var moved := 0
+	var failed := 0
+	for node in movers:
+		_abort_harvest(node)
+		_abort_build_leave(node)
+		_abort_attack(node)
+		_clear_hold(node)
+		node.set_meta("attack_move", false)
+		var order := UnitOrder.patrol(goal_center_wc3, source)
+		var q := queue_for(node)
+		if q:
+			q.set_current(order)
+		var pc := _ensure_patrol(node)
+		if pc != null and pc.begin(goal_center_wc3):
+			moved += 1
+		else:
+			failed += 1
+			if q:
+				q.set_current(UnitOrder.stop(source))
+	result["moved"] = moved
+	result["failed"] = failed
+	return result
+
+
+func _ensure_patrol(node: Node3D) -> PatrolController:
+	if node == null:
+		return null
+	var existing := node.get_node_or_null("PatrolController") as PatrolController
+	if existing != null:
+		existing.configure(_ensure_navigator)
+		return existing
+	var pc := PatrolController.new()
+	pc.name = "PatrolController"
+	pc.configure(_ensure_navigator)
+	node.add_child(pc)
+	return pc
+
+
+func _abort_patrol(node: Node3D) -> void:
+	if node == null:
+		return
+	var pc := node.get_node_or_null("PatrolController") as PatrolController
+	if pc != null:
+		pc.cancel()
+
+
+func _abort_attack(node: Node3D) -> void:
+	if node == null:
+		return
+	var ac := node.get_node_or_null("AttackController") as AttackController
+	if ac != null:
+		ac.cancel()
+
+
+func _clear_hold(node: Node3D) -> void:
+	if node != null and node.has_meta("hold_position"):
+		node.remove_meta("hold_position")
 
 
 ## 智能交互：同一 SmartTarget → Handler 按优先级认领并执行。
@@ -198,7 +387,7 @@ func issue_smart(
 	var out := empty.duplicate()
 	out["kind"] = target.kind_name()
 	out["goal_wc3"] = target.goal_wc3
-	for h in _SmartHandlers.all_sorted():
+	for h in SmartHandlerRegistry.all_sorted():
 		if not h.applies_to(target):
 			continue
 		var claimed: Dictionary = h.claim(movers, rally_bldgs, target, self)
@@ -268,6 +457,11 @@ func issue_move_to_wc3(
 	for node in movers:
 		_abort_harvest(node)
 		_abort_build_leave(node)
+		_abort_patrol(node)
+		_abort_attack(node)
+		_clear_hold(node)
+		if node.has_meta("attack_move"):
+			node.remove_meta("attack_move")
 		var r := 16.0
 		if _crowd_query != null:
 			r = _crowd_query.radius_for_unit(node)
@@ -317,6 +511,7 @@ func issue_harvest_gold(
 	var n := 0
 	var lane := 0
 	for node in peasants:
+		_abort_attack(node)
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
@@ -350,6 +545,7 @@ func issue_harvest_lumber(
 	var n := 0
 	var lane := 0
 	for node in peasants:
+		_abort_attack(node)
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
