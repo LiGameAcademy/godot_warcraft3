@@ -9,6 +9,7 @@ signal session_ready
 
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
+const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_shell.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -68,6 +69,7 @@ var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
 var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
+var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
@@ -462,6 +464,7 @@ func _on_map_loaded() -> void:
 	_setup_minimap()
 	_setup_portrait_hud()
 	_setup_health_bars()
+	_wire_all_gold_mines()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -502,6 +505,11 @@ func _setup_pathing() -> void:
 	_death_service.on_before_exit = Callable(self, "_on_unit_dying")
 	_damage_pipeline = DamagePipeline.new()
 	_damage_pipeline.death = _death_service
+	_damage_pipeline.damage_applied.connect(_on_damage_applied_present)
+	_projectile_service = ProjectileService.new()
+	_projectile_service.pipeline = _damage_pipeline
+	_projectile_service.projectile_launched.connect(_on_combat_projectile_launched)
+	_projectile_service.projectile_resolved.connect(_on_combat_projectile_resolved)
 	_ensure_build_sites_host()
 	_command_router.configure(
 		_path_query,
@@ -634,6 +642,8 @@ func _ensure_path_debug() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _projectile_service != null:
+		_projectile_service.tick(_delta)
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
@@ -887,6 +897,32 @@ func _issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 		game_hud.set_status("保持原位：无可用单位")
 	_refresh_command_card()
 	return n > 0
+
+
+func _try_toggle_defend(_source: int = UnitOrder.Source.UNKNOWN) -> void:
+	if _command_router == null:
+		return
+	var stock := _local_stock()
+	if stock == null or not stock.has_upgrade(DefendController.UPGRADE_ID):
+		if game_hud:
+			game_hud.set_status("需要研究：%s" % TechPresence.display_name(DefendController.UPGRADE_ID))
+		return
+	var selected := _get_selected_safe()
+	if selected.is_empty():
+		return
+	var primary: Node3D = null
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		primary = unit_selector.call("get_primary") as Node3D
+	var want := not DefendController.is_defending(primary)
+	var n := _command_router.issue_defend(selected, want)
+	if game_hud:
+		if n <= 0:
+			game_hud.set_status("顶盾：无可用步兵")
+		elif want:
+			game_hud.set_status("顶盾开启 · %d 单位" % n)
+		else:
+			game_hud.set_status("停止顶盾 · %d 单位" % n)
+	_refresh_command_card()
 
 
 ## 攻击瞄准落点：单位 → Attack（P0 追击）；地面 → Attack-Move。
@@ -1204,6 +1240,8 @@ func _node_goal_wc3(node: Node3D, fallback: Vector2) -> Vector2:
 
 func _is_own_dropoff_building(building: Node3D, selected: Array) -> bool:
 	if building == null or not is_instance_valid(building):
+		return false
+	if UnitLife.is_under_construction(building):
 		return false
 	var bd: Dictionary = building.get_meta("unit_data", {})
 	var tid := str(bd.get("typeId", "")).strip_edges()
@@ -1740,7 +1778,8 @@ func _ensure_attack_controller(unit: Node3D) -> AttackController:
 		existing.configure(
 			Callable(self, "_ensure_navigator"),
 			Callable(self, "_unit_host"),
-			_damage_pipeline
+			_damage_pipeline,
+			_projectile_service
 		)
 		return existing
 	var ac := AttackController.new()
@@ -1748,17 +1787,70 @@ func _ensure_attack_controller(unit: Node3D) -> AttackController:
 	ac.configure(
 		Callable(self, "_ensure_navigator"),
 		Callable(self, "_unit_host"),
-		_damage_pipeline
+		_damage_pipeline,
+		_projectile_service
 	)
 	unit.add_child(ac)
 	return ac
 
 
+func _on_combat_projectile_launched(info: Dictionary) -> void:
+	var from_wc3: Vector3 = info.get("from_wc3", Vector3.ZERO)
+	var to_wc3: Vector3 = info.get("to_wc3", Vector3.ZERO)
+	var duration := float(info.get("duration", 0.2))
+	var attacker: Node3D = info.get("attacker") as Node3D
+	var target: Node3D = info.get("target") as Node3D
+	var show_tracer := true
+	var impact_art := ""
+	if attacker != null and is_instance_valid(attacker):
+		show_tracer = CombatQuery.wants_tracer_visual(attacker)
+		impact_art = CombatQuery.weapon_impact_art(attacker)
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	var shell: Node3D = CombatProjectileShellScene.instantiate() as Node3D
+	if shell == null:
+		return
+	shell.name = "CombatProjectileShell_%s" % str(info.get("id", 0))
+	add_child(shell)
+	if shell.has_method("play"):
+		shell.call("play", from_wc3, to_wc3, duration, show_tracer, impact_art, cache, target)
+
+
+func _on_combat_projectile_resolved(result: Dictionary) -> void:
+	if bool(result.get("visual_only", false)):
+		return
+	var attacker: Node3D = result.get("attacker") as Node3D
+	if attacker == null or not is_instance_valid(attacker):
+		return
+	var ac := attacker.get_node_or_null("AttackController") as AttackController
+	if ac != null:
+		ac.notify_strike_result(result)
+
+
+func _on_damage_applied_present(result: Dictionary) -> void:
+	DamageFloatText.spawn(result.get("target") as Node3D, result)
+
+
 func _on_unit_dying(unit: Node3D) -> void:
 	if unit == null:
 		return
+	_release_unit_food(unit)
 	if unit_selector != null and unit_selector.has_method("deselect_unit"):
 		unit_selector.call("deselect_unit", unit)
+	var vis := _ensure_unit_visual(unit)
+	if vis != null:
+		if not vis.corpse_expired.is_connected(_on_corpse_expired):
+			vis.corpse_expired.connect(_on_corpse_expired)
+		vis.play_death()
+	else:
+		var tree := get_tree()
+		if tree != null:
+			tree.create_timer(UnitVisual.CORPSE_LINGER_SEC).timeout.connect(
+				_on_corpse_expired.bind(unit)
+			)
+		else:
+			_on_corpse_expired(unit)
 	var hc := unit.get_node_or_null("HarvestController") as HarvestController
 	if hc != null:
 		hc.abort()
@@ -1768,6 +1860,88 @@ func _on_unit_dying(unit: Node3D) -> void:
 	var pc := unit.get_node_or_null("PatrolController") as PatrolController
 	if pc != null:
 		pc.cancel()
+	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
+	if nav != null:
+		nav.stop()
+
+
+func _on_corpse_expired(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	var cn := int(d.get("creationNumber", -1))
+	if map_root != null and cn >= 0 and map_root.remove_unit_instance(cn):
+		return
+	unit.queue_free()
+
+
+func _wire_all_gold_mines() -> void:
+	var host := _unit_host()
+	if host == null:
+		return
+	for c in host.get_children():
+		if not (c is Node3D) or not GoldMineRuntime.is_gold_mine(c):
+			continue
+		_wire_gold_mine(c as Node3D)
+
+
+func _wire_gold_mine(mine: Node3D) -> void:
+	if mine == null or not is_instance_valid(mine):
+		return
+	var rt := GoldMineRuntime.ensure(mine)
+	if rt == null:
+		return
+	if rt.depleted.is_connected(_on_gold_mine_depleted):
+		return
+	rt.depleted.connect(_on_gold_mine_depleted.bind(mine))
+
+
+func _on_gold_mine_depleted(mine: Node3D) -> void:
+	if mine == null or not is_instance_valid(mine):
+		return
+	if bool(mine.get_meta("gold_mine_collapsing", false)):
+		return
+	mine.set_meta("gold_mine_collapsing", true)
+	if unit_selector != null and unit_selector.has_method("deselect_unit"):
+		unit_selector.call("deselect_unit", mine)
+	WorldMembership.exit(mine)
+	if is_instance_valid(mine):
+		mine.visible = true
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	var tid := str(mine.get_meta("unit_data", {}).get("typeId", "ngol"))
+	var played: Dictionary = BuildingVisual.play_death(cache, mine, tid)
+	var wait := float(played.get("duration", 0.0))
+	if wait < 0.35:
+		wait = 1.6
+	var tree := get_tree()
+	if tree != null:
+		tree.create_timer(wait).timeout.connect(_on_gold_mine_collapse_finished.bind(mine))
+	else:
+		_on_gold_mine_collapse_finished(mine)
+
+
+func _on_gold_mine_collapse_finished(mine: Node3D) -> void:
+	_on_corpse_expired(mine)
+
+
+func _release_unit_food(unit: Node3D) -> void:
+	if unit == null or bool(unit.get_meta("food_released", false)):
+		return
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	var owner := int(d.get("owner", -1))
+	if _session != null and owner != int(_session.local_player):
+		return
+	var tid := str(d.get("typeId", "")).strip_edges()
+	var food := BuildingCatalog.get_food_used(tid)
+	if food <= 0:
+		return
+	var stock := _local_stock()
+	if stock == null:
+		return
+	stock.add_food_used(-food)
+	unit.set_meta("food_released", true)
 
 
 func _is_build_targeting() -> bool:
@@ -2342,6 +2516,7 @@ func _apply_building_train_card(building: Node3D, tid: String) -> void:
 	var state := {
 		"include_locomotion": false,
 		"owned_buildings": _owned_buildings_for_local(),
+		"researched": _researched_for_local(),
 		"hero_slots_full": (
 			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
 			>= TechPresence.MAX_HEROES_PER_PLAYER
@@ -2361,6 +2536,20 @@ func _owned_buildings_for_local() -> Dictionary:
 	if _session != null:
 		owner_id = int(_session.local_player)
 	return TechPresence.collect_owned_buildings(_unit_host(), owner_id)
+
+
+func _researched_for_local() -> Dictionary:
+	var stock := _local_stock()
+	if stock == null:
+		return {}
+	return stock.upgrade_map()
+
+
+func _primary_defend_active() -> bool:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	return DefendController.is_defending(primary)
 
 
 func _try_issue_train(unit_id: String) -> void:
@@ -2434,6 +2623,73 @@ func _try_issue_train(unit_id: String) -> void:
 	if game_hud:
 		var n := queue.queue_count() if queue != null else 1
 		game_hud.set_status("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
+
+
+func _try_issue_research(upgrade_id: String) -> void:
+	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		if game_hud:
+			game_hud.set_status("请先选中可研究建筑")
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
+		if game_hud:
+			game_hud.set_status("当前选中无法研究")
+		return
+	if UnitLife.is_under_construction(primary):
+		if game_hud:
+			game_hud.set_status("建造中，无法研究")
+		return
+	var uid := upgrade_id.strip_edges()
+	var researches := TechPresence.filter_vertical_researches(
+		building_id, CommandButtonCatalog.get_shared().get_researches(building_id)
+	)
+	if researches.find(uid) < 0:
+		if game_hud:
+			game_hud.set_status("%s 不能研究 %s" % [building_id, uid])
+		return
+	var stock := _local_stock()
+	if stock != null and stock.has_upgrade(uid):
+		if game_hud:
+			game_hud.set_status("已研究：%s" % TechPresence.display_name(uid))
+		return
+	var owner_id := int(d.get("owner", 0))
+	if TechPresence.is_upgrade_queued(_unit_host(), owner_id, uid):
+		if game_hud:
+			game_hud.set_status("已在研究：%s" % TechPresence.display_name(uid))
+		return
+	var gold := TechPresence.upgrade_gold(uid)
+	var lumber := TechPresence.upgrade_lumber(uid)
+	if stock != null and (stock.gold < gold or stock.lumber < lumber):
+		if game_hud:
+			var msg := "资源不够（需 %d金" % gold
+			if lumber > 0:
+				msg += " %d木" % lumber
+			msg += "）"
+			if game_hud.has_method("show_command_tip"):
+				game_hud.show_command_tip(msg)
+			else:
+				game_hud.set_status(msg)
+		return
+	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if existing != null and existing.is_full():
+		if game_hud:
+			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
+		return
+	if not _command_router.issue_research(primary, uid):
+		if game_hud:
+			game_hud.set_status("无法研究 %s" % uid)
+		return
+	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
+	_wire_train_queue(queue)
+	_apply_building_train_card(primary, building_id)
+	_sync_build_hud_for_selection()
+	if game_hud:
+		var n := queue.queue_count() if queue != null else 1
+		game_hud.set_status("已加入研究队列：%s（%d/%d）" % [TechPresence.display_name(uid), n, TrainQueue.MAX_QUEUE])
 
 
 func _wire_train_queue(queue: TrainQueue) -> void:
@@ -2533,6 +2789,9 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 	if queue != null and is_instance_valid(queue):
 		building = queue.get_parent() as Node3D
 	_sync_building_train_visual(building)
+	if TechPresence.is_upgrade_id(unit_id):
+		_on_research_completed(unit_id, building)
+		return
 	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
 	if node == null:
 		push_warning("GameDirector: 训练完成但刷单位失败 %s" % unit_id)
@@ -2556,6 +2815,24 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 		game_hud.set_status("训练完成：%s" % unit_id)
 
 
+func _on_research_completed(upgrade_id: String, building: Node3D) -> void:
+	var stock := _local_stock()
+	if stock != null:
+		stock.grant_upgrade(upgrade_id)
+	# 科技是玩家级：场上已有步兵与之后新训的步兵都解锁同一按钮
+	if unit_selector != null and unit_selector.has_method("get_primary"):
+		var primary: Node3D = unit_selector.call("get_primary") as Node3D
+		if primary != null and building != null and primary == building:
+			var tid := str(building.get_meta("unit_data", {}).get("typeId", ""))
+			if not tid.is_empty():
+				_apply_building_train_card(building, tid)
+			_sync_build_hud_for_selection()
+		else:
+			_refresh_command_card()
+	if game_hud:
+		game_hud.set_status("研究完成：%s" % TechPresence.display_name(upgrade_id))
+
+
 func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int = -1) -> void:
 	var stock := _local_stock()
 	if stock != null:
@@ -2567,7 +2844,8 @@ func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food:
 		if food_n > 0:
 			stock.add_food_used(-food_n)
 	if game_hud:
-		game_hud.set_status("取消训练：%s（退 %d金 %d木）" % [unit_id, refund_g, refund_l])
+		var kind := "研究" if TechPresence.is_upgrade_id(unit_id) else "训练"
+		game_hud.set_status("取消%s：%s（退 %d金 %d木）" % [kind, TechPresence.display_name(unit_id), refund_g, refund_l])
 	_sync_build_hud_for_selection()
 	if unit_selector != null and unit_selector.has_method("get_primary"):
 		var primary: Node3D = unit_selector.call("get_primary") as Node3D
@@ -2798,6 +3076,8 @@ func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
 	if _crowd_query != null:
 		radius = _crowd_query.radius_for_unit(unit)
 	nav.apply_unit_stats(spd, turn, radius)
+	var dc := DefendController.of(unit)
+	nav.speed_mul = dc.speed_mul() if dc != null else 1.0
 	# 农民 soft 分离略放大，减轻采金/伐木叠人（不改 UnitBalance.collision 权威值）
 	if tid == HarvestController.WORKER_PEASANT:
 		nav.separation_radius_mul = 1.45
@@ -2954,6 +3234,8 @@ func _on_command_action(
 				game_hud.set_status("战斗号召：逻辑待接（F3+）")
 		CommandCard.ACTION_SET_RALLY:
 			_begin_rally_targeting(source)
+		CommandCard.ACTION_DEFEND:
+			_try_toggle_defend(source)
 		_:
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())
@@ -2962,6 +3244,10 @@ func _on_command_action(
 			if action_id.begins_with(CommandCard.ACTION_TRAIN_PREFIX):
 				var uid := action_id.substr(CommandCard.ACTION_TRAIN_PREFIX.length())
 				_try_issue_train(uid)
+				return
+			if action_id.begins_with(CommandCard.ACTION_RESEARCH_PREFIX):
+				var rid := action_id.substr(CommandCard.ACTION_RESEARCH_PREFIX.length())
+				_try_issue_research(rid)
 				return
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
@@ -3155,14 +3441,19 @@ func _push_train_queue_hud(tq: TrainQueue) -> void:
 	for e in tq.snapshot():
 		var uid := str(e.get("unit_id", ""))
 		var entry := cat.unit_hud_entry(uid, "train:" + uid, {})
+		if entry.is_empty():
+			entry = cat.upgrade_hud_entry(uid, "research:" + uid, {})
+		var shown_name := str(entry.get("name", "")).strip_edges()
+		if shown_name.is_empty():
+			shown_name = TechPresence.display_name(uid)
 		slots.append({
 			"unit_id": uid,
-			"name": str(entry.get("name", uid)),
+			"name": shown_name,
 			"icon": str(entry.get("icon", "")),
 			"progress": float(e.get("progress", 0.0)),
 			"active": bool(e.get("active", false)),
 			"remaining_sec": float(e.get("remaining_sec", 0.0)),
-			"tooltip": "%s · 点击取消" % str(entry.get("name", uid)),
+			"tooltip": "%s · 点击取消" % shown_name,
 		})
 	game_hud.set_train_queue(slots, tq.queue_count(), TrainQueue.MAX_QUEUE)
 
@@ -3328,6 +3619,8 @@ func _refresh_command_card() -> void:
 						"move_executing": moving,
 						"include_locomotion": true,
 						"owned_buildings": _owned_buildings_for_local(),
+						"researched": _researched_for_local(),
+						"defend_active": _primary_defend_active(),
 					}
 				)
 			)

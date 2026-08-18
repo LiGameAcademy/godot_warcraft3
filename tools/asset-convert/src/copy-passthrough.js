@@ -49,6 +49,22 @@ const COMMAND_ABILITY_TXT_NAMES = [
   "CampaignAbilityStrings.txt",
 ];
 
+/** 升级 UI：图标 / Buttonpos / Tip / Hotkey */
+const UPGRADE_TXT_NAMES = [
+  "HumanUpgradeFunc.txt",
+  "HumanUpgradeStrings.txt",
+  "OrcUpgradeFunc.txt",
+  "OrcUpgradeStrings.txt",
+  "UndeadUpgradeFunc.txt",
+  "UndeadUpgradeStrings.txt",
+  "NightElfUpgradeFunc.txt",
+  "NightElfUpgradeStrings.txt",
+  "NeutralUpgradeFunc.txt",
+  "NeutralUpgradeStrings.txt",
+  "CampaignUpgradeFunc.txt",
+  "CampaignUpgradeStrings.txt",
+];
+
 const UNIT_ROOT_PREFIXES = ["", "Melee_V0/", "Melee_V1/", "Custom_V0/", "Custom_V1/"];
 
 /**
@@ -111,6 +127,13 @@ export function copyPassthroughBatch(opts) {
   // Command / Ability Func+Strings（命令卡 Catalog）
   for (const prefix of UNIT_ROOT_PREFIXES) {
     for (const name of COMMAND_ABILITY_TXT_NAMES) {
+      copyDataLogical(`${prefix}Units/${name}`);
+    }
+  }
+
+  // Upgrade Func+Strings（研究按钮 Catalog）
+  for (const prefix of UNIT_ROOT_PREFIXES) {
+    for (const name of UPGRADE_TXT_NAMES) {
       copyDataLogical(`${prefix}Units/${name}`);
     }
   }

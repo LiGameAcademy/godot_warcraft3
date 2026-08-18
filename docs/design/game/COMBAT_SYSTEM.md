@@ -1,9 +1,9 @@
 # 战斗系统：攻击管线 · 伤害公式 · 开发路线
 
-> 状态：**C0 框架接线中**（DamagePipeline / AttackController / Death / 命令卡 Attack·Hold·Patrol 已落地；实机验收打野怪）  
+> 状态：**C0–C3 已接线**（DamagePipeline 骰×表×护甲；Death → Decay Flesh 停留后移除尸体；离场不可选）  
 > 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [WORLD_MEMBERSHIP.md](../../architecture/WORLD_MEMBERSHIP.md) · [TREE_INTERACT.md](TREE_INTERACT.md)  
-> 竖切进度：F0–F6 ✅ → **C0 战斗框架** → F8 顶盾 / F10 技能  
-> 最后更新：2026-08-17
+> 竖切进度：F0–F6 ✅ → C0–C3 战斗 ✅ → F8–F9 顶盾 ✅ → F10 技能  
+> 最后更新：2026-08-18
 
 ---
 
@@ -416,9 +416,12 @@ MOVE_TO_GOAL   # 仅 Attack-Move：无目标时走向 goal
 | STRIKE | `UnitVisual` Attack（已有 fallback）；yaw 朝向目标 |
 | missile P0 | Logic 瞬时结算；Present 可只播音效 |
 | missile P1 | Logic `MissileDelivery` 推进命中再 Pipeline；Present 飞矛仅为镜像（**禁止** Present 回调扣血） |
+| **C2 落地** | `weapTp`→`CombatQuery.Delivery`：`instant`/`normal`（含 **hrif**）dmgpt 结算 + Present `CombatProjectileShell`；`missile*` 走 `ProjectileService` 飞行后再 Pipeline |
 | 死亡 | 订阅 `unit_died`：Death 动画 + 尸体 Geoset；Logic 已 `WorldMembership.exit` / 不可选 |
+| **C3 落地** | Pipeline 骰×表×护甲；`exit` 后 `visible=true` 播 Death → **完整** `Decay Flesh` → `Decay Bone`（片长即停留），然后 `remove_unit_instance`；血条不跟尸体 |
+| 命中飘字 | `DamagePipeline.damage_applied` → Present `DamageFloatText` 挂目标；禁改 `UnitLife` |
 
-血条：`HealthBarManager` 已读 `UnitLife`，无需战斗特判。
+血条：`HealthBarManager` 已读 `UnitLife`，无需战斗特判。命中数字：`DamageFloatText`（调试用，挂受击单位）。
 
 ---
 
@@ -433,6 +436,7 @@ game/scripts/
 │   │   ├── combat_query.gd           # 敌对、射程、acquire、targs
 │   │   ├── damage_pipeline.gd        # roll + 表 + 护甲 + 写 UnitLife
 │   │   ├── death_service.gd          # kill / 清引用
+│   │   ├── projectile_service.gd     # C2：missile 飞行 + 命中结算；instant 远程仅登记壳
 │   │   └── combat_rng.gd             # 可注入 RNG
 │   ├── command/
 │   │   ├── unit_order.gd             # + ATTACK / ATTACK_MOVE
@@ -443,7 +447,8 @@ game/scripts/
 ├── data/
 │   └── combat_damage_table.gd        # atk×def 倍率（或 definitions/）
 └── presentation/
-    └── (可选) projectile_simple.gd   # P1
+    ├── combat_projectile_shell.gd    # C2 Present 弹道壳（tscn 挂载；禁 set_life）
+    └── damage_float_text.gd          # 受击飘字（订阅 Pipeline；禁 set_life）
 ```
 
 自测：`tests/unit/selftest_c_combat_damage.gd`（公式表 + 护甲）；场景验收用 `game_main`。
@@ -486,7 +491,7 @@ game/scripts/
 - **PR2**：C1 + C2 → 「攻移 + 远程手感」  
 - **PR3**：C3 公式验收 + selftest 绿灯（若未进 PR1）
 
-之后回到竖切：**F8 顶盾 → F9 → F10 技能**（技能伤害复用 `DamagePipeline`）。
+之后回到竖切：**F8–F9 顶盾 ✅ → F10 技能**（技能伤害复用 `DamagePipeline`）。
 
 ```text
 时间线（玩法主线）
@@ -526,6 +531,11 @@ F0–F6 ✅ ──► C0–C3（本文件）──► F8–F9 顶盾 ──► F
 | 2026-08-17 | **行为编排**（§2.1-F）：域内小 FSM + 薄 OrderArbiter；不做单位级巨型 FSM；玩家单位不用 BT；BT 仅留给电脑 AI / 复杂野怪（反击 P0 不做） |
 | 2026-08-17 | 命令卡常规键：`CmdAttack` / `CmdHoldPos` / `CmdPatrol` 与 Move/Stop 同列上卡；Hold=停步+旗；Attack 瞄准；Patrol=A↔B；扣血仍待 C0-4 |
 | 2026-08-17 | **C0 落地**：`CombatDamageTable` + `DamagePipeline` + `AttackController` + `DeathService`；右键 `ENEMY_UNIT` Handler；selftest_c_combat_damage |
+| 2026-08-17 | **C2 落地**：`ProjectileService` + `CombatProjectileShell`；hrif=`instant` 伤在 dmgpt、壳仅 Present；真 `missile` 飞行后再 Pipeline |
+| 2026-08-17 | **C2 Present**：PE2 脉冲 `active_sequences` 修复（枪口 Flame）；hrif 命中 `RifleImpact`；单位 `_fm2` 披风改 DEPTH_PRE_PASS+双面 |
+| 2026-08-18 | **C3 落地**：公式 selftest 扩表/负甲；死亡离场仍可见尸体（Death → Decay Flesh 定格） |
+| 2026-08-18 | **尸体移除**：Death → 播完 `Decay Flesh` → `Decay Bone`（用动画片长，不定格）后 Director `remove_unit_instance`；死亡立即释人口 |
+| 2026-08-18 | **命中飘字**：Present `DamageFloatText` 订阅 `damage_applied`，挂受击单位 |
 
 ---
 

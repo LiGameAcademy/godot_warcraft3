@@ -14,6 +14,7 @@ enum Phase {
 	BIRTH = 1,
 	WORK = 2,
 	UPGRADE_BIRTH = 3,
+	DEATH = 4,
 }
 
 ## 兼容旧调用。
@@ -66,6 +67,8 @@ static func _phase_to_activity(phase: int) -> int:
 			return AnimSequenceResolver.Activity.BIRTH
 		Phase.WORK:
 			return AnimSequenceResolver.Activity.WORK
+		Phase.DEATH:
+			return AnimSequenceResolver.Activity.DEATH
 		_:
 			return AnimSequenceResolver.Activity.IDLE
 
@@ -124,6 +127,24 @@ static func apply_phase(
 
 static func apply_idle(cache: MapModelCache, root: Node, type_id: String) -> bool:
 	return apply_phase(cache, root, type_id, Phase.IDLE)
+
+
+## 建筑销毁（金矿塌陷等）：单次 Death，失败不回退 Stand。返回 {ok, duration}。
+static func play_death(cache: MapModelCache, root: Node, type_id: String = "") -> Dictionary:
+	var out := {"ok": false, "duration": 0.0}
+	if root == null:
+		return out
+	var want := sequence_name(type_id, Phase.DEATH) if not type_id.is_empty() else "Death"
+	var played: Dictionary = AnimPlayback.play_logical(
+		root, want, 0.0, cache, AnimSequenceResolver.Activity.DEATH, ["Death"]
+	)
+	if not bool(played.get("ok", false)):
+		return out
+	out["ok"] = true
+	var ap := AnimPlayback.find_animation_player(root)
+	if ap != null:
+		out["duration"] = maxf(ap.current_animation_length, 0.0)
+	return out
 
 
 static func resolve_animation(root: Node, logical_name: String) -> String:

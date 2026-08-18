@@ -1,7 +1,7 @@
 class_name AnimPlayback
 extends RefCounted
 
-## 动画解析与播放：空格/`_` 名解析、loop / ping-pong 策略、PE2。
+## 动画解析与播放：空格/`_`/驼峰/`Stand-2` 名解析、loop / ping-pong 策略、PE2。
 ## 无单位业务态；UnitVisual / BuildingVisual 调用本层。
 ##
 ## AnimationPlayer：**优先由调用方注入**（UnitVisual 缓存）；未传时才查找。
@@ -58,7 +58,13 @@ static func anim_leaf(anim_path: String) -> String:
 	return anim_path.substr(i + 1) if i >= 0 else anim_path
 
 
-## 在 AnimationPlayer 中解析「Stand Upgrade First」↔「Stand_Upgrade_First」。
+## 比较用：`Decay Flesh` / `Decay_Flesh` / `DecayFlesh` / `Stand_-_2` / `Stand-2` → 同一键。
+static func compact_seq_name(s: String) -> String:
+	var leaf := anim_leaf(s).strip_edges()
+	return leaf.replace("_", "").replace(" ", "").to_lower()
+
+
+## 在 AnimationPlayer 中解析「Stand Upgrade First」↔「Stand_Upgrade_First」↔「StandUpgradeFirst」。
 ## `ap` 已注入则不再查找；否则在 root 下回退查找。
 static func resolve(
 	root: Node, logical_name: String, ap: AnimationPlayer = null
@@ -89,6 +95,11 @@ static func resolve(
 			var leaf := anim_leaf(str(n))
 			if leaf == cand or leaf.to_lower() == cand_l:
 				return str(n)
+	var want_c := compact_seq_name(logical_name)
+	if not want_c.is_empty():
+		for n in names:
+			if compact_seq_name(str(n)) == want_c:
+				return str(n)
 	var want_l := logical_name.to_lower().strip_edges()
 	if want_l == "stand":
 		for n in names:
@@ -107,8 +118,8 @@ static func resolve(
 			):
 				continue
 			return str(n)
-	# WC3 变体名：Attack_-_1 / Walk Defend…；逻辑名只写 Attack / Walk
-	if want_l == "attack" or want_l == "walk":
+	# WC3 变体名：Attack-1 / Attack_-_1 / Walk Defend / Death - 1；逻辑名只写 Attack / Walk / Death
+	if want_l == "attack" or want_l == "walk" or want_l == "death":
 		var picked := _resolve_family_prefix(names, want_l)
 		if not picked.is_empty():
 			return picked
@@ -134,7 +145,7 @@ static func _resolve_family_prefix(names: PackedStringArray, base_lower: String)
 			or leaf.contains("work")
 		):
 			continue
-		# 优先编号最小的变体（Attack_-_1 优于 Attack_-_2）
+		# 优先编号最小的变体（Attack-1 优于 Attack-2；旧名 Attack_-_1）
 		if prefer.is_empty() or str(n) < prefer:
 			prefer = str(n)
 	return prefer
@@ -272,7 +283,9 @@ static func play_logical(
 		return out
 	# 战斗默认 Attack 单次；伐木 Attack Lumber / Attack Gold 仍要 LOOP
 	var force_loop := -1
-	if activity_hint == AnimSequenceResolver.Activity.ATTACK:
+	if activity_hint == AnimSequenceResolver.Activity.DEATH:
+		force_loop = 0
+	elif activity_hint == AnimSequenceResolver.Activity.ATTACK:
 		var leaf := logical.replace("_", " ").strip_edges().to_lower()
 		if leaf == "attack" or (
 			leaf.begins_with("attack")

@@ -13,7 +13,12 @@ func _run() -> void:
 	_test_requires_parse()
 	_test_equiv_htow()
 	_test_vertical_trains()
+	_test_vertical_researches()
+	_test_hbar_researches_csv()
 	_test_hrif_needs_hbla()
+	_test_upgrade_stock()
+	_test_adef_requires_rhde()
+	_test_command_card_defend_and_research()
 	if failed == 0:
 		print("selftest_tech_presence: PASS")
 		quit(0)
@@ -75,6 +80,39 @@ func _test_vertical_trains() -> void:
 	print("  vertical_trains OK")
 
 
+func _test_vertical_researches() -> void:
+	var raw := PackedStringArray(["Rhde", "Rhan", "Rhri"])
+	var filtered := TechPresence.filter_vertical_researches("hbar", raw)
+	if filtered.size() != 1 or str(filtered[0]) != "Rhde":
+		_fail("兵营竖切研究应只留 Rhde，实际 %s" % str(filtered))
+		return
+	print("  vertical_researches OK")
+
+
+func _test_hbar_researches_csv() -> void:
+	var rs := CommandButtonCatalog.get_shared().get_researches("hbar")
+	if rs.find("Rhde") < 0:
+		_fail("hbar Researches 应含 Rhde，实际 %s" % str(rs))
+		return
+	print("  hbar_researches_csv OK")
+
+
+func _test_upgrade_stock() -> void:
+	var s := PlayerStock.new()
+	if s.has_upgrade("Rhde"):
+		_fail("新库存不应已有 Rhde")
+		return
+	s.grant_upgrade("Rhde")
+	if not s.has_upgrade("Rhde"):
+		_fail("grant_upgrade 后应有 Rhde")
+		return
+	var missing := TechPresence.missing_requires({}, PackedStringArray(["Rhde"]), s.upgrade_map())
+	if not missing.is_empty():
+		_fail("已研究 Rhde 后 missing 应空，实际 %s" % str(missing))
+		return
+	print("  upgrade_stock OK")
+
+
 func _test_hrif_needs_hbla() -> void:
 	var missing := TechPresence.missing_requires(
 		{"htow": 1, "hbar": 1},
@@ -91,3 +129,64 @@ func _test_hrif_needs_hbla() -> void:
 		_fail("有铁匠后 hrif 应可训，实际缺 %s" % str(ok))
 		return
 	print("  hrif_needs_hbla OK")
+
+
+func _test_adef_requires_rhde() -> void:
+	var req := CommandButtonCatalog.get_shared().get_ability_requires("Adef")
+	if req.find("Rhde") < 0:
+		_fail("Adef Requires 应含 Rhde，实际 %s" % str(req))
+		return
+	var missing := TechPresence.missing_requires({}, req, {})
+	if missing.find("Rhde") < 0:
+		_fail("未研究时顶盾应缺 Rhde")
+		return
+	var ok := TechPresence.missing_requires({}, req, {"Rhde": 1})
+	if not ok.is_empty():
+		_fail("已研究 Rhde 后 Adef 应解锁，实际缺 %s" % str(ok))
+		return
+	print("  adef_requires_rhde OK")
+
+
+func _card_entry(card: Array, action_id: String) -> Dictionary:
+	for e in card:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d := e as Dictionary
+		if str(d.get("id", "")) == action_id:
+			return d
+	return {}
+
+
+func _test_command_card_defend_and_research() -> void:
+	var locked := CommandCard.for_unit("hfoo", {"researched": {}})
+	var adef := _card_entry(locked, CommandCard.ACTION_DEFEND)
+	if adef.is_empty():
+		_fail("步兵未研究时命令卡应有置灰顶盾格")
+		return
+	if bool(adef.get("enabled", true)):
+		_fail("未研究 Rhde 时顶盾应置灰")
+		return
+	var unlocked := CommandCard.for_unit("hfoo", {"researched": {"Rhde": 1}})
+	adef = _card_entry(unlocked, CommandCard.ACTION_DEFEND)
+	if adef.is_empty() or not bool(adef.get("enabled", false)):
+		_fail("已研究 Rhde 后场上/新训步兵顶盾应可点")
+		return
+	var on := CommandCard.for_unit(
+		"hfoo", {"researched": {"Rhde": 1}, "defend_active": true}
+	)
+	adef = _card_entry(on, CommandCard.ACTION_DEFEND)
+	var icon := str(adef.get("icon", "")).replace("\\", "/")
+	if icon.find("DefendStop") < 0:
+		_fail("开启顶盾后图标应切 Unart DefendStop，实际 %s" % icon)
+		return
+	var bar := CommandCard.for_unit("hbar", {"include_locomotion": false, "researched": {}})
+	if _card_entry(bar, "research:Rhde").is_empty():
+		_fail("兵营未研究时应有 Rhde 研究按钮")
+		return
+	var bar_done := CommandCard.for_unit(
+		"hbar", {"include_locomotion": false, "researched": {"Rhde": 1}}
+	)
+	if not _card_entry(bar_done, "research:Rhde").is_empty():
+		_fail("研究完成后兵营 Rhde 按钮应消失")
+		return
+	print("  command_card_defend_and_research OK")

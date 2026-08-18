@@ -14,6 +14,7 @@ signal return_issued(count: int)
 signal smart_issued(summary: Dictionary)
 signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
 signal train_issued(unit_id: String) ## F2-6: 训练令下给建筑
+signal research_issued(upgrade_id: String) ## F8: 研究令下给建筑
 
 const META_ORDER_QUEUE := "order_queue"
 
@@ -205,6 +206,38 @@ func issue_hold(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 			_abort_attack(node)
 		n += 1
 	return n
+
+
+## 顶盾开关。未研究 / 无 Adef → 跳过。不取消移动（原作：顶盾下可走，只减速）。
+func issue_defend(selected: Array, active: bool) -> int:
+	var stock: PlayerStock = null
+	if _session != null:
+		stock = _session.local_stock()
+	if stock == null or not stock.has_upgrade(DefendController.UPGRADE_ID):
+		return 0
+	var n := 0
+	for node in filter_movers(selected):
+		if not DefendController.unit_has_abil(node):
+			continue
+		var dc := DefendController.of(node)
+		if dc == null:
+			dc = DefendController.new()
+			dc.name = "DefendController"
+			node.add_child(dc)
+		dc.set_active(active)
+		if _ensure_navigator.is_valid():
+			var nav: UnitNavigator = _ensure_navigator.call(node) as UnitNavigator
+			if nav != null:
+				nav.speed_mul = dc.speed_mul()
+		n += 1
+	return n
+
+
+func any_defending(units: Array) -> bool:
+	for n in units:
+		if n is Node3D and DefendController.is_defending(n as Node3D):
+			return true
+	return false
 
 
 ## 攻击移动：AttackController 索敌 + 走向目标点。
@@ -503,6 +536,9 @@ func issue_harvest_gold(
 ) -> int:
 	if mine == null or not is_instance_valid(mine):
 		return 0
+	var rt := GoldMineRuntime.ensure(mine)
+	if rt == null or rt.is_depleted():
+		return 0
 	if not _ensure_harvest.is_valid():
 		return 0
 	var peasants := filter_peasants(selected)
@@ -745,6 +781,56 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		_refund_train_spend(stock, gold, lumber, food)
 		return false
 	train_issued.emit(uid)
+	return true
+
+
+## F8：建筑研究科技。无人口；完工不刷单位，由 Director 写入 PlayerStock.grant_upgrade。
+func issue_research(building: Node3D, upgrade_id: String) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	if UnitLife.is_under_construction(building):
+		return false
+	var uid := upgrade_id.strip_edges()
+	if uid.is_empty() or not TechPresence.is_upgrade_id(uid):
+		return false
+	var d: Dictionary = building.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	var researches := TechPresence.filter_vertical_researches(
+		building_id, CommandButtonCatalog.get_shared().get_researches(building_id)
+	)
+	if researches.find(uid) < 0:
+		return false
+	var owner: int = int(d.get("owner", 0))
+	var unit_host: Node = building.get_parent()
+	var stock: PlayerStock = null
+	if _session != null:
+		stock = _session.local_stock()
+	if stock != null and stock.has_upgrade(uid):
+		return false
+	if TechPresence.is_upgrade_queued(unit_host, owner, uid):
+		return false
+	var time_sec := TechPresence.upgrade_time(uid)
+	var gold := TechPresence.upgrade_gold(uid)
+	var lumber := TechPresence.upgrade_lumber(uid)
+	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
+		return false
+	if stock != null:
+		if not stock.try_spend(gold, lumber):
+			return false
+	var pos: Dictionary = d.get("position", {})
+	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
+	if queue == null:
+		queue = TrainQueue.new()
+		queue.name = "TrainQueue"
+		building.add_child(queue)
+	if queue.is_full():
+		_refund_train_spend(stock, gold, lumber, 0)
+		return false
+	if not queue.enqueue(uid, time_sec, gold, lumber, 0, site_wc3, owner):
+		_refund_train_spend(stock, gold, lumber, 0)
+		return false
+	research_issued.emit(uid)
 	return true
 
 

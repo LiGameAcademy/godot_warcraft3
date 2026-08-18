@@ -69,6 +69,8 @@ func apply(req: Dictionary) -> Dictionary:
 
 	var mult := CombatDamageTable.multiplier(atk_type, def_type)
 	var after_type := roll * mult
+	if CombatDamageTable.normalize_atk(atk_type) == "pierce":
+		after_type *= DefendController.pierce_taken_factor(target)
 	var amount := CombatDamageTable.apply_armor(after_type, armor)
 	# 最低伤：有命中时至少 1（对齐常见 WC3 观感；0 骰全 0 除外）
 	if amount > 0.0 and amount < 1.0:

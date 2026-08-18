@@ -33,6 +33,8 @@ var queue_outward_wc3: Vector2 = Vector2(0.0, -1.0)
 var _inside_ids: Array[int] = []
 var _queue_ids: Array[int] = []
 var _mine_radius_wc3: float = 100.0
+## 储量耗尽后只发一次 depleted（塌陷由 Present 订阅）。
+var _depleted_emitted: bool = false
 ## 对同一主城缓存固定运金走廊（端点 + 路点只算一次）。
 var _corridor_hall_id: int = 0
 var _corridor_layout_version: int = 0
@@ -274,6 +276,14 @@ func mine_radius_wc3() -> float:
 	return _mine_radius_wc3
 
 
+func is_depleted() -> bool:
+	return remaining_gold <= 0 or _depleted_emitted
+
+
+func has_gold() -> bool:
+	return remaining_gold > 0 and not _depleted_emitted
+
+
 func _bootstrap_from_mine() -> void:
 	var mine := get_parent() as Node3D
 	if mine == null:
@@ -321,7 +331,7 @@ func queue_index(peasant: Node) -> int:
 func try_enter(peasant: Node) -> bool:
 	if peasant == null or not is_instance_valid(peasant):
 		return false
-	if remaining_gold <= 0:
+	if is_depleted():
 		return false
 	_prune_dead()
 	var id := peasant.get_instance_id()
@@ -366,10 +376,16 @@ func exit_mine(peasant: Node, gold_taken: int) -> int:
 		remaining_gold -= taken
 		_sync_gold_meta()
 		gold_changed.emit(remaining_gold)
-		if remaining_gold <= 0:
-			depleted.emit()
+	_notify_if_empty()
 	slot_available.emit()
 	return taken
+
+
+func _notify_if_empty() -> void:
+	if remaining_gold > 0 or _depleted_emitted:
+		return
+	_depleted_emitted = true
+	depleted.emit()
 
 
 func cancel_inside(peasant: Node) -> void:

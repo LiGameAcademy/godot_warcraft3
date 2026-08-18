@@ -13,6 +13,11 @@ const VERTICAL_TRAINS := {
 	"hcas": ["hpea"],
 }
 
+## 人族竖切：兵营只研究顶盾。
+const VERTICAL_RESEARCHES := {
+	"hbar": ["Rhde"],
+}
+
 ## Melee 简化：每位玩家同时场上英雄上限。
 const MAX_HEROES_PER_PLAYER := 1
 
@@ -90,6 +95,25 @@ static func count_heroes_with_queues(unit_host: Node, owner_id: int) -> int:
 	return n
 
 
+static func is_upgrade_queued(unit_host: Node, owner_id: int, upgrade_id: String) -> bool:
+	var want := upgrade_id.strip_edges()
+	if unit_host == null or want.is_empty():
+		return false
+	for c in unit_host.get_children():
+		if not (c is Node3D) or not is_instance_valid(c):
+			continue
+		var d: Dictionary = (c as Node3D).get_meta("unit_data", {})
+		if int(d.get("owner", -1)) != owner_id:
+			continue
+		var q := (c as Node3D).get_node_or_null("TrainQueue") as TrainQueue
+		if q == null:
+			continue
+		for e in q.snapshot():
+			if str((e as Dictionary).get("unit_id", "")) == want:
+				return true
+	return false
+
+
 static func is_hero_id(unit_id: String) -> bool:
 	return _HERO_IDS.has(unit_id.strip_edges())
 
@@ -106,14 +130,18 @@ static func owns_requirement(owned_buildings: Dictionary, required_id: String) -
 	return false
 
 
-## 未满足的 Requires 列表（保持原顺序）。
+## 未满足的 Requires 列表（保持原顺序）。researched：upgradeid→level，满足科技需求。
 static func missing_requires(
-	owned_buildings: Dictionary, requires: PackedStringArray
+	owned_buildings: Dictionary, requires: PackedStringArray, researched: Dictionary = {}
 ) -> PackedStringArray:
 	var out := PackedStringArray()
 	for r in requires:
-		if not owns_requirement(owned_buildings, str(r)):
-			out.append(str(r))
+		var rid := str(r)
+		if int(researched.get(rid, 0)) > 0:
+			continue
+		if owns_requirement(owned_buildings, rid):
+			continue
+		out.append(rid)
 	return out
 
 
@@ -121,11 +149,24 @@ static func missing_requires(
 static func filter_vertical_trains(
 	building_id: String, trains: PackedStringArray
 ) -> PackedStringArray:
-	var allow = VERTICAL_TRAINS.get(building_id.strip_edges(), null)
+	return _filter_vertical_ids(building_id, trains, VERTICAL_TRAINS)
+
+
+## 竖切：建筑 Researches ∩ 锁死表；无表则原样返回。
+static func filter_vertical_researches(
+	building_id: String, researches: PackedStringArray
+) -> PackedStringArray:
+	return _filter_vertical_ids(building_id, researches, VERTICAL_RESEARCHES)
+
+
+static func _filter_vertical_ids(
+	building_id: String, ids: PackedStringArray, table: Dictionary
+) -> PackedStringArray:
+	var allow = table.get(building_id.strip_edges(), null)
 	if allow == null:
-		return trains
+		return ids
 	var have: Dictionary = {}
-	for t in trains:
+	for t in ids:
 		have[str(t)] = true
 	var out := PackedStringArray()
 	for a in allow:
@@ -137,8 +178,12 @@ static func filter_vertical_trains(
 
 ## 显示名（命令卡 tip）；缺 Name 则回退 id。
 static func display_name(unit_id: String) -> String:
-	var row := CommandButtonCatalog.get_shared().get_unit_ui(unit_id)
+	var cat := CommandButtonCatalog.get_shared()
+	var row := cat.get_unit_ui(unit_id)
 	var n := str(row.get("name", "")).strip_edges()
+	if n.is_empty():
+		row = cat.get_upgrade_ui(unit_id)
+		n = str(row.get("name", "")).strip_edges()
 	return n if not n.is_empty() else unit_id
 
 
@@ -149,3 +194,40 @@ static func requires_tip(missing: PackedStringArray) -> String:
 	for m in missing:
 		parts.append(display_name(str(m)))
 	return "需要：" + ", ".join(parts)
+
+
+static func get_upgrade(upgrade_id: String) -> UpgradeDataDef:
+	var uid := upgrade_id.strip_edges()
+	if uid.is_empty():
+		return null
+	var store := _def_store()
+	if store == null or not store.has_method("ensure_table") or not store.has_method("get_row"):
+		return null
+	store.ensure_table(UpgradeDataDef.TABLE_NAME)
+	return store.get_row(UpgradeDataDef.TABLE_NAME, uid) as UpgradeDataDef
+
+
+static func is_upgrade_id(upgrade_id: String) -> bool:
+	return get_upgrade(upgrade_id) != null
+
+
+static func upgrade_gold(upgrade_id: String) -> int:
+	var d := get_upgrade(upgrade_id)
+	return int(round(d.goldbase)) if d != null else 0
+
+
+static func upgrade_lumber(upgrade_id: String) -> int:
+	var d := get_upgrade(upgrade_id)
+	return int(round(d.lumberbase)) if d != null else 0
+
+
+static func upgrade_time(upgrade_id: String) -> float:
+	var d := get_upgrade(upgrade_id)
+	return d.timebase if d != null else 0.0
+
+
+static func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")

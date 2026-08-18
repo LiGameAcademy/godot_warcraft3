@@ -1,8 +1,8 @@
 class_name ReceiveResources
 extends RefCounted
 
-## 建筑「接收资源」能力（主城交金木；未来伐木场只收木可复用）。
-## 不挂 Node：按 typeId 判定 + 向 PlayerStock 入账。
+## 建筑「接收资源」能力（主城交金木；伐木场只收木）。
+## 不挂 Node：按 typeId 判定 + 向 PlayerStock 入账。未完工建筑不能交货。
 
 enum Kind {
 	NONE = 0,
@@ -30,6 +30,9 @@ static func capability_for_type(type_id: String) -> int:
 
 static func can_receive(building: Node, resource_mask: int) -> bool:
 	if building == null or not is_instance_valid(building):
+		return false
+	# 与 TechPresence 一致：半成品不提供能力（含伐木场收木）。
+	if bool(building.get_meta("under_construction", false)):
 		return false
 	var tid := _type_id(building)
 	var cap := capability_for_type(tid)

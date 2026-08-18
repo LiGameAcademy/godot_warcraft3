@@ -60,7 +60,23 @@ func _init() -> void:
 		"Stand_Work_Lumber"
 	)
 	_expect_bool("ping stand gold", AnimSequenceResolver.needs_ping_pong("Stand_Gold"), true)
+	_expect_bool("ping stand gold camel", AnimSequenceResolver.needs_ping_pong("StandGold"), true)
 	_expect_bool("ping walk gold", AnimSequenceResolver.needs_ping_pong("Walk_Gold"), false)
+	_expect(
+		"compact decay flesh",
+		AnimPlayback.compact_seq_name("Decay Flesh"),
+		"decayflesh"
+	)
+	_expect(
+		"compact stand variant",
+		AnimPlayback.compact_seq_name("Stand - 2"),
+		"stand-2"
+	)
+	_expect(
+		"compact old underscore variant",
+		AnimPlayback.compact_seq_name("Stand_-_2"),
+		"stand-2"
+	)
 	_expect(
 		"pe2 strips gold idle",
 		AnimSequenceResolver.pe2_hint("Stand Gold", AnimSequenceResolver.Activity.IDLE),

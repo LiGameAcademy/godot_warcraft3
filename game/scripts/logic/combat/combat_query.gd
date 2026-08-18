@@ -97,6 +97,111 @@ static func damage_point_sec(node: Node) -> float:
 	var cool := maxf(w.cool1, 0.1)
 	return clampf(w.dmgpt1, 0.0, cool)
 
+
+## 武器弹道类型字符串（weapTp1）。
+static func weapon_tp(node: Node) -> String:
+	var w := weapons_of(node)
+	if w == null:
+		return ""
+	return w.weap_tp1.strip_edges().to_lower()
+
+
+## 投送分类：instant（含 normal）/ missile（含 bounce·splash·line）/ artillery。
+enum Delivery {
+	INSTANT = 0,
+	MISSILE = 1,
+	ARTILLERY = 2,
+}
+
+
+## 由 weapTp 字符串分类（无 DefStore 也可测）。
+static func classify_weap_tp(tp: String) -> int:
+	var t := tp.strip_edges().to_lower()
+	if t.is_empty() or t == "_" or t == "-" or t == "instant" or t == "normal":
+		return Delivery.INSTANT
+	if t == "artillery" or t == "aline":
+		return Delivery.ARTILLERY
+	# missile / mbounce / msplash / mline / …
+	if t.begins_with("m") or t == "missile":
+		return Delivery.MISSILE
+	return Delivery.INSTANT
+
+
+static func delivery_kind(node: Node) -> int:
+	return classify_weap_tp(weapon_tp(node))
+
+
+## Logic 是否等弹道飞行后再 DamagePipeline（真 missile；instant 火枪仍 dmgpt 瞬时伤）。
+static func uses_projectile_travel(node: Node) -> bool:
+	return delivery_kind(node) == Delivery.MISSILE
+
+
+## Present 是否需要弹道壳（远程手感；含 hrif 的 instant）。
+static func wants_projectile_visual(node: Node) -> bool:
+	if uses_projectile_travel(node):
+		return true
+	return attack_range_wc3(node) >= 200.0
+
+
+## 命中特效模型（UnitFunc Missileart；未进 Def 时按兵种兜底）。
+const _IMPACT_ART_BY_TYPE := {
+	"hrif": "Abilities/Weapons/Rifle/RifleImpact.gltf",
+}
+
+
+static func weapon_impact_art(node: Node) -> String:
+	var tid := type_id_of(node)
+	if _IMPACT_ART_BY_TYPE.has(tid):
+		return str(_IMPACT_ART_BY_TYPE[tid])
+	return ""
+
+
+## 是否用可见曳光弹（真 missile）；instant 远程可只播命中特效。
+static func wants_tracer_visual(node: Node) -> bool:
+	return uses_projectile_travel(node)
+
+
+## 弹道速度（WC3 单位/秒）。UnitFunc Missilespeed 尚未进 Def 时按兵种兜底。
+const DEFAULT_MISSILE_SPEED_WC3 := 900.0
+const _MISSILE_SPEED_BY_TYPE := {
+	"hrif": 1900.0,
+	"earc": 900.0,
+	"esen": 900.0,
+}
+
+
+static func missile_speed_wc3(node: Node) -> float:
+	var tid := type_id_of(node)
+	if _MISSILE_SPEED_BY_TYPE.has(tid):
+		return float(_MISSILE_SPEED_BY_TYPE[tid])
+	return DEFAULT_MISSILE_SPEED_WC3
+
+
+static func travel_time_sec(dist_wc3: float, speed_wc3: float) -> float:
+	return maxf(dist_wc3, 0.0) / maxf(speed_wc3, 1.0)
+
+
+## 发射点（相对单位原点的 WC3 偏移；高度用 launch_z）。
+static func launch_offset_wc3(node: Node) -> Vector3:
+	var w := weapons_of(node)
+	if w == null:
+		return Vector3(0.0, 0.0, 60.0)
+	return Vector3(w.launch_x, w.launch_y, maxf(w.launch_z, 40.0))
+
+
+static func impact_z_wc3(node: Node) -> float:
+	var w := weapons_of(node)
+	if w == null:
+		return 60.0
+	return maxf(w.impact_z, 40.0)
+
+
+static func min_attack_range_wc3(node: Node) -> float:
+	var w := weapons_of(node)
+	if w == null:
+		return 0.0
+	return maxf(w.min_range, 0.0)
+
 ## 获取距离
 static func distance_wc3(a: Node3D, b: Node3D) -> float:
 	if a == null or b == null:
@@ -108,9 +213,16 @@ static func distance_wc3(a: Node3D, b: Node3D) -> float:
 ## 是否在出手射程内。
 ## 只用 range_n1（+ hysteresis）；RngBuff1 是追击/保持交战容差，不能整段加进出手判定
 ## （步兵 range=90、buff=250 → 误判成 340）。
+## min_range>0 时过近不可打（竖切多数单位为 0）。
 static func in_attack_range(attacker: Node3D, target: Node3D, hysteresis: float = 0.0) -> bool:
+	var d := distance_wc3(attacker, target)
 	var lim := attack_range_wc3(attacker) + hysteresis
-	return distance_wc3(attacker, target) <= lim
+	if d > lim:
+		return false
+	var min_r := min_attack_range_wc3(attacker)
+	if min_r > 0.0 and d + hysteresis < min_r:
+		return false
+	return true
 
 
 ## 是否仍处于交战距离（出手射程 + RngBuff；用于冷却中不立刻取消、Hold 近距索敌等）。

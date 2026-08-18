@@ -10,7 +10,8 @@
    - 批量导出可编辑预制：`godot --headless -s res://scripts/tool/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force`
    - **对外说明（特效全貌）**：[docs/blog/04-wc3-effects-conversion.md](../../docs/blog/04-wc3-effects-conversion.md)
 5. **Geoset 显隐** → 同 stem 旁路 `*.geosetvis.json`（Sequence 作用域 alpha）；Godot 导入丢 scale 轨后由 `MapModelCache` 补 `:visible`
-6. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
+6. **动画关键帧** → 同 stem 旁路 `*.animkeys.json`（MDX 原始 TRS / GeosetAnim / EventTrack；时间单位毫秒）
+7. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
 
 默认顺序：`textures → models → scn`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 时会重新转换该模型。  
 `.scn` 需本机 Godot 4.x（环境变量 `GODOT` / `GODOT_BIN`）；找不到 Godot 时跳过烘焙并警告，不阻断 convert。
@@ -149,4 +150,4 @@ godot --headless --path ../.. -s res://scripts/tool/export_visual_scenes.gd -- -
 - **Geoset 显隐（Godot）**：`GLTFDocument` 会丢掉蒙皮 `Geoset_*` 的 scale 轨；convert 写旁路 `*.geosetvis.json`，`MapModelCache` 加载/bake 时注入 `Skeleton3D/Geoset_*:visible`。
 - **Transparent**：FilterMode=1 使用 MASK + cutoff 0.75，避免半透明碎片。
 - **Additive / AddAlpha（FilterMode 3/4）**：glTF 无加法混合；材质名带 `_fm3`/`_fm4`，Godot `MapModelCache` 加载时改成 `BLEND_MODE_ADD`（否则 `Yellow_Glow*` 黑底会变成实心黑牌）。
-- **动画**：每个 Sequence → 一条 glTF Animation；扁平 Armature + 等权蒙皮。
+- **动画**：每个 Sequence → 一条 glTF Animation。名称用驼峰、变体序号用 `-`（`Stand - 2` → `Stand-2`，不要 `Stand_-_2`）。原始 Keys 另写旁路 `*.animkeys.json`（毫秒时间轴 + LineType / InTan / OutTan）。扁平 Armature + 等权蒙皮。

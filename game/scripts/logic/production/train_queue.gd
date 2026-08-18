@@ -1,7 +1,7 @@
 class_name TrainQueue
 extends Node
 
-## 建筑训练队列（对齐 WC3：每建筑最多 7 槽）。
+## 建筑训练/研究队列（对齐 WC3：每建筑最多 7 槽，训兵与研究共用）。
 ## 挂 Barracks / Altar / Town Hall 等可训建筑子节点。
 ##
 ## 槽 0 为正在训练；1..N-1 为等待。点训兵按钮 enqueue；满 7 拒单。

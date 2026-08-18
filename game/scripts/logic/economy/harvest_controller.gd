@@ -174,6 +174,8 @@ func start_harvest_gold(
 	_mine_rt = GoldMineRuntime.ensure(_mine)
 	if _mine_rt == null:
 		return false
+	if _mine_rt.is_depleted():
+		return false
 	_lane_index = maxi(lane_index, 0)
 	_lane_count = maxi(lane_count, 1)
 	_mine_portal_wc3 = Vector2.INF
@@ -181,6 +183,7 @@ func start_harvest_gold(
 	_wait_goal_wc3 = Vector2.INF
 	_update_queue_direction()
 	_cache_corridor_goals()
+	_connect_mine_signals()
 	_set_harvest_ghost(true)
 	# 仅负同类（金）时先交货；负木不交货，出矿时 gather 丢弃旧木
 	if _carry.id == CarrySlot.ID_GOLD and _carry.amount > 0:
@@ -334,7 +337,7 @@ func _process(delta: float) -> void:
 
 
 func _tick_move_to_mine() -> void:
-	if not _mine_valid():
+	if not _mine_valid() or _mine_rt.is_depleted():
 		abort()
 		return
 	var body := _body()
@@ -399,7 +402,7 @@ func _issue_mine_path(body: Node3D) -> bool:
 
 
 func _tick_wait_in_queue() -> void:
-	if not _mine_valid():
+	if not _mine_valid() or _mine_rt.is_depleted():
 		abort()
 		return
 	var body := _body()
@@ -445,7 +448,7 @@ func _tick_in_mine(delta: float) -> void:
 
 
 func _tick_move_to_dropoff() -> void:
-	if _dropoff == null or not is_instance_valid(_dropoff):
+	if not _dropoff_can_take():
 		if not _resolve_dropoff():
 			abort()
 			return
@@ -549,7 +552,11 @@ func _exit_mine_with_gold() -> void:
 
 
 func _do_deposit() -> void:
-	var body := _body()
+	if not _dropoff_can_take():
+		if not _resolve_dropoff():
+			return
+		_go_dropoff()
+		return
 	var nav := _nav()
 	if nav != null:
 		nav.stop()
@@ -600,6 +607,12 @@ func _do_deposit() -> void:
 		_tree_cn = -1
 	if _mine != null and is_instance_valid(_mine):
 		_mine_rt = GoldMineRuntime.ensure(_mine)
+		if _mine_rt == null or _mine_rt.is_depleted():
+			_active = false
+			_set_harvest_ghost(false)
+			_set_state(State.IDLE)
+			set_process(false)
+			return
 		_ensure_walkable_start(body)
 		_set_state(State.MOVE_TO_MINE)
 		set_process(true)
@@ -614,9 +627,10 @@ func _do_deposit() -> void:
 
 
 func _go_mine_approach() -> bool:
-	if not _mine_valid():
+	if not _mine_valid() or _mine_rt.is_depleted():
 		return false
 	_mine_rt = GoldMineRuntime.ensure(_mine)
+	_connect_mine_signals()
 	_update_queue_direction()
 	if _mine_portal_wc3 == Vector2.INF or _wait_goal_wc3 == Vector2.INF:
 		_cache_corridor_goals()
@@ -932,6 +946,8 @@ func _connect_mine_signals() -> void:
 		return
 	if not _mine_rt.slot_available.is_connected(_on_mine_slot_available):
 		_mine_rt.slot_available.connect(_on_mine_slot_available)
+	if not _mine_rt.depleted.is_connected(_on_mine_depleted):
+		_mine_rt.depleted.connect(_on_mine_depleted)
 
 
 func _disconnect_mine_signals() -> void:
@@ -939,6 +955,14 @@ func _disconnect_mine_signals() -> void:
 		return
 	if _mine_rt.slot_available.is_connected(_on_mine_slot_available):
 		_mine_rt.slot_available.disconnect(_on_mine_slot_available)
+	if _mine_rt.depleted.is_connected(_on_mine_depleted):
+		_mine_rt.depleted.disconnect(_on_mine_depleted)
+
+
+func _on_mine_depleted() -> void:
+	# 刚掏空矿的人还在出矿/交货；只停候矿与走近矿的人。
+	if _state == State.WAIT_IN_QUEUE or _state == State.MOVE_TO_MINE:
+		abort()
 
 
 func _update_queue_direction() -> void:
@@ -979,6 +1003,15 @@ func _can_deposit_now(body: Node3D) -> bool:
 func _deposit_accept_radius_wc3(building: Node) -> float:
 	# 与接近点同用 collision，勿用 pathTex 半宽（否则「能交」圈离城过远）
 	return _building_radius_wc3(building) + DROPOFF_MARGIN_WC3
+
+
+func _dropoff_can_take() -> bool:
+	if _dropoff == null or not is_instance_valid(_dropoff):
+		return false
+	var mask: int = _carry.receive_mask()
+	if mask == int(ReceiveResources.Kind.NONE):
+		mask = int(ReceiveResources.Kind.GOLD)
+	return ReceiveResources.can_receive(_dropoff, mask)
 
 
 func _resolve_dropoff() -> bool:

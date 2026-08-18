@@ -17,6 +17,8 @@ var gold: int = 0
 var lumber: int = 0
 var food_used: int = 0
 var food_cap: int = 0
+## upgradeid → 已研究等级（未研究不在表内）
+var _upgrades: Dictionary = {}
 
 
 static func melee_start(worker_count: int = 5, hall_food: int = MELEE_TOWN_HALL_FOOD) -> PlayerStock:
@@ -71,3 +73,24 @@ func add_food_used(delta: int) -> void:
 
 func can_afford_food(extra: int = 1) -> bool:
 	return food_used + extra <= food_cap
+
+
+func has_upgrade(upgrade_id: String) -> bool:
+	return upgrade_level(upgrade_id) > 0
+
+
+func upgrade_level(upgrade_id: String) -> int:
+	return int(_upgrades.get(upgrade_id.strip_edges(), 0))
+
+
+func grant_upgrade(upgrade_id: String, level: int = 1) -> void:
+	var uid := upgrade_id.strip_edges()
+	if uid.is_empty():
+		return
+	_upgrades[uid] = maxi(upgrade_level(uid), maxi(1, level))
+	notify_changed()
+
+
+## {upgradeid: level} 副本，供命令卡 Requires。
+func upgrade_map() -> Dictionary:
+	return _upgrades.duplicate()

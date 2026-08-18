@@ -90,6 +90,15 @@ export function mdxLogicalToCameras(logicalPath) {
   return `${gltf}.cameras.json`;
 }
 
+/** Map WC3 model path to raw animation keyframe sidecar（MDX Keys，毫秒时间轴）. */
+export function mdxLogicalToAnimKeys(logicalPath) {
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.animkeys.json`;
+  }
+  return `${gltf}.animkeys.json`;
+}
+
 /**
  * 从模型逻辑路径到贴图逻辑路径的相对 URI（posix，供 glTF images[].uri）。
  * WC3 路径大小写混乱：公共前缀按不敏感匹配，下行段保留 pngLogical 原大小写。

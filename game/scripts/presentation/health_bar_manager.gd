@@ -137,6 +137,10 @@ func _ensure_root() -> void:
 func _is_trackable(node: Node3D) -> bool:
 	if node == null:
 		return false
+	if not WorldMembership.is_in_world(node):
+		return false
+	if UnitLife.get_life(node) <= 0.0:
+		return false
 	var d: Dictionary = node.get_meta("unit_data", {})
 	if d.is_empty():
 		return false
@@ -149,6 +153,8 @@ func _is_trackable(node: Node3D) -> bool:
 
 
 func _should_show(node: Node3D, id: int) -> bool:
+	if not WorldMembership.is_in_world(node) or UnitLife.get_life(node) <= 0.0:
+		return false
 	# 常显，或 GM 关闭时常按 Alt 临时显示
 	if always_show or Input.is_key_pressed(KEY_ALT) or _alt_hold_show:
 		return true
@@ -208,7 +214,7 @@ func _estimate_height(node: Node3D) -> float:
 		if vi == null or not vi.visible:
 			continue
 		var nm := str(vi.name)
-		if SKIP_META.has(nm):
+		if SKIP_META.has(nm) or nm.begins_with("DamageFloat"):
 			continue
 		var local := vi.get_aabb()
 		var xf: Transform3D = node.global_transform.affine_inverse() * vi.global_transform

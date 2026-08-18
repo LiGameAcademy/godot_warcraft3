@@ -30,6 +30,10 @@ window/per_pixel_transparency/allowed=true
 
 project/assembly_name="godot_warcraft3"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/wc3_gltf_importer/plugin.cfg")
+
 [internationalization]
 
 locale/translations=PackedStringArray("res://editor/locale/editor_strings.en.translation", "res://editor/locale/editor_strings.zh_CN.translation")
@@ -43,4 +47,3 @@ locale/fallbacks=["en"]
 [rendering]
 
 rendering_device/driver.windows="d3d12"
-renderer/rendering_method="forward_plus"

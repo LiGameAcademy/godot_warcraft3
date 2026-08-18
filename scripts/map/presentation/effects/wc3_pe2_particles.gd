@@ -60,13 +60,16 @@ static func build_root_from_payload(data: Dictionary) -> Node3D:
 	var emitters: Array = data.get("emitters", []) if typeof(data) == TYPE_DICTIONARY else []
 	if emitters.is_empty():
 		return null
+	var sequences: Array = data.get("sequences", []) if typeof(data) == TYPE_DICTIONARY else []
 	var pe2_root := Node3D.new()
 	pe2_root.name = PE2_ROOT_NAME
 	for i in range(emitters.size()):
 		var em: Variant = emitters[i]
 		if typeof(em) != TYPE_DICTIONARY:
 			continue
-		var node := _make_emitter(em as Dictionary, i)
+		var em_dict: Dictionary = (em as Dictionary).duplicate(true)
+		_ensure_active_sequences(em_dict, sequences)
+		var node := _make_emitter(em_dict, i)
 		if node == null:
 			continue
 		pe2_root.add_child(node)
@@ -83,9 +86,10 @@ static func build_root_from_payload(data: Dictionary) -> Node3D:
 static func attach_to(root: Node3D, glb_path: String) -> int:
 	if root == null or glb_path.is_empty():
 		return 0
-	# visuals 场景已内嵌 Pe2Root：只关闸到 Stand，勿重复挂
+	# visuals 场景已内嵌 Pe2Root：用 pe2.json 刷新 active_sequences（修旧 bake 空数组），勿重复挂
 	var existing := root.find_child(PE2_ROOT_NAME, true, false)
 	if existing != null:
+		_sync_active_seqs_from_payload(existing, load_payload(glb_path))
 		apply_sequence(root, "Stand")
 		return _count_particle_nodes(existing)
 	var parent := _resolve_model_root(root)
@@ -161,7 +165,7 @@ static func _normalize_seq_key(s: String) -> String:
 	var slash := leaf.rfind("/")
 	if slash >= 0:
 		leaf = leaf.substr(slash + 1)
-	return leaf.replace("_", " ").to_lower()
+	return leaf.replace("_", "").replace(" ", "").replace("-", "").to_lower()
 
 
 static func _seqs_match(seqs: PackedStringArray, want_key: String) -> bool:
@@ -342,8 +346,8 @@ static func _make_emitter(em: Dictionary, index: int) -> GPUParticles3D:
 	return p
 
 
-## active_sequences=null → 全程；数组 → 仅列出的 Sequence。
-## v1 无字段：有轨痕迹则先关（等重转）；纯静态 rate>0 才当火盆。
+## active_sequences=null → 全程；数组 → 仅这些 Sequence。
+## 空数组 + visibility 脉冲：按 pe2.sequences 重推断（火枪 Flame 旧旁路常漏）。
 static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
 	var raw: Variant = em.get("active_sequences", null)
 	if raw == null and not em.has("active_sequences"):
@@ -373,6 +377,118 @@ static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
 	p.set_meta(META_ACTIVE_SEQS, packed)
 	# 默认关，等 apply_sequence / attach 末尾 Stand
 	p.emitting = false
+
+
+## 若 active_sequences 为空数组，用 visibility 脉冲帧重推断。
+static func _ensure_active_sequences(em: Dictionary, sequences: Array) -> void:
+	var raw: Variant = em.get("active_sequences", null)
+	if raw == null:
+		return
+	if not (raw is Array) or not (raw as Array).is_empty():
+		return
+	var inferred := _infer_active_sequences(em, sequences)
+	if not inferred.is_empty():
+		em["active_sequences"] = inferred
+
+
+static func _sync_active_seqs_from_payload(pe2_root: Node, data: Dictionary) -> void:
+	if pe2_root == null or data.is_empty():
+		return
+	var sequences: Array = data.get("sequences", [])
+	var emitters: Array = data.get("emitters", [])
+	var by_name: Dictionary = {}
+	for em in emitters:
+		if typeof(em) != TYPE_DICTIONARY:
+			continue
+		var em_dict: Dictionary = (em as Dictionary).duplicate(true)
+		_ensure_active_sequences(em_dict, sequences)
+		by_name[str(em_dict.get("name", ""))] = em_dict
+	_sync_active_seqs_node(pe2_root, by_name)
+
+
+static func _sync_active_seqs_node(n: Node, by_name: Dictionary) -> void:
+	if n is GPUParticles3D:
+		var p := n as GPUParticles3D
+		var em: Variant = by_name.get(p.name, null)
+		if em is Dictionary:
+			_bind_sequence_meta(p, em as Dictionary)
+	for c in n.get_children():
+		_sync_active_seqs_node(c, by_name)
+
+
+## 与 convert-mdx activeSequencesForEmitter 对齐：采 vis 脉冲帧，勿只采 Sequence 中点。
+static func _infer_active_sequences(em: Dictionary, sequences: Array) -> Array:
+	var out: Array = []
+	var vis_keys: Array = em.get("visibility_keys", []) as Array
+	var rate_keys: Array = em.get("emission_rate_keys", []) as Array
+	var static_rate := float(em.get("emission_rate", 0.0))
+	var has_anim_rate := not rate_keys.is_empty()
+	for s in sequences:
+		if typeof(s) != TYPE_DICTIONARY:
+			continue
+		var interval: Array = (s as Dictionary).get("interval", [0, 0]) as Array
+		var start := int(interval[0]) if interval.size() > 0 else 0
+		var end := int(interval[1]) if interval.size() > 1 else start
+		var mid := int((start + end) / 2)
+		var frames: Dictionary = {mid: true, start: true, end: true}
+		for k in vis_keys:
+			if typeof(k) != TYPE_DICTIONARY:
+				continue
+			var fr := int((k as Dictionary).get("frame", 0))
+			if fr >= start and fr <= end:
+				frames[fr] = true
+		for k in rate_keys:
+			if typeof(k) != TYPE_DICTIONARY:
+				continue
+			var fr2 := int((k as Dictionary).get("frame", 0))
+			if fr2 >= start and fr2 <= end:
+				frames[fr2] = true
+		var hit := false
+		for fr3 in frames.keys():
+			var vis := _sample_track(vis_keys, int(fr3), start, end, 1.0)
+			var rate := (
+				_sample_track(rate_keys, int(fr3), start, end, 0.0)
+				if has_anim_rate
+				else static_rate
+			)
+			if vis >= 0.5 and rate > 0.01:
+				hit = true
+				break
+		if hit:
+			var nm := str((s as Dictionary).get("name", "")).strip_edges()
+			if not nm.is_empty():
+				out.append(nm)
+	return out
+
+
+static func _sample_track(
+	keys: Array, frame: int, start: int, end: int, default_v: float
+) -> float:
+	if keys.is_empty():
+		return default_v
+	var best: Variant = null
+	for k in keys:
+		if typeof(k) != TYPE_DICTIONARY:
+			continue
+		var fr := int((k as Dictionary).get("frame", 0))
+		if fr < start:
+			best = k
+			continue
+		if fr > end:
+			break
+		if fr <= frame:
+			best = k
+		else:
+			break
+	if best == null:
+		for k2 in keys:
+			if typeof(k2) != TYPE_DICTIONARY:
+				continue
+			var fr2 := int((k2 as Dictionary).get("frame", 0))
+			if fr2 >= start and fr2 <= end:
+				return float((k2 as Dictionary).get("value", default_v))
+		return default_v
+	return float((best as Dictionary).get("value", default_v))
 
 
 ## 优先 res:// 已导入贴图（便于 .pe2.tscn 保存 ExtResource）；否则磁盘 ImageTexture。

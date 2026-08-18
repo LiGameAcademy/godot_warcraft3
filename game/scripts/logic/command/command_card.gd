@@ -20,6 +20,8 @@ const ACTION_BUILD_PREFIX := "build:" ## 建造按钮 action_id 前缀
 const ACTION_OPEN_BUILD := "open_build" ## 进入建造二级面板
 const ACTION_CLOSE_BUILD := "close_build" ## 退出建造二级面板
 const ACTION_TRAIN_PREFIX := "train:" ## 训练单位：train:hpea
+const ACTION_RESEARCH_PREFIX := "research:" ## 研究科技：research:Rhde
+const ACTION_DEFEND := "defend"
 const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
 
@@ -45,6 +47,7 @@ const _RACE_BUILD_ABIL := {
 const _ORDER_SPEC := {
 	"harvest": {"action": ACTION_HARVEST_GOLD, "un_action": ACTION_RETURN_GOODS},
 	"townbellon": {"action": ACTION_CALL_TO_ARMS},
+	"defend": {"action": ACTION_DEFEND},
 }
 
 
@@ -79,6 +82,8 @@ static func _place(card: Array[Dictionary], entry: Dictionary) -> void:
 ##   building_executing（与 building_ids 等长）
 ##   build_disabled_reasons（与 building_ids 等长；未解锁 tip）
 ##   owned_buildings（typeId→count；训练 Requires 判定）
+##   researched（upgradeid→level；研究完成 / 技能 Requires）
+##   defend_active（顶盾开启 → Unart 停盾图标）
 ##   hide_trains（true：隐藏训兵按钮，仍可显示集结点；建造中用）
 ##   worker_race（可选；空则按 human）
 static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionary]:
@@ -111,6 +116,9 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	var owned: Dictionary = state.get("owned_buildings", {}) as Dictionary
 	if owned == null:
 		owned = {}
+	var researched: Dictionary = state.get("researched", {}) as Dictionary
+	if researched == null:
+		researched = {}
 	var hero_slots_full := bool(state.get("hero_slots_full", false))
 	var hide_trains := bool(state.get("hide_trains", false))
 	var trains := TechPresence.filter_vertical_trains(uid, cat.get_trains(uid))
@@ -118,7 +126,7 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 		for tid in trains:
 			var exec := training_unit == tid or queued.has(tid)
 			var missing := TechPresence.missing_requires(
-				owned, UnitRequiresCatalog.get_shared().get_requires(tid)
+				owned, UnitRequiresCatalog.get_shared().get_requires(tid), researched
 			)
 			var train_ok := missing.is_empty()
 			var opts := {"enabled": train_ok, "executing": exec}
@@ -128,10 +136,22 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 				opts["enabled"] = false
 				opts["disabled_reason"] = "英雄数量已达上限"
 			_place(card, cat.unit_hud_entry(tid, ACTION_TRAIN_PREFIX + tid, opts))
+		var researches := TechPresence.filter_vertical_researches(uid, cat.get_researches(uid))
+		for rid in researches:
+			# 原作：研究完成后按钮消失（不是置灰留在卡上）
+			if int(researched.get(rid, 0)) > 0:
+				continue
+			var exec := training_unit == rid or queued.has(rid)
+			var opts := {
+				"enabled": true,
+				"executing": exec,
+				"cost_line": _upgrade_cost_line(rid),
+			}
+			_place(card, cat.upgrade_hud_entry(rid, ACTION_RESEARCH_PREFIX + rid, opts))
 
 	var carrying := bool(state.get("carrying", false))
 	for abil_id in cat.get_abil_list(uid):
-		_place_supported_ability(card, cat, str(abil_id), state, carrying)
+		_place_supported_ability(card, cat, str(abil_id), state, carrying, owned, researched)
 
 	if not building_ids.is_empty():
 		_place_build_opener(card, cat, str(state.get("worker_race", "human")))
@@ -259,7 +279,9 @@ static func _place_supported_ability(
 	cat: CommandButtonCatalog,
 	abil_id: String,
 	state: Dictionary,
-	carrying: bool
+	carrying: bool,
+	owned: Dictionary = {},
+	researched: Dictionary = {}
 ) -> void:
 	var order := cat.get_ability_order(abil_id)
 	if order.is_empty() or not _ORDER_SPEC.has(order):
@@ -268,7 +290,18 @@ static func _place_supported_ability(
 	var use_un := false
 	var action_id := str(spec.get("action", ""))
 	var opts := {"enabled": true, "executing": false}
-	if order == "harvest":
+	if order == "defend":
+		var missing := TechPresence.missing_requires(
+			owned, cat.get_ability_requires(abil_id), researched
+		)
+		if not missing.is_empty():
+			opts["enabled"] = false
+			opts["disabled_reason"] = TechPresence.requires_tip(missing)
+		else:
+			use_un = bool(state.get("defend_active", false))
+			opts["executing"] = use_un
+			opts["use_un"] = use_un
+	elif order == "harvest":
 		use_un = carrying
 		action_id = str(spec.get("un_action" if use_un else "action", action_id))
 		if use_un:
@@ -409,6 +442,18 @@ static func _building_cost_line(building_id: String) -> String:
 	var cost := "造价 %d 金" % g
 	if l > 0:
 		cost += " · %d 木" % l
+	return cost + "。"
+
+
+static func _upgrade_cost_line(upgrade_id: String) -> String:
+	var g := TechPresence.upgrade_gold(upgrade_id)
+	var l := TechPresence.upgrade_lumber(upgrade_id)
+	var t := TechPresence.upgrade_time(upgrade_id)
+	var cost := "造价 %d 金" % g
+	if l > 0:
+		cost += " · %d 木" % l
+	if t > 0.0:
+		cost += " · %.0f秒" % t
 	return cost + "。"
 
 

@@ -481,8 +481,8 @@ func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true
 	return loaded
 
 
-## 按指定动画 t=0 的 :visible 轨立刻设 Geoset 显隐（不依赖正在播放）。
-func _snap_geoset_visibility_pose(root: Node, anim_name: String) -> void:
+## 按指定动画 at_time 的 :visible 轨立刻设 Geoset 显隐（不依赖正在播放）。
+func _snap_geoset_visibility_pose(root: Node, anim_name: String, at_time: float = 0.0) -> void:
 	var ap := _find_animation_player(root)
 	if ap == null:
 		return
@@ -506,26 +506,62 @@ func _snap_geoset_visibility_pose(root: Node, anim_name: String) -> void:
 		if anim.track_get_key_count(i) <= 0:
 			continue
 		any_vis_track = true
-		var vis: bool = bool(anim.track_get_key_value(i, 0))
-		var node_path := NodePath(ps.get_basename())
-		var target := anim_root.get_node_or_null(node_path)
-		if target is Node3D:
-			(target as Node3D).visible = vis
+		var vis := _track_bool_at(anim, i, at_time)
+		var target := _geoset_node_from_track(anim_root, tpath)
+		if target != null:
+			target.visible = vis
 	# 无 :visible 轨时仍尝试按 rest scale=0 藏（旧 GLB）；失败则保持原样
 	if not any_vis_track:
 		_hide_zero_scale_geosets(root)
 
 
-## AnimationPlayer 动画名解析：精确 → 叶名大小写不敏感 → 库前缀。
+func _geoset_node_from_track(anim_root: Node, tpath: NodePath) -> Node3D:
+	if anim_root == null:
+		return null
+	var ps := str(tpath)
+	if ps.ends_with(":visible"):
+		ps = ps.substr(0, ps.length() - ":visible".length())
+	var n := anim_root.get_node_or_null(NodePath(ps))
+	if n is Node3D:
+		return n as Node3D
+	var leaf := ps.get_file()
+	if leaf.is_empty():
+		leaf = ps
+	if leaf.contains("/"):
+		leaf = leaf.substr(leaf.rfind("/") + 1)
+	var found := anim_root.find_child(leaf, true, false)
+	if found is Node3D:
+		return found as Node3D
+	return null
+
+
+func _track_bool_at(anim: Animation, track_i: int, time_sec: float) -> bool:
+	var n := anim.track_get_key_count(track_i)
+	if n <= 0:
+		return true
+	var vis := bool(anim.track_get_key_value(track_i, 0))
+	for k in range(n):
+		if anim.track_get_key_time(track_i, k) <= time_sec + 0.0001:
+			vis = bool(anim.track_get_key_value(track_i, k))
+		else:
+			break
+	return vis
+
+
+## AnimationPlayer 动画名解析：精确 → 叶名大小写不敏感 → 驼峰/去空格 → 库前缀。
 func _resolve_animation_name(ap: AnimationPlayer, anim_name: String) -> String:
 	if ap == null or anim_name.is_empty():
 		return ""
 	if ap.has_animation(anim_name):
 		return anim_name
 	var want := _anim_leaf_name(anim_name).to_lower()
+	var want_c := AnimPlayback.compact_seq_name(anim_name)
 	for n in ap.get_animation_list():
 		var full := str(n)
-		if _anim_leaf_name(full).to_lower() == want:
+		var leaf := _anim_leaf_name(full)
+		if leaf.to_lower() == want:
+			return full
+		if AnimPlayback.compact_seq_name(full) == want_c:
 			return full
 	return ""
 
@@ -1433,11 +1469,11 @@ func snap_stand_geoset_visibility(root: Node) -> void:
 	_snap_geoset_visibility_pose(root, leaf)
 
 
-## 按任意 Sequence（如 Stand_Work）t=0 的 :visible 轨定格 geoset（建造锤子等）。
-func snap_geoset_visibility_for(root: Node, anim_name: String) -> void:
+## 按任意 Sequence（如 Stand_Work / Decay_Flesh）指定时刻的 :visible 定格 geoset。
+func snap_geoset_visibility_for(root: Node, anim_name: String, at_time: float = 0.0) -> void:
 	if root == null or anim_name.is_empty():
 		return
-	_snap_geoset_visibility_pose(root, anim_name)
+	_snap_geoset_visibility_pose(root, anim_name, at_time)
 
 
 func _collect_mesh_parts(n: Node, out: Array) -> void:

@@ -5,7 +5,9 @@ import { parseMDL, parseMDX } from "war3-model";
 import {
   collectSampleFrames,
   evaluateNodeWorldMatrices,
+  LINE_TYPE_NAMES,
   sampleGeosetAlphaInSequence,
+  wc3SequenceToAnimName,
 } from "./anim.js";
 import { blpBufferToPng, writePlaceholderPng } from "./convert-blp.js";
 import {
@@ -16,6 +18,7 @@ import {
 } from "./mat4.js";
 import {
   blpLogicalToPng,
+  mdxLogicalToAnimKeys,
   mdxLogicalToAttachments,
   mdxLogicalToCameras,
   mdxLogicalToGeosetVis,
@@ -154,11 +157,7 @@ function activeSequencesForEmitter(pe, sequences) {
  */
 function _emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end) {
   const mid = Math.floor((start + end) / 2);
-  if (staticRate != null) {
-    const vis = sampleTrackInSequence(visKeys, mid, start, end, 1);
-    return vis >= 0.5 && staticRate > 0.01;
-  }
-  // 动画 rate：检查区间内每个 rate>0 的关键帧（含脉冲爆发）
+  // 必须采 vis/rate 关键帧：火枪 Flame 等脉冲只亮几十帧，采中点会漏（active=[]）。
   const sampleFrames = new Set([mid, start, end]);
   for (const k of rateKeys || []) {
     if (k.frame >= start && k.frame <= end) sampleFrames.add(k.frame);
@@ -166,9 +165,14 @@ function _emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end) {
   for (const k of visKeys || []) {
     if (k.frame >= start && k.frame <= end) sampleFrames.add(k.frame);
   }
+  const hasAnimRate = Array.isArray(rateKeys) && rateKeys.length > 0;
   for (const frame of sampleFrames) {
     const vis = sampleTrackInSequence(visKeys, frame, start, end, 1);
-    const rate = sampleTrackInSequence(rateKeys, frame, start, end, 0);
+    const rate = hasAnimRate
+      ? sampleTrackInSequence(rateKeys, frame, start, end, 0)
+      : staticRate != null
+        ? staticRate
+        : sampleTrackInSequence(rateKeys, frame, start, end, 0);
     if (vis >= 0.5 && rate > 0.01) return true;
   }
   return false;
@@ -361,7 +365,7 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
     const start = Number(seq.Interval?.[0]) || 0;
     const end = Number(seq.Interval?.[1]) || 0;
     if (end <= start) continue;
-    const animName = String(seq.Name || "Anim").replace(/\s+/g, "_");
+    const animName = wc3SequenceToAnimName(seq.Name || "Anim");
     const frames = collectSampleFrames(
       model.Nodes || [],
       start,
@@ -407,6 +411,168 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
     sequences: sequencesOut,
   };
   // P3-10：原子写盘
+  atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
+  return dest;
+}
+
+/** @param {ArrayLike<number> | undefined | null} v */
+function numArray(v) {
+  if (v == null) return [];
+  return Array.from(v, (n) => Number(n) || 0);
+}
+
+/**
+ * MDX AnimVector → JSON（保留原始 Frame / Vector / InTan / OutTan / LineType）。
+ * @param {import('war3-model').AnimVector | number | undefined | null} anim
+ */
+function dumpAnimVector(anim) {
+  if (anim == null) return null;
+  if (typeof anim === "number") return { static: anim };
+  if (ArrayBuffer.isView(anim) || Array.isArray(anim)) {
+    return { static: numArray(anim) };
+  }
+  const keys = anim.Keys;
+  if (!keys?.length) return null;
+  const line = Number(anim.LineType) || 0;
+  return {
+    line_type: line,
+    line_type_name: LINE_TYPE_NAMES[line] ?? String(line),
+    global_seq_id: anim.GlobalSeqId ?? null,
+    keys: keys.map((k) => {
+      /** @type {{ frame: number, vector: number[], in_tan?: number[], out_tan?: number[] }} */
+      const e = { frame: Number(k.Frame) || 0, vector: numArray(k.Vector) };
+      if (k.InTan) e.in_tan = numArray(k.InTan);
+      if (k.OutTan) e.out_tan = numArray(k.OutTan);
+      return e;
+    }),
+  };
+}
+
+/** @param {import('war3-model').AnimVector | undefined | null} anim */
+function countKeysInInterval(anim, start, end) {
+  if (!anim?.Keys?.length) return 0;
+  let n = 0;
+  for (const k of anim.Keys) {
+    const f = Number(k.Frame) || 0;
+    if (f >= start && f <= end) n += 1;
+  }
+  return n;
+}
+
+/**
+ * 旁路：尽量导出 MDX 原始动画关键帧（毫秒全局时间轴，非 glTF 重采样）。
+ * glTF 仍按 Sequence 烤世界矩阵；本文件供对照 Hermite/Bezier 与 Interval。
+ *
+ * @param {ReturnType<typeof parseMDX>} model
+ * @param {string} logicalPath
+ * @param {string} outDir
+ */
+function writeAnimKeysSidecar(model, logicalPath, outDir) {
+  const sequences = [];
+  for (const seq of model.Sequences ?? []) {
+    const start = Number(seq.Interval?.[0]) || 0;
+    const end = Number(seq.Interval?.[1]) || 0;
+    if (end <= start) continue;
+    const mdxName = String(seq.Name || "");
+    let tKeys = 0;
+    let rKeys = 0;
+    let sKeys = 0;
+    for (const node of model.Nodes ?? []) {
+      if (!node) continue;
+      tKeys += countKeysInInterval(node.Translation, start, end);
+      rKeys += countKeysInInterval(node.Rotation, start, end);
+      sKeys += countKeysInInterval(node.Scaling, start, end);
+    }
+    let alphaKeys = 0;
+    for (const ga of model.GeosetAnims ?? []) {
+      if (ga?.Alpha && typeof ga.Alpha !== "number") {
+        alphaKeys += countKeysInInterval(ga.Alpha, start, end);
+      }
+    }
+    sequences.push({
+      name: wc3SequenceToAnimName(mdxName || "Anim"),
+      mdx_name: mdxName,
+      interval: [start, end],
+      duration_ms: end - start,
+      duration_sec: Math.round(((end - start) / 1000) * 1000) / 1000,
+      looping: !seq.NonLooping,
+      move_speed: Number(seq.MoveSpeed) || 0,
+      rarity: Number(seq.Rarity) || 0,
+      key_count: {
+        translation: tKeys,
+        rotation: rKeys,
+        scaling: sKeys,
+        geoset_alpha: alphaKeys,
+      },
+    });
+  }
+
+  const nodes = [];
+  for (const node of model.Nodes ?? []) {
+    if (!node) continue;
+    const translation = dumpAnimVector(node.Translation);
+    const rotation = dumpAnimVector(node.Rotation);
+    const scaling = dumpAnimVector(node.Scaling);
+    if (!translation && !rotation && !scaling) continue;
+    nodes.push({
+      name: String(node.Name || ""),
+      object_id: node.ObjectId,
+      parent: node.Parent ?? null,
+      translation,
+      rotation,
+      scaling,
+    });
+  }
+
+  const geosetAnims = [];
+  for (const ga of model.GeosetAnims ?? []) {
+    if (!ga) continue;
+    const alpha = dumpAnimVector(ga.Alpha);
+    const color = dumpAnimVector(ga.Color);
+    geosetAnims.push({
+      geoset_id: ga.GeosetId,
+      flags: ga.Flags ?? 0,
+      alpha,
+      color,
+    });
+  }
+
+  const textureAnims = [];
+  for (const ta of model.TextureAnims ?? []) {
+    if (!ta) continue;
+    const translation = dumpAnimVector(ta.Translation);
+    const rotation = dumpAnimVector(ta.Rotation);
+    const scaling = dumpAnimVector(ta.Scaling);
+    if (!translation && !rotation && !scaling) continue;
+    textureAnims.push({ translation, rotation, scaling });
+  }
+
+  const events = [];
+  for (const ev of model.EventObjects ?? []) {
+    if (!ev) continue;
+    const frames = numArray(ev.EventTrack);
+    if (!frames.length) continue;
+    events.push({
+      name: String(ev.Name || ""),
+      object_id: ev.ObjectId,
+      parent: ev.Parent ?? null,
+      frames,
+    });
+  }
+
+  const dest = path.join(outDir, ...mdxLogicalToAnimKeys(logicalPath).split("/"));
+  const payload = {
+    version: 1,
+    source: normalizeLogicalPath(logicalPath),
+    time_unit: "ms",
+    note: "MDX 全局毫秒时间轴；Sequences.interval 为片段范围。glTF 动画已按 Sequence 归零并重采样，原始 Keys 在此。",
+    global_sequences: (model.GlobalSequences ?? []).map((d) => Number(d) || 0),
+    sequences,
+    nodes,
+    geoset_anims: geosetAnims,
+    texture_anims: textureAnims,
+    events,
+  };
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
 }
@@ -1069,7 +1235,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       const end = seq.Interval[1];
       if (end <= start) continue;
 
-      const animName = (seq.Name || "Anim").replace(/\s+/g, "_");
+      const animName = wc3SequenceToAnimName(seq.Name || "Anim");
       const animation = document.createAnimation(animName);
       const frames = collectSampleFrames(
         allNodes,
@@ -1239,6 +1405,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     outDir,
     ...mdxLogicalToCameras(logicalPath).split("/"),
   );
+  const animKeysDest = path.join(
+    outDir,
+    ...mdxLogicalToAnimKeys(logicalPath).split("/"),
+  );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
@@ -1248,6 +1418,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
     writeAttachmentsSidecar(model, logicalPath, outDir);
     writeCamerasSidecar(model, logicalPath, outDir);
+    writeAnimKeysSidecar(model, logicalPath, outDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
@@ -1257,6 +1428,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(geosetVisDest);
     unlinkQuiet(attDest);
     unlinkQuiet(camDest);
+    unlinkQuiet(animKeysDest);
     throw err;
   }
   return dest;

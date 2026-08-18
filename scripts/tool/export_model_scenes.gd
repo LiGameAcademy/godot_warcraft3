@@ -337,12 +337,8 @@ func _has_axhandle_tool_ba(proto: Node) -> bool:
 
 
 func _is_stand_work_anim(anim_name: String) -> bool:
-	var leaf := _anim_leaf_name(anim_name).replace(" ", "_").to_lower()
-	return (
-		leaf == "stand_work"
-		or leaf == "stand_work_gold"
-		or leaf == "stand_work_lumber"
-	)
+	var leaf := _anim_leaf_name(anim_name).replace("_", "").replace(" ", "").to_lower()
+	return leaf == "standwork" or leaf.begins_with("standwork")
 
 
 func _anim_leaf_name(anim_path: String) -> String:

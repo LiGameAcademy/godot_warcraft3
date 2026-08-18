@@ -42,7 +42,7 @@ F  人族游玩竖切        采集→基建→英雄→训兵→科技→技能
 E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂接
 ```
 
-编号即推荐顺序；**A→D 已基本落地；F 竖切完成 F0–F6**；**下一主线 C0–C3 战斗框架**（见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)）；F8–F10 依赖战斗；E 仍单独开里程碑。
+编号即推荐顺序；**A→D 已基本落地；F 竖切完成 F0–F6 + C0–C3 + F8–F9**；下一步 **F10 技能**（见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)）；E 仍单独开里程碑。
 
 ---
 
@@ -115,10 +115,11 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 | F4 | 训练步兵 `hfoo` | ✅ |
 | F5 | 伐木场 `hlum`（收木） | ✅ 可造；送回能力已有 |
 | F6 | 铁匠铺 → 解锁火枪手 | ✅ Requires 置灰 + `hrif`；铁匠武器/护甲科技后置 |
-| **C0–C3** | **攻击 / 攻移 / 射程 / 攻防伤害** | **← 下一步** · 契约 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) |
+| **C0–C3** | **攻击 / 攻移 / 射程 / 攻防伤害** | ✅ · 尸体停留后移除 · 契约 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) |
 | F7 | 主城升 Keep | 后置 |
-| F8–F9 | 顶盾科技 + 切换 | 待办（依赖 C*） |
-| F10 | 大法师技能（先原生，再评估插件） | 待办（依赖 C3） |
+| F8 | 顶盾科技 `Rhde` | ✅ 兵营研究；完成后按钮消失；玩家级解锁 |
+| F9 | 顶盾切换 `Adef` | ✅ 减速 / Defend 姿态 / Unart |
+| F10 | 大法师技能（先原生，再评估插件） | ← 下一步 |
 
 **Present 并行（不挡 F2）：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `MapUnitLayer` snap；同树桩管线）。
 

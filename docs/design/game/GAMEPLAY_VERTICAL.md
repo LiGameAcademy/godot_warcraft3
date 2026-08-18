@@ -4,7 +4,7 @@
 > 范围：**仅人族 Melee 最小集**；不做完整科技树、不做多族、不做联机。  
 > 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [HUD.md](HUD.md)  
 > 最后更新：2026-08-17  
-> **当前进度：F0–F6 已接线。下一步优先补战斗框架（C0–C3）；契约见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)。再 F8 顶盾 → F10 技能。Keep 与铁匠武器升级后置。**
+> **当前进度：F0–F6、C0–C3、F8–F9 已接线。下一步 F10 技能。Keep 与铁匠武器升级后置。**
 
 ---
 
@@ -24,7 +24,7 @@
 | 命令格 | `CommandCard` | 建造二级面板 / 训练格 |
 | 数值权威 | `UnitBalanceDef` / `UnitWeaponsDef` / … | 造价、人口、武器表（战斗待接） |
 
-**下一步缺口：** **战斗框架 C0–C3**（见 §1）→ 顶盾 F8–F9 → 大法师技能 F10。  
+**下一步缺口：** 大法师技能 F10。  
 **Present 并行：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `snap_stand_geoset_visibility`，见 §5）。
 
 ---
@@ -40,17 +40,17 @@ F4  训练步兵                 ✅ 兵营产 hfoo
 F5  建造伐木场               ✅ hlum；收木
 F6  建造铁匠铺 → 解锁火枪手  ✅ Requires + hrif（铁匠科技后置）
 ─── 战斗插入（优先于科技/技能）───
-C0  攻击命令 + 自动接敌      ← 下一步
-C1  攻击移动（Attack-Move）
-C2  射程 / 冷却 / 面向 / 弹道壳
-C3  攻防类型 + 伤害公式（读 UnitWeapons / UnitBalance）
+C0  攻击命令 + 自动接敌      ✅
+C1  攻击移动（Attack-Move）  ✅
+C2  射程 / 冷却 / 面向 / 弹道壳  ✅
+C3  攻防类型 + 伤害公式（读 UnitWeapons / UnitBalance）  ✅
 F7  主城升级                 后置 htow → hkee
-F8  研究顶盾科技             Barracks 研究 Rhde（依赖 C*）
-F9  步兵切换顶盾             Adef 开/关
-F10 大法师技能               先原生子集（依赖 C3 伤害管线）
+F8  研究顶盾科技             Barracks 研究 Rhde           ✅
+F9  步兵切换顶盾             Adef 开/关                   ✅
+F10 大法师技能               先原生子集（依赖 C3 伤害管线）  ← 下一步
 ```
 
-编号即推荐实现顺序；**主线进入 C0**。铁匠铺武器/护甲升级不挡竖切，后置。
+编号即推荐实现顺序；**主线进入 F10**。铁匠铺武器/护甲升级不挡竖切，后置。
 
 游玩验收剧本（人工点一遍）：
 
@@ -168,7 +168,7 @@ game/scripts/
 **简化（允许）**
 
 - 金矿可先无限或读地图储量  
-- 交货建筑搜索：距离最近、同玩家、类型匹配  
+- 交货建筑搜索：距离最近、同玩家、类型匹配、**已完工**  
 - 伐木场优先交货见 F5；树闲置 demote 回 MM 后置  
 
 **验收**
@@ -199,7 +199,7 @@ game/scripts/
 | 归属 | `ngol` 保持中立；任何玩家都可采 | P0 不锁矿；软宣称可后置 |
 | 闹鬼金矿 | `ugol` 等，多侍僧站桩采（≠进出矿） | 远期，另设 `max_inside`/无排队 |
 | 缠绕金矿 | 暗夜生命之树缠绕，小精灵站桩 | 远期 |
-| 矿空 | 储量 0 塌陷/停采 | `depleted`；农民出矿 taken=0 则停循环 |
+| 矿空 | 储量 0 播 Death 塌陷，播完移除 | `depleted` → Present `BuildingVisual.play_death`；农民停采 |
 | 低储量提示 | ≤1500 警告 | P1 HUD |
 | 自动回城/回矿 | 属于 **Harvest 订单 AI**，非硬编码坐标 | 交货点由 `ReceiveResources` 查询 |
 
@@ -346,12 +346,14 @@ game/scripts/
 **玩法**
 
 - 建造 `hlum`（规则同 F2）  
-- 伐木交货优先：有 Mill 时优先最近 Mill，否则 Town Hall  
+- 伐木交货优先：有 **已完工** Mill 时优先最近 Mill，否则 Town Hall  
+- 未完工 Mill **不能**收木（与 TechPresence 一致：半成品不提供能力）  
 - P1：Mill 提供视野/效率加成可后置；本步以**路径更短、逻辑正确**为主  
 
 **验收**
 
 - 造好 Mill 后，负木农民会改去 Mill 交货  
+- 建造中的 Mill 交货失败/不入账；农民改去主城  
 
 **依赖**：F1 + F2 建造管线
 
@@ -375,7 +377,7 @@ game/scripts/
 
 ### C0–C3 · 战斗框架（插入 · 优先于 F8）
 
-> **主线下一步。** 顶盾与技能都依赖「能打出真实伤害」；先补战斗再回头做 F8–F10。  
+> **已完成。** 顶盾与技能都依赖「能打出真实伤害」；战斗框架已接线。  
 > **设计契约（落地前必读）：** [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) — Attack 订单 · `DamagePipeline` · 攻防表 · 分 commit 路线 · 与 `CombatSteering`/树伤边界。
 
 #### 摘要
@@ -384,8 +386,8 @@ game/scripts/
 |----|------|------------|
 | C0 | Attack 命令 + 追击 + 近战出手 | 步兵右键野怪能打死 |
 | C1 | Attack-Move + `acquire` | A 键点地途经会打，Move 不惹怪 |
-| C2 | 射程 / 冷却 / 面向 / 弹道壳 | 火枪远程不连发 |
-| C3 | 攻防表 + 骰伤 + 死亡离场 | 公式可单测；尸体/清选中 |
+| C2 | 射程 / 冷却 / 面向 / 弹道壳 | ✅ weapTp 分支 + Present 壳；hrif 远程不连发 |
+| C3 | 攻防表 + 骰伤 + 死亡离场 | ✅ 公式可单测；Death→尸体停留后移除；清选中 |
 
 **代码落点**：`game/scripts/logic/combat/`（见 COMBAT_SYSTEM §8）  
 **依赖**：F0；建议已有 `hfoo`/`hrif`（F4/F6）
@@ -418,14 +420,17 @@ game/scripts/
 **玩法**
 
 - 选中 `hbar` → 研究 `Rhde`（Defend）  
-- 费用/时间读 `UpgradeDataDef`  
-- 写入 `PlayerStock` 或 `Session.tech_flags`：`player.has_upgrade("Rhde")`  
+- 费用/时间读 `UpgradeDataDef`（150 金 / 100 木 / 45 秒）  
+- 写入 `PlayerStock.has_upgrade("Rhde")`（玩家级，不是单兵旗）  
 
 **验收**
 
-- 研究完成后全图己方步兵解锁顶盾命令；重复研究不可用  
+- 步兵命令卡**默认就有**顶盾格，未研究时置灰（DISBTN +「需要：…」）  
+- 研究完成后：兵营研究按钮**消失**；场上已有 `hfoo` 与之后新训的 `hfoo` 顶盾格一并点亮  
 
-**依赖**：F4（有兵营 + 步兵）；**须先完成 C0–C3**（挨打中验证减伤）
+**落地**：兵营 `research:Rhde` 与训兵共用 `TrainQueue`；完工不刷单位。
+
+**依赖**：F4（有兵营 + 步兵）；C0–C3
 
 ---
 
@@ -433,13 +438,13 @@ game/scripts/
 
 **玩法**
 
-- 已研究 `Rhde` 的 `hfoo`：命令卡「顶盾」开关  
-- 开启：移速降低、防御姿态（数值可读 Ability/Upgrade；P0 可先改移速倍率 + 状态旗）  
-- 移动/攻击命令是否自动取消顶盾：P0 跟随 WC3（Defend 下可移动但慢）  
+- 已研究 `Rhde` 的 `hfoo`：命令卡顶盾开关（热键 D）  
+- 开启：移速 × (1 − `Adef.DataC`)=70%；穿刺承受 `Adef.DataA`=30%；`UnitVisual` Stance.DEFEND  
+- 图标切 `Unart`（BTNDefendStop）；可移动、可攻击（不自动取消顶盾）  
 
 **验收**
 
-- 开关切换有反馈（动画可后置，先状态 + 移速）；未研究无此命令  
+- 开关有移速/姿态/图标反馈；未研究按钮在但点不了  
 
 **依赖**：F8
 
@@ -539,9 +544,10 @@ WC3 单位 MDX 常把**活体 + 尸体 + 武器变体**放在同一模型，用 
 | G3 | 建造三件套 + Farm 人口 | F2 | ✅ |
 | G4 | 祭坛训英雄 + 兵营训步兵 | F3–F4 | ✅ |
 | G5 | Mill + Blacksmith + 火枪手 Requires | F5–F6 | ✅ |
-| **G5.5** | **战斗：Attack / Attack-Move / 射程 / 攻防伤害** | **C0–C3** | **← 下一步** |
-| G6 | Keep 升级 + Defend 研究/切换 | F7–F9 | 依赖 C* |
-| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 | 依赖 C3 |
+| **G5.5** | **战斗：Attack / Attack-Move / 射程 / 攻防伤害** | **C0–C3** | ✅ |
+| G6 | Defend 研究 | F8 | ✅ |
+| G6.5 | Defend 开关 | F9 | ✅ |
+| G7 | 大法师技能 P0 + AbilitySystem 评估结论 | F10 | ← 下一步 |
 
 每迭代验收以 §1 剧本对应条目为准；合并前 F6 跑 `game_main` 不破现有移动。
 
@@ -587,3 +593,6 @@ game/scripts/logic/
 | 2026-08-09 | F2 拆 7 commit（docs/data/logic×3/present/test）；锁 3 建筑 `hhou`/`halt`/`hbar`；开 `feature/building-system` 分支 |
 | 2026-08-16 | F0–F6 竖切接线完成；下一步插入 **C0–C3 战斗框架**（攻击/攻移/射程/攻防伤害），再 F8 顶盾与 F10 技能 |
 | 2026-08-17 | 战斗契约单列 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)；实现按 C0-0～C3 分 commit，单位扣血唯一入口 `DamagePipeline` |
+| 2026-08-18 | 尸体 Decay Flesh→Bone 按动画片长播放后移除；F8 兵营研究 `Rhde` 写入 `PlayerStock`；F9 顶盾开关（置灰→解锁、研究按钮消失、减速/姿态/Unart） |
+| 2026-08-18 | 未完工建筑不能交货：`ReceiveResources.can_receive` 拒绝 `under_construction`（伐木场半成品不收木） |
+| 2026-08-18 | 金矿踩空：`GoldMineRuntime.depleted` → Present 播 Death，结束后 `remove_unit_instance`；候矿农民停采 |

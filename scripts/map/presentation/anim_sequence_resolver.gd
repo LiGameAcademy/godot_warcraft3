@@ -82,8 +82,8 @@ static func town_hall_tier_suffix(type_id: String) -> String:
 
 ## 源 MDX 标 looping 但首尾姿势不闭合 → 需 ping-pong，不能 LOOP_LINEAR。
 static func needs_ping_pong(anim_or_logical: String) -> bool:
-	var leaf := _anim_leaf(anim_or_logical).replace(" ", "_").to_lower()
-	return leaf == "stand_gold" or leaf == "stand_lumber"
+	var c := AnimPlayback.compact_seq_name(anim_or_logical)
+	return c == "standgold" or c == "standlumber"
 
 ## PE2 侧常用更短的序列标签（负资源站立/走路仍用空手标签关闸）。
 static func pe2_hint(logical: String, activity: int) -> String:

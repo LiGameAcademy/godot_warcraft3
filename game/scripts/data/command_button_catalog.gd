@@ -1,8 +1,8 @@
 class_name CommandButtonCatalog
 extends RefCounted
 
-## 命令卡资源映射：Command / Ability / Unit 的 Func+Strings → 图标路径、槽位、热键、Tip。
-## 数据权威：assets/slk-exported/Units/{Command*,*Ability*,*Unit*}（经 passthrough，禁止读 .cache）。
+## 命令卡资源映射：Command / Ability / Unit / Upgrade 的 Func+Strings → 图标路径、槽位、热键、Tip。
+## 数据权威：assets/slk-exported/Units/{Command*,*Ability*,*Unit*,*Upgrade*}（经 passthrough，禁止读 .cache）。
 ##
 ## 槽位：slot = Buttonpos.y * 4 + Buttonpos.x（WC3 4×3）。
 
@@ -16,6 +16,7 @@ static var _shared: CommandButtonCatalog = null
 var _commands: Dictionary = {}
 var _abilities: Dictionary = {}
 var _units: Dictionary = {}
+var _upgrades: Dictionary = {}
 var _loaded: bool = false
 
 
@@ -40,6 +41,8 @@ func ensure_loaded() -> void:
 		_load_pair("%sAbilityFunc.txt" % race, "%sAbilityStrings.txt" % race, _abilities)
 	for race in ["Human", "Orc", "Undead", "NightElf", "Neutral", "Campaign"]:
 		_load_pair("%sUnitFunc.txt" % race, "%sUnitStrings.txt" % race, _units)
+	for race in ["Human", "Orc", "Undead", "NightElf", "Neutral", "Campaign"]:
+		_load_pair("%sUpgradeFunc.txt" % race, "%sUpgradeStrings.txt" % race, _upgrades)
 
 
 func get_command(cmd_id: String) -> Dictionary:
@@ -57,6 +60,15 @@ func get_unit_ui(unit_id: String) -> Dictionary:
 func get_trains(building_id: String) -> PackedStringArray:
 	var row := get_unit_ui(building_id)
 	return _split_csv(str(row.get("trains", "")))
+
+
+func get_researches(building_id: String) -> PackedStringArray:
+	var row := get_unit_ui(building_id)
+	return _split_csv(str(row.get("researches", "")))
+
+
+func get_upgrade_ui(upgrade_id: String) -> Dictionary:
+	return (_upgrades.get(upgrade_id, {}) as Dictionary).duplicate(true)
 
 
 func get_builds(unit_id: String) -> PackedStringArray:
@@ -82,6 +94,11 @@ func get_abil_list(unit_id: String) -> PackedStringArray:
 func get_ability_order(abil_id: String) -> String:
 	var row := get_ability(abil_id)
 	return str(row.get("order", "")).strip_edges().to_lower()
+
+
+func get_ability_requires(abil_id: String) -> PackedStringArray:
+	var row := get_ability(abil_id)
+	return _split_csv(str(row.get("requires", "")))
 
 
 ## Builds ∩ allowlist。
@@ -250,6 +267,10 @@ func unit_hud_entry(unit_id: String, action_id: String, opts: Dictionary = {}) -
 	return make_hud_entry(get_unit_ui(unit_id), action_id, opts)
 
 
+func upgrade_hud_entry(upgrade_id: String, action_id: String, opts: Dictionary = {}) -> Dictionary:
+	return make_hud_entry(get_upgrade_ui(upgrade_id), action_id, opts)
+
+
 func _converted_file_exists(logical: String) -> bool:
 	var res := RuntimeAssets.converted_path(logical)
 	return RuntimeAssets.file_exists(res)
@@ -321,6 +342,8 @@ func _normalize_key(key: String) -> String:
 			return "order"
 		"trains":
 			return "trains"
+		"researches":
+			return "researches"
 		"builds":
 			return "builds"
 		_:

@@ -482,7 +482,7 @@ func _resolve_town_hall_portrait(
 		return resolved
 	# 一本：源名常为 Portrait_-1，精确「Portrait」对不上
 	if suffix.is_empty():
-		for alt in ["Portrait - 1", "Portrait_-1", "Portrait -1", "Portrait"]:
+		for alt in ["Portrait - 1", "Portrait_-1", "Portrait -1", "Portrait-1", "Portrait"]:
 			resolved = AnimPlayback.resolve(root, alt, player)
 			if not resolved.is_empty():
 				return resolved

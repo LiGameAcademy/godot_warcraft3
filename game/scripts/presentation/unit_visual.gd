@@ -10,6 +10,20 @@ extends Node
 
 const _TAG := "UnitVisual"
 
+## 无 Decay 序列时的尸体停留（有 Decay Flesh/Bone 则用动画片长）。
+const CORPSE_LINGER_SEC := 8.0
+## Death 若未 finished，按片长 + 裕量强制进 Decay。
+const DEATH_ANIM_FALLBACK_SEC := 4.0
+## 尸体链：Death → Decay Flesh → Decay Bone。
+const _CORPSE_NONE := 0
+const _CORPSE_DEATH := 1
+const _CORPSE_FLESH := 2
+const _CORPSE_BONE := 3
+const _CORPSE_DONE := 4
+
+## 尸体停留结束，应由 Director 走 MapLoader.remove_unit_instance；无订阅则 queue_free。
+signal corpse_expired(unit: Node3D)
+
 ## 负资源姿态。
 enum Carry {
 	NONE = 0, ## 无。
@@ -28,10 +42,18 @@ var _stance: int = AnimSequenceResolver.Stance.DEFAULT ## 姿态。
 var _moving: bool = false ## 是否移动。
 var _chopping: bool = false ## 是否砍伐。
 var _combat_attack: bool = false ## 是否战斗出手。
+var _dying: bool = false ## 是否死亡表现（Death → Decay）。
+var _corpse_phase: int = _CORPSE_NONE ## 尸体链阶段。
+var _corpse_watch_id: int = 0 ## 阶段切换时作废旧 timeout。
+var _played_any_decay: bool = false ## 是否已播过 Flesh/Bone。
 var _building_work: bool = false ## 是否施工。
 var _logical: String = "" ## 逻辑名。
 var _activity: int = AnimSequenceResolver.Activity.IDLE ## 活动。
 var _soft_loop = null ## 软循环。
+
+
+func _ready() -> void:
+	set_process(false)
 
 
 ## 绑定模型缓存。
@@ -97,11 +119,11 @@ func set_stance(stance: int, force: bool = false) -> void:
 	var stance_changed := _stance != stance
 	_stance = stance
 	_logical = ""
-	if _chopping or _building_work or _combat_attack:
+	if _dying or _chopping or _building_work or _combat_attack:
 		AppLog.debug(
 			AppLog.Layer.PRESENT,
 			_TAG,
-			"set_stance=%s 延迟（chop/work/attack）" % stance
+			"set_stance=%s 延迟（die/chop/work/attack）" % stance
 		)
 		return
 	var blend := BLEND_CARRY_SWITCH if stance_changed or force else (
@@ -117,13 +139,18 @@ func set_stance(stance: int, force: bool = false) -> void:
 
 ## 设置移动。
 func set_locomotion(moving: bool) -> void:
-	if (_chopping or _building_work or _combat_attack) and moving:
+	if _dying:
+		return
+	# 战斗出手中：不因 Navigator 抖动打断 Attack（首刀进距时常先 stop 再残留 moving=true）。
+	if _combat_attack:
+		_moving = moving
+		return
+	if (_chopping or _building_work) and moving:
 		_chopping = false
 		_building_work = false
-		_combat_attack = false
 		_logical = ""
-	elif _chopping or _building_work or _combat_attack:
-		# 砍伐 / 施工 / 战斗出手中：只记移动态，不抢播 Walk/Stand。
+	elif _chopping or _building_work:
+		# 砍伐 / 施工中：只记移动态，不抢播 Walk/Stand。
 		_moving = moving
 		return
 	var activity := (
@@ -147,6 +174,8 @@ func set_locomotion(moving: bool) -> void:
 
 ## 设置施工（仅切换 Activity → Stand Work*；锤子可见性由 bake 轨保证）。
 func set_building_work(active: bool) -> void:
+	if _dying:
+		return
 	if active:
 		AppLog.debug(AppLog.Layer.PRESENT, _TAG, "set_building_work=true stance=%s" % _stance)
 		_chopping = false
@@ -166,6 +195,8 @@ func set_building_work(active: bool) -> void:
 
 ## 设置砍伐。
 func set_chopping(active: bool) -> void:
+	if _dying:
+		return
 	if _chopping == active:
 		if active and _activity == AnimSequenceResolver.Activity.ATTACK:
 			return
@@ -183,8 +214,245 @@ func set_chopping(active: bool) -> void:
 		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
 
 
+## 死亡表现：Death → 完整播 Decay Flesh → Decay Bone（片长=尸体停留），然后移除。
+func play_death() -> void:
+	if _dying:
+		return
+	_dying = true
+	_corpse_phase = _CORPSE_DEATH
+	_played_any_decay = false
+	_combat_attack = false
+	_chopping = false
+	_building_work = false
+	_moving = false
+	_logical = ""
+	if _soft_loop != null:
+		_soft_loop.clear()
+	var body := _host()
+	var ap := _animation_player()
+	if ap != null:
+		ap.active = true
+		if ap.speed_scale < 1.0:
+			ap.speed_scale = 1.0
+	if body != null:
+		var nav := body.get_node_or_null("UnitNavigator") as UnitNavigator
+		if nav != null:
+			nav.stop()
+	_play_current(0.0)
+	if _activity != AnimSequenceResolver.Activity.DEATH:
+		enter_corpse_state()
+		return
+	_connect_corpse_finished()
+	set_process(true)
+	_arm_corpse_watch(DEATH_ANIM_FALLBACK_SEC)
+
+
+func _connect_corpse_finished() -> void:
+	var ap := _animation_player()
+	if ap == null:
+		return
+	if not ap.animation_finished.is_connected(_on_corpse_anim_finished):
+		ap.animation_finished.connect(_on_corpse_anim_finished)
+
+
+func _disconnect_corpse_finished() -> void:
+	var ap := _animation_player()
+	if ap == null:
+		return
+	if ap.animation_finished.is_connected(_on_corpse_anim_finished):
+		ap.animation_finished.disconnect(_on_corpse_anim_finished)
+
+
+func _anim_leaf_key(anim: StringName) -> String:
+	return AnimPlayback.compact_seq_name(str(anim))
+
+
+func _is_death_clip(anim: StringName) -> bool:
+	if str(anim).is_empty():
+		return true
+	var leaf := _anim_leaf_key(anim)
+	if leaf.begins_with("decay"):
+		return false
+	return leaf.begins_with("death") or leaf.begins_with("dissipate")
+
+
+func _is_decay_flesh_clip(anim: StringName) -> bool:
+	var leaf := _anim_leaf_key(anim)
+	if leaf.contains("bone"):
+		return false
+	return leaf.begins_with("decay")
+
+
+func _is_decay_bone_clip(anim: StringName) -> bool:
+	var leaf := _anim_leaf_key(anim)
+	return leaf.begins_with("decay") and leaf.contains("bone")
+
+
+func _scene_tree() -> SceneTree:
+	var t := get_tree()
+	if t != null:
+		return t
+	return Engine.get_main_loop() as SceneTree
+
+
+func _arm_corpse_watch(min_wait: float) -> void:
+	_corpse_watch_id += 1
+	var id := _corpse_watch_id
+	var ap := _animation_player()
+	var wait := min_wait
+	if ap != null:
+		wait = maxf(wait, ap.current_animation_length + 0.35)
+	var tree := _scene_tree()
+	if tree == null:
+		return
+	tree.create_timer(wait).timeout.connect(
+		func() -> void:
+			if id != _corpse_watch_id:
+				return
+			_advance_corpse_phase()
+	)
+
+
+func _process(_delta: float) -> void:
+	if not _dying or _corpse_phase == _CORPSE_DONE or _corpse_phase == _CORPSE_NONE:
+		set_process(false)
+		return
+	var ap := _animation_player()
+	if ap == null:
+		_advance_corpse_phase()
+		return
+	var cur := StringName(ap.current_animation)
+	if not _clip_matches_phase(cur):
+		return
+	var alen := ap.current_animation_length
+	var pos := ap.current_animation_position
+	if ap.is_playing() and alen > 0.0 and pos < alen - 0.05:
+		return
+	# 刚切到新片时 seek(0) 可能尚未标 playing；未到片尾不要跳阶段。
+	if (not ap.is_playing()) and alen > 0.0 and pos < alen - 0.05:
+		return
+	_advance_corpse_phase()
+
+
+func _clip_matches_phase(anim: StringName) -> bool:
+	match _corpse_phase:
+		_CORPSE_DEATH:
+			return _is_death_clip(anim)
+		_CORPSE_FLESH:
+			return _is_decay_flesh_clip(anim)
+		_CORPSE_BONE:
+			return _is_decay_bone_clip(anim)
+		_:
+			return false
+
+
+func _on_corpse_anim_finished(anim: StringName) -> void:
+	if not _dying or _corpse_phase == _CORPSE_DONE:
+		return
+	if not _clip_matches_phase(anim):
+		return
+	_advance_corpse_phase()
+
+
+func _advance_corpse_phase() -> void:
+	match _corpse_phase:
+		_CORPSE_DEATH:
+			enter_corpse_state()
+		_CORPSE_FLESH:
+			enter_decay_bone()
+		_CORPSE_BONE:
+			_finish_corpse()
+		_:
+			pass
+
+
+## Death 播完 → 完整播放 Decay Flesh（尸体 Geoset 在此序列，勿定格）。
+func enter_corpse_state() -> void:
+	if not _dying:
+		_dying = true
+	if _corpse_phase >= _CORPSE_FLESH:
+		return
+	_corpse_phase = _CORPSE_FLESH
+	if _play_decay_clip(["Decay Flesh", "Decay_Flesh", "DecayFlesh", "Decay"]):
+		return
+	enter_decay_bone()
+
+
+## Decay Flesh 播完 → Decay Bone（片长即骨架停留；无此片则结束）。
+func enter_decay_bone() -> void:
+	if not _dying:
+		return
+	if _corpse_phase >= _CORPSE_BONE:
+		return
+	_corpse_phase = _CORPSE_BONE
+	if _play_decay_clip(["Decay Bone", "Decay_Bone", "DecayBone"]):
+		return
+	_finish_corpse()
+
+
+func _play_decay_clip(logical_names: Array) -> bool:
+	var body := _host()
+	if body == null:
+		return false
+	var ap := _animation_player()
+	if ap != null:
+		ap.speed_scale = 1.0
+	var resolved := ""
+	for name_v in logical_names:
+		resolved = AnimPlayback.resolve(body, str(name_v), ap)
+		if not resolved.is_empty():
+			break
+	if resolved.is_empty():
+		return false
+	var played := AnimPlayback.play(body, resolved, 0.0, _cache, 0, ap)
+	if not bool(played.get("ok", false)):
+		return false
+	_played_any_decay = true
+	_logical = AnimPlayback.anim_leaf(resolved).replace(" ", "_")
+	if _cache != null:
+		_cache.snap_geoset_visibility_for(body, resolved, 0.0)
+	Wc3Pe2Particles.apply_sequence(body, AnimPlayback.anim_leaf(resolved).replace("_", " "))
+	_connect_corpse_finished()
+	set_process(true)
+	_arm_corpse_watch(0.35)
+	return true
+
+
+func _finish_corpse() -> void:
+	if _corpse_phase == _CORPSE_DONE:
+		return
+	_corpse_phase = _CORPSE_DONE
+	_corpse_watch_id += 1
+	set_process(false)
+	_disconnect_corpse_finished()
+	if _played_any_decay:
+		_remove_corpse()
+		return
+	_schedule_corpse_remove()
+
+
+func _schedule_corpse_remove() -> void:
+	var tree := _scene_tree()
+	if tree == null:
+		_remove_corpse()
+		return
+	tree.create_timer(CORPSE_LINGER_SEC).timeout.connect(_remove_corpse)
+
+
+func _remove_corpse() -> void:
+	var body := _host()
+	if body == null or not is_instance_valid(body):
+		return
+	if corpse_expired.get_connections().size() > 0:
+		corpse_expired.emit(body)
+		return
+	body.queue_free()
+
+
 ## 战斗出手动画（非伐木）。
 func set_combat_attack(active: bool) -> void:
+	if _dying:
+		return
 	if _combat_attack == active:
 		if active and _activity == AnimSequenceResolver.Activity.ATTACK:
 			return
@@ -195,7 +463,8 @@ func set_combat_attack(active: bool) -> void:
 		_chopping = false
 		_moving = false
 		_logical = ""
-		_play_current(0.08)
+		# 从 Walk 切入时 blend>0 会「揉」成怪姿；首刀必须硬切 Attack
+		_play_current(0.0)
 	else:
 		_logical = ""
 		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
@@ -203,6 +472,8 @@ func set_combat_attack(active: bool) -> void:
 
 ## 获取当前活动。
 func _current_activity() -> int:
+	if _dying:
+		return AnimSequenceResolver.Activity.DEATH
 	if _chopping or _combat_attack:
 		return AnimSequenceResolver.Activity.ATTACK
 	if _building_work:
@@ -212,8 +483,10 @@ func _current_activity() -> int:
 	return AnimSequenceResolver.Activity.IDLE
 
 
-## 获取播放用姿态（砍伐强制 Lumber）。
+## 获取播放用姿态（砍伐强制 Lumber；死亡用默认 Death，无 Death Defend）。
 func _play_stance() -> int:
+	if _dying:
+		return AnimSequenceResolver.Stance.DEFAULT
 	if _chopping:
 		return AnimSequenceResolver.Stance.LUMBER
 	return _stance
@@ -233,13 +506,17 @@ func _play_current(blend: float) -> void:
 	var stance := _play_stance()
 	var logical := AnimSequenceResolver.sequence_name(activity, stance)
 	var fallbacks: Array = []
-	if activity == AnimSequenceResolver.Activity.ATTACK and stance != AnimSequenceResolver.Stance.DEFAULT:
+	if activity == AnimSequenceResolver.Activity.DEATH:
+		fallbacks.append("Death")
+		fallbacks.append("Dissipate")
+	elif activity == AnimSequenceResolver.Activity.ATTACK and stance != AnimSequenceResolver.Stance.DEFAULT:
 		fallbacks.append("Attack")
 	elif stance != AnimSequenceResolver.Stance.DEFAULT:
 		fallbacks.append(AnimSequenceResolver.activity_base(activity))
 	if activity == AnimSequenceResolver.Activity.WORK and stance != AnimSequenceResolver.Stance.DEFAULT:
 		fallbacks.append("Stand Work")
 		fallbacks.append("Stand_Work")
+		fallbacks.append("StandWork")
 	if activity == AnimSequenceResolver.Activity.MOVE and stance == AnimSequenceResolver.Stance.DEFAULT:
 		var walk_fb := _resolve_walk_prefix(body)
 		if not walk_fb.is_empty():
@@ -275,7 +552,7 @@ func _play_current(blend: float) -> void:
 	else:
 		if _soft_loop != null:
 			_soft_loop.clear()
-	# Work / 负资源：立刻定格 geosetvis（斧/金袋/木材），避免沿用上一动画末帧显隐
+	# Work / 负资源：立刻定格 geosetvis（斧/金袋/木材）。Death 交给动画轨，结束再定格 Decay。
 	if _cache != null and _cache.has_method("snap_geoset_visibility_for"):
 		if (
 			activity == AnimSequenceResolver.Activity.WORK

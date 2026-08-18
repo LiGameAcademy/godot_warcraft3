@@ -18,6 +18,9 @@ func kill(unit: Node3D, killer: Node3D = null) -> void:
 	# 清以其为目标的攻击订单（同宿主下其它单位）
 	_clear_attackers_of(unit)
 	WorldMembership.exit(unit)
+	# 在场性已关（不可选、不占寻路）；尸体仍要看见 Death / Decay geoset
+	if is_instance_valid(unit):
+		unit.visible = true
 	unit_died.emit(unit, killer)
 
 ## 清除以其为目标的攻击订单

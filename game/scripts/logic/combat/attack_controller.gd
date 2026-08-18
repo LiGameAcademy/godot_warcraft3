@@ -1,12 +1,12 @@
 class_name AttackController
 extends Node
 
-## 攻击订单状态机（Logic）。Present 只订阅 strike_begun；扣血走 DamagePipeline。
-## 时序：进入射程 → WINDUP（播 Attack，等 dmgpt）→ 结算 → COOLDOWN（cool1 剩余）→ 下一击。
+## 攻击订单状态机（Logic）。Present 只订阅 strike_begun / 弹道壳；扣血走 DamagePipeline。
+## 时序：进入射程 → WINDUP（播 Attack，等 dmgpt）→ instant 结算或 missile 出弹 → COOLDOWN。
 
 signal state_changed(state: int)							## 状态改变信号
 signal strike_begun(attacker: Node3D, target: Node3D)		## 攻击开始信号（windup 起点）
-signal damage_applied(result: Dictionary)					## 伤害应用信号
+signal damage_applied(result: Dictionary)					## 伤害应用信号（瞬时伤或弹道命中）
 
 ## 状态
 enum State {
@@ -35,17 +35,20 @@ var _repath_cd: float = 0.0									## 重新路径时间
 var _ensure_navigator: Callable = Callable()				## 确保导航器
 var _unit_host: Callable = Callable()						## 单位主机
 var _pipeline: DamagePipeline = null						## 伤害管道
+var _projectiles: ProjectileService = null					## 弹道服务（会话共享）
 var _active: bool = false									## 是否活跃
 
 ## 配置
 func configure(
 	ensure_navigator: Callable,
 	unit_host: Callable,
-	pipeline: DamagePipeline
+	pipeline: DamagePipeline,
+	projectiles: ProjectileService = null
 ) -> void:
 	_ensure_navigator = ensure_navigator
 	_unit_host = unit_host
 	_pipeline = pipeline
+	_projectiles = projectiles
 
 ## 获取状态
 func get_state() -> int:
@@ -57,6 +60,9 @@ func is_active() -> bool:
 
 ## 取消
 func cancel() -> void:
+	var body := _body()
+	if _projectiles != null and body != null:
+		_projectiles.cancel_attacker(body)
 	_active = false
 	_mode = Mode.NONE
 	_target = null
@@ -65,6 +71,25 @@ func cancel() -> void:
 	_dmgpt_left = 0.0
 	_set_state(State.IDLE)
 	_set_attack_anim(false)
+
+## 弹道命中后的结算转发（由会话层接 ProjectileService.projectile_resolved）。
+func notify_strike_result(result: Dictionary) -> void:
+	if result.is_empty() or bool(result.get("visual_only", false)):
+		return
+	damage_applied.emit(result)
+	if not bool(result.get("killed", false)):
+		return
+	var killed: Node3D = result.get("target") as Node3D
+	if killed != null and _target == killed:
+		_target = null
+		_set_attack_anim(false)
+		if _mode == Mode.ATTACK:
+			cancel()
+		elif _mode == Mode.ATTACK_MOVE:
+			_set_state(State.MOVE_TO_GOAL)
+			_path_to_goal()
+		elif _mode == Mode.HOLD:
+			_set_state(State.IDLE)
 
 ## 通知目标死亡
 func notify_target_died(dead: Node3D) -> void:
@@ -226,7 +251,7 @@ func _tick_windup(delta: float) -> void:
 	if _dmgpt_left <= 0.0:
 		_resolve_strike()
 
-## 伤害点结算
+## 伤害点结算：instant/normal 当场 Pipeline；missile 交 ProjectileService 飞行后再结算。
 func _resolve_strike() -> void:
 	var body := _body()
 	_dmgpt_left = 0.0
@@ -239,21 +264,28 @@ func _resolve_strike() -> void:
 		CombatQuery.is_valid_attack_target(body, _target)
 		and CombatQuery.in_attack_range(body, _target, 24.0)
 	):
-		var result := _pipeline.apply({"attacker": body, "target": _target, "source_kind": "weapon"})
-		damage_applied.emit(result)
-		if bool(result.get("killed", false)):
-			_target = null
-			_set_attack_anim(false)
-			if _mode == Mode.ATTACK:
-				cancel()
-				return
-			if _mode == Mode.ATTACK_MOVE:
-				_set_state(State.MOVE_TO_GOAL)
-				_path_to_goal()
-				return
-			if _mode == Mode.HOLD:
-				_set_state(State.IDLE)
-				return
+		if CombatQuery.uses_projectile_travel(body) and _projectiles != null:
+			_projectiles.fire(body, _target, false)
+			# 命中结果由会话层 projectile_resolved → 可选转发；此处不立刻 kill 切态
+		else:
+			var result := _pipeline.apply({"attacker": body, "target": _target, "source_kind": "weapon"})
+			damage_applied.emit(result)
+			# hrif 等 instant 远程：Present 弹道壳，Logic 已扣血
+			if CombatQuery.wants_projectile_visual(body) and _projectiles != null:
+				_projectiles.fire(body, _target, true)
+			if bool(result.get("killed", false)):
+				_target = null
+				_set_attack_anim(false)
+				if _mode == Mode.ATTACK:
+					cancel()
+					return
+				if _mode == Mode.ATTACK_MOVE:
+					_set_state(State.MOVE_TO_GOAL)
+					_path_to_goal()
+					return
+				if _mode == Mode.HOLD:
+					_set_state(State.IDLE)
+					return
 	_set_attack_anim(false)
 	_set_state(State.COOLDOWN)
 

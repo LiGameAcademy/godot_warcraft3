@@ -8,6 +8,37 @@ const DEFAULT_T = new Float32Array([0, 0, 0]);
 const DEFAULT_R = new Float32Array([0, 0, 0, 1]);
 const DEFAULT_S = new Float32Array([1, 1, 1]);
 
+/** MDX AnimVector.LineType → 名。0 无插值 / 1 线性 / 2 Hermite / 3 Bezier。 */
+export const LINE_TYPE_NAMES = ["DontInterp", "Linear", "Hermite", "Bezier"];
+
+/**
+ * WC3 Sequence 名 → glTF / Godot 动画名。
+ * 单词之间不加 `_`（驼峰拼接）；变体序号保留 `-`。
+ * `"Stand - 2"` → `Stand-2`（避免 `Stand_-_2`）；`"Decay Flesh"` → `DecayFlesh`。
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function wc3SequenceToAnimName(raw) {
+  const src = String(raw ?? "").trim();
+  if (!src) return "Anim";
+  const hyphenNorm = src.replace(/\s*-\s*/g, "-");
+  const words = hyphenNorm.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "Anim";
+  return words.map(pascalHyphenToken).join("");
+}
+
+/** @param {string} token */
+function pascalHyphenToken(token) {
+  return token
+    .split("-")
+    .map((seg) => {
+      if (!seg) return "";
+      if (/^\d+$/.test(seg)) return seg;
+      return seg.charAt(0).toUpperCase() + seg.slice(1);
+    })
+    .join("-");
+}
+
 /**
  * Interpolate AnimVector at frame (WC3 millis). Linear between keys; clamp outside.
  * Prefer {@link sampleAnimVectorInSequence} when baking a Sequence — WC3 only

@@ -20,6 +20,8 @@ const SteeringScr = preload("res://game/scripts/logic/pathing/steering_behaviors
 const PathArcScr = preload("res://game/scripts/logic/pathing/path_arc.gd")
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
+## 外部倍率（顶盾等）；1=全速。不改 speed_wc3 权威值。
+@export var speed_mul: float = 1.0
 ## 到达路点阈值（WC3 单位）。过小会抖动绕圈，过大会提前切点。
 @export var arrive_eps_wc3: float = 10.0
 ## 最终路点（常在不可走边缘）放宽阈值，避免贴墙永远差几单位到不了。
@@ -320,10 +322,11 @@ func _process(delta: float) -> void:
 		_wp_i += 1
 		_stall_time = 0.0
 		return
-	var speed := speed_wc3
+	var base_speed := speed_wc3 * clampf(speed_mul, 0.05, 4.0)
+	var speed := base_speed
 	# F3-3: 上下坡速度衰减（WC3 真实斜坡观感）
 	if enable_slope_speed and _prev_wc3 != Vector2.INF:
-		speed = SlopeSpeedScr.apply(cur_wc3, _prev_wc3, speed_wc3, slope_max_deg)
+		speed = SlopeSpeedScr.apply(cur_wc3, _prev_wc3, base_speed, slope_max_deg)
 	# 朝向与前进方向夹角越大越慢（先转向再迈步，减轻蟹行）
 	speed *= _turn_speed_mul(body, to)
 	var step := speed * delta
