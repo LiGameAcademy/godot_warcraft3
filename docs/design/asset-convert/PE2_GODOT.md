@@ -97,8 +97,8 @@ HeroArchMage 三个发射器（对照用）：
 ## 4. TeamGlow（已做，仍偏暗可调）
 
 - 脚底：按三角法线拆贴地盘，`wc3_team_glow.gdshader`，`intensity=2.4`，`use_billboard=false`。
-- 杖尖：MDX 多张平行面片改为单张 Quad + **同一 shader**，`intensity=3.6`，`use_billboard=true`（vertex 里相机朝向）。挂在 Weapon/Staff 的 `Tip` 下，局部 I。
-- 旧路径曾用 `StandardMaterial3D` Additive 且 RGB **clamp 到 1**，HDR 加不亮；已弃。
+- 杖尖 Billboard **只在**扫到 Weapon / Staff（其次 Hand Right）挂点时生成。主城 `Geoset_1` 也是 `_rep2` TeamGlow，但 geosetvis 仅 `Portrait*` 为 1、Stand 为 0——这是肖像背景板，不是杖尖。无武器挂点则**不**造 `Geoset_*_GlowBillboard`，原 mesh + shader 留给显隐轨（Portrait 播放时仍能出队色光板）。
+- 不要按「建筑 / 单位」分叉；按「有没有武器挂点」统一。
 
 调亮度只改 `MapModelCache._make_team_glow_shader_material` 的 intensity，或 shader 默认值。
 

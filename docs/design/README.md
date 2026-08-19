@@ -64,6 +64,7 @@ docs/design/
 │   ├── ATTACHMENTS_BAKE.md            小件 / 特效 sidecar 拼装
 │   ├── MDX_SKINNING_GODOT.md          蒙皮空间、Stand rest、挂点 Tip
 │   ├── PE2_GODOT.md                   ParticleEmitter2 / TeamGlow → Godot
+│   ├── DEVLOG_2026-08-19.md           当日开发日志（杖尖 / PE2 / 回归）
 │   └── SCN_COVERAGE.md                .scn 覆盖率快照
 └── hivewe/                            HiveWE 行为参考
     ├── README.md

@@ -1236,28 +1236,16 @@ func _present_team_glow_mesh(
 		mi.mesh = foot_mesh
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
 	else:
-		# 无脚底盘：整片改 billboard 软圆（少见）
-		mi.visible = false
+		# 无脚底：可能是肖像背景板（主城 Geoset_1 仅 Portrait* 可见）。
+		# 保留原 mesh + glow shader，显隐交给 geosetvis；不要整片关掉。
+		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
 	mi.set_meta(META_GLOW_PRESENTED, true)
 	if not has_tip or tip_aabb.size.length() < 1e-4:
 		return
 	var host := _resolve_team_glow_tip_host(root, mi)
 	if host == null:
-		# 找不到挂点：把平行面片挂成 billboard MeshInstance（整簇朝向相机叠成一团）
-		host = mi.get_parent()
-		if host == null:
-			return
-		var tip_mesh: ArrayMesh = split.get("tip", null) as ArrayMesh
-		if tip_mesh == null:
-			return
-		var tip_mi := MeshInstance3D.new()
-		tip_mi.name = str(mi.name) + "_GlowBillboard"
-		tip_mi.mesh = tip_mesh
-		tip_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		tip_mi.set_meta(META_GLOW_BILLBOARD, true)
-		tip_mi.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
-		host.add_child(tip_mi)
-		tip_mi.owner = root
+		# 无 Weapon/Staff：不是英雄杖尖。禁止再造 Geoset_*_GlowBillboard
+		# （那条常显、没有 Portrait 显隐轨，主城 Stand 会多一块光板）。
 		return
 	# 杖尖：单张软圆，尺寸取 tip AABB 对角线的一部分
 	var side := maxf(12.0, tip_aabb.size.length() * 0.55)
@@ -1337,28 +1325,37 @@ func _recolor_team_glow_billboards(root: Node, team_color: Color) -> void:
 		mi.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
 
 
-## 优先：Weapon / Staff / Hand Right 挂点；否则 Skeleton 上 Mage_Staff 等骨。
+## 优先：Weapon / Staff，再 Hand Right。必须扫完全部 BA 再按 prefer 排名，
+## 不能「第一个匹配就 return」——Paladin 树里 Hand Right 在 Weapon 前面。
 func _resolve_team_glow_tip_host(root: Node, glow_mi: MeshInstance3D) -> Node3D:
 	if root == null:
 		return null
 	var prefer := [
-		"attach_weaponref",
-		"attach_weapon",
+		"attachweaponref",
+		"attachweapon",
 		"weaponref",
 		"weapon",
-		"mage_staff",
-		"attach_handrightref",
+		"magestaff",
+		"attachhandrightref",
 		"handrightref",
 	]
+	var best: BoneAttachment3D = null
+	var best_rank := prefer.size()
 	for n in root.find_children("*", "BoneAttachment3D", true, false):
 		var ba := n as BoneAttachment3D
 		if ba == null:
 			continue
 		var key := str(ba.name).replace(" ", "").replace("-", "").replace("_", "").to_lower()
 		var bone_key := str(ba.bone_name).replace(" ", "").replace("-", "").replace("_", "").to_lower()
-		for p in prefer:
-			if key.contains(str(p)) or bone_key.contains(str(p)):
-				return ba
+		for i in range(prefer.size()):
+			var p: String = str(prefer[i])
+			if key.contains(p) or bone_key.contains(p):
+				if i < best_rank:
+					best_rank = i
+					best = ba
+				break
+	if best != null:
+		return best
 	# 按骨名直接建 BoneAttachment
 	var skeleton: Skeleton3D = null
 	for c in root.find_children("*", "Skeleton3D", true, false):
