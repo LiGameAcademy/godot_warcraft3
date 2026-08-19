@@ -1,10 +1,10 @@
 class_name SplitMeshesByGroup
 extends RefCounted
-## C-3: 按 VertexGroup 拆 geoset mesh（class_name 静态调用版）
+## 按 VertexGroup 拆 geoset mesh（可选工具；bake:scn 默认不调用）。
 ##
-## 修"小配件位置错乱"：原 m2g 写 .gltf 时一个 geoset = 1 个 mesh，
-## skin joints = group 内所有 bone，weight equal 分 → 旗子/铃铛/钟摆位置 = mesh 中心。
-## 本函数拆开后：每 group 单独绑一个 bone → 真正跟骨走。
+## 用途：城墙旗子等 equal-weight 错位。原 m2g 一个 geoset = 1 个 mesh，
+## skin joints = group 内所有 bone，weight equal 分 → 配件位置 = mesh 中心。
+## 拆开后每 group 单独绑一个 bone。独立测试：tests/unit/selftest_c3_split.gd。
 ##
 ## 用法:
 ##   var n := SplitMeshesByGroup.split(proto, att_data)

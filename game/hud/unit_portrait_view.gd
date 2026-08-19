@@ -175,7 +175,7 @@ func _apply_team_color_if_needed(root: Node3D, type_id: String, owner_id: int) -
 	var prev := int(root.get_meta(_META_TEAM, -999))
 	if prev == color_i:
 		return
-	_cache.apply_team_color(root, color_i, type_id != "sloc")
+	_cache.apply_team_color(root, color_i, false)
 	root.set_meta(_META_TEAM, color_i)
 
 
@@ -306,9 +306,14 @@ func _disconnect_anim_only() -> void:
 func _fit_camera(root: Node3D, model_path: String) -> void:
 	if root == null or _world == null:
 		return
-	# 禁止用模型树内 bake 的 Camera3D：挂在 scale=0.01 根下时 SubViewport 常黑屏
-	# （金矿等旧 .scn 偶发能看，人族重烤后全滅）。统一用 PortraitWorld 下的回退相机。
 	_set_model_cameras_current(root, false)
+	var baked := _find_baked_camera(root)
+	if baked != null:
+		# Camera01 已挂 proto（scale=1）；Portrait 位移轨由 AnimationPlayer 驱动。
+		baked.current = true
+		if _fallback_cam != null and is_instance_valid(_fallback_cam):
+			_fallback_cam.current = false
+		return
 	var cam := _ensure_fallback_camera()
 	cam.current = true
 	if _apply_mdx_camera_sidecar(cam, model_path):

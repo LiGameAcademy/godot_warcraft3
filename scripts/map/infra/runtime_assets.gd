@@ -10,9 +10,9 @@ extends RefCounted
 
 const CONVERTED_RES_ROOT := "res://assets/asset-converted"
 const SLK_RES_ROOT := "res://assets/slk-exported"
-## 可提交的 PE2 粒子预制（路径镜像 asset-converted 逻辑子树，不含 Blizzard 贴图/网格）
+## 已弃用：PE2 打进 bake .scn；保留路径仅兼容旧 export_pe2_scenes
 const PE2_PREFABS_RES_ROOT := "res://assets/pe2-prefabs"
-## 可提交的模型视觉封装（继承 bake .scn + Pe2Root；无游戏逻辑）
+## 模型视觉封装（继承 bake .scn；无游戏逻辑）
 const VISUALS_RES_ROOT := "res://assets/visuals"
 ## 旧版独立目录（已弃用：.scn 现与 GLB 同目录）；resolve 仍作回退
 const LEGACY_MODEL_SCENES_RES_ROOT := "res://assets/model-scenes"
@@ -369,12 +369,27 @@ static func _clear_asset_converted_resource_paths(node: Node, cleared: Array) ->
 			for si2 in range(mi.mesh.get_surface_count()):
 				_clear_material_converted_paths(mi.get_active_material(si2), cleared)
 				_clear_material_converted_paths(mi.mesh.surface_get_material(si2), cleared)
+	elif node is GPUParticles3D:
+		var gp := node as GPUParticles3D
+		if gp.material_override != null:
+			_clear_material_converted_paths(gp.material_override, cleared)
+		_clear_particle_draw_pass(gp.draw_pass_1, cleared)
+		if gp.process_material != null:
+			_maybe_clear_res_path(gp.process_material, cleared)
 	elif node is GeometryInstance3D:
 		var gi := node as GeometryInstance3D
 		if gi.material_override != null:
 			_clear_material_converted_paths(gi.material_override, cleared)
 	for c in node.get_children():
 		_clear_asset_converted_resource_paths(c, cleared)
+
+
+static func _clear_particle_draw_pass(mesh: Mesh, cleared: Array) -> void:
+	if mesh == null:
+		return
+	_maybe_clear_res_path(mesh, cleared)
+	for si in range(mesh.get_surface_count()):
+		_clear_material_converted_paths(mesh.surface_get_material(si), cleared)
 
 
 static func _clear_material_converted_paths(mat: Material, cleared: Array) -> void:

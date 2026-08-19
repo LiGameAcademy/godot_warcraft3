@@ -8,7 +8,7 @@
  *   - 与同目录 .gltf 的 images[].uri 无关的旁路 PNG（如 Footman_Footman.png）
  *
  * 保留：
- *   - *.gltf / *.bin / *.scn / *.pe2.json / *.geosetvis.json / *.cameras.json
+ *   - *.gltf / *.bin / *.scn / *.pe2.json / *.geosetvis.json / *.cameras.json / *.collision.json / *.attachments.json / *.animkeys.json
  *   - Textures/、ReplaceableTextures/、_placeholders/ 下的 canonical PNG
  *   - 被本目录 .gltf URI 引用的同目录 PNG（如 TownHallCastleKeep.png）
  */

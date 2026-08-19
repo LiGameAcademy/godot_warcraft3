@@ -1,21 +1,17 @@
 #!/usr/bin/env node
 /**
  * 统一调用 Godot headless 导出运行时友好资产：
- *   1) GLB → .scn（bake）
- *   2) pe2.json → assets/pe2-prefabs/*.pe2.tscn（GPU 粒子预制）
- *   3) .scn + PE2 → assets/visuals/*.tscn（可提交视觉封装）
+ *   1) GLB → .scn（bake，含 PE2 GPUParticles3D）
+ *   2) 可选 .scn → assets/visuals/*.tscn（薄封装）
  *
  * 用法:
  *   node tools/export-godot-assets.mjs
  *   node tools/export-godot-assets.mjs --include Buildings/Human/ --force
- *   node tools/export-godot-assets.mjs --skip-bake --pe2-only
  *   node tools/export-godot-assets.mjs --godot "D:/Godot/Godot_v4.6_console.exe"
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { findGodotExecutable, runGodotScript } from "./lib/godot-cli.mjs";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function printHelp() {
   console.log(`用法: node tools/export-godot-assets.mjs [选项]
@@ -24,11 +20,10 @@ function printHelp() {
   --include <path>   逻辑路径子串过滤（可重复；默认 Buildings/Human/）
   --force            强制重导出
   --skip-bake        跳过 GLB→.scn
-  --skip-pe2         跳过 PE2 预制
   --skip-visuals     跳过 visuals 封装
-  --bake-only        只 bake .scn
-  --pe2-only         只导 PE2
+  --bake-only        只 bake .scn（含 PE2）
   --visuals-only     只导 visuals
+  --pe2-only         已弃用：仍可单独导 pe2.tscn（调试）
   --godot <path>     Godot 可执行文件
   -h, --help
 `);
@@ -39,7 +34,7 @@ function parseArgs(argv) {
     include: [],
     force: false,
     skipBake: false,
-    skipPe2: false,
+    skipPe2: true,
     skipVisuals: false,
     bakeOnly: false,
     pe2Only: false,
@@ -92,6 +87,7 @@ function parseArgs(argv) {
   }
   if (opts.pe2Only) {
     opts.skipBake = true;
+    opts.skipPe2 = false;
     opts.skipVisuals = true;
   }
   if (opts.visualsOnly) {
@@ -139,7 +135,7 @@ function main() {
   let code = 0;
 
   if (!opts.skipBake) {
-    console.log("\n=== [1/3] bake GLB → .scn ===");
+    console.log("\n=== bake GLB → .scn（含 PE2）===");
     code = runGodotScript({
       scriptRes: "res://scripts/tool/export_model_scenes.gd",
       userArgs: ua,
@@ -149,7 +145,7 @@ function main() {
   }
 
   if (!opts.skipPe2) {
-    console.log("\n=== [2/3] export PE2 prefabs ===");
+    console.log("\n=== [deprecated] export PE2 prefabs ===");
     code = runGodotScript({
       scriptRes: "res://scripts/tool/export_pe2_scenes.gd",
       userArgs: ua,
@@ -159,7 +155,7 @@ function main() {
   }
 
   if (!opts.skipVisuals) {
-    console.log("\n=== [3/3] export visuals ===");
+    console.log("\n=== export visuals ===");
     code = runGodotScript({
       scriptRes: "res://scripts/tool/export_visual_scenes.gd",
       userArgs: ua,

@@ -699,7 +699,7 @@ func _ensure_ghost() -> void:
 			cache.apply_team_color(
 				node,
 				MapUnitLayer.resolve_team_color_index(type_id, owner_id),
-				type_id != "sloc"
+				false
 			)
 	if node == null:
 		node = MapPlaceholders.make_entity(type_id, owner_id, true)

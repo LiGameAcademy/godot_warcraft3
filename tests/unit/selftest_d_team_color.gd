@@ -7,7 +7,7 @@ extends SceneTree
 ##   2. apply_team_color(0) 后 0 号 teamcolor mesh 的 material 变 ShaderMaterial
 ##   3. apply_team_color(5) 切到 5 号，颜色 uniform 变（team_color_fallback 不同）
 ##   4. 8 队（0-7）全跑无 crash + 切色有效
-##   5. hide_team_glow=true 隐藏 Additive glow mesh
+##   5. hide_team_glow=true 兼容路径不 crash
 ##
 ## godot --headless --path . -s res://tests/unit/selftest_d_team_color.gd
 
@@ -121,24 +121,20 @@ func _test_apply_team_color_all_8() -> void:
 	passed += 1
 
 
-# Test 5: hide_team_glow=true 隐藏 Additive glow mesh
+# Test 5: hide_team_glow=true 兼容路径不 crash（旧误识别大面片）
 func _test_hide_team_glow() -> void:
 	var glb_res := "res://assets/asset-converted/Units/Human/Footman/Footman.gltf"
 	var proto: Node3D = RuntimeAssets.load_gltf_scene(glb_res)
 	if proto == null:
 		return
-	# 统计 Additive blend 数量
 	var add_count_before := _count_additive_meshes(proto)
-	# 注：Footman 可能没有真正的 Additive 材质（ReplaceableId=2 通常是 hero）
-	# 这个测试主要验证 hide_team_glow 路径不 crash
 	var cache := MapModelCache.new()
 	cache.apply_team_color(proto, 0, true)
 	var add_count_after := _count_additive_meshes(proto)
-	# hide_team_glow=true 时，additive mesh 应被 hide
 	if add_count_after > add_count_before:
 		push_error("test_5 FAIL: additive count increased after hide_team_glow")
 		return
-	print("  hide_team_glow: %d → %d Additive mesh (no crash, hide OK)" % [add_count_before, add_count_after])
+	print("  hide_team_glow compat: %d → %d Additive mesh (no crash)" % [add_count_before, add_count_after])
 	passed += 1
 
 

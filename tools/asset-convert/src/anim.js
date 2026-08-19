@@ -89,6 +89,7 @@ export function sampleAnimVector(anim, frame, fallback) {
  * Sequence-scoped bone TRS (WC3 runtime semantics).
  * Only Keys with Frame in [seqStart, seqEnd] apply; if none → fallback (bind/default).
  * Before the first in-sequence key → fallback.
+ * Global Sequence tracks must NOT use this — see {@link sampleAnimVectorOnClock}.
  * @param {import('war3-model').AnimVector | undefined} anim
  * @param {number} frame
  * @param {number} seqStart
@@ -104,15 +105,103 @@ export function sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallba
 }
 
 /**
+ * MDX AnimVector.GlobalSeqId：≥0 有效（0 是第一条 Global Sequence）；-1 / 缺省 = 无。
+ * @param {import('war3-model').AnimVector | number | undefined | null} anim
+ * @returns {number}
+ */
+export function animGlobalSeqId(anim) {
+  if (anim == null || typeof anim !== "object") return -1;
+  const raw = /** @type {{ GlobalSeqId?: number | null }} */ (anim).GlobalSeqId;
+  // Number(null)===0，会误当成第一条 Global Sequence（主城铃铛冻在 bind）。
+  if (raw === undefined || raw === null) return -1;
+  const id = Number(raw);
+  if (!Number.isFinite(id) || id < 0) return -1;
+  return id | 0;
+}
+
+/** @param {number} timeMs @param {number} durationMs */
+export function wrapGlobalSeqTime(timeMs, durationMs) {
+  if (!(durationMs > 0)) return 0;
+  const t = timeMs % durationMs;
+  return t < 0 ? t + durationMs : t;
+}
+
+/**
+ * 模型里实际用到的 Global Sequence 最长时长（毫秒）。
+ * 旗 ~1.3–1.7s、分针 ~6.7s；时针常 80s——拉长每一条循环 Sequence 会把 .bin 打到上百 MB，
+ * 故默认忽略超过 capMs 的时钟类 Global Sequence（仍按 % dur 在段内采样）。
+ * @param {import('war3-model').Node[] | undefined} nodes
+ * @param {ArrayLike<number> | undefined} globalSequences
+ * @param {number} [capMs]
+ */
+export function maxUsedGlobalSeqDuration(nodes, globalSequences, capMs = 20000) {
+  let max = 0;
+  const seqs = globalSequences || [];
+  for (const node of nodes || []) {
+    if (!node) continue;
+    for (const track of [node.Translation, node.Rotation, node.Scaling]) {
+      const gid = animGlobalSeqId(track);
+      if (gid < 0) continue;
+      const d = Number(seqs[gid]) || 0;
+      if (d > capMs) continue;
+      if (d > max) max = d;
+    }
+  }
+  return max;
+}
+
+/**
+ * 循环 Sequence 必须盖住最长 Global Sequence，否则 Stand（常 333ms）播完就跳回，旗只抖一下。
+ * 非循环（Birth/Death）保持原长，用 localTime % globalDur 在段内循环飘。
+ * @param {number} seqStart
+ * @param {number} seqEnd
+ * @param {boolean} looping
+ * @param {import('war3-model').Node[] | undefined} nodes
+ * @param {ArrayLike<number> | undefined} globalSequences
+ */
+export function sequenceBakeDurationMs(
+  seqStart,
+  seqEnd,
+  looping,
+  nodes,
+  globalSequences,
+) {
+  const seqDur = Math.max(0, seqEnd - seqStart);
+  if (!looping) return seqDur;
+  return Math.max(seqDur, maxUsedGlobalSeqDuration(nodes, globalSequences));
+}
+
+/**
+ * Global Sequence 时钟采样：keys 在 [0, duration]，与当前 Sequence 区间无关。
+ * @param {import('war3-model').AnimVector | undefined} anim
+ * @param {number} globalTimeMs
+ * @param {number} durationMs
+ * @param {Float32Array} fallback
+ */
+export function sampleAnimVectorOnClock(anim, globalTimeMs, durationMs, fallback) {
+  return sampleAnimVector(anim, wrapGlobalSeqTime(globalTimeMs, durationMs), fallback);
+}
+
+/**
  * Evaluate WC3 node world matrices at frame (same rules as war3-model updateNode, no billboards).
- * When seqStart/seqEnd are provided, bone TRS uses sequence-scoped sampling.
+ * When seqStart/seqEnd are provided, bone TRS uses sequence-scoped sampling,
+ * except GlobalSeqId tracks which follow {@link wrapGlobalSeqTime}.
  * @param {import('war3-model').Node[]} nodes
  * @param {number} frame
  * @param {number} [seqStart]
  * @param {number} [seqEnd]
+ * @param {ArrayLike<number>} [globalSequences]
+ * @param {number} [globalTimeMs]
  * @returns {Float32Array[]} world matrices indexed by ObjectId
  */
-export function evaluateNodeWorldMatrices(nodes, frame, seqStart, seqEnd) {
+export function evaluateNodeWorldMatrices(
+  nodes,
+  frame,
+  seqStart,
+  seqEnd,
+  globalSequences,
+  globalTimeMs,
+) {
   /** @type {Map<number, import('war3-model').Node>} */
   const byId = new Map();
   for (const n of nodes) {
@@ -125,11 +214,23 @@ export function evaluateNodeWorldMatrices(nodes, frame, seqStart, seqEnd) {
     Number.isFinite(seqStart) &&
     Number.isFinite(seqEnd);
 
+  const gTime =
+    typeof globalTimeMs === "number" && Number.isFinite(globalTimeMs)
+      ? globalTimeMs
+      : scoped
+        ? frame - seqStart
+        : frame;
+
   /** @type {Float32Array[]} */
   const worlds = [];
   const visiting = new Set();
 
   function sampleTrs(anim, fallback) {
+    const gid = animGlobalSeqId(anim);
+    const dur = gid >= 0 ? Number(globalSequences?.[gid]) || 0 : 0;
+    if (gid >= 0 && dur > 0) {
+      return sampleAnimVectorOnClock(anim, gTime, dur, fallback);
+    }
     if (scoped) {
       return sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback);
     }
@@ -207,6 +308,54 @@ export function collectSampleFrames(nodes, start, end, stepMs = 33, geosetAnims 
     if (!keys) continue;
     for (const key of keys) {
       if (key.Frame >= start && key.Frame <= end) times.add(key.Frame);
+    }
+  }
+
+  return [...times].sort((a, b) => a - b);
+}
+
+/**
+ * 烘焙时间轴（相对 Sequence 起点，毫秒）。
+ * 用 33ms 网格覆盖 bakeDur，另加入 Sequence 原始 keys（铺到循环段）。
+ * Global Sequence 不另铺 keys：evaluate 时用 globalTime % dur，33ms 已够捕获旗/钟。
+ * @param {import('war3-model').Node[]} nodes
+ * @param {number} seqStart
+ * @param {number} seqEnd
+ * @param {number} bakeDur
+ * @param {number} [stepMs]
+ * @param {import('war3-model').GeosetAnim[]} [geosetAnims]
+ * @param {ArrayLike<number>} [_globalSequences]
+ */
+export function collectBakeFrames(
+  nodes,
+  seqStart,
+  seqEnd,
+  bakeDur,
+  stepMs = 33,
+  geosetAnims = [],
+  _globalSequences = [],
+) {
+  const seqDur = Math.max(0, seqEnd - seqStart);
+  const cap = Math.max(0, bakeDur);
+  const times = new Set([0, cap]);
+  if (cap <= 0) return [0];
+  const step = Math.max(1, stepMs);
+  for (let t = 0; t <= cap; t += step) times.add(t);
+
+  const period = collectSampleFrames(
+    nodes,
+    seqStart,
+    seqEnd,
+    Math.max(seqDur, 1),
+    geosetAnims,
+  );
+  const stride = seqDur > 0 ? seqDur : cap;
+  for (const f of period) {
+    const rel = f - seqStart;
+    if (rel < 0 || rel > seqDur) continue;
+    for (let t = rel; t <= cap + 0.5; t += stride) {
+      times.add(Math.min(t, cap));
+      if (stride <= 0) break;
     }
   }
 

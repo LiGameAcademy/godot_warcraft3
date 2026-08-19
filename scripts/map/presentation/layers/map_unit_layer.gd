@@ -475,9 +475,9 @@ func _make_unit_node(
 				var inst := _cache.instance_glb(glb)
 				if inst:
 					inst.set_meta("is_placeholder", false)
-					# 开始点本体即队伍色环，不可按 TeamGlow 隐藏
+					# 开始点本体即队伍色环；英雄 Team Glow 也需染色显示
 					var color_i := resolve_team_color_index(type_id, owner_id)
-					_cache.apply_team_color(inst, color_i, type_id != "sloc")
+					_cache.apply_team_color(inst, color_i, false)
 					return inst
 	var ph := MapPlaceholders.make_entity(type_id, owner_id, true)
 	ph.set_meta("is_placeholder", true)

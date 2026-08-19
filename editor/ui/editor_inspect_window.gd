@@ -691,7 +691,7 @@ func set_preview_team_color(owner_id: int) -> void:
 	if _preview_kind != "unit" or _preview_instance == null or _cache == null:
 		return
 	var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)
-	_cache.apply_team_color(_preview_instance, color_i, _type_id != "sloc")
+	_cache.apply_team_color(_preview_instance, color_i, false)
 
 
 ## 地图点选：预览该单位实例（朝向 + 队伍色）。
@@ -973,7 +973,7 @@ func _polish_preview_deferred(gen: int, path: String, info: Dictionary) -> void:
 		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	if _preview_kind == "unit" and _cache != null:
 		var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)
-		_cache.apply_team_color(node, color_i, _type_id != "sloc")
+		_cache.apply_team_color(node, color_i, false)
 	_setup_animations(node)
 	call_deferred("_frame_model_deferred", gen)
 

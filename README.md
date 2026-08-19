@@ -47,7 +47,7 @@ node tools/dev-setup.mjs --game-dir "D:/Program Files (x86)/Warcraft3"
 4. 解析 Echo Isles → `assets/map-parsed/echoisles/`
 5. 转换人族 Melee + Lordaeron 子集 → `assets/asset-converted/`（含自动 bake `.scn`）
 6. `sync-data-assets`：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
-7. Godot headless：PE2 粒子预制 + `visuals` 封装（`Buildings/Human` 等）
+7. Godot headless：bake `.scn`（含 PE2）
 
 完成后用 Godot 打开本仓库，运行 `game/scenes/game_main.tscn`。
 
@@ -71,17 +71,13 @@ node tools/dev-setup.mjs --help
 
 ### 仅补导 Godot 特效 / 场景
 
-资源已转换、只想重导粒子与 visuals：
+资源已转换、只想重烤 `.scn`（含 PE2）：
 
 ```bash
 node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 ```
 
-等价于依次调用：
-
-- `scripts/tool/export_model_scenes.gd`（GLB→`.scn`）
-- `scripts/tool/export_pe2_scenes.gd`（`*.pe2.json`→`assets/pe2-prefabs/`）
-- `scripts/tool/export_visual_scenes.gd`（→`assets/visuals/`）
+等价于调用 `scripts/tool/export_model_scenes.gd`（GLB→`.scn`，**含 PE2**），可选再导 `assets/visuals/`。
 
 ---
 
@@ -90,11 +86,10 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 | 路径 | 说明 |
 |------|------|
 | `.cache/wc3-assets/` | MPQ 解包**中间态**（工具用；游戏/编辑器禁止依赖） |
-| `assets/asset-converted/` | 视觉车道：PNG / GLB / `.scn` / PathTextures（`.gdignore`） |
+| `assets/asset-converted/` | 视觉车道：PNG / GLB / `.scn`（内嵌 PE2）/ PathTextures（`.gdignore`） |
 | `assets/slk-exported/` | 数据车道：SLK JSON + UnitFunc/Strings + UI txt |
 | `assets/map-parsed/` | 地图车道：解析 JSON（如 echoisles） |
-| `assets/pe2-prefabs/` | PE2 GPU 粒子预制（**可提交**） |
-| `assets/visuals/` | 模型视觉封装 tscn（**可提交**） |
+| `assets/visuals/` | 模型视觉封装 tscn（薄继承，可选） |
 
 逻辑路径与经典客户端一致。运行时经 Autoload `AssetProvider`：**overlay → converted → slk-exported**（不读 `.cache`）。
 

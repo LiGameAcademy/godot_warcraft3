@@ -60,9 +60,8 @@ node tools/export-godot-assets.mjs --help
 | [`sync-editor-assets.mjs`](sync-editor-assets.mjs) | cache UI txt | `asset-converted/UI/` | 编辑器字符串 |
 | [`extract-icecrown-replaceables.mjs`](extract-icecrown-replaceables.mjs) | War3x 内 `I.mpq` | cache 悬崖/水贴图 | Lost Temple Icecrown |
 | [`gen-unit-defs.mjs`](gen-unit-defs.mjs) | slk-exported | `scripts/definitions/units/*.gd` | **会重写 Def 脚本**；改表结构时才用 |
-| [`export_model_scenes.gd`](export_model_scenes.gd) | GLB | 同目录 `.scn` | Godot headless |
-| [`export_pe2_scenes.gd`](export_pe2_scenes.gd) | `*.pe2.json` | `assets/pe2-prefabs/` | GPU 粒子预制（可提交） |
-| [`export_visual_scenes.gd`](export_visual_scenes.gd) | `.scn`+PE2 | `assets/visuals/` | 薄封装场景（可提交） |
+| [`export_model_scenes.gd`](../scripts/tool/export_model_scenes.gd) | GLB | 同目录 `.scn`（含 PE2） | Godot headless |
+| [`export_visual_scenes.gd`](../scripts/tool/export_visual_scenes.gd) | `.scn` | `assets/visuals/` | 薄封装（可选） |
 
 分步细节与 AssetProvider 优先级：[docs/data/PIPELINE.md](../docs/data/PIPELINE.md)。  
 asset-convert 已知问题（队伍色、Geoset 显隐、Additive）：[asset-convert/README.md](asset-convert/README.md)。
@@ -92,8 +91,8 @@ npm run parse -- --map "C:/war3/Maps/FrozenThrone/(2)EchoIsles.w3x" --force
 # 编辑器 UI
 node tools/sync-editor-assets.mjs
 
-# 只导 TownHall 粒子与 visuals
-node tools/export-godot-assets.mjs --include Buildings/Human/TownHall --force
+# 重烤 TownHall .scn（含 PE2）
+node tools/export-godot-assets.mjs --include Buildings/Human/TownHall --force --bake-only
 ```
 
 ---
@@ -103,6 +102,6 @@ node tools/export-godot-assets.mjs --include Buildings/Human/TownHall --force
 1. 跑通 `dev-setup`（`--profile game`）
 2. Godot 打开项目 → `game/scenes/game_main.tscn`
 3. 框选农民，右键地面移动；`S` 停止；`F9` 看路径线
-4. 主城应有建造/训练相关 PE2（若已导出 pe2-prefabs）
+4. 主城打开 `.scn` 播 Stand Work / Birth / Death 应见 PE2
 
 缺图/粉模：对对应逻辑路径加 `--include` 再 `npm run convert`，或改用 `--profile full`。

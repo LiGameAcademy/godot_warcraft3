@@ -1,5 +1,5 @@
 extends SceneTree
-## C-3 geoset 顶点按 VertexGroup 拆 mesh selftest。
+## 可选工具 selftest：按 VertexGroup 拆 geoset（bake:scn 默认不调用）。
 ## 验证 SplitMeshesByGroup.split 把 .gltf 里的 Geoset_<i> 节点拆成多个 BoneAttachment3D + MeshInstance3D。
 ## 5/5：
 ##   1. 拆出 group 数量 = attachments.json 期望值

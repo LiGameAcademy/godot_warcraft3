@@ -32,7 +32,7 @@ project/assembly_name="godot_warcraft3"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/wc3_gltf_importer/plugin.cfg")
+enabled=PackedStringArray()
 
 [internationalization]
 

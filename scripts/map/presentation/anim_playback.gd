@@ -227,9 +227,21 @@ static func play(
 	ap.active = true
 	var anim := ap.get_animation(anim_name)
 	if anim != null:
-		anim.loop_mode = (
-			Animation.LOOP_NONE if ping or not loop else Animation.LOOP_LINEAR
-		)
+		var baked := anim.has_meta("wc3_seq_looping")
+		if force_loop == 0 or ping:
+			anim.loop_mode = Animation.LOOP_NONE
+		elif force_loop == 1:
+			anim.loop_mode = Animation.LOOP_LINEAR
+		elif baked:
+			anim.loop_mode = (
+				Animation.LOOP_LINEAR
+				if bool(anim.get_meta("wc3_seq_looping"))
+				else Animation.LOOP_NONE
+			)
+		else:
+			anim.loop_mode = (
+				Animation.LOOP_NONE if not loop else Animation.LOOP_LINEAR
+			)
 	ap.play(anim_name, maxf(blend, 0.0))
 	# 立刻应用第 0 帧姿态（建筑门/旗等常量骨骼轨，避免从上一段姿态卡住）
 	ap.seek(0.0, true)

@@ -128,7 +128,7 @@ UnitSelector
 - HUD：`game/hud/unit_portrait_view.tscn`（队色 `ColorRect` + SubViewport）。
 - 模型队色按 owner 重染；MDX 内嵌背景板运行时隐藏（勿用笼统 `_portrait` 匹配，会误藏全身）。
 - **相机**（优先级）：
-  1. bake 进 `*_Portrait.scn` 的 `MdxCameras/Camera3D`
+  1. bake 进 `.scn` 根上的 `Camera3D`（MDX Camera01；HUD 暂用 sidecar 回退相机）
   2. 旁路 `*.cameras.json`
   3. AABB 启发式
 

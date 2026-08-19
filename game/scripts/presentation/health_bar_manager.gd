@@ -3,7 +3,7 @@ extends CanvasLayer
 
 ## 全局头顶血条（Present）。跟随 MapUnitLayer 单位/建筑；读 UnitLife，不写战斗逻辑。
 ## 默认常显；GM 可关。关闭后按住 Alt 临时显示。
-## 挂点优先骨骼 Bone_Head / Overhead / Head，否则回退 AABB 顶。
+## 挂点优先模型 API `overhead_anchor()`（OverHead Ref），再骨骼 Bone_Head / Overhead，否则 AABB 顶。
 
 const BAR_W := 52.0
 const BAR_H := 6.0
@@ -180,6 +180,10 @@ func _bar_world_pos(e: Dictionary, node: Node3D) -> Vector3:
 
 
 func _resolve_attach(node: Node3D) -> Dictionary:
+	if node != null and node.has_method("overhead_anchor"):
+		var from_api: Variant = node.call("overhead_anchor")
+		if from_api is Node3D:
+			return {"attach": from_api as Node3D, "skeleton": null, "bone_idx": -1}
 	# BoneAttachment3D（若转换器已挂）
 	for c in node.find_children("*", "BoneAttachment3D", true, false):
 		var ba := c as BoneAttachment3D

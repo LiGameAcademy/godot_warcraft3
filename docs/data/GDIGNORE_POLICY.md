@@ -37,8 +37,7 @@ GLB 规范硬约束：`image` 必须是 embedded（bufferView），**不允许**
 
 | 目录 | 文件 | Godot 要看？ |
 |------|------|------------|
-| `assets/pe2-prefabs/` | `.pe2.tscn` | ✅（粒子预制） |
-| `assets/visuals/` | `.tscn` | ✅（建筑视觉） |
+| `assets/visuals/` | `.tscn` | ✅（建筑视觉，可选） |
 | `assets/map-parsed/` | `.json` | ✅（地图数据，运行时 Resource.load） |
 | `assets/slk-exported/` | `.json` | ✅（SLK 数据） |
 | `assets/materials/` | `.tres` | ✅（自定义材质） |
