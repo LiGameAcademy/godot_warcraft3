@@ -5,15 +5,18 @@
 1. **贴图** `BLP` → `PNG`（`war3-model` 解码 + `pngjs`）
 2. **模型** `MDX`/`MDL` → `GLB`（`war3-model` 解析 + `@gltf-transform/core`）
 3. **场景** `GLB` → 同目录 `.scn`（Godot headless 烘焙；运行时优先，免 `GLTFDocument`；bake 时注入 `*.geosetvis.json` 的 Geoset 显隐轨）
-4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`（Godot 运行时挂 `GPUParticles3D`）
+4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`；**`bake:scn` 写入 `Pe2Root`（GPUParticles3D）** 与各 Sequence 的 `:emitting` / position 轨。贴图内嵌进 `.scn`，不再落地 `pe2.tscn`。
    - **v2**：写入 `active_sequences`（Visibility∩EmissionRate 按 Sequence 作用域）；`null`=全程发射（火盆），数组=仅训练烟/建造尘等阶段性特效
-   - 批量导出可编辑预制：`godot --headless -s res://scripts/tool/export_pe2_scenes.gd -- --include Buildings/Human/TownHall --force`
+   - 字段对照与未做项：[docs/design/asset-convert/PE2_GODOT.md](../../docs/design/asset-convert/PE2_GODOT.md)
    - **对外说明（特效全貌）**：[docs/blog/04-wc3-effects-conversion.md](../../docs/blog/04-wc3-effects-conversion.md)
 5. **Geoset 显隐** → 同 stem 旁路 `*.geosetvis.json`（Sequence 作用域 alpha）；Godot 导入丢 scale 轨后由 `MapModelCache` 补 `:visible`
-6. **动画关键帧** → 同 stem 旁路 `*.animkeys.json`（MDX 原始 TRS / GeosetAnim / EventTrack；时间单位毫秒）
-7. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
+6. **动画关键帧** → 同 stem 旁路 `*.animkeys.json`（MDX 原始 TRS / GeosetAnim / EventTrack；时间单位毫秒）。`bake:scn` 写入各 Animation 的 `loop_mode`、`wc3_mdx_name` / `wc3_rarity` / `wc3_move_speed`，以及 `MdxEvents.fire` Method Track（SND/FPT/SPL/SPN）。Hermite 原始 Keys 仍只留在 JSON。
+7. **碰撞** → 同 stem 旁路 `*.collision.json`（MDX CollisionShapes：球心/半径或箱 min/max，已 Y-up × 0.01）；`bake:scn` 写入 `MdxCollision`（Area3D，layer=0）
+8. **光晕 Geoset** FilterMode Additive/AddAlpha → 材质名 `_fm3`/`_fm4`；可用 `npm run reconvert:additive` 批量重转
 
-默认顺序：`textures → models → scn`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 时会重新转换该模型。  
+默认顺序：`textures → models → scn`。模型会优先使用已转换的 PNG；缺失时再即时转 BLP。无 `pe2.json` 或 `collision.json` 时会重新转换该模型。  
+glTF Skin joints：`Bones` 在前（JOINTS_0 下标不变），`Helpers` 去重后追加（便于挂点绑 `Bone_Foot_L`）。attachments.json 对 Attachment 写出 `pivot`、原始 `visibility` 关键帧；`bake:scn` 把无父挂点放场景根，并把 Visibility 写成各 Sequence 的 `:visible` 轨。
+`bake:scn` **不按 VertexGroup 拆网格**：`.scn` 保留 glTF 的 Geoset 蒙皮块（进 `SkinMeshes`），`BoneAttachment3D` 只给 `Attach_*`。城墙旗子等 equal-weight 错位可手工跑 `scripts/tool/split_meshes_by_group.gd`。  
 `.scn` 需本机 Godot 4.x（环境变量 `GODOT` / `GODOT_BIN`）；找不到 Godot 时跳过烘焙并警告，不阻断 convert。
 
 ### 转换（含自动烘焙 .scn）
@@ -120,26 +123,14 @@ node scripts/reconvert-additive-geosets.mjs --include "**/*"
 node scripts/reconvert-additive-geosets.mjs --list-only
 ```
 
-### 导出可编辑 PE2 预制（.pe2.tscn）+ visuals
-
-推荐统一入口（bake + PE2 + visuals）：
+### bake .scn（含 PE2）+ 可选 visuals
 
 ```bash
 # 仓库根目录
-node tools/export-godot-assets.mjs --include Buildings/Human/ --force
+node tools/export-godot-assets.mjs --include Buildings/Human/ --force --bake-only
 ```
 
-或分步：
-
-```bash
-godot --headless --path ../.. -s res://scripts/tool/export_pe2_scenes.gd -- --include Doodads/ --force
-godot --headless --path ../.. -s res://scripts/tool/export_visual_scenes.gd -- --include Buildings/Human/TownHall --force
-```
-
-输出到 **`assets/pe2-prefabs/`** / **`assets/visuals/`**（可提交 git）。  
-`pe2.json` / 贴图仍在 `asset-converted`（不入库）。
-
-`Wc3Pe2Particles.attach_to` 优先 `res://assets/pe2-prefabs/.../*.pe2.tscn`，没有再回退 JSON。
+PE2 打进 `.scn`；`pe2.json` / 贴图仍在 `asset-converted`（不入库）。  
 `MapModelCache` 优先 `visuals/*.tscn` → `.scn` → GLB。
 
 ## 已知问题与处理
@@ -150,4 +141,6 @@ godot --headless --path ../.. -s res://scripts/tool/export_visual_scenes.gd -- -
 - **Geoset 显隐（Godot）**：`GLTFDocument` 会丢掉蒙皮 `Geoset_*` 的 scale 轨；convert 写旁路 `*.geosetvis.json`，`MapModelCache` 加载/bake 时注入 `Skeleton3D/Geoset_*:visible`。
 - **Transparent**：FilterMode=1 使用 MASK + cutoff 0.75，避免半透明碎片。
 - **Additive / AddAlpha（FilterMode 3/4）**：glTF 无加法混合；材质名带 `_fm3`/`_fm4`，Godot `MapModelCache` 加载时改成 `BLEND_MODE_ADD`（否则 `Yellow_Glow*` 黑底会变成实心黑牌）。
-- **动画**：每个 Sequence → 一条 glTF Animation。名称用驼峰、变体序号用 `-`（`Stand - 2` → `Stand-2`，不要 `Stand_-_2`）。原始 Keys 另写旁路 `*.animkeys.json`（毫秒时间轴 + LineType / InTan / OutTan）。扁平 Armature + 等权蒙皮。
+- **动画**：每个 Sequence → 一条 glTF Animation。名称用驼峰、变体序号用 `-`（`Stand - 2` → `Stand-2`，不要 `Stand_-_2`）。原始 Keys 另写旁路 `*.animkeys.json`（毫秒时间轴 + LineType / InTan / OutTan）。`bake:scn` 再写入 loop / rarity / move_speed / Event 轨。扁平 Armature + 等权蒙皮。
+- **Global Sequence（全模型同一规则）**：`AnimVector.GlobalSeqId ≥ 0` 的骨骼（主城旗布、时针等）按 `GlobalSequences[id]` 独立时钟采样，**不**走 Sequence 区间过滤。循环 Sequence 的 glTF 时长 = `max(本段, 该模型用到的最长 Global Sequence，但忽略 >20s 的时钟轨)`，段内骨骼 `% seqDur`、GlobalSeq 骨骼 `% globalDur`。非循环段（Birth/Death）保持原长，段内用 `% globalDur` 循环飘。静止骨骼会折叠成 2 个关键帧。超过 20s 的时针仍按 `% dur` 写进短循环，会周期性跳一下（避免单条 Stand 变成 80s / 上百 MB）。
+- **Billboard / 双面**：只认 MDX。节点 `Flags & 0x8` 才是 Billboard；Layer `Shading & 16` 才是 TwoSided。人族主城旗**两者都没有**——单面、不转朝向。RTS 固定机位与原作一致；编辑器绕到背面看不到旗是预期，不要给所有旗开公告牌。

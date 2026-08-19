@@ -41,10 +41,14 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 
 | 脚本 | 职责 |
 |------|------|
-| `export_model_scenes.gd` | `asset-converted` 下 gltf/glb → 同目录 `.scn` |
-| `export_pe2_scenes.gd` | `*.pe2.json` → `assets/pe2-prefabs/` |
-| `export_visual_scenes.gd` | bake → `assets/visuals/` |
-| `split_meshes_by_group.gd` | C-3：按 VertexGroup 拆 geoset mesh |
+| `export_model_scenes.gd` | `asset-converted` 下 gltf/glb → 同目录 `.scn`（含 PE2） |
+| `export_pe2_scenes.gd` | 已弃用：PE2 打进 `.scn` |
+| `export_visual_scenes.gd` | bake → `assets/visuals/`（薄继承，不再 instance pe2.tscn） |
+| `split_meshes_by_group.gd` | 可选：按 VertexGroup 拆 geoset（bake 默认不调用） |
+| `wc3_scn_animkeys.gd` | bake：animkeys → loop/meta + Event Method Track |
+| `wc3_scn_pe2.gd` | bake：pe2.json → Pe2Root + `:emitting` / position |
+
+粒子字段对照与未做项：[PE2_GODOT.md](../design/asset-convert/PE2_GODOT.md)。
 
 编辑器笔刷仍在 `editor/scripts/tools/`（运行时编辑器工具，不是 headless 导出）。
 
@@ -190,6 +194,7 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 | `map_loader.gd` | 读 JSON/内存 hf；建 Context；按序调 Layer；export 开关；状态栏；碰撞；查看栅格 | `_ready` → `Wc3TerrainTileCatalog.load_default()` → [可选] `Wc3IdCatalog.load_default()` → [auto_load_on_ready] `_load_all()`；可走 `reload_from_hf(hf, info, map_dir)` / `rebuild_terrain_only` / `rebuild_terrain_cliffs_water` |
 | `map_build_context.gd` | 共享 `hf` / `meta` / `info` / `tiles` / `catalog` / `cache`；`ensure_cliff_topology()` 只算一次 | 跨层共享状态；不要在 Layer 直读 hf |
 | `orbit_camera.gd` | 主场景预览相机 | WASD/QE/Shift/右键/滚轮 |
+| `wc3_model_scene.gd` | bake `.scn` 根脚本 | `overhead_anchor()` / `origin_anchor()` / `find_socket()` / `animation_player()` |
 
 ### 8.2 `mesh/`
 

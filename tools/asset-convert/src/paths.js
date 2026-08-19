@@ -81,6 +81,17 @@ export function mdxLogicalToAttachments(logicalPath) {
   return `${gltf}.attachments.json`;
 }
 
+/** Godot GLTFDocument 解析 skinned mesh 时丢弃 joint node 的 TRS（视为 identity rest），
+ * 这导致 WC3 多层骨骼（马 + 人 + 手臂 + 杖）的父子偏移全为 0，BA / PE2 漂在原点。
+ * 把每个 joint 的 global_rest 写进 sidecar，bake 后用 set_bone_rest() 还原。 */
+export function mdxLogicalToBoneRest(logicalPath) {
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.bone_rest.json`;
+  }
+  return `${gltf}.bone_rest.json`;
+}
+
 /** Map WC3 model path to cameras sidecar（MDX Cameras → Godot 机位）. */
 export function mdxLogicalToCameras(logicalPath) {
   const gltf = mdxLogicalToGltf(logicalPath);
@@ -97,6 +108,15 @@ export function mdxLogicalToAnimKeys(logicalPath) {
     return `${gltf.slice(0, -5)}.animkeys.json`;
   }
   return `${gltf}.animkeys.json`;
+}
+
+/** Map WC3 model path to CollisionShapes sidecar. */
+export function mdxLogicalToCollision(logicalPath) {
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.collision.json`;
+  }
+  return `${gltf}.collision.json`;
 }
 
 /**

@@ -3,16 +3,20 @@ import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { parseMDL, parseMDX } from "war3-model";
 import {
+  collectBakeFrames,
   collectSampleFrames,
   evaluateNodeWorldMatrices,
   LINE_TYPE_NAMES,
   sampleGeosetAlphaInSequence,
+  sequenceBakeDurationMs,
   wc3SequenceToAnimName,
 } from "./anim.js";
 import { blpBufferToPng, writePlaceholderPng } from "./convert-blp.js";
 import {
   mat4DecomposeTRS,
   mat4Identity,
+  mat4Invert,
+  mat4Multiply,
   wc3ToGltfQuat,
   wc3ToGltfVec3,
 } from "./mat4.js";
@@ -20,7 +24,9 @@ import {
   blpLogicalToPng,
   mdxLogicalToAnimKeys,
   mdxLogicalToAttachments,
+  mdxLogicalToBoneRest,
   mdxLogicalToCameras,
+  mdxLogicalToCollision,
   mdxLogicalToGeosetVis,
   mdxLogicalToGltf,
   mdxLogicalToPe2,
@@ -32,6 +38,9 @@ import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
 import { getLog } from "../../pipeline-log.mjs";
 
 const MODEL_SCALE = 0.01;
+
+/** MDX CollisionShapes.Shape：0=box，1=plane，2=sphere（部分资源还有 3=cylinder）。 */
+const COLLISION_SHAPE_NAMES = ["box", "plane", "sphere", "cylinder"];
 
 /** 合法 .gltf：JSON 且含 asset.version（方案 B 外链贴图）。 */
 function isValidGltfOnDisk(absPath) {
@@ -191,6 +200,24 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
   const sequences = model.Sequences ?? [];
   const allNodes = model.Nodes ?? [];
   const emitters = [];
+  const boneIdToName = (() => {
+    /** @type {Map<number, string>} */
+    const m = new Map();
+    for (const b of model.Bones ?? []) {
+      if (b?.ObjectId != null) m.set(b.ObjectId, String(b.Name || ""));
+    }
+    for (const h of model.Helpers ?? []) {
+      if (h?.ObjectId != null && !m.has(h.ObjectId)) {
+        m.set(h.ObjectId, String(h.Name || ""));
+      }
+    }
+    for (const n of allNodes) {
+      if (n?.ObjectId != null && !m.has(n.ObjectId)) {
+        m.set(n.ObjectId, String(n.Name || ""));
+      }
+    }
+    return m;
+  })();
 
   for (const pe of emittersIn) {
     const tid = typeof pe.TextureID === "number" ? pe.TextureID : 0;
@@ -205,10 +232,16 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     const visKeys = animTrackKeys(pe.Visibility);
     const rateKeys = animTrackKeys(pe.EmissionRate);
     const active = activeSequencesForEmitter(pe, sequences);
+    const parentId = pe.Parent ?? null;
+    const boneName =
+      parentId != null && boneIdToName.has(parentId)
+        ? boneIdToName.get(parentId) || null
+        : null;
     const entry = {
       name: String(pe.Name || `PE2_${pe.ObjectId ?? emitters.length}`),
       object_id: pe.ObjectId ?? -1,
-      parent: pe.Parent ?? null,
+      parent: parentId,
+      bone: boneName,
       flags: pe.Flags ?? 0,
       speed: typeof pe.Speed === "number" ? pe.Speed : Number(pe.Speed) || 0,
       variation: typeof pe.Variation === "number" ? pe.Variation : Number(pe.Variation) || 0,
@@ -221,7 +254,9 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
       filter_mode: Number(pe.FilterMode) || 0,
       rows: Math.max(1, Number(pe.Rows) || 1),
       columns: Math.max(1, Number(pe.Columns) || 1),
-      frame_flags: Number(pe.FrameFlags) || 0,
+      frame_flags: Number(pe.FrameFlags ?? pe.HeadOrTail) || 0,
+      tail_length: Number(pe.TailLength) || 0,
+      squirt: Boolean(pe.Squirt),
       time_middle: Number(pe.Time) || 0.5,
       segment_color: [asVec3(seg[0]), asVec3(seg[1]), asVec3(seg[2])],
       alpha: asVec3(pe.Alpha),
@@ -236,11 +271,16 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
     };
     if (visKeys) entry.visibility_keys = visKeys;
     if (rateKeys) entry.emission_rate_keys = rateKeys;
+    const localPivot = bakePe2LocalPivot(allNodes, pe);
+    if (localPivot) entry.local_pivot = localPivot;
     // 发射器节点常有 Translation/Rotation（兵营门光在 Stand Work 才挪到门口）。
     // 按 Sequence 烤 W*pivot → glTF，供运行时/编辑器切动画时改 position。
-    const pivotsBySeq = bakePe2PivotsBySequence(allNodes, pe, sequences);
-    if (pivotsBySeq && Object.keys(pivotsBySeq).length > 0) {
-      entry.pivot_by_sequence = pivotsBySeq;
+    // 已绑骨时跟骨走，不再用世界空间 pivot_by_sequence。
+    if (!boneName) {
+      const pivotsBySeq = bakePe2PivotsBySequence(allNodes, pe, sequences);
+      if (pivotsBySeq && Object.keys(pivotsBySeq).length > 0) {
+        entry.pivot_by_sequence = pivotsBySeq;
+      }
     }
     emitters.push(entry);
   }
@@ -259,6 +299,36 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
   // P3-10：原子写盘（.tmp → rename）—— 中途崩溃不留半成品 .pe2.json
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
+}
+
+/**
+ * 子 Pivot 相对父 Pivot → glTF 轴（与 SkinMesh 顶点同一空间）。
+ * 根节点已 setScale(MODEL_SCALE)，此处不再 ×0.01，否则骨骼/挂点会再缩 100 倍挤到原点。
+ * MDX 无 Translation 时子节点 world≈父 world；挂点/杖尖靠 Pivot 差。
+ * @param {unknown} childPivot
+ * @param {unknown} parentPivot
+ * @returns {number[]}
+ */
+function bakePivotDeltaGltf(childPivot, parentPivot) {
+  const c = asVec3(childPivot);
+  const p = asVec3(parentPivot);
+  return wc3ToGltfVec3(c[0] - p[0], c[1] - p[1], c[2] - p[2]);
+}
+
+/**
+ * 发射器相对父骨的局部平移（与 SkinMesh 顶点同空间，根节点再 × MODEL_SCALE）。
+ * 绑 BoneAttachment 后作 position。勿用 frame0 的 inv(P)*E：sampleAnimVector
+ * 会钳到第一帧 Translation（ArchMage Attack 轨 ≈ -126），把杖尖烤成握柄附近。
+ * @param {import('war3-model').Node[]} allNodes
+ * @param {object} pe
+ * @returns {number[] | null}
+ */
+function bakePe2LocalPivot(allNodes, pe) {
+  const parentId = pe.Parent;
+  if (typeof parentId !== "number" || parentId < 0) return null;
+  const parent = (allNodes || []).find((n) => n && n.ObjectId === parentId);
+  if (!parent) return null;
+  return bakePivotDeltaGltf(pe.PivotPoint, parent.PivotPoint);
 }
 
 /**
@@ -308,7 +378,7 @@ function bakePe2PivotsBySequence(allNodes, pe, sequences) {
  * @param {string} logicalPath
  * @param {string} outDir
  */
-function writeCamerasSidecar(model, logicalPath, outDir) {
+export function writeCamerasSidecar(model, logicalPath, outDir) {
   const camsIn = model.Cameras ?? [];
   const cameras = [];
   for (const cam of camsIn) {
@@ -316,6 +386,7 @@ function writeCamerasSidecar(model, logicalPath, outDir) {
     const tgtWc3 = asVec3(cam.TargetPosition);
     const posG = wc3ToGltfVec3(posWc3[0], posWc3[1], posWc3[2]);
     const tgtG = wc3ToGltfVec3(tgtWc3[0], tgtWc3[1], tgtWc3[2]);
+    // MDX FieldOfView 是弧度（wowdev 默认约 0.95）。Godot Camera3D.fov 是垂直视角（度）。
     const fovRad = Number(cam.FieldOfView);
     const fovDeg =
       Number.isFinite(fovRad) && fovRad > 0
@@ -336,6 +407,10 @@ function writeCamerasSidecar(model, logicalPath, outDir) {
       fov_y_deg: fovDeg,
       near: (Number(cam.NearClip) || 1) * MODEL_SCALE,
       far: (Number(cam.FarClip) || 10000) * MODEL_SCALE,
+      // Portrait 等 Sequence 会平移/滚转相机；游戏肖像框用这段，不是 bind 的全身远景。
+      translation: dumpCameraVecTrack(cam.Translation),
+      rotation: dumpAnimVector(cam.Rotation),
+      target_translation: dumpCameraVecTrack(cam.TargetTranslation),
     });
   }
   const camLogical = mdxLogicalToCameras(logicalPath);
@@ -344,6 +419,83 @@ function writeCamerasSidecar(model, logicalPath, outDir) {
     version: 1,
     source: normalizeLogicalPath(logicalPath),
     cameras,
+  };
+  atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
+  return dest;
+}
+
+/** WC3 vec3 → glTF Y-up，再 × MODEL_SCALE（与 cameras.json 一致）. */
+function sidecarVec3(x, y, z) {
+  const g = wc3ToGltfVec3(Number(x) || 0, Number(y) || 0, Number(z) || 0);
+  return [g[0] * MODEL_SCALE, g[1] * MODEL_SCALE, g[2] * MODEL_SCALE];
+}
+
+function collisionVerticesSidecar(vertices) {
+  const nums = numArray(vertices);
+  const pts = [];
+  for (let i = 0; i + 2 < nums.length; i += 3) {
+    pts.push(sidecarVec3(nums[i], nums[i + 1], nums[i + 2]));
+  }
+  return pts;
+}
+
+function aabbOfPoints(pts) {
+  if (!pts.length) return null;
+  const min = [...pts[0]];
+  const max = [...pts[0]];
+  for (const p of pts) {
+    for (let i = 0; i < 3; i += 1) {
+      if (p[i] < min[i]) min[i] = p[i];
+      if (p[i] > max[i]) max[i] = p[i];
+    }
+  }
+  return { min, max };
+}
+
+/**
+ * MDX CollisionShapes → *.collision.json（Godot Y-up + MODEL_SCALE）。
+ * Footman：2 个球；TownHall：1 个箱（Vertices 两角点）。
+ * @param {object} model
+ * @param {string} logicalPath
+ * @param {string} outDir
+ */
+function writeCollisionSidecar(model, logicalPath, outDir) {
+  const shapes = [];
+  for (const c of model.CollisionShapes ?? []) {
+    if (!c) continue;
+    const shape = Number(c.Shape) || 0;
+    const vertices = collisionVerticesSidecar(c.Vertices);
+    const entry = {
+      name: String(c.Name || `Collision_${shapes.length}`),
+      object_id: c.ObjectId ?? null,
+      parent: c.Parent ?? null,
+      shape,
+      shape_name: COLLISION_SHAPE_NAMES[shape] ?? String(shape),
+      vertices,
+    };
+    const radius = Number(c.BoundsRadius);
+    if (Number.isFinite(radius) && radius > 0) {
+      entry.radius = radius * MODEL_SCALE;
+    }
+    if (shape === 2 && vertices[0]) {
+      entry.center = vertices[0];
+    }
+    if (shape === 0) {
+      const aabb = aabbOfPoints(vertices);
+      if (aabb) {
+        entry.min = aabb.min;
+        entry.max = aabb.max;
+      }
+    }
+    shapes.push(entry);
+  }
+  const logical = mdxLogicalToCollision(logicalPath);
+  const dest = path.join(outDir, ...logical.split("/"));
+  const payload = {
+    version: 1,
+    source: normalizeLogicalPath(logicalPath),
+    note: "Godot Y-up；已 × MODEL_SCALE=0.01。shape: 0=box 1=plane 2=sphere。",
+    shapes,
   };
   atomicWriteBytesSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
   return dest;
@@ -415,16 +567,41 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
   return dest;
 }
 
-/** @param {ArrayLike<number> | undefined | null} v */
+/** @param {ArrayLike<number> | Record<string, number> | undefined | null} v */
 function numArray(v) {
   if (v == null) return [];
-  return Array.from(v, (n) => Number(n) || 0);
+  if (typeof v === "number") return [Number(v) || 0];
+  if (typeof v !== "object") return [];
+  if (typeof v.length === "number") {
+    return Array.from(v, (n) => Number(n) || 0);
+  }
+  const keys = Object.keys(v)
+    .map((k) => Number(k))
+    .filter((n) => Number.isInteger(n) && n >= 0)
+    .sort((a, b) => a - b);
+  return keys.map((k) => Number(v[k]) || 0);
 }
 
 /**
  * MDX AnimVector → JSON（保留原始 Frame / Vector / InTan / OutTan / LineType）。
  * @param {import('war3-model').AnimVector | number | undefined | null} anim
  */
+/** Camera Translation / TargetTranslation：每 key 已 Y-up × MODEL_SCALE。 */
+function dumpCameraVecTrack(anim) {
+  const d = dumpAnimVector(anim);
+  if (!d?.keys?.length) return d;
+  return {
+    ...d,
+    keys: d.keys.map((k) => {
+      const v = k.vector || [];
+      return {
+        ...k,
+        vector: sidecarVec3(v[0] || 0, v[1] || 0, v[2] || 0),
+      };
+    }),
+  };
+}
+
 function dumpAnimVector(anim) {
   if (anim == null) return null;
   if (typeof anim === "number") return { static: anim };
@@ -437,7 +614,10 @@ function dumpAnimVector(anim) {
   return {
     line_type: line,
     line_type_name: LINE_TYPE_NAMES[line] ?? String(line),
-    global_seq_id: anim.GlobalSeqId ?? null,
+    global_seq_id:
+      anim.GlobalSeqId === undefined || anim.GlobalSeqId === null || anim.GlobalSeqId < 0
+        ? null
+        : Number(anim.GlobalSeqId),
     keys: keys.map((k) => {
       /** @type {{ frame: number, vector: number[], in_tan?: number[], out_tan?: number[] }} */
       const e = { frame: Number(k.Frame) || 0, vector: numArray(k.Vector) };
@@ -446,6 +626,17 @@ function dumpAnimVector(anim) {
       return e;
     }),
   };
+}
+
+/** Attachment 显隐：只看 Visibility 轨。Flags&0x4 是 DontInherit Scaling，不是隐藏。 */
+function attachmentVisibleByDefault(a) {
+  const vis = dumpAnimVector(a?.Visibility);
+  if (!vis) return true;
+  if (typeof vis.static === "number") return vis.static >= 0.5;
+  if (Array.isArray(vis.static)) return Number(vis.static[0]) >= 0.5;
+  const k0 = vis.keys?.[0]?.vector?.[0];
+  if (k0 != null) return Number(k0) >= 0.5;
+  return true;
 }
 
 /** @param {import('war3-model').AnimVector | undefined | null} anim */
@@ -518,6 +709,8 @@ function writeAnimKeysSidecar(model, logicalPath, outDir) {
       name: String(node.Name || ""),
       object_id: node.ObjectId,
       parent: node.Parent ?? null,
+      flags: Number(node.Flags) || 0,
+      billboarded: ((Number(node.Flags) || 0) & 0x8) !== 0,
       translation,
       rotation,
       scaling,
@@ -565,7 +758,7 @@ function writeAnimKeysSidecar(model, logicalPath, outDir) {
     version: 1,
     source: normalizeLogicalPath(logicalPath),
     time_unit: "ms",
-    note: "MDX 全局毫秒时间轴；Sequences.interval 为片段范围。glTF 动画已按 Sequence 归零并重采样，原始 Keys 在此。",
+    note: "MDX 全局毫秒时间轴；Sequences.interval 为片段范围。GlobalSeqId≥0 的轨按 GlobalSequences 时钟循环，不跟 Sequence 区间走。glTF 动画已按 Sequence 归零并重采样（循环段会拉长到最长 Global Sequence）。原始 Keys 在此。",
     global_sequences: (model.GlobalSequences ?? []).map((d) => Number(d) || 0),
     sequences,
     nodes,
@@ -618,19 +811,45 @@ export function extractAttachments(model, logicalPath) {
 		version: 1,
 		model: logicalPath,
 		skeleton_bone_count: boneNames.length,
+		skeleton_helper_count: (model.Helpers ?? []).length,
 		attachments: [],
 		geoset_expansions: [],
 	};
 
+	function nodeByObjectId(id) {
+		if (id == null) return null;
+		for (const n of model.Nodes ?? []) {
+			if (n && n.ObjectId === id) return n;
+		}
+		return null;
+	}
+
 	// 4 类辅助 attachment
 	for (const a of model.Attachments ?? []) {
-		out.attachments.push({
+		const parentNode = nodeByObjectId(a.Parent);
+		const entry = {
 			name: a.Name,
 			type: "attachment",
 			bone: boneNameById(a.Parent),
 			source: `attachment_${a.AttachmentID ?? 0}`,
-			visibility_default: !(a.Flags & 0x4),
-		});
+			object_id: a.ObjectId ?? null,
+			path: String(a.Path || ""),
+			// Flags 0x4 = DontInherit Scaling，不是显隐。无 KATV 则插座保持可见。
+			visibility_default: attachmentVisibleByDefault(a),
+			// 世界/场景根挂点：已 × MODEL_SCALE
+			pivot: sidecarVec3(
+				asVec3(a.PivotPoint)[0],
+				asVec3(a.PivotPoint)[1],
+				asVec3(a.PivotPoint)[2],
+			),
+		};
+		// 绑骨：相对父骨 Pivot 的局部偏移（与 SkinMesh 顶点同空间；根节点再 × MODEL_SCALE）
+		if (parentNode && boneNameById(a.Parent)) {
+			entry.pivot_delta = bakePivotDeltaGltf(a.PivotPoint, parentNode.PivotPoint);
+		}
+		const vis = dumpAnimVector(a.Visibility);
+		if (vis) entry.visibility = vis;
+		out.attachments.push(entry);
 	}
 	for (const p of model.ParticleEmitters2 ?? []) {
 		out.attachments.push({
@@ -641,12 +860,35 @@ export function extractAttachments(model, logicalPath) {
 		});
 	}
 	for (const l of model.Lights ?? []) {
-		out.attachments.push({
+		const pivot = asVec3(l.PivotPoint);
+		const color = asVec3(l.Color);
+		const vis = dumpAnimVector(l.Visibility);
+		const vis0 = vis?.keys?.[0]?.vector?.[0];
+		const visStatic = vis?.static;
+		let visibilityDefault = false;
+		if (typeof visStatic === "number") {
+			visibilityDefault = visStatic >= 0.5;
+		} else if (Array.isArray(visStatic)) {
+			visibilityDefault = Number(visStatic[0]) >= 0.5;
+		} else if (vis0 != null) {
+			visibilityDefault = Number(vis0) >= 0.5;
+		}
+		const entry = {
 			name: l.Name,
 			type: "light",
 			bone: boneNameById(l.Parent),
-			source: l.LightType === 0 ? "OmniLight" : "DirectionalLight",
-		});
+			source: Number(l.LightType) === 0 ? "OmniLight" : "DirectionalLight",
+			object_id: l.ObjectId ?? null,
+			light_type: Number(l.LightType) || 0,
+			attenuation_start: (Number(l.AttenuationStart) || 0) * MODEL_SCALE,
+			attenuation_end: (Number(l.AttenuationEnd) || 0) * MODEL_SCALE,
+			intensity: Number(l.Intensity) || 0,
+			color: [color[0], color[1], color[2]],
+			visibility_default: visibilityDefault,
+			pivot: sidecarVec3(pivot[0], pivot[1], pivot[2]),
+		};
+		if (vis) entry.visibility = vis;
+		out.attachments.push(entry);
 	}
 	for (const r of model.RibbonEmitters ?? []) {
 		out.attachments.push({
@@ -758,12 +1000,68 @@ export function writeAttachmentsSidecar(model, logicalPath, outDir) {
 	return dest;
 }
 
+/**
+ * 写 Stand 绑定姿态的 glTF TRS（平铺骨骼 rest）。马网格已是绑定外形 rest≈I；
+ * 骑士是 T-pose 顶点，rest=Stand 世界阵才能坐上马。IBM 保持单位阵。
+ * @param {Array<{ObjectId: number, Name?: string}>} skinAnimNodes
+ * @param {Float32Array[]} bindWorlds
+ * @param {Array<{getName(): string}>} jointList
+ * @param {string} logicalPath
+ * @param {string} outDir
+ */
+function writeBoneRestSidecar(skinAnimNodes, bindWorlds, jointList, logicalPath, outDir) {
+  const bones = [];
+  for (let i = 0; i < jointList.length; i += 1) {
+    const src = skinAnimNodes[i];
+    const { t, r, s } = transformMat4Wc3ToGltf(bindWorlds[src.ObjectId] || mat4Identity());
+    bones.push({
+      name: jointList[i].getName(),
+      translation: t,
+      rotation: r,
+      scale: s,
+    });
+  }
+  const logical = mdxLogicalToBoneRest(logicalPath);
+  const dest = path.join(outDir, ...logical.split("/"));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  atomicWriteBytesSync(dest, `${JSON.stringify({ version: 2, bones }, null, 2)}\n`);
+  if (globalThis.__WC3_DEBUG_JOINT) console.log("[bone_rest] wrote", dest, "bones=", bones.length);
+  return dest;
+}
+
+/**
+ * Helpers 里真正的骨架骨（Bone_Root / Bone_Foot_L 等）不在 model.Bones。
+ * 追加进 Skin 时必须排在 Bones 之后，以免改 JOINTS_0 下标。
+ * @param {object} model
+ * @param {Array<{ ObjectId?: number }>} boneNodes
+ */
+function extraHelperNodes(model, boneNodes) {
+  const seen = new Set((boneNodes ?? []).map((b) => b.ObjectId));
+  const extras = [];
+  for (const h of model.Helpers ?? []) {
+    if (!h || h.ObjectId == null || seen.has(h.ObjectId)) continue;
+    seen.add(h.ObjectId);
+    extras.push(h);
+  }
+  return extras;
+}
+
+function uniqueJointName(src, used) {
+  const base = String(src?.Name || `Bone_${src?.ObjectId}`).trim() || `Bone_${src?.ObjectId}`;
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  const alt = `${base}_${src.ObjectId}`;
+  used.add(alt);
+  return alt;
+}
 
 /**
  * @param {ArrayBuffer | Buffer} data
  * @param {string} logicalPath
  */
-function parseModel(data, logicalPath) {
+export function parseModel(data, logicalPath) {
   const buf =
     data instanceof ArrayBuffer
       ? data
@@ -778,7 +1076,8 @@ function parseModel(data, logicalPath) {
 const REPLACEABLE_DEFAULTS = {
 	// 默认队伍色：导出时直接嵌 TeamColor00（红/玩家1）；运行时仍可按 owner 重染
 	1: "ReplaceableTextures/TeamColor/TeamColor00.blp",
-	2: null, // team glow → _placeholders/team_glow.png（编辑器常跳过纯 glow geoset）
+	// 英雄脚底/武器光晕：软圆 TeamGlow；运行时按队伍色乘 albedo
+	2: "ReplaceableTextures/TeamGlow/TeamGlow00.blp",
 	11: "ReplaceableTextures/Cliff/Cliff0.blp",
 	31: "ReplaceableTextures/LordaeronTree/LordaeronSnowTree.blp",
 	// Icecrown / Lost Temple uses Ice_Tree on AshenTree models (ITtw).
@@ -923,26 +1222,6 @@ function materialHasTeamColorUnderlay(matDef, textures) {
 	return hasRep1 && hasImage;
 }
 
-/**
- * 材质是否「仅」某 ReplaceableId（所有层都无 Image，且 RepId 一致）。
- * RepId=2 → Team Glow（英雄光环/武器光晕面片）；Stand 下 WE 通常不可见。
- */
-function materialExclusiveReplaceableId(matDef, textures) {
-	const layers = matDef?.Layers ?? [];
-	if (layers.length === 0) return 0;
-	let only = 0;
-	for (const layer of layers) {
-		const tex = textures?.[textureIdOfLayer(layer)];
-		if (!tex) return 0;
-		if (tex.Image) return 0;
-		const rid = tex.ReplaceableId || 0;
-		if (!rid) return 0;
-		if (only === 0) only = rid;
-		else if (only !== rid) return 0;
-	}
-	return only;
-}
-
 function alphaModeForFilter(filterMode) {
   // WC3: 0 None, 1 Transparent, 2 Blend, 3 Additive, 4 AddAlpha, 5 Modulate, 6 Modulate2x
   // Godot 里 BLEND 会进透明队列导致建筑透视；仍导出 BLEND，由 MapModelCache 改 DEPTH_PRE_PASS。
@@ -977,6 +1256,62 @@ function transformMat4Wc3ToGltf(m) {
   // Scale axes permute with basis: (sx,sy,sz)_wc3 -> (sx,sz,sy)
   const sg = [s[0], s[2], s[1]];
   return { t: tg, r: rg, s: sg };
+}
+
+function quatNearlyEqual(a, b) {
+  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  return Math.abs(Math.abs(dot) - 1) < 2e-3;
+}
+
+/** 循环段拉长后，静止骨骼不必每 33ms 写一帧。 */
+function collapseConstantTrsTrack(track) {
+  const n = track.times.length;
+  if (n <= 2) return track;
+  const t0 = [track.t[0], track.t[1], track.t[2]];
+  const r0 = [track.r[0], track.r[1], track.r[2], track.r[3]];
+  const s0 = [track.s[0], track.s[1], track.s[2]];
+  for (let i = 1; i < n; i += 1) {
+    const ri = [track.r[i * 4], track.r[i * 4 + 1], track.r[i * 4 + 2], track.r[i * 4 + 3]];
+    if (
+      Math.abs(track.t[i * 3] - t0[0]) > 0.05 ||
+      Math.abs(track.t[i * 3 + 1] - t0[1]) > 0.05 ||
+      Math.abs(track.t[i * 3 + 2] - t0[2]) > 0.05 ||
+      !quatNearlyEqual(r0, ri) ||
+      Math.abs(track.s[i * 3] - s0[0]) > 1e-3 ||
+      Math.abs(track.s[i * 3 + 1] - s0[1]) > 1e-3 ||
+      Math.abs(track.s[i * 3 + 2] - s0[2]) > 1e-3
+    ) {
+      return track;
+    }
+  }
+  const last = n - 1;
+  return {
+    times: [track.times[0], track.times[last]],
+    t: [t0[0], t0[1], t0[2], track.t[last * 3], track.t[last * 3 + 1], track.t[last * 3 + 2]],
+    r: [...r0, track.r[last * 4], track.r[last * 4 + 1], track.r[last * 4 + 2], track.r[last * 4 + 3]],
+    s: [s0[0], s0[1], s0[2], track.s[last * 3], track.s[last * 3 + 1], track.s[last * 3 + 2]],
+  };
+}
+
+function collapseConstantScaleTrack(track) {
+  const n = track.times.length;
+  if (n <= 2) return track;
+  const s0 = track.s[0];
+  for (let i = 1; i < n; i += 1) {
+    if (Math.abs(track.s[i * 3] - s0) > 1e-6) return track;
+  }
+  const last = n - 1;
+  return {
+    times: [track.times[0], track.times[last]],
+    s: [
+      track.s[0],
+      track.s[1],
+      track.s[2],
+      track.s[last * 3],
+      track.s[last * 3 + 1],
+      track.s[last * 3 + 2],
+    ],
+  };
 }
 
 /**
@@ -1063,8 +1398,11 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 	}
 
   // --- Skeleton (flat under Armature; IBM = I to match WC3 model-space skinning) ---
+  // Bones 必须先入 joint 列表，保持已有 JOINTS_0 下标 0..Bones-1；Helpers 去重后追加。
   const boneNodes = model.Bones ?? [];
   const allNodes = model.Nodes ?? [];
+  const helperJoints = extraHelperNodes(model, boneNodes);
+  const skinAnimNodes = [...boneNodes, ...helperJoints];
   const armature = document.createNode("Armature");
   root.addChild(armature);
 
@@ -1072,10 +1410,43 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   const jointByObjectId = new Map();
   /** @type {import('@gltf-transform/core').Node[]} */
   const jointList = [];
+  const usedJointNames = new Set();
 
-  for (const bone of boneNodes) {
-    const joint = document.createNode(bone.Name || `Bone_${bone.ObjectId}`);
-    jointByObjectId.set(bone.ObjectId, joint);
+  // WC3 PivotPoint 是「旋转原点」。每个 joint 在父坐标系里的偏移 = 父 Pivot − 子 Pivot。
+  // glTF joint node.translation 在 skin 场景下不被保留（IBM 才携带 chain 信息），
+  // 我们把 chain 累计的 translation 写进 IBM：vertex_final = vertex_model × jointTRS × IBM，
+  // IBM = inv(globalJointT) ⇒ vertex_final = vertex_model × jointTRS / globalJointT，
+  // 即 jointTRS 应用到 joint-local vertex。
+  const nodeByObjectId = (id) => {
+    if (id == null) return null;
+    for (const n of allNodes ?? []) {
+      if (n && n.ObjectId === id) return n;
+    }
+    return null;
+  };
+  const jointLocalT = new Map(); // ObjectId → gltf vec3（与顶点同空间，不含根 scale）
+  const jointParent = new Map(); // ObjectId → parent ObjectId
+  const DBG_JOINT = globalThis.__WC3_DEBUG_JOINT === true;
+  for (const src of skinAnimNodes) {
+    const parentId = src.Parent;
+    jointParent.set(src.ObjectId, parentId);
+    const gp = parentId != null ? nodeByObjectId(parentId) : null;
+    const t = bakePivotDeltaGltf(src.PivotPoint, gp?.PivotPoint ?? [0, 0, 0]);
+    jointLocalT.set(src.ObjectId, t);
+  }
+  if (DBG_JOINT) {
+    for (const src of skinAnimNodes.slice(0, 5)) {
+      const t = jointLocalT.get(src.ObjectId);
+      console.log("[joint]", src.Name || src.ObjectId, "t=", t);
+    }
+    console.log("[joint] total skinAnimNodes=", skinAnimNodes.length, "jointLocalT size=", jointLocalT.size);
+  }
+
+  for (const src of skinAnimNodes) {
+    const joint = document.createNode(uniqueJointName(src, usedJointNames));
+    // 不要 setTranslation：Godot 若把它收成 bone rest，而顶点已是 model space、IBM=I，
+    // 蒙皮会再加一遍局部平移，骑士叠进马身。joint 保持原点，绑定网格即 MDX 外形。
+    jointByObjectId.set(src.ObjectId, joint);
     jointList.push(joint);
     armature.addChild(joint);
   }
@@ -1085,7 +1456,33 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       ? document.createSkin("Skin").setSkeleton(armature)
       : null;
 
+  /** @type {Map<number, Float32Array>} */
+  const globalJointT = new Map();
+  /** @param {number} oid @returns {Float32Array} */
+  const computeGlobal = (oid) => {
+    const cached = globalJointT.get(oid);
+    if (cached) return cached;
+    const t = jointLocalT.get(oid) ?? [0, 0, 0];
+    const pid = jointParent.get(oid);
+    const parGlobal = pid != null ? computeGlobal(pid) : null;
+    const out = new Float32Array(16);
+    if (parGlobal) {
+      out.set(parGlobal);
+      out[12] = parGlobal[0] * t[0] + parGlobal[4] * t[1] + parGlobal[8] * t[2] + parGlobal[12];
+      out[13] = parGlobal[1] * t[0] + parGlobal[5] * t[1] + parGlobal[9] * t[2] + parGlobal[13];
+      out[14] = parGlobal[2] * t[0] + parGlobal[6] * t[1] + parGlobal[10] * t[2] + parGlobal[14];
+    } else {
+      out[0] = 1; out[5] = 1; out[10] = 1; out[15] = 1;
+      out[12] = t[0]; out[13] = t[1]; out[14] = t[2];
+    }
+    globalJointT.set(oid, out);
+    return out;
+  };
+  for (const src of skinAnimNodes) computeGlobal(src.ObjectId);
+
   if (skin) {
+    // Godot 导入 skinned mesh 时 joint rest=I。IBM 必须是单位阵，否则
+    // pose=I、IBM=inv(bind) 会把绑定姿态顶点减回原点（网格堆成一团）。
     const ibmData = new Float32Array(jointList.length * 16);
     for (let i = 0; i < jointList.length; i += 1) {
       ibmData.set(mat4Identity(), i * 16);
@@ -1101,7 +1498,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   }
 
   const objectIdToJointIndex = new Map();
-  boneNodes.forEach((b, i) => objectIdToJointIndex.set(b.ObjectId, i));
+  skinAnimNodes.forEach((b, i) => objectIdToJointIndex.set(b.ObjectId, i));
 
   // --- Geosets ---
   // Godot GLTFDocument drops TRS on skinned mesh nodes; visibility for Godot is
@@ -1120,17 +1517,6 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
 		const vertCount = (g.Vertices?.length ?? 0) / 3;
 		if (!vertCount || !g.Faces?.length) continue;
 
-		// 纯 Team Glow geoset（英雄光环/武器光晕大面片）：Stand 下 WE 不可见，
-		// 导出成实心色块会污染编辑器预览 → 跳过。
-		const matId = g.MaterialID ?? 0;
-		const exclusiveRep = materialExclusiveReplaceableId(
-			model.Materials?.[matId],
-			model.Textures,
-		);
-		if (exclusiveRep === 2) {
-			continue;
-		}
-
 		const positions = new Float32Array(vertCount * 3);
     const normals = new Float32Array(vertCount * 3);
     const uvs = new Float32Array(vertCount * 2);
@@ -1142,9 +1528,11 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       const y = g.Vertices[i * 3 + 1];
       const z = g.Vertices[i * 3 + 2];
       const p = wc3ToGltfVec3(x, y, z);
+      // 顶点保持 model space。Godot rest=I + IBM=I 时视觉即绑定姿态。
       positions[i * 3] = p[0];
       positions[i * 3 + 1] = p[1];
       positions[i * 3 + 2] = p[2];
+      const group = g.Groups?.[g.VertexGroup?.[i] ?? 0] ?? [];
 
       if (g.Normals?.length >= (i + 1) * 3) {
         const n = wc3ToGltfVec3(g.Normals[i * 3], g.Normals[i * 3 + 1], g.Normals[i * 3 + 2]);
@@ -1163,7 +1551,6 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       }
 
       // Skin weights from matrix groups (equal weight, up to 4).
-      const group = g.Groups?.[g.VertexGroup?.[i] ?? 0] ?? [];
       const usable = group
         .map((objectId) => objectIdToJointIndex.get(objectId))
         .filter((idx) => idx !== undefined);
@@ -1229,25 +1616,52 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   }
 
   // --- Animations (one glTF animation per WC3 Sequence) ---
+  // Global Sequence（旗/钟）不跟 Sequence 区间走：循环段烘焙时长拉到最长 GlobalSeq，
+  // 段内骨骼 % seqDur，GlobalSeq 骨骼 % globalDur。MDX Billboard 位（0x8）原样保留，
+  // 不在烘焙时改朝向（RTS 固定机位；旗布也不是 TwoSided）。
+  const globalSequences = (model.GlobalSequences ?? []).map((d) => Number(d) || 0);
+  const bindSeq =
+    (model.Sequences ?? []).find((s) => /^stand/i.test(String(s.Name || "").trim())) || restSeq;
+  const bindStart = bindSeq?.Interval?.[0] ?? restStart;
+  const bindEnd = bindSeq?.Interval?.[1] ?? restEnd;
+  const bindWorlds = evaluateNodeWorldMatrices(
+    allNodes,
+    bindStart,
+    bindStart,
+    bindEnd,
+    globalSequences,
+    0,
+  );
   if (model.Sequences?.length) {
     for (const seq of model.Sequences) {
       const start = seq.Interval[0];
       const end = seq.Interval[1];
       if (end <= start) continue;
+      const seqDur = end - start;
+      const looping = !seq.NonLooping;
+      const bakeDur = sequenceBakeDurationMs(
+        start,
+        end,
+        looping,
+        allNodes,
+        globalSequences,
+      );
 
       const animName = wc3SequenceToAnimName(seq.Name || "Anim");
       const animation = document.createAnimation(animName);
-      const frames = collectSampleFrames(
+      const frames = collectBakeFrames(
         allNodes,
         start,
         end,
+        bakeDur,
         33,
         model.GeosetAnims || [],
+        globalSequences,
       );
 
       /** @type {Map<number, { times: number[], t: number[], r: number[], s: number[] }>} */
       const tracks = new Map();
-      for (const bone of boneNodes) {
+      for (const bone of skinAnimNodes) {
         tracks.set(bone.ObjectId, { times: [], t: [], r: [], s: [] });
       }
 
@@ -1257,11 +1671,22 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
         geosetScaleTracks.set(gi, { times: [], s: [] });
       }
 
-      for (const frame of frames) {
-        const worlds = evaluateNodeWorldMatrices(allNodes, frame, start, end);
-        const timeSec = (frame - start) / 1000;
-        for (const bone of boneNodes) {
+      for (const tMs of frames) {
+        const seqFrame =
+          looping && seqDur > 0 ? start + (tMs % seqDur) : start + tMs;
+        const worlds = evaluateNodeWorldMatrices(
+          allNodes,
+          seqFrame,
+          start,
+          end,
+          globalSequences,
+          tMs,
+        );
+        const timeSec = tMs / 1000;
+        for (const bone of skinAnimNodes) {
           const world = worlds[bone.ObjectId] || mat4Identity();
+          // Godot 4.6 平铺骨骼：global_pose≈pose（rest 不参与蒙皮）。
+          // pose 必须写 WC3 世界阵；相对 Stand 的 delta 会在播动画时把骑士打回 T-pose。
           const { t, r, s } = transformMat4Wc3ToGltf(world);
           const track = tracks.get(bone.ObjectId);
           track.times.push(timeSec);
@@ -1274,7 +1699,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
           const alpha = sampleGeosetAlphaInSequence(
             model.GeosetAnims,
             gi,
-            frame,
+            seqFrame,
             start,
             end,
           );
@@ -1285,10 +1710,11 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
         }
       }
 
-      for (const bone of boneNodes) {
+      for (const bone of skinAnimNodes) {
         const joint = jointByObjectId.get(bone.ObjectId);
-        const track = tracks.get(bone.ObjectId);
+        let track = tracks.get(bone.ObjectId);
         if (!joint || !track?.times.length) continue;
+        track = collapseConstantTrsTrack(track);
 
         const input = document
           .createAccessor(`${animName}_${bone.ObjectId}_time`)
@@ -1359,8 +1785,9 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
       // Drive geoset visibility (WC3 GeosetAnim alpha) via node scale.
       // Godot drops these on skinned meshes — see writeGeosetVisSidecar.
       for (const [gi, meshNode] of geosetMeshNodes) {
-        const gTrack = geosetScaleTracks.get(gi);
+        let gTrack = geosetScaleTracks.get(gi);
         if (!gTrack?.times.length) continue;
+        gTrack = collapseConstantScaleTrack(gTrack);
         const input = document
           .createAccessor(`${animName}_geoset${gi}_time`)
           .setType("SCALAR")
@@ -1409,6 +1836,14 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     outDir,
     ...mdxLogicalToAnimKeys(logicalPath).split("/"),
   );
+  const collisionDest = path.join(
+    outDir,
+    ...mdxLogicalToCollision(logicalPath).split("/"),
+  );
+  const boneRestDest = path.join(
+    outDir,
+    ...mdxLogicalToBoneRest(logicalPath).split("/"),
+  );
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
@@ -1419,6 +1854,8 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writeAttachmentsSidecar(model, logicalPath, outDir);
     writeCamerasSidecar(model, logicalPath, outDir);
     writeAnimKeysSidecar(model, logicalPath, outDir);
+    writeCollisionSidecar(model, logicalPath, outDir);
+    writeBoneRestSidecar(skinAnimNodes, bindWorlds, jointList, logicalPath, outDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
@@ -1429,6 +1866,8 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(attDest);
     unlinkQuiet(camDest);
     unlinkQuiet(animKeysDest);
+    unlinkQuiet(collisionDest);
+    unlinkQuiet(boneRestDest);
     throw err;
   }
   return dest;
@@ -1459,19 +1898,25 @@ export async function convertMdxBatch(options) {
       outDir,
       ...mdxLogicalToCameras(file.logicalPath).split("/"),
     );
+    const collisionDest = path.join(
+      outDir,
+      ...mdxLogicalToCollision(file.logicalPath).split("/"),
+    );
 
     if (
       !force &&
       fs.existsSync(dest) &&
       fs.existsSync(pe2Dest) &&
       fs.existsSync(geosetVisDest) &&
-      fs.existsSync(camDest)
+      fs.existsSync(camDest) &&
+      fs.existsSync(collisionDest)
     ) {
       const srcStat = fs.statSync(file.absPath);
       const dstStat = fs.statSync(dest);
       const pe2Stat = fs.statSync(pe2Dest);
       const visStat = fs.statSync(geosetVisDest);
       const camStat = fs.statSync(camDest);
+      const collisionStat = fs.statSync(collisionDest);
       const valid = isValidGltfOnDisk(dest);
       if (
         dstStat.mtimeMs >= srcStat.mtimeMs &&
@@ -1479,7 +1924,8 @@ export async function convertMdxBatch(options) {
         valid &&
         pe2Stat.mtimeMs >= srcStat.mtimeMs &&
         visStat.mtimeMs >= srcStat.mtimeMs &&
-        camStat.mtimeMs >= srcStat.mtimeMs
+        camStat.mtimeMs >= srcStat.mtimeMs &&
+        collisionStat.mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
         processed += 1;

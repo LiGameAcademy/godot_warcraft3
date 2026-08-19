@@ -60,6 +60,11 @@ docs/design/
 │   └── LAYERS.md
 ├── shader/                            着色器
 │   └── README.md
+├── asset-convert/                     MDX/glTF 烘焙
+│   ├── ATTACHMENTS_BAKE.md            小件 / 特效 sidecar 拼装
+│   ├── MDX_SKINNING_GODOT.md          蒙皮空间、Stand rest、挂点 Tip
+│   ├── PE2_GODOT.md                   ParticleEmitter2 / TeamGlow → Godot
+│   └── SCN_COVERAGE.md                .scn 覆盖率快照
 └── hivewe/                            HiveWE 行为参考
     ├── README.md
     ├── WATER_DEEP_ANALYSIS.md

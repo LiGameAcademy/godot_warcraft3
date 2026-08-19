@@ -3,7 +3,7 @@
 > **关联 commit**：C-1（extract_attachments + write_attachments_sidecar + selftest 5/5）→ C-2（export_model_scenes 拼装 + selftest 5/5）→ C-3（AnimationPlayer 合并 + selftest 5/5）
 > **关联代码**：`tools/asset-convert/src/convert-mdx.js` + `tools/asset-convert/src/cli.js` + `scripts/tool/export_model_scenes.gd` + `tests/unit/selftest_attachments.gd` + `selftest_attachment_bake.gd` + `selftest_animation_merge.gd`
 > **触发问题**：TownHall .scn 实际只有 35 个 MeshInstance3D，缺 15 面旗子 + 4 时针 + 4 分针 + 2 铃铛 + 1 平面（Skeletal Mesh 全有，BoneAttachment 全丢）；Footman 缺 26 个 box / cantine / gutz 装饰物；所有 200+ WC3 模型都受影响
-> **最后更新**：2026-08-11
+> **最后更新**：2026-08-19（蒙皮/挂点复盘见 [MDX_SKINNING_GODOT.md](MDX_SKINNING_GODOT.md)；粒子/TeamGlow 映射见 [PE2_GODOT.md](PE2_GODOT.md)）
 
 ---
 
@@ -234,7 +234,7 @@ export function extractAttachments(model, logicalPath) {
         bone: getBoneNameById(model, node.Parent ?? -1),
         source: `Geoset_${node.GeosetId ?? 0}`,
         transform: extractTransform(node),
-        visibility_default: !(node.Flags & 0x4),  // MDX flag bit 2 = don't show
+        visibility_default: true,  // 无 Visibility 轨则可见；Flags 0x4 是 DontInherit Scaling
         animations: extractAnimations(node, model)
       });
     } else if (type === "ParticleEmitter2") {
@@ -360,7 +360,7 @@ for item in att["attachments"]:
 | 复用 mesh 方式 | ① 复制顶点 ② .gltf 共享 ③ BoneAttachment + skin | ③ | Godot 4 BoneAttachment3D 原生支持；mesh 复用 geoset |
 | 动画管理 | ① 每 attachment 独立 AnimationPlayer ② 统一 AnimationPlayer | ② | set_animation("Stand") 控全；运行时 1 个 player 简单 |
 | 是否保留现有 35 个 MeshInstance3D（geoset）| ① 是 ② 否 | ① | geoset 仍是主 mesh；小件是附加 |
-| PE2 粒子预制 | ① 现有 .pe2.tscn ② 运行时从 JSON 构造 | ① | 已有 .pe2.json + .pe2.tscn 系统；复用 |
+| PE2 粒子 | ① 单独 .pe2.tscn ② bake 进 .scn ③ 运行时 JSON | ② | 贴图内嵌，编辑器播 Sequence 即可见；不入库 tscn |
 | bake 阶段 | ① .gltf bake 时 ② runtime load 时 | ① | 烤 .scn 后运行时无需再 load JSON；性能 + 简化 |
 | GeometryInstance3D vs MeshInstance3D | ① MeshInstance3D ② GeometryInstance3D | ① | 简化；light/particle 各自类型 |
 | 是否支持 Light / Ribbon | ① 是 ② 否（只 Mesh + Particle）| ① | WC3 铃铛光晕 = Light，旗拖尾 = Ribbon |

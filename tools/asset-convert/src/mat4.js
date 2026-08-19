@@ -104,6 +104,37 @@ export function mat4DecomposeTRS(m) {
   return { t, r: [qx, qy, qz, qw], s };
 }
 
+/** Invert affine mat4 (column-major). Returns null if singular. */
+export function mat4Invert(out, m) {
+  const a00 = m[0], a01 = m[1], a02 = m[2];
+  const a10 = m[4], a11 = m[5], a12 = m[6];
+  const a20 = m[8], a21 = m[9], a22 = m[10];
+  const a30 = m[12], a31 = m[13], a32 = m[14];
+  const b01 = a22 * a11 - a12 * a21;
+  const b11 = -a22 * a10 + a12 * a20;
+  const b21 = a21 * a10 - a11 * a20;
+  let det = a00 * b01 + a01 * b11 + a02 * b21;
+  if (Math.abs(det) < 1e-12) return null;
+  det = 1 / det;
+  out[0] = b01 * det;
+  out[1] = (-a22 * a01 + a02 * a21) * det;
+  out[2] = (a12 * a01 - a02 * a11) * det;
+  out[3] = 0;
+  out[4] = b11 * det;
+  out[5] = (a22 * a00 - a02 * a20) * det;
+  out[6] = (-a12 * a00 + a02 * a10) * det;
+  out[7] = 0;
+  out[8] = b21 * det;
+  out[9] = (-a21 * a00 + a01 * a20) * det;
+  out[10] = (a11 * a00 - a01 * a10) * det;
+  out[11] = 0;
+  out[12] = (-a30 * out[0] - a31 * out[4] - a32 * out[8]);
+  out[13] = (-a30 * out[1] - a31 * out[5] - a32 * out[9]);
+  out[14] = (-a30 * out[2] - a31 * out[6] - a32 * out[10]);
+  out[15] = 1;
+  return out;
+}
+
 /** Transform WC3 vec3 to glTF/Y-up: (x,y,z)->(x,z,-y) */
 export function wc3ToGltfVec3(x, y, z) {
   return [x, z, -y];

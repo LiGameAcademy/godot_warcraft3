@@ -390,10 +390,10 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 		ap.stop()
 	_inject_geoset_vis_tracks(glb_path, root)
 	const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
-	const _Sync := preload("res://scripts/map/presentation/model_visual_sync.gd")
+	const _Model := preload("res://scripts/map/presentation/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
-	root.set_script(_Sync)
+	root.set_script(_Model)
 	var packed := PackedScene.new()
 	if packed.pack(root) != OK:
 		root.free()
@@ -579,12 +579,12 @@ func _hide_zero_scale_geosets(root: Node) -> void:
 			continue
 		if mi.scale.length_squared() < 1e-8:
 			mi.visible = false
-	# C-3：Geoset_N_Group_* BoneAttachment（无 scale 轨，靠 visible）
+	# 可选拆组：Geoset_N_Group_* BoneAttachment（无 scale 轨，靠 visible）
 	for c in root.find_children("*", "BoneAttachment3D", true, false):
 		var ba := c as BoneAttachment3D
 		if ba == null:
 			continue
-		var nm2 := str(ba.name)
+		var nm2 := _strip_ba_geoset_prefix(str(ba.name))
 		if not nm2.begins_with("Geoset_") or not nm2.contains("_Group_"):
 			continue
 		if ba.scale.length_squared() < 1e-8:
@@ -612,6 +612,84 @@ func process_lazy_bake_one() -> bool:
 ## 将缓存中的原型打包为 .scn（优先写 asset-converted 同目录，失败则 user://）。
 ## force=true 时覆盖已有旁路 .scn（export --force / 补 geosetvis 轨后重烤）。
 ## 打包前套默认队伍色（TeamColor00），便于编辑器直接打开 .scn 即见染色；游戏侧仍会按 owner 重染。
+## 旁路 JSON：优先与 glTF 同目录（含 tmp 拷贝），否则 asset-converted。
+static func _resolve_bone_rest_disk(glb_path: String) -> String:
+	var side := glb_path.replace("\\", "/")
+	var rest_rel := ""
+	if side.to_lower().ends_with(".gltf"):
+		rest_rel = side.substr(0, side.length() - 5) + ".bone_rest.json"
+	elif side.to_lower().ends_with(".glb"):
+		rest_rel = side.substr(0, side.length() - 4) + ".bone_rest.json"
+	else:
+		return ""
+	var candidates: PackedStringArray = []
+	if rest_rel.begins_with("res://") or rest_rel.is_absolute_path():
+		candidates.append(RuntimeAssets.project_abs(rest_rel))
+	else:
+		candidates.append(RuntimeAssets.project_abs("res://assets/asset-converted/" + rest_rel))
+		candidates.append(RuntimeAssets.project_abs("res://" + rest_rel))
+	for disk in candidates:
+		if not disk.is_empty() and FileAccess.file_exists(disk):
+			return disk
+	return ""
+
+
+## Stand 绑定 TRS → 骨 rest（pose 保持 I）。骑士 T-pose 顶点 × rest 才是坐姿；
+## 不要 set_bone_pose_position：那会 rest*pose 叠两次。IBM 必须是单位阵。
+static func apply_bone_rest_sidecar(proto: Node, glb_path: String) -> void:
+	if proto == null or glb_path.is_empty():
+		return
+	var disk := _resolve_bone_rest_disk(glb_path)
+	if disk.is_empty():
+		return
+	var raw := FileAccess.get_file_as_string(disk)
+	if raw.is_empty():
+		return
+	var parsed: Variant = JSON.parse_string(raw)
+	if not parsed is Dictionary:
+		return
+	var bones: Array = parsed.get("bones", [])
+	var skeleton: Skeleton3D = null
+	for c in proto.find_children("*", "Skeleton3D", true, false):
+		if c is Skeleton3D:
+			skeleton = c as Skeleton3D
+			break
+	if skeleton == null:
+		return
+	var updated_bi: Array[int] = []
+	for entry in bones:
+		var nm := str(entry.get("name", ""))
+		if nm.is_empty():
+			continue
+		var bi := skeleton.find_bone(nm)
+		if bi < 0:
+			continue
+		var t: Variant = entry.get("translation", [])
+		var pos := Vector3.ZERO
+		if t is Array and t.size() >= 3:
+			pos = Vector3(float(t[0]), float(t[1]), float(t[2]))
+		var rot: Variant = entry.get("rotation", [])
+		var q := Quaternion.IDENTITY
+		if rot is Array and rot.size() >= 4:
+			q = Quaternion(float(rot[0]), float(rot[1]), float(rot[2]), float(rot[3]))
+		var sc: Variant = entry.get("scale", [])
+		var basis := Basis(q)
+		if sc is Array and sc.size() >= 3:
+			basis = basis.scaled(Vector3(float(sc[0]), float(sc[1]), float(sc[2])))
+		skeleton.set_bone_rest(bi, Transform3D(basis, pos))
+		skeleton.reset_bone_pose(bi)
+		updated_bi.append(bi)
+	if not updated_bi.is_empty():
+		skeleton.force_update_all_bone_transforms()
+	for c in proto.find_children("*", "BoneAttachment3D", true, false):
+		if c is BoneAttachment3D:
+			var ba := c as BoneAttachment3D
+			if not ba.bone_name.is_empty():
+				var idx2 := skeleton.find_bone(ba.bone_name)
+				if idx2 >= 0 and ba.get_bone_idx() != idx2:
+					ba.set_bone_idx(idx2)
+
+
 func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 	if glb_path.is_empty():
 		return false
@@ -622,7 +700,8 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 		proto = _scene_cache[glb_path] as Node3D
 	if proto == null:
 		return false
-	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, true)
+	apply_bone_rest_sidecar(proto, glb_path)
+	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
 	var res_p := RuntimeAssets.model_scene_path(glb_path)
 	var user_p := RuntimeAssets.model_scene_user_path(glb_path)
 	var saved_path := ""
@@ -760,8 +839,8 @@ func _geoset_vis_json_path(glb_path: String) -> String:
 
 
 ## 索引 geoset 显隐目标：gi → Array[Node]
-## - 旧：MeshInstance3D 名 `Geoset_N`
-## - C-3 拆分后：BoneAttachment3D 名 `Geoset_N_Group_M`（对 BA 设 visible，子 Mesh 一并隐）
+## - 默认：MeshInstance3D 名 `Geoset_N`（SkinMeshes 桶）
+## - 可选拆组：BoneAttachment3D 名 `Geoset_N_Group_M` 或 `BA_Geoset_N_Group_M`
 func _index_geoset_meshes(root: Node) -> Dictionary:
 	var out: Dictionary = {}
 	var stack: Array[Node] = [root]
@@ -769,7 +848,7 @@ func _index_geoset_meshes(root: Node) -> Dictionary:
 		var n: Node = stack.pop_back()
 		for c in n.get_children():
 			stack.append(c)
-		var nm := str(n.name)
+		var nm := _strip_ba_geoset_prefix(str(n.name))
 		if not nm.begins_with("Geoset_"):
 			continue
 		var rest := nm.substr("Geoset_".length())
@@ -794,6 +873,12 @@ func _index_geoset_meshes(root: Node) -> Dictionary:
 	return out
 
 
+func _strip_ba_geoset_prefix(nm: String) -> String:
+	if nm.begins_with("BA_"):
+		return nm.substr(3)
+	return nm
+
+
 func _remove_geoset_visible_tracks(anim: Animation) -> void:
 	for i in range(anim.get_track_count() - 1, -1, -1):
 		var p := str(anim.track_get_path(i))
@@ -805,13 +890,14 @@ func _remove_geoset_visible_tracks(anim: Animation) -> void:
 ## 把 replaceable 队伍色占位贴图换成 TeamColorXX（对齐 WE / HiveWE 预览染色）。
 ## color_index: 0..15（TeamColor 序号）。中立建筑常由 unitUI.teamColor 固定为 0（红），
 ## 与地图 owner（如 15 Neutral Passive）无关。
-## hide_team_glow：隐藏 Team Glow（ReplaceableId=2）大面片——转换后常被画成实心色块。
-## 同时隐藏预览不该出现的 UberSplat / Death 烟雾 / Portrait BackGround geoset。
+## hide_team_glow：兼容旧调用；有正确 TeamGlow 贴图后默认不再隐藏英雄光晕。
+## 仍隐藏预览不该出现的 UberSplat / Death 烟雾 / Portrait BackGround geoset。
 ##
 ## 两类 _rep1：
 ## - 纯队色占位：整面换成 TeamColorXX（步兵肩甲等）
 ## - 队色垫底（建筑旗帜等）：漫反射 alpha 下透队伍色 → ShaderMaterial
-func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = true) -> void:
+## _rep2 Team Glow：保留 TeamGlow 软圆贴图，用队伍色乘 albedo（Additive）。
+func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = false) -> void:
 	if root == null:
 		return
 	var idx := clampi(color_index, 0, 15)
@@ -833,8 +919,7 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = t
 		if _should_hide_preview_mesh(mi):
 			mi.visible = false
 			continue
-		# Team Glow：整 mesh 只有 team_color 占位，且比身体 geoset 大得多 → 隐藏
-		# （圣骑士 Geoset_2 = ReplaceableId=2 Additive，被当成实心红面片）
+		# 旧资源：纯队色占位被误当成 glow 的大面片 → 仍可隐藏
 		if hide_team_glow and _is_exclusive_team_color_mesh(mi) and _looks_like_team_glow(mi, body_aabb):
 			mi.visible = false
 			continue
@@ -854,17 +939,29 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = t
 						sh_out.set_shader_parameter("use_team_texture", false)
 					sh_out.set_shader_parameter("team_color_fallback", fallback)
 					mi.set_surface_override_material(si, sh_out)
+				elif _is_team_glow_shader(shm):
+					if not bool(mi.get_meta(META_GLOW_PRESENTED, false)):
+						# 旧 bake：整片 glow shader，尚未拆脚底/杖尖
+						var fake := StandardMaterial3D.new()
+						fake.albedo_texture = shm.get_shader_parameter("glow_tex") as Texture2D
+						fake.resource_name = "Material_fm3_rep2"
+						_present_team_glow_mesh(mi, fake, fallback, root)
+					else:
+						var glow_out := shm.duplicate() as ShaderMaterial
+						glow_out.set_shader_parameter(
+							"team_color", Color(fallback.r, fallback.g, fallback.b, 1.0)
+						)
+						mi.set_surface_override_material(si, glow_out)
 				continue
 			if not (mat is StandardMaterial3D):
 				continue
 			var sm := mat as StandardMaterial3D
+			if _is_team_glow_material(sm):
+				# 脚底贴地 + 杖尖 billboard（平行面片无法糊成球）
+				_present_team_glow_mesh(mi, sm, fallback, root)
+				break
 			if not _is_team_color_material(sm):
 				continue
-			# Additive glow 材质：即使未隐藏也不要铺成实心 TeamColor
-			var mat_key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
-			if mat_key.contains("_fm3") or mat_key.contains("_fm4") or sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
-				mi.visible = false
-				break
 			if _is_team_color_underlay_material(sm):
 				mi.set_surface_override_material(si, _make_team_color_underlay(sm, tex, fallback))
 			elif tex != null:
@@ -872,6 +969,7 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = t
 				out.albedo_texture = tex
 				out.albedo_color = Color.WHITE
 				mi.set_surface_override_material(si, out)
+	_recolor_team_glow_billboards(root, fallback)
 
 
 ## 双层队色垫底：材质名 _rep1 且漫反射不是纯占位 team_color。
@@ -917,6 +1015,13 @@ func _is_team_color_underlay_shader(mat: ShaderMaterial) -> bool:
 		return false
 	var p := str(mat.shader.resource_path).replace("\\", "/").to_lower()
 	return p.contains("wc3_team_color_underlay")
+
+
+func _is_team_glow_shader(mat: ShaderMaterial) -> bool:
+	if mat == null or mat.shader == null:
+		return false
+	var p := str(mat.shader.resource_path).replace("\\", "/").to_lower()
+	return p.contains("wc3_team_glow")
 
 
 func _is_exclusive_team_color_mesh(mi: MeshInstance3D) -> bool:
@@ -1057,13 +1162,356 @@ func _should_hide_preview_mesh(mi: MeshInstance3D) -> bool:
 			or blob.contains("background")
 			or blob.contains("back_ground")
 		):
-			return true		# 模型内嵌 Textures\Shadow.blp（地精商店脚底实心黑盘等）；真正建筑阴影走 unitUI.buildingShadow
+			return true
+		# 模型内嵌 Textures\Shadow.blp（地精商店脚底实心黑盘等）；真正建筑阴影走 unitUI.buildingShadow
 		if _is_embedded_blob_shadow_tex(tex, blob):
 			return true
-		# Team Glow（_rep2 / team_glow 占位）：英雄光环/武器光晕，Stand 下应隐藏
-		if blob.contains("team_glow") or blob.contains("_rep2"):
-			return true
+		# Team Glow（_rep2）保留显示：法杖/脚底英雄光晕
 	return false
+
+
+## ReplaceableId=2 / TeamGlow 软圆光晕材质。
+func _is_team_glow_material(sm: StandardMaterial3D) -> bool:
+	if sm == null:
+		return false
+	var key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
+	if key.contains("_rep2") or key.contains("team_glow"):
+		return true
+	var tex: Texture2D = sm.albedo_texture
+	if tex == null:
+		return false
+	var p := str(tex.resource_path).replace("\\", "/").to_lower()
+	var n := str(tex.resource_name).to_lower()
+	return p.contains("team_glow") or n.contains("team_glow") or p.contains("/teamglow/")
+
+
+func _make_team_glow_shader_material(
+	glow_tex: Texture2D, team_color: Color, intensity: float, billboard: bool
+) -> ShaderMaterial:
+	var sh: Shader = load("res://assets/shaders/wc3_team_glow.gdshader") as Shader
+	var out := ShaderMaterial.new()
+	out.shader = sh
+	out.set_shader_parameter("glow_tex", glow_tex)
+	out.set_shader_parameter(
+		"team_color", Color(team_color.r, team_color.g, team_color.b, 1.0)
+	)
+	out.set_shader_parameter("intensity", intensity)
+	out.set_shader_parameter("use_billboard", billboard)
+	out.resource_local_to_scene = true
+	return out
+
+
+## 脚底 TeamGlow：贴地软圆（Additive + 贴图 RGB 软边）。
+func _make_team_glow_material(src: StandardMaterial3D, team_color: Color) -> ShaderMaterial:
+	return _make_team_glow_shader_material(src.albedo_texture, team_color, 2.4, false)
+
+
+## 杖尖：同一 shader，允许 albedo>1；billboard 在 vertex 里做。
+func _make_team_glow_billboard_material(glow_tex: Texture2D, team_color: Color) -> ShaderMaterial:
+	return _make_team_glow_shader_material(glow_tex, team_color, 3.6, true)
+
+
+const META_GLOW_PRESENTED := "wc3_team_glow_presented"
+const META_GLOW_BILLBOARD := "wc3_team_glow_billboard"
+## 三角法线 |Y| 大于此值 → 脚底贴地盘；其余视为杖尖/武器平行面片。
+const TEAM_GLOW_FOOT_NY := 0.65
+
+
+## 把 Team Glow geoset 拆成：脚底贴地网格 + 杖尖 billboard。
+## MDX 杖尖是多张平行四边形，斜看必露卡片；billboard 软圆才像球形光晕。
+func _present_team_glow_mesh(
+	mi: MeshInstance3D, src_mat: StandardMaterial3D, team_color: Color, root: Node
+) -> void:
+	if mi == null or src_mat == null:
+		return
+	if bool(mi.get_meta(META_GLOW_PRESENTED, false)):
+		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
+		return
+	var glow_tex: Texture2D = src_mat.albedo_texture
+	var split := _split_team_glow_by_normal(mi.mesh)
+	var foot_mesh: ArrayMesh = split.get("foot", null) as ArrayMesh
+	var tip_aabb: AABB = split.get("tip_aabb", AABB()) as AABB
+	var has_tip: bool = bool(split.get("has_tip", false))
+	if foot_mesh != null and foot_mesh.get_surface_count() > 0:
+		mi.mesh = foot_mesh
+		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
+	else:
+		# 无脚底盘：整片改 billboard 软圆（少见）
+		mi.visible = false
+	mi.set_meta(META_GLOW_PRESENTED, true)
+	if not has_tip or tip_aabb.size.length() < 1e-4:
+		return
+	var host := _resolve_team_glow_tip_host(root, mi)
+	if host == null:
+		# 找不到挂点：把平行面片挂成 billboard MeshInstance（整簇朝向相机叠成一团）
+		host = mi.get_parent()
+		if host == null:
+			return
+		var tip_mesh: ArrayMesh = split.get("tip", null) as ArrayMesh
+		if tip_mesh == null:
+			return
+		var tip_mi := MeshInstance3D.new()
+		tip_mi.name = str(mi.name) + "_GlowBillboard"
+		tip_mi.mesh = tip_mesh
+		tip_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tip_mi.set_meta(META_GLOW_BILLBOARD, true)
+		tip_mi.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
+		host.add_child(tip_mi)
+		tip_mi.owner = root
+		return
+	# 杖尖：单张软圆，尺寸取 tip AABB 对角线的一部分
+	var side := maxf(12.0, tip_aabb.size.length() * 0.55)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(side, side)
+	var tip_bb := MeshInstance3D.new()
+	tip_bb.name = "TeamGlowBillboard"
+	tip_bb.mesh = quad
+	tip_bb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	tip_bb.set_meta(META_GLOW_BILLBOARD, true)
+	tip_bb.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
+	var tip := host.get_node_or_null("Tip") as Node3D
+	if tip != null:
+		# 与 Tip 同一世界位：挂到 Tip 下，局部 Transform 单位阵
+		tip.add_child(tip_bb)
+		tip_bb.owner = root
+		tip_bb.transform = Transform3D.IDENTITY
+	else:
+		host.add_child(tip_bb)
+		tip_bb.owner = root
+		tip_bb.position = _team_glow_tip_local_offset(host, tip_aabb, root)
+
+
+## BoneAttachment 跟骨原点；杖尖在 pivot_delta / tip AABB。
+func _team_glow_tip_local_offset(host: Node3D, tip_aabb: AABB, root: Node) -> Vector3:
+	if host == null:
+		return tip_aabb.get_center()
+	if host.has_meta("wc3_pivot_delta"):
+		var d: Variant = host.get_meta("wc3_pivot_delta")
+		if d is Vector3:
+			return d as Vector3
+	var tip_node := host.get_node_or_null("Tip") as Node3D
+	if tip_node != null and tip_node.position != Vector3.ZERO:
+		return tip_node.position
+	var center := tip_aabb.get_center()
+	if not (host is BoneAttachment3D):
+		return center
+	var ba := host as BoneAttachment3D
+	var skeleton: Skeleton3D = null
+	if ba.use_external_skeleton:
+		var sk_path: NodePath = ba.external_skeleton
+		if not sk_path.is_empty():
+			skeleton = ba.get_node_or_null(sk_path) as Skeleton3D
+	else:
+		skeleton = ba.get_parent() as Skeleton3D
+	if skeleton == null and root != null:
+		for c in root.find_children("*", "Skeleton3D", true, false):
+			if c is Skeleton3D:
+				skeleton = c as Skeleton3D
+				break
+	if skeleton == null:
+		return center
+	var bi := skeleton.find_bone(ba.bone_name)
+	if bi < 0:
+		return center
+	var bone_rest: Transform3D = skeleton.get_bone_global_rest(bi)
+	return bone_rest.affine_inverse() * center
+
+
+func _recolor_team_glow_billboards(root: Node, team_color: Color) -> void:
+	if root == null:
+		return
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or not bool(mi.get_meta(META_GLOW_BILLBOARD, false)):
+			continue
+		var mat: Material = mi.get_active_material(0)
+		var glow_tex: Texture2D = null
+		if mat is StandardMaterial3D:
+			glow_tex = (mat as StandardMaterial3D).albedo_texture
+		elif mat is ShaderMaterial:
+			glow_tex = (mat as ShaderMaterial).get_shader_parameter("glow_tex") as Texture2D
+		if glow_tex == null:
+			glow_tex = RuntimeAssets.load_converted_texture(
+				"ReplaceableTextures/TeamGlow/TeamGlow00.png"
+			)
+		mi.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
+
+
+## 优先：Weapon / Staff / Hand Right 挂点；否则 Skeleton 上 Mage_Staff 等骨。
+func _resolve_team_glow_tip_host(root: Node, glow_mi: MeshInstance3D) -> Node3D:
+	if root == null:
+		return null
+	var prefer := [
+		"attach_weaponref",
+		"attach_weapon",
+		"weaponref",
+		"weapon",
+		"mage_staff",
+		"attach_handrightref",
+		"handrightref",
+	]
+	for n in root.find_children("*", "BoneAttachment3D", true, false):
+		var ba := n as BoneAttachment3D
+		if ba == null:
+			continue
+		var key := str(ba.name).replace(" ", "").replace("-", "").replace("_", "").to_lower()
+		var bone_key := str(ba.bone_name).replace(" ", "").replace("-", "").replace("_", "").to_lower()
+		for p in prefer:
+			if key.contains(str(p)) or bone_key.contains(str(p)):
+				return ba
+	# 按骨名直接建 BoneAttachment
+	var skeleton: Skeleton3D = null
+	for c in root.find_children("*", "Skeleton3D", true, false):
+		if c is Skeleton3D:
+			skeleton = c as Skeleton3D
+			break
+	if skeleton == null:
+		return null
+	for bone_want in ["Mage_Staff", "Weapon", "Bone_Hand_R", "Hand Right"]:
+		var bi := skeleton.find_bone(bone_want)
+		if bi < 0:
+			continue
+		var ba2 := BoneAttachment3D.new()
+		ba2.name = "BA_TeamGlowTip"
+		ba2.bone_name = bone_want
+		ba2.use_external_skeleton = true
+		var pe2 := root.find_child("Pe2Root", true, false)
+		var parent: Node = pe2 if pe2 != null else glow_mi.get_parent()
+		if parent == null:
+			parent = root
+		parent.add_child(ba2)
+		ba2.owner = root
+		ba2.external_skeleton = ba2.get_path_to(skeleton)
+		return ba2
+	return null
+
+
+## 按三角法线拆脚底 / 杖尖；返回 {foot, tip, tip_aabb, has_tip}。
+func _split_team_glow_by_normal(mesh: Mesh) -> Dictionary:
+	var empty := {"foot": null, "tip": null, "tip_aabb": AABB(), "has_tip": false}
+	if mesh == null or not (mesh is ArrayMesh):
+		return empty
+	var am := mesh as ArrayMesh
+	if am.get_surface_count() <= 0:
+		return empty
+	var arrays: Array = am.surface_get_arrays(0)
+	if arrays.is_empty() or arrays[Mesh.ARRAY_VERTEX] == null:
+		return empty
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = (
+		arrays[Mesh.ARRAY_NORMAL]
+		if arrays[Mesh.ARRAY_NORMAL] != null
+		else PackedVector3Array()
+	)
+	var uvs: PackedVector2Array = (
+		arrays[Mesh.ARRAY_TEX_UV]
+		if arrays[Mesh.ARRAY_TEX_UV] != null
+		else PackedVector2Array()
+	)
+	var idx: PackedInt32Array = (
+		arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	)
+	var bones: PackedInt32Array = (
+		arrays[Mesh.ARRAY_BONES] if arrays[Mesh.ARRAY_BONES] != null else PackedInt32Array()
+	)
+	var weights: PackedFloat32Array = (
+		arrays[Mesh.ARRAY_WEIGHTS] if arrays[Mesh.ARRAY_WEIGHTS] != null else PackedFloat32Array()
+	)
+	var tri_count := int((idx.size() if idx.size() > 0 else verts.size()) / 3)
+	var foot_idx := PackedInt32Array()
+	var tip_idx := PackedInt32Array()
+	var tip_aabb := AABB()
+	var tip_has := false
+	for t in range(tri_count):
+		var i0: int
+		var i1: int
+		var i2: int
+		if idx.size() > 0:
+			i0 = idx[t * 3]
+			i1 = idx[t * 3 + 1]
+			i2 = idx[t * 3 + 2]
+		else:
+			i0 = t * 3
+			i1 = t * 3 + 1
+			i2 = t * 3 + 2
+		var nrm: Vector3
+		if norms.size() > i0:
+			nrm = (norms[i0] + norms[i1] + norms[i2]).normalized()
+		else:
+			nrm = (verts[i1] - verts[i0]).cross(verts[i2] - verts[i0]).normalized()
+		var is_foot := absf(nrm.y) >= TEAM_GLOW_FOOT_NY
+		if is_foot:
+			foot_idx.append(i0)
+			foot_idx.append(i1)
+			foot_idx.append(i2)
+		else:
+			tip_idx.append(i0)
+			tip_idx.append(i1)
+			tip_idx.append(i2)
+			for iv in [i0, i1, i2]:
+				if not tip_has:
+					tip_aabb = AABB(verts[iv], Vector3.ZERO)
+					tip_has = true
+				else:
+					tip_aabb = tip_aabb.expand(verts[iv])
+	var foot_mesh := _rebuild_glow_surface(verts, norms, uvs, bones, weights, foot_idx)
+	var tip_mesh := _rebuild_glow_surface(verts, norms, uvs, bones, weights, tip_idx)
+	return {
+		"foot": foot_mesh,
+		"tip": tip_mesh,
+		"tip_aabb": tip_aabb,
+		"has_tip": tip_has and tip_idx.size() > 0,
+	}
+
+
+func _rebuild_glow_surface(
+	verts: PackedVector3Array,
+	norms: PackedVector3Array,
+	uvs: PackedVector2Array,
+	bones: PackedInt32Array,
+	weights: PackedFloat32Array,
+	tri_idx: PackedInt32Array
+) -> ArrayMesh:
+	if tri_idx.is_empty():
+		return null
+	# 紧凑重映射顶点
+	var remap: Dictionary = {}
+	var new_v := PackedVector3Array()
+	var new_n := PackedVector3Array()
+	var new_uv := PackedVector2Array()
+	var new_bones := PackedInt32Array()
+	var new_weights := PackedFloat32Array()
+	var new_idx := PackedInt32Array()
+	var has_skin := bones.size() >= verts.size() * 4 and weights.size() >= verts.size() * 4
+	for i in tri_idx:
+		if not remap.has(i):
+			var ni := new_v.size()
+			remap[i] = ni
+			new_v.append(verts[i])
+			if norms.size() > i:
+				new_n.append(norms[i])
+			if uvs.size() > i:
+				new_uv.append(uvs[i])
+			if has_skin:
+				var b0 := i * 4
+				for k in range(4):
+					new_bones.append(bones[b0 + k])
+					new_weights.append(weights[b0 + k])
+		new_idx.append(int(remap[i]))
+	var out_arrays: Array = []
+	out_arrays.resize(Mesh.ARRAY_MAX)
+	out_arrays[Mesh.ARRAY_VERTEX] = new_v
+	if new_n.size() == new_v.size():
+		out_arrays[Mesh.ARRAY_NORMAL] = new_n
+	if new_uv.size() == new_v.size():
+		out_arrays[Mesh.ARRAY_TEX_UV] = new_uv
+	out_arrays[Mesh.ARRAY_INDEX] = new_idx
+	if has_skin and new_bones.size() == new_v.size() * 4:
+		out_arrays[Mesh.ARRAY_BONES] = new_bones
+		out_arrays[Mesh.ARRAY_WEIGHTS] = new_weights
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out_arrays)
+	return am
 
 
 ## 识别 MDX 内嵌的半透明阴影盘贴图（非 ReplaceableTextures/Shadows 单位阴影）。
@@ -1314,26 +1762,48 @@ func _as_wc3_additive_material(mat: Material) -> Material:
 		return mat
 	var sm := mat as StandardMaterial3D
 	var key := str(sm.resource_name) + " " + str(sm.get_name())
+	var key_l := key.to_lower()
 	var tex: Texture2D = sm.albedo_texture
 	var tex_path := ""
 	if tex != null:
-		tex_path = str(tex.resource_path) + " " + str(tex.resource_name)
+		tex_path = (str(tex.resource_path) + " " + str(tex.resource_name)).to_lower()
+	var is_team_glow := (
+		key_l.contains("_rep2")
+		or key_l.contains("team_glow")
+		or tex_path.contains("team_glow")
+		or tex_path.contains("teamglow")
+		or tex_path.contains("/teamglow/")
+	)
 	var want_add := (
-		key.contains("_fm3")
-		or key.contains("_fm4")
-		or key.contains("_rep2")
-		or tex_path.to_lower().contains("glow")
-		or tex_path.to_lower().contains("team_glow")
+		is_team_glow
+		or key_l.contains("_fm3")
+		or key_l.contains("_fm4")
+		or tex_path.contains("glow")
 	)
 	if not want_add:
 		return mat
-	# 不改共享原型：duplicate 后写入 override
+	# 已是目标态则跳过（避免 instance 时反复 duplicate）
+	var want_alpha := BaseMaterial3D.TRANSPARENCY_ALPHA
+	var want_no_depth := is_team_glow
+	if (
+		sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD
+		and sm.transparency == want_alpha
+		and sm.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED
+		and sm.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_DISABLED
+		and sm.no_depth_test == want_no_depth
+		and sm.cull_mode == BaseMaterial3D.CULL_DISABLED
+	):
+		return mat
 	var out := sm.duplicate() as StandardMaterial3D
 	out.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	out.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	out.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	# 必须开 ALPHA：TeamGlow / 软边 Additive 贴图靠 alpha 藏面片边；
+	# DISABLED 时只会按 RGB 叠加，交叉四边形棱线从斜角非常明显。
+	out.transparency = want_alpha
 	out.cull_mode = BaseMaterial3D.CULL_DISABLED
 	out.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	# 英雄脚底/杖尖 TeamGlow 是多片交叉面：关深度测试减轻片间遮挡棱线
+	out.no_depth_test = want_no_depth
 	return out
 
 

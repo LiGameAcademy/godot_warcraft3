@@ -1,12 +1,8 @@
 extends SceneTree
-## 批量：asset-converted 下非空 *.pe2.json → assets/pe2-prefabs/ 同逻辑路径 *.pe2.tscn。
-## pe2-prefabs 可提交 git；asset-converted（贴图/网格）仍不入库。
+## 已弃用：PE2 由 bake:scn（wc3_scn_pe2.gd）打进 .scn。
+## 保留此脚本仅供调试单独导出 GPUParticles 预制；默认管线不再调用。
 ##
-## 用法:
-##   godot --headless --path . -s res://scripts/tool/export_pe2_scenes.gd
 ##   godot --headless --path . -s res://scripts/tool/export_pe2_scenes.gd -- --include Buildings/Human/ --force
-##
-## 运行时 attach_to 优先实例化 pe2-prefabs；没有则回退动态读 pe2.json。
 
 const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
 

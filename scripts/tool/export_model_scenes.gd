@@ -1,5 +1,5 @@
 extends SceneTree
-## 批量：asset-converted 下 *.gltf/.glb → 同目录 *.scn（最终运行时优先格式）。
+## 批量：asset-converted 下 *.gltf/.glb → 同目录 *.scn（含 PE2 / cameras / collision / animkeys）。
 ## .scn 与模型同属 gitignore 的 asset-converted；免主线程 GLTF 解析。
 ##
 ## 用法:
@@ -9,8 +9,11 @@ extends SceneTree
 ## 通常由 tools/asset-convert（npm run convert）在转完模型后自动调用。
 ## 若环境变量 PIPELINE_LOG 已设，进度/警告/错误会追加到该 Markdown 文档。
 
-# SplitMeshesByGroup 是 class_name，全局可用
-const SplitMeshesByGroupScript := preload("res://scripts/tool/split_meshes_by_group.gd")
+# 五桶归位：Skeleton3D 只留骨头；Geoset 蒙皮网格进 SkinMeshes
+const Wc3ScnRebucketScript := preload("res://scripts/tool/wc3_scn_rebucket.gd")
+const Wc3ScnAnimkeysScript := preload("res://scripts/tool/wc3_scn_animkeys.gd")
+const Wc3ScnPe2Script := preload("res://scripts/tool/wc3_scn_pe2.gd")
+const Wc3ModelSceneScript := preload("res://scripts/map/presentation/wc3_model_scene.gd")
 
 
 func _initialize() -> void:
@@ -110,11 +113,16 @@ func _run() -> void:
 		elif not force and FileAccess.file_exists(disk_scn):
 			var gstat := FileAccess.get_modified_time(disk_glb)
 			var sstat := FileAccess.get_modified_time(disk_scn)
-			if sstat >= gstat:
+			var pe2_stat := _sidecar_mtime(logical_glb, ".pe2.json")
+			var cam_stat := _sidecar_mtime(logical_glb, ".cameras.json")
+			if sstat >= gstat and sstat >= pe2_stat and sstat >= cam_stat:
 				skipped += 1
 				if considered % 50 == 0:
 					_progress_line(considered, exported, skipped, failed)
 				continue
+			# 过期 .scn 必须删掉，否则 instance 会吃旧包、重复拼装
+			DirAccess.remove_absolute(disk_scn)
+			cache.evict(glb_res)
 		# 烤基座时跳过 visuals（避免套娃 / 基座已删时 ExtResource 失败）
 		var root: Node3D = cache.instance_glb_preview(glb_res, false)
 		if root == null:
@@ -127,14 +135,21 @@ func _run() -> void:
 		var att_data := _read_attachments(logical_glb)
 		var proto := cache.get_proto(glb_res)
 		if proto != null:
+			_apply_bone_rest_from_sidecar(proto, logical_glb)
 			if not att_data.is_empty():
-				# C-3: 先按 VertexGroup 拆 mesh（修"小配件位置错乱"），再拼 attachment 节点
-				_split_meshes_by_group(proto, att_data)
 				_assemble_attachments(proto, att_data)
-				# 拆组后原 Geoset_N 节点已删；必须重注 :visible → Geoset_N_Group_*
-				if cache.has_method("reinject_geoset_vis_tracks"):
-					cache.reinject_geoset_vis_tracks(glb_res)
-				# Stand_Work*：腰带斧 hide-scale 会把 AxHandle 上的施工锤一起缩没 → 对齐左手并取消 hide
+			# Skeleton3D 只留骨头；glTF Geoset 蒙皮网格 → SkinMeshes；Attach_* → Attachments
+			var rb: Dictionary = Wc3ScnRebucketScript.apply(proto)
+			_plog(
+				"INFO",
+				"rebucket skins=%s ba=%s skeleton=%s (%s)"
+				% [rb.get("skins", 0), rb.get("attachments", 0), rb.get("skeleton", ""), logical_glb]
+			)
+			# 网格换父后 :visible 轨路径失效，必须按 SkinMeshes/Geoset_N 重注
+			if cache.has_method("reinject_geoset_vis_tracks"):
+				cache.reinject_geoset_vis_tracks(glb_res)
+			if not att_data.is_empty():
+				# Stand_Work*：腰带斧 hide-scale 会把同骨施工锤一起缩没 → 对齐左手并取消 hide
 				var work_fix := _fix_work_tool_anims(proto)
 				if work_fix > 0:
 					_plog("INFO", "fix_work_tool_anims: %d sequences (%s)" % [work_fix, logical_glb])
@@ -142,6 +157,37 @@ func _run() -> void:
 			var cam_n := _inject_mdx_cameras(proto, logical_glb)
 			if cam_n > 0:
 				_plog("INFO", "inject_mdx_cameras: %d (%s)" % [cam_n, logical_glb])
+				var cam_tr := _inject_mdx_camera_tracks(proto, logical_glb)
+				if cam_tr > 0:
+					_plog("INFO", "inject_mdx_camera_tracks: %d (%s)" % [cam_tr, logical_glb])
+			var col_n := _inject_mdx_collision(proto, logical_glb)
+			if col_n > 0:
+				_plog("INFO", "inject_mdx_collision: %d (%s)" % [col_n, logical_glb])
+			# Pe2Root 先就位，再挪 Omni，最后写 :visible——避免 TownHall/Omni01 轨悬空
+			var pe2: Dictionary = Wc3ScnPe2Script.apply(proto, glb_res)
+			if bool(pe2.get("ok", false)) and int(pe2.get("emitters", 0)) > 0:
+				var pe2_msg := (
+					"inject_pe2 emitters=%s tracks=%s (%s)"
+					% [pe2.get("emitters", 0), pe2.get("tracks", 0), logical_glb]
+				)
+				print("  %s" % pe2_msg)
+				_plog("INFO", pe2_msg)
+			var light_n := _reparent_lights_into_pe2(proto)
+			if light_n > 0:
+				_plog("INFO", "reparent_lights_into_pe2: %d (%s)" % [light_n, logical_glb])
+			if not att_data.is_empty():
+				var vis_n := _inject_attachment_visibility(proto, att_data, logical_glb)
+				if vis_n > 0:
+					_plog("INFO", "inject_attachment_visibility: %d tracks (%s)" % [vis_n, logical_glb])
+			var ak: Dictionary = Wc3ScnAnimkeysScript.apply(proto, _read_animkeys(logical_glb))
+			if bool(ak.get("ok", false)) and int(ak.get("sequences", 0)) > 0:
+				_plog(
+					"INFO",
+					"inject_animkeys sequences=%s event_keys=%s (%s)"
+					% [ak.get("sequences", 0), ak.get("event_keys", 0), logical_glb]
+				)
+			_apply_bone_rest_from_sidecar(proto, logical_glb)
+			proto.set_script(Wc3ModelSceneScript)
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
@@ -211,6 +257,25 @@ func _read_cameras(logical_glb: String) -> Dictionary:
 	return _read_json_sidecar(logical_glb, ".cameras.json")
 
 
+func _sidecar_mtime(logical_glb: String, suffix: String) -> int:
+	var side := logical_glb
+	if side.to_lower().ends_with(".gltf"):
+		side = side.substr(0, side.length() - 5) + suffix
+	elif side.to_lower().ends_with(".glb"):
+		side = side.substr(0, side.length() - 4) + suffix
+	else:
+		return 0
+	var disk := RuntimeAssets.project_abs("res://assets/asset-converted/" + side)
+	if not FileAccess.file_exists(disk):
+		return 0
+	return int(FileAccess.get_modified_time(disk))
+
+
+## Godot GLTFDocument 解析 skinned mesh 时丢弃 joint node TRS → Skeleton3D 全 identity rest。
+func _apply_bone_rest_from_sidecar(proto: Node, logical_glb: String) -> void:
+	MapModelCache.apply_bone_rest_sidecar(proto, logical_glb)
+
+
 func _read_json_sidecar(logical_glb: String, suffix: String) -> Dictionary:
 	var side := logical_glb
 	if side.to_lower().ends_with(".gltf"):
@@ -233,9 +298,10 @@ func _read_json_sidecar(logical_glb: String, suffix: String) -> Dictionary:
 	return data
 
 
-## 把 *.cameras.json 写成场景内 Camera3D（current=false）。
-## 注意：HUD 肖像框不再启用这些相机（见 UnitPortraitView._fit_camera），
-## 仅作编辑器预览 / 将来机位参考；坐标与 convert sidecar 一致（已 × MODEL_SCALE）。
+## 把 *.cameras.json 写成场景根上的 Camera3D（current=false）。
+## 必须挂在 proto（scale=1），不能进 0.01 模型根，否则 sidecar 坐标再缩 100×。
+## 休息姿态用 Portrait 位移（bind 是全身远景）；HUD 启用这台相机，AP 播 Portrait*。
+## fov = sidecar fov_y_deg = MDX FieldOfView（弧度）× 180/π，写入 Godot 垂直 FOV。
 func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 	if proto == null:
 		return 0
@@ -253,10 +319,6 @@ func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 	var old_host := proto.get_node_or_null("MdxCameras")
 	if old_host != null:
 		old_host.queue_free()
-	var host := Node3D.new()
-	host.name = "MdxCameras"
-	proto.add_child(host)
-	host.owner = proto
 	var n := 0
 	for item in cams:
 		if typeof(item) != TYPE_DICTIONARY:
@@ -284,23 +346,628 @@ func _inject_mdx_cameras(proto: Node, logical_glb: String) -> int:
 			cam.far = far_v
 		var pos := Vector3(float(pos_a[0]), float(pos_a[1]), float(pos_a[2]))
 		var tgt := Vector3(float(tgt_a[0]), float(tgt_a[1]), float(tgt_a[2]))
-		host.add_child(cam)
+		proto.add_child(cam)
 		cam.owner = proto
 		cam.position = pos
 		if pos.distance_squared_to(tgt) > 1e-8:
 			cam.look_at_from_position(pos, tgt, Vector3.UP)
+		n += 1
+	_apply_portrait_camera_rest(proto, data, logical_glb)
+	return n
+
+
+## 游戏肖像框播 Portrait*：把 Camera Translation/Rotation 写进主 AP。
+## 编辑器 Camera01 预览用 Portrait 机位（bind 是全身远景，和原作框差很多）。
+func _inject_mdx_camera_tracks(proto: Node, logical_glb: String) -> int:
+	var ap := _find_animation_player(proto)
+	if ap == null:
+		return 0
+	var anim_root: Node = ap.get_node_or_null(ap.root_node)
+	if anim_root == null:
+		anim_root = ap.get_parent()
+	if anim_root == null:
+		return 0
+	var data := _read_cameras(logical_glb)
+	var cams_v: Variant = data.get("cameras", [])
+	if typeof(cams_v) != TYPE_ARRAY:
+		return 0
+	var sequences: Array = _read_animkeys(logical_glb).get("sequences", [])
+	if sequences.is_empty():
+		return 0
+	var n := 0
+	for item in cams_v as Array:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		var cname := str(d.get("name", "")).strip_edges()
+		var cam: Camera3D = proto.find_child(cname, true, false) as Camera3D
+		if cam == null:
+			continue
+		var rel := anim_root.get_path_to(cam)
+		if str(rel).is_empty() or str(rel) == ".":
+			continue
+		for seq_v in sequences:
+			if typeof(seq_v) != TYPE_DICTIONARY:
+				continue
+			var seq: Dictionary = seq_v
+			var resolved := _resolve_ap_anim(ap, str(seq.get("name", "")).strip_edges())
+			if resolved.is_empty():
+				continue
+			var anim := ap.get_animation(resolved)
+			if anim == null:
+				continue
+			var interval: Variant = seq.get("interval", [])
+			if typeof(interval) != TYPE_ARRAY or (interval as Array).size() < 2:
+				continue
+			var start_ms := float((interval as Array)[0])
+			var end_ms := float((interval as Array)[1])
+			if end_ms <= start_ms:
+				continue
+			n += _write_camera_clip_tracks(anim, rel, d, start_ms, end_ms, anim.length)
+	return n
+
+
+func _write_camera_clip_tracks(
+	anim: Animation, cam_rel: NodePath, d: Dictionary, start_ms: float, end_ms: float, anim_len: float
+) -> int:
+	var frames: Dictionary = {start_ms: true}
+	for track_name in ["translation", "rotation", "target_translation"]:
+		var keys := _cam_track_keys(d.get(track_name, null))
+		for k in keys:
+			var fr := float(k.get("frame", 0.0))
+			if fr >= start_ms and fr <= end_ms:
+				frames[fr] = true
+	var ordered: Array = frames.keys()
+	ordered.sort()
+	_remove_tracks_of_type(anim, cam_rel, Animation.TYPE_POSITION_3D)
+	_remove_tracks_of_type(anim, cam_rel, Animation.TYPE_ROTATION_3D)
+	var pi := anim.add_track(Animation.TYPE_POSITION_3D)
+	anim.track_set_path(pi, cam_rel)
+	var ri := anim.add_track(Animation.TYPE_ROTATION_3D)
+	anim.track_set_path(ri, cam_rel)
+	for fr_v in ordered:
+		var fr := float(fr_v)
+		var pose := _camera_pose_at(d, fr, start_ms, end_ms)
+		var t := (fr - start_ms) / 1000.0
+		if anim_len > 0.0:
+			t = clampf(t, 0.0, anim_len)
+		anim.track_insert_key(pi, t, pose["pos"])
+		anim.track_insert_key(ri, t, pose["rot"])
+	return 2
+
+
+func _remove_tracks_of_type(anim: Animation, track_path: NodePath, ttype: int) -> void:
+	var want := str(track_path)
+	for i in range(anim.get_track_count() - 1, -1, -1):
+		if anim.track_get_type(i) != ttype:
+			continue
+		if str(anim.track_get_path(i)) == want:
+			anim.remove_track(i)
+
+
+func _cam_track_keys(raw: Variant) -> Array:
+	if typeof(raw) != TYPE_DICTIONARY:
+		return []
+	var keys_v: Variant = (raw as Dictionary).get("keys", [])
+	if typeof(keys_v) != TYPE_ARRAY:
+		return []
+	var out: Array = []
+	for k in keys_v as Array:
+		if typeof(k) == TYPE_DICTIONARY:
+			out.append(k)
+	out.sort_custom(func(a, b): return float((a as Dictionary).get("frame", 0.0)) < float((b as Dictionary).get("frame", 0.0)))
+	return out
+
+
+func _camera_pose_at(d: Dictionary, frame_ms: float, start_ms: float, end_ms: float) -> Dictionary:
+	var pos := _vec3_from_json(d.get("position", []))
+	var tgt := _vec3_from_json(d.get("target", []))
+	pos += _sample_cam_vec3(d.get("translation", null), frame_ms, start_ms, end_ms, Vector3.ZERO)
+	tgt += _sample_cam_vec3(d.get("target_translation", null), frame_ms, start_ms, end_ms, Vector3.ZERO)
+	var roll := _sample_cam_float(d.get("rotation", null), frame_ms, start_ms, end_ms, 0.0)
+	var xf := Transform3D(Basis.IDENTITY, pos)
+	if pos.distance_squared_to(tgt) > 1e-8:
+		xf = xf.looking_at(tgt, Vector3.UP)
+	if absf(roll) > 1e-6:
+		xf.basis = xf.basis.rotated(xf.basis.z, roll)
+	return {"pos": xf.origin, "rot": xf.basis.get_rotation_quaternion()}
+
+
+func _sample_cam_vec3(raw: Variant, frame_ms: float, start_ms: float, end_ms: float, fallback: Vector3) -> Vector3:
+	var keys := _cam_track_keys(raw)
+	if keys.is_empty():
+		return fallback
+	var best: Variant = null
+	for k in keys:
+		var fr := float((k as Dictionary).get("frame", 0.0))
+		if fr < start_ms:
+			best = k
+			continue
+		if fr > end_ms:
+			break
+		if fr <= frame_ms:
+			best = k
+		else:
+			break
+	if best == null:
+		return fallback
+	return _vec3_from_json((best as Dictionary).get("vector", []))
+
+
+func _sample_cam_float(raw: Variant, frame_ms: float, start_ms: float, end_ms: float, fallback: float) -> float:
+	var keys := _cam_track_keys(raw)
+	if keys.is_empty():
+		return fallback
+	var best: Variant = null
+	for k in keys:
+		var fr := float((k as Dictionary).get("frame", 0.0))
+		if fr < start_ms:
+			best = k
+			continue
+		if fr > end_ms:
+			break
+		if fr <= frame_ms:
+			best = k
+		else:
+			break
+	if best == null:
+		return fallback
+	var vec_v: Variant = (best as Dictionary).get("vector", [])
+	if typeof(vec_v) == TYPE_ARRAY and (vec_v as Array).size() > 0:
+		return float((vec_v as Array)[0])
+	return fallback
+
+
+func _apply_portrait_camera_rest(proto: Node, data: Dictionary, logical_glb: String = "") -> void:
+	var cams_v: Variant = data.get("cameras", [])
+	if typeof(cams_v) != TYPE_ARRAY:
+		return
+	var iv := _portrait_interval(_read_animkeys(logical_glb).get("sequences", []))
+	for item in cams_v as Array:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		var cname := str(d.get("name", "")).strip_edges()
+		var cam: Camera3D = proto.find_child(cname, true, false) as Camera3D
+		if cam == null:
+			continue
+		var start_ms := iv.x
+		var end_ms := iv.y
+		if end_ms <= start_ms:
+			var trans_keys := _cam_track_keys(d.get("translation", null))
+			for k in trans_keys:
+				var fr := float((k as Dictionary).get("frame", 0.0))
+				if fr > 1000.0:
+					start_ms = fr
+					end_ms = fr + 1.0
+					break
+		if end_ms <= start_ms:
+			continue
+		var pose := _camera_pose_at(d, start_ms, start_ms, end_ms)
+		cam.position = pose["pos"] as Vector3
+		cam.quaternion = pose["rot"] as Quaternion
+
+
+func _portrait_interval(sequences: Array) -> Vector2:
+	var fallback := Vector2(-1.0, -1.0)
+	for seq_v in sequences:
+		if typeof(seq_v) != TYPE_DICTIONARY:
+			continue
+		var seq: Dictionary = seq_v
+		var nm := str(seq.get("mdx_name", seq.get("name", ""))).strip_edges().to_lower()
+		if not nm.begins_with("portrait"):
+			continue
+		var interval: Variant = seq.get("interval", [])
+		if typeof(interval) != TYPE_ARRAY or (interval as Array).size() < 2:
+			continue
+		var start_ms := float((interval as Array)[0])
+		var end_ms := float((interval as Array)[1])
+		if end_ms <= start_ms:
+			continue
+		if not nm.contains("upgrade"):
+			return Vector2(start_ms, end_ms)
+		if fallback.x < 0.0:
+			fallback = Vector2(start_ms, end_ms)
+	return fallback
+
+
+func _read_collision(logical_glb: String) -> Dictionary:
+	return _read_json_sidecar(logical_glb, ".collision.json")
+
+
+func _read_animkeys(logical_glb: String) -> Dictionary:
+	return _read_json_sidecar(logical_glb, ".animkeys.json")
+
+
+func _vec3_from_json(v: Variant) -> Vector3:
+	if typeof(v) != TYPE_ARRAY:
+		return Vector3.ZERO
+	var a: Array = v
+	if a.size() < 3:
+		return Vector3.ZERO
+	return Vector3(float(a[0]), float(a[1]), float(a[2]))
+
+
+## attachments.pivot 已 ×0.01（米）。IBM=I 时蒙皮是 bone_global * v_model，
+## Tip 局部必须等于 Pivot 厘米，才能跟网格杖尖一起转；勿用 inv(bind)*P。
+func _bone_local_from_model_pivot(_skeleton: Skeleton3D, _bone_idx: int, pivot_m: Vector3) -> Vector3:
+	return pivot_m / 0.01
+
+
+## *.collision.json → Area3D + CollisionShape3D（layer/mask=0，不参与玩法碰撞）。
+## 坐标与 cameras.json 相同：已 Y-up × MODEL_SCALE，挂在 proto 根下。
+func _inject_mdx_collision(proto: Node, logical_glb: String) -> int:
+	if proto == null:
+		return 0
+	var data := _read_collision(logical_glb)
+	var shapes_v: Variant = data.get("shapes", [])
+	if typeof(shapes_v) != TYPE_ARRAY:
+		return 0
+	var shapes: Array = shapes_v
+	for c in proto.find_children("*", "CollisionObject3D", true, false):
+		var obj := c as CollisionObject3D
+		if obj != null and bool(obj.get_meta("wc3_mdx_collision", false)):
+			obj.queue_free()
+	var old_host := proto.get_node_or_null("MdxCollision")
+	if old_host != null:
+		old_host.queue_free()
+	if shapes.is_empty():
+		return 0
+	var host := Node3D.new()
+	host.name = "MdxCollision"
+	proto.add_child(host)
+	host.owner = proto
+	var n := 0
+	for item in shapes:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		var area := Area3D.new()
+		var cname := str(d.get("name", "Collision%02d" % (n + 1))).strip_edges()
+		area.name = cname if not cname.is_empty() else ("Collision%02d" % (n + 1))
+		area.monitoring = false
+		area.monitorable = false
+		area.collision_layer = 0
+		area.collision_mask = 0
+		area.set_meta("wc3_mdx_collision", true)
+		var shape_id := int(d.get("shape", -1))
+		var cs := CollisionShape3D.new()
+		cs.name = "Shape"
+		if shape_id == 2:
+			var sphere := SphereShape3D.new()
+			sphere.radius = maxf(0.001, float(d.get("radius", 0.0)))
+			cs.shape = sphere
+			var center_v: Variant = d.get("center", null)
+			if typeof(center_v) == TYPE_ARRAY:
+				area.position = _vec3_from_json(center_v)
+			else:
+				var verts_v: Variant = d.get("vertices", [])
+				if typeof(verts_v) == TYPE_ARRAY and (verts_v as Array).size() > 0:
+					area.position = _vec3_from_json((verts_v as Array)[0])
+		elif shape_id == 0:
+			var mn := _vec3_from_json(d.get("min", []))
+			var mx := _vec3_from_json(d.get("max", []))
+			var box := BoxShape3D.new()
+			box.size = (mx - mn).abs()
+			cs.shape = box
+			area.position = (mn + mx) * 0.5
+		else:
+			continue
+		host.add_child(area)
+		area.owner = proto
+		area.add_child(cs)
+		cs.owner = proto
 		n += 1
 	if n == 0:
 		host.queue_free()
 	return n
 
 
-## C-3: 按 VertexGroup 拆 geoset mesh（实现抽到 scripts/tool/split_meshes_by_group.gd）
-func _split_meshes_by_group(proto: Node, att_data: Dictionary) -> int:
-	var n: int = SplitMeshesByGroupScript.split(proto, att_data)
-	if n > 0:
-		_plog("INFO", "split_meshes_by_group: groups=%d" % n)
+func _apply_attachment_pivot(node: Node3D, item: Dictionary) -> void:
+	var pivot := _vec3_from_json(item.get("pivot", []))
+	if pivot != Vector3.ZERO:
+		node.position = pivot
+
+
+func _make_mdx_omni(item: Dictionary) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	var node_name := str(item.get("name", "Omni")).strip_edges()
+	light.name = node_name if not node_name.is_empty() else "Omni"
+	light.set_meta("wc3_mdx_attachment", true)
+	light.shadow_enabled = false
+	light.visible = bool(item.get("visibility_default", false))
+	var col := _vec3_from_json(item.get("color", [1, 1, 1]))
+	light.light_color = Color(col.x, col.y, col.z)
+	var intensity := maxf(0.0, float(item.get("intensity", 1.0)))
+	light.light_energy = maxf(0.5, intensity * 0.25)
+	var att_end := maxf(0.25, float(item.get("attenuation_end", 2.0)))
+	light.omni_range = att_end
+	return light
+
+
+## WC3 网格 unshaded，OmniLight 照不亮模型。Death 闪光靠加性球，跟 :visible 轨一起开关。
+func _attach_omni_flash(light: OmniLight3D, item: Dictionary, owner: Node) -> void:
+	if light == null:
+		return
+	var att_end := maxf(0.25, float(item.get("attenuation_end", 2.0)))
+	var intensity := maxf(0.0, float(item.get("intensity", 1.0)))
+	var col := light.light_color
+	var gain := clampf(intensity / 12.0, 0.45, 1.8)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.albedo_color = Color(col.r * gain, col.g * gain, col.b * gain)
+	var sphere := SphereMesh.new()
+	sphere.radius = att_end * 0.35
+	sphere.height = sphere.radius * 2.0
+	sphere.radial_segments = 16
+	sphere.rings = 8
+	sphere.material = mat
+	var flash := MeshInstance3D.new()
+	flash.name = "Flash"
+	flash.mesh = sphere
+	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	flash.set_meta("wc3_omni_flash", true)
+	light.add_child(flash)
+	if owner != null:
+		flash.owner = owner
+
+
+func _attachment_key(name: String) -> String:
+	return name.strip_edges().replace(" ", "").replace("-", "").replace("_", "").to_lower()
+
+
+func _is_origin_or_overhead(name: String) -> bool:
+	var k := _attachment_key(name)
+	return k.begins_with("origin") or k.begins_with("overhead")
+
+
+func _is_sprite_socket(name: String) -> bool:
+	return _attachment_key(name).begins_with("sprite")
+
+
+func _ensure_named_child(parent: Node, child_name: String) -> Node3D:
+	var existing := parent.get_node_or_null(child_name)
+	if existing is Node3D:
+		return existing as Node3D
+	var n := Node3D.new()
+	n.name = child_name
+	parent.add_child(n)
+	n.owner = parent if parent.owner == null else parent.owner
+	if n.owner == null:
+		n.owner = parent
 	return n
+
+
+## 非 MDX 的 Omni（极少）才收进 Pe2Root。MDX Light 挂 proto（scale=1），勿再缩 100×。
+func _reparent_lights_into_pe2(proto: Node) -> int:
+	if proto == null:
+		return 0
+	var lights: Array[OmniLight3D] = []
+	for n in proto.find_children("*", "OmniLight3D", true, false):
+		if n is OmniLight3D and not bool(n.get_meta("wc3_mdx_attachment", false)):
+			lights.append(n as OmniLight3D)
+	if lights.is_empty():
+		return 0
+	var host: Node = proto.find_child(Wc3Pe2Particles.PE2_ROOT_NAME, true, false)
+	if host == null:
+		var model_root: Node3D = proto as Node3D
+		if model_root != null:
+			model_root = Wc3Pe2Particles.resolve_model_root(model_root)
+		if model_root == null:
+			return 0
+		host = Node3D.new()
+		host.name = Wc3Pe2Particles.PE2_ROOT_NAME
+		model_root.add_child(host)
+		host.owner = proto
+	var anim_root := _anim_root_of(proto)
+	var moved := 0
+	for light in lights:
+		if light.get_parent() == host:
+			continue
+		var old_rel := NodePath()
+		if anim_root != null:
+			old_rel = anim_root.get_path_to(light)
+		var old := light.get_parent()
+		if old != null:
+			old.remove_child(light)
+		light.owner = null
+		host.add_child(light)
+		light.owner = proto
+		if anim_root != null and not str(old_rel).is_empty() and str(old_rel) != ".":
+			_rewrite_anim_node_path(proto, old_rel, anim_root.get_path_to(light))
+		moved += 1
+	return moved
+
+
+func _anim_root_of(proto: Node) -> Node:
+	var ap := _find_animation_player(proto)
+	if ap == null:
+		return null
+	var anim_root: Node = ap.get_node_or_null(ap.root_node)
+	if anim_root == null:
+		anim_root = ap.get_parent()
+	return anim_root
+
+
+## 节点换父后，把 Animation 里旧 NodePath 改成新路径（含 :visible 等属性）。
+func _rewrite_anim_node_path(proto: Node, old_rel: NodePath, new_rel: NodePath) -> void:
+	var ap := _find_animation_player(proto)
+	if ap == null or str(old_rel).is_empty() or str(new_rel).is_empty():
+		return
+	if str(old_rel) == str(new_rel):
+		return
+	var old_s := str(old_rel)
+	var new_s := str(new_rel)
+	for anim_name in ap.get_animation_list():
+		var anim := ap.get_animation(anim_name)
+		if anim == null:
+			continue
+		for i in range(anim.get_track_count()):
+			var pstr := str(anim.track_get_path(i))
+			if pstr == old_s:
+				anim.track_set_path(i, new_rel)
+			elif pstr.begins_with(old_s + ":"):
+				anim.track_set_path(i, NodePath(new_s + pstr.substr(old_s.length())))
+
+
+## Attachment Visibility Keys（全局毫秒）→ 各 Sequence 的 `:visible` 轨。
+func _inject_attachment_visibility(proto: Node, att_data: Dictionary, logical_glb: String) -> int:
+	if proto == null or att_data.is_empty():
+		return 0
+	var att_list: Array = att_data.get("attachments", [])
+	if att_list.is_empty():
+		return 0
+	var ap := _find_animation_player(proto)
+	if ap == null:
+		return 0
+	var anim_root: Node = ap.get_node_or_null(ap.root_node)
+	if anim_root == null:
+		anim_root = ap.get_parent()
+	if anim_root == null:
+		return 0
+	var sequences: Array = _read_animkeys(logical_glb).get("sequences", [])
+	if sequences.is_empty():
+		return 0
+	var nodes_by_name: Dictionary = {}
+	for c in proto.find_children("*", "Node3D", true, false):
+		if not (c is Node3D) or not bool(c.get_meta("wc3_mdx_attachment", false)):
+			continue
+		var nm := str(c.name)
+		nodes_by_name[nm] = c
+		if nm.begins_with("Attach_"):
+			nodes_by_name[nm.substr("Attach_".length())] = c
+	if nodes_by_name.is_empty():
+		return 0
+	var injected := 0
+	for item in att_list:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		var node_name := str(d.get("name", "")).strip_edges()
+		if node_name.is_empty() or not nodes_by_name.has(node_name):
+			continue
+		var target: Node3D = nodes_by_name[node_name]
+		var default_on := bool(d.get("visibility_default", true))
+		var keys := _attachment_vis_keys(d.get("visibility", null))
+		# 无 KATV：不要写 :visible=false（旧 sidecar 把 Flags 0x4 误当成隐藏，攻击会藏掉杖尖）
+		if keys.is_empty():
+			continue
+		var rel := anim_root.get_path_to(target)
+		if str(rel).is_empty() or str(rel) == ".":
+			continue
+		var track_path := NodePath("%s:visible" % str(rel))
+		for seq_v in sequences:
+			if typeof(seq_v) != TYPE_DICTIONARY:
+				continue
+			var seq: Dictionary = seq_v
+			var anim_name := str(seq.get("name", "")).strip_edges()
+			if anim_name.is_empty():
+				continue
+			var resolved := _resolve_ap_anim(ap, anim_name)
+			if resolved.is_empty():
+				continue
+			var anim := ap.get_animation(resolved)
+			if anim == null:
+				continue
+			var interval: Variant = seq.get("interval", [])
+			if typeof(interval) != TYPE_ARRAY or (interval as Array).size() < 2:
+				continue
+			var start_f := float((interval as Array)[0])
+			var end_f := float((interval as Array)[1])
+			if end_f <= start_f:
+				continue
+			var sampled := _sample_vis_in_sequence(keys, start_f, end_f, default_on)
+			if sampled.is_empty():
+				continue
+			_remove_track_with_path(anim, track_path)
+			var ti := anim.add_track(Animation.TYPE_VALUE)
+			anim.track_set_path(ti, track_path)
+			anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
+			anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
+			for kv in sampled:
+				anim.track_insert_key(ti, float(kv.t), bool(kv.v))
+			injected += 1
+	return injected
+
+
+func _resolve_ap_anim(ap: AnimationPlayer, anim_name: String) -> String:
+	if ap == null or anim_name.is_empty():
+		return ""
+	if ap.has_animation(anim_name):
+		return anim_name
+	var want := _anim_leaf_name(anim_name).to_lower()
+	var want_c := AnimPlayback.compact_seq_name(anim_name)
+	for n in ap.get_animation_list():
+		var full := str(n)
+		var leaf := _anim_leaf_name(full)
+		if leaf.to_lower() == want:
+			return full
+		if AnimPlayback.compact_seq_name(full) == want_c:
+			return full
+	return ""
+
+
+func _remove_track_with_path(anim: Animation, track_path: NodePath) -> void:
+	var want := str(track_path)
+	for i in range(anim.get_track_count() - 1, -1, -1):
+		if str(anim.track_get_path(i)) == want:
+			anim.remove_track(i)
+
+
+func _attachment_vis_keys(vis_v: Variant) -> Array:
+	var out: Array = []
+	if typeof(vis_v) != TYPE_DICTIONARY:
+		return out
+	var vis: Dictionary = vis_v
+	if vis.has("static"):
+		var sv: Variant = vis.get("static")
+		var val := 1.0
+		if typeof(sv) == TYPE_ARRAY and (sv as Array).size() > 0:
+			val = float((sv as Array)[0])
+		elif typeof(sv) == TYPE_FLOAT or typeof(sv) == TYPE_INT:
+			val = float(sv)
+		out.append({"frame": -1e12, "value": val >= 0.5})
+		return out
+	var keys_v: Variant = vis.get("keys", [])
+	if typeof(keys_v) != TYPE_ARRAY:
+		return out
+	for k in keys_v as Array:
+		if typeof(k) != TYPE_DICTIONARY:
+			continue
+		var kd: Dictionary = k
+		var vec_v: Variant = kd.get("vector", [])
+		var val := 1.0
+		if typeof(vec_v) == TYPE_ARRAY and (vec_v as Array).size() > 0:
+			val = float((vec_v as Array)[0])
+		out.append({"frame": float(kd.get("frame", 0.0)), "value": val >= 0.5})
+	out.sort_custom(func(a, b): return float(a.frame) < float(b.frame))
+	return out
+
+
+func _sample_vis_in_sequence(keys: Array, start_f: float, end_f: float, default_on: bool) -> Array:
+	var start_v := default_on
+	for k in keys:
+		if float(k.frame) <= start_f:
+			start_v = bool(k.value)
+		else:
+			break
+	var sampled: Array = [{"t": 0.0, "v": start_v}]
+	var last := start_v
+	for k in keys:
+		var fr := float(k.frame)
+		if fr <= start_f or fr > end_f:
+			continue
+		var v := bool(k.value)
+		if v == last:
+			continue
+		var t := (fr - start_f) / 1000.0
+		sampled.append({"t": t, "v": v})
+		last = v
+	return sampled
 
 
 ## Stand_Work*：MDX 用 AxHandle01.scale≈0 藏腰带斧，但施工锤同骨 → Godot 里锤消失。
@@ -324,14 +991,9 @@ func _fix_work_tool_anims(proto: Node) -> int:
 
 
 func _has_axhandle_tool_ba(proto: Node) -> bool:
-	for c in proto.find_children("*", "BoneAttachment3D", true, false):
-		var ba := c as BoneAttachment3D
-		if ba == null:
-			continue
-		if ba.bone_name != "AxHandle01":
-			continue
-		var nm := str(ba.name)
-		if nm.begins_with("Geoset_") or nm.contains("Weapon"):
+	for c in proto.find_children("*", "Skeleton3D", true, false):
+		var sk := c as Skeleton3D
+		if sk != null and sk.find_bone("AxHandle01") >= 0:
 			return true
 	return false
 
@@ -433,16 +1095,14 @@ func _copy_track_key_values(anim: Animation, src_track: int, dst_track: int) -> 
 	return true
 
 
-## C-2: 拼装 attachments 到 proto（_scene_cache 里的 Node3D）。
-## - attachments[]：4 类辅助（Attachment / ParticleEmitter2 / Light / RibbonEmitter）
-##   → BoneAttachment3D（绑骨）+ 子节点（MeshInstance3D 占位 / GPUParticles3D / OmniLight3D）
-## - geoset_expansions[]：C-3 在 _split_meshes_by_group 处理（先拆再拼 attachment 节点）
-##
-## 副作用：给 _plog 写拼装统计。owner 设为 proto（不是临时 inst）才能保存到 .scn。
+## C-2: 拼装 attachments 到 proto。
+## particle 不建空壳（Pe2Root 才是真发射器）。
+## sidecar pivot 已 × MODEL_SCALE：Origin / OverHead / SpriteRefs / MDX Light 挂场景根（scale=1）。
+## 骨骼挂点：BoneAttachment 跟骨原点（p-R*p）；Tip = inv(骨全局)×Pivot厘米。
+## Light → OmniLight3D + 加性 Flash（网格 unshaded，纯 Omni 看不见）。
 func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:
 	if proto == null or att_data.is_empty():
 		return
-	# 找 Skeleton3D
 	var skeleton: Skeleton3D = null
 	for c in proto.find_children("*", "Skeleton3D", true, false):
 		if c is Skeleton3D:
@@ -454,56 +1114,69 @@ func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:
 	var att_list: Array = att_data.get("attachments", [])
 	if att_list.is_empty():
 		return
+	var model_root: Node3D = proto as Node3D
+	if model_root != null:
+		model_root = Wc3Pe2Particles.resolve_model_root(model_root)
+	if model_root == null:
+		model_root = proto as Node3D
+	var sprite_host: Node3D = null
 	var placed := 0
 	var skipped := 0
 	for item in att_list:
-		var name: String = str(item.get("name", ""))
-		var type: String = str(item.get("type", ""))
-		var bone: String = str(item.get("bone", ""))
-		if bone.is_empty():
+		if typeof(item) != TYPE_DICTIONARY:
 			skipped += 1
 			continue
-		# 找 bone index
-		var bone_idx := skeleton.find_bone(bone)
-		if bone_idx == -1:
-			# 静默 skip：很多 attachment 的 bone 是 model.Nodes 里的 Helper（Bone_Root/Pelvis/Foot_L 等），
-			# m2g 写 .gltf 时只用 model.Bones 的 mesh-bone，所以 skeleton 里找不到。
-			# 这种 attachment 用 placeholder marker 替代即可（runtime 不影响功能）。
-			# 统计仍在 assemble_attachments placed/skipped 末尾汇总。
+		var d: Dictionary = item
+		var node_name := str(d.get("name", "")).strip_edges()
+		var type: String = str(d.get("type", ""))
+		var bone: String = str(d.get("bone", "")).strip_edges()
+		if node_name.is_empty():
 			skipped += 1
 			continue
-		# BoneAttachment3D
-		var ba := BoneAttachment3D.new()
-		ba.name = name
-		ba.bone_name = bone
-		skeleton.add_child(ba)
-		ba.owner = proto  # 关键：owner = proto（不是临时 inst）才能保存到 .scn
-		# 子节点（按 type）
-		match type:
-			"attachment":
-				# WC3 attachment point：仅占位（后续运行时挂 UI / 血条 / 寻路点）
-				var marker := Node3D.new()
-				marker.name = name + "_marker"
-				ba.add_child(marker)
-				marker.owner = proto
-			"particle":
-				var particles := GPUParticles3D.new()
-				particles.name = name + "_particles"
-				particles.amount = 16
-				ba.add_child(particles)
-				particles.owner = proto
-			"light":
-				var light := OmniLight3D.new()
-				light.name = name + "_light"
-				light.light_color = Color(1.0, 0.8, 0.3)
-				light.light_energy = 1.5
-				ba.add_child(light)
-				light.owner = proto
-			"ribbon":
-				var ribbon := Node3D.new()
-				ribbon.name = name + "_ribbon"
-				ba.add_child(ribbon)
-				ribbon.owner = proto
+		if type == "particle" or type == "ribbon":
+			skipped += 1
+			continue
+		if type == "light":
+			var light := _make_mdx_omni(d)
+			# sidecar pivot 已 × MODEL_SCALE：挂 proto（scale=1），与 Camera / Origin 相同。
+			proto.add_child(light)
+			light.owner = proto
+			_apply_attachment_pivot(light, d)
+			_attach_omni_flash(light, d, proto)
+			placed += 1
+			continue
+		var bone_idx := skeleton.find_bone(bone) if not bone.is_empty() else -1
+		if bone_idx >= 0:
+			var ba := BoneAttachment3D.new()
+			ba.name = node_name
+			ba.bone_name = bone
+			ba.set_meta("wc3_mdx_attachment", true)
+			skeleton.add_child(ba)
+			ba.owner = proto
+			# BA 被骨 pose 覆盖；Pivot 在模型空间厘米，Tip 必须是 inv(骨全局)*P
+			var pivot_m := _vec3_from_json(d.get("pivot", []))
+			var local := _bone_local_from_model_pivot(skeleton, bone_idx, pivot_m)
+			if local != Vector3.ZERO:
+				ba.set_meta("wc3_pivot_delta", local)
+				var tip := Marker3D.new()
+				tip.name = "Tip"
+				tip.position = local
+				ba.add_child(tip)
+				tip.owner = proto
+			placed += 1
+			continue
+		var socket := Marker3D.new()
+		socket.name = node_name
+		socket.set_meta("wc3_mdx_attachment", true)
+		if _is_origin_or_overhead(node_name):
+			proto.add_child(socket)
+		else:
+			if sprite_host == null:
+				sprite_host = _ensure_named_child(proto, "SpriteRefs")
+				sprite_host.owner = proto
+			sprite_host.add_child(socket)
+		socket.owner = proto
+		_apply_attachment_pivot(socket, d)
 		placed += 1
 	_plog("INFO", "assemble_attachments placed=%d skipped=%d skeleton=%s" % [placed, skipped, skeleton.name])
 

@@ -2,8 +2,8 @@
 
 > 副标题：MDX 里的粒子 / 显隐 / 绑骨小件，为什么不能「一键 glTF」完事  
 > 面向：对复刻或管线好奇的读者（非必须读过本仓库）  
-> 工程细节：[ATTACHMENTS_BAKE.md](../design/asset-convert/ATTACHMENTS_BAKE.md) · [tools/asset-convert/README.md](../../tools/asset-convert/README.md) · [ASSET_LANES.md](../architecture/ASSET_LANES.md)  
-> 最后更新：2026-08-14
+> 工程细节：[PE2_GODOT.md](../design/asset-convert/PE2_GODOT.md) · [ATTACHMENTS_BAKE.md](../design/asset-convert/ATTACHMENTS_BAKE.md) · [MDX_SKINNING_GODOT.md](../design/asset-convert/MDX_SKINNING_GODOT.md) · [tools/asset-convert/README.md](../../tools/asset-convert/README.md) · [ASSET_LANES.md](../architecture/ASSET_LANES.md)  
+> 最后更新：2026-08-19
 
 ---
 
