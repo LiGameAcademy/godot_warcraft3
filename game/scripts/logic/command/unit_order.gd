@@ -28,6 +28,7 @@ enum Source {
 	PANEL = 2, 				## 行动面板按钮
 	HOTKEY = 3,				## 快捷键
 	TARGETING = 4, 			## 点选移动模式后的落点
+	UNIT_AI = 5,			## 单位微观 AI（警戒/反击；非 AI 玩家）
 }
 
 var kind: int = Kind.NONE						## 命令类型

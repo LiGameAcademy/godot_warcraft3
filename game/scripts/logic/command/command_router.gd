@@ -187,6 +187,7 @@ func issue_hold(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 		_abort_harvest(node)
 		_abort_build_leave(node)
 		_abort_patrol(node)
+		_yield_unit_ai(node)
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
@@ -262,6 +263,7 @@ func issue_attack_move(
 		_abort_harvest(node)
 		_abort_build_leave(node)
 		_abort_patrol(node)
+		_yield_unit_ai(node)
 		_clear_hold(node)
 		var r := 16.0
 		if _crowd_query != null:
@@ -310,6 +312,7 @@ func issue_attack_target(
 		_abort_harvest(node)
 		_abort_build_leave(node)
 		_abort_patrol(node)
+		_yield_unit_ai(node)
 		_clear_hold(node)
 		node.set_meta("attack_move", false)
 		var order := UnitOrder.attack(target, source)
@@ -383,9 +386,16 @@ func _abort_patrol(node: Node3D) -> void:
 func _abort_attack(node: Node3D) -> void:
 	if node == null:
 		return
+	_yield_unit_ai(node)
 	var ac := node.get_node_or_null("AttackController") as AttackController
 	if ac != null:
 		ac.cancel()
+
+
+func _yield_unit_ai(node: Node3D) -> void:
+	var ai := UnitAI.of(node)
+	if ai != null:
+		ai.yield_to_player()
 
 
 func _clear_hold(node: Node3D) -> void:

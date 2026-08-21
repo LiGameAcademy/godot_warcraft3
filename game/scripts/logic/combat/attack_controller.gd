@@ -54,6 +54,17 @@ func configure(
 func get_state() -> int:
 	return _state
 
+
+## 当前模式（ATTACK / ATTACK_MOVE / HOLD / NONE）。
+func get_mode() -> int:
+	return _mode
+
+
+## 当前攻击目标（无则 null）。
+func get_target() -> Node3D:
+	return _target
+
+
 ## 是否活跃
 func is_active() -> bool:
 	return _active and _state != State.IDLE

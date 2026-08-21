@@ -1,9 +1,62 @@
 # 战斗系统：攻击管线 · 伤害公式 · 开发路线
 
 > 状态：**C0–C3 已接线**（DamagePipeline 骰×表×护甲；Death → Decay Flesh 停留后移除尸体；离场不可选）  
-> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [WORLD_MEMBERSHIP.md](../../architecture/WORLD_MEMBERSHIP.md) · [TREE_INTERACT.md](TREE_INTERACT.md)  
-> 竖切进度：F0–F6 ✅ → C0–C3 战斗 ✅ → F8–F9 顶盾 ✅ → F10 技能  
-> 最后更新：2026-08-18
+> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [WORLD_MEMBERSHIP.md](../../architecture/WORLD_MEMBERSHIP.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · **[UNIT_AI.md](UNIT_AI.md)**（单位级 AI，非 AI 玩家）  
+> 竖切进度：F0–F6 ✅ → C0–C3 战斗 ✅ → F8–F9 顶盾 ✅ → **单位 AI（野怪对抗）** → F10 技能  
+> 最后更新：2026-08-21
+
+---
+
+## 0a. 实现现状（as-built · 2026-08-21）
+
+> 本节描述**仓库里已经跑通的代码**，供单位 AI / 后续技能直接挂钩。设计意图仍以 §0 之后为准。
+
+### 已落地模块
+
+| 模块 | 路径 | 职责 |
+|------|------|------|
+| `AttackController` | `game/scripts/logic/combat/attack_controller.gd` | 订单 FSM：`ATTACK` / `ATTACK_MOVE` / `HOLD`；追击 → WINDUP(dmgpt) → instant 或 missile → COOLDOWN |
+| `CombatQuery` | `…/combat_query.gd` | 敌对 / 合法目标 / 出手射程 vs 交战容差 / acquire 索敌 / weapTp 投送分类 |
+| `DamagePipeline` | `…/damage_pipeline.gd` | 唯一扣血：骰 × 攻防表 × 护甲（pierce 可读顶盾因子）→ `UnitLife` → `DeathService` |
+| `CombatDamageTable` | `game/scripts/data/combat_damage_table.gd` | atk×def 倍率 + 护甲公式 |
+| `CombatRng` | `…/combat_rng.gd` | 可注入 RNG |
+| `DeathService` | `…/death_service.gd` | 清选中、`WorldMembership.exit`、通知同宿主其它 `AttackController` |
+| `ProjectileService` | `…/projectile_service.gd` | Logic 弹道；真 missile 命中后再 Pipeline；instant 远程可 `visual_only` |
+| Present | `combat_projectile_shell` / `damage_float_text` | 只镜像事件；**禁止** `set_life` |
+| 命令入口 | `CommandRouter.issue_attack_*` / Hold / Patrol | 懒挂 `AttackController`；与 Harvest/Build 互斥 abort |
+
+### 运行时接线（`GameDirector`）
+
+```text
+_damage_pipeline.death = _death_service
+_damage_pipeline.damage_applied → DamageFloatText
+_projectile_service.pipeline = _damage_pipeline
+projectile_launched → CombatProjectileShell
+projectile_resolved → AttackController.notify_strike_result
+死亡 → Unit.play_death → Decay 链 → remove_unit_instance
+```
+
+`AttackController` **按需**挂载：玩家下 Attack / Attack-Move / Hold 时 `_ensure_attack_controller`。地图野怪默认**没有**在跑的攻击 FSM。
+
+### 模式语义（已实现）
+
+| Mode | 索敌 | 追击 | 典型入口 |
+|------|------|------|----------|
+| `ATTACK` | 固定目标 | 是 | 右键敌 / A 点单位 |
+| `ATTACK_MOVE` | `find_acquire_target`（`acquire` 半径） | 有目标则追；清场后续走 | A 点地面 |
+| `HOLD` | 仅 `attack_range` 内 | **不**追出射程 | H 键 |
+
+### 仍缺（交给 [UNIT_AI.md](UNIT_AI.md)）
+
+- 野怪 / 闲置单位 **idle 主动索敌**、**受击反击**、营地 leash / 助攻
+- 独立 `OrderArbiter` 薄壳（今日靠 Router 里 `_abort_*`）
+- AI 玩家宏观策略（**明确不做**，见 UNIT_AI 非目标）
+
+### 自测
+
+- `tests/unit/selftest_c_combat_damage.gd`
+- `tests/unit/selftest_c_combat_attack_resolve.gd`
+- `tests/unit/selftest_c_combat_projectile.gd`
 
 ---
 
@@ -33,9 +86,9 @@
 | C2 | 射程 / 冷却 / 面向 / 弹道壳 | 读武器表；近战 instant；远程可先瞬时+朝向 |
 | C3 | 攻防类型 + 伤害 + 死亡 | 骰伤 × 攻防表 × 护甲减伤；HP≤0 离场 |
 
-### 1.2 明确不做（本阶段）
+### 1.2 明确不做（战斗竖切；单位 AI 另文）
 
-- 完整电脑战斗 AI / 自动防守反击（可后置 `Hold` / auto-acquire idle）
+- ~~完整电脑战斗 AI / 自动防守反击~~ → **单位微观 AI** 见 [UNIT_AI.md](UNIT_AI.md)（野怪反击 / idle 索敌）；**AI 玩家**仍不做
 - 溅射 / 弹跳 / 武器槽 2 / 攻城弹道抛物线
 - 魔法抗性细分、护甲升级科技（铁匠 `Rhme`/`Rhar` 后置）
 - 隐身 / 魔法免疫 / 无敌 buff 全表（预留钩子即可）
@@ -232,7 +285,7 @@ WC3 语义对照：引擎核心是 **Order（即时/队列）→ 单位执行器
 | 野怪 / 守卫「主动反击、巡逻、警戒」 | 微观：感知→选目标→Attack Order |
 | **不要**用 BT 替换玩家右键 Attack/Harvest | 玩家输入已是最高优先级 Order |
 
-野怪 P0（本战斗竖切）：**不反击** → 无需 BT。P1 反击：优先「受到伤害 → 对来源发 Attack Order」，仍走 `AttackController`；只有巡逻/多条件警戒再上小型 BT 或简易决策表。
+野怪主动行为已单列 [UNIT_AI.md](UNIT_AI.md)：P0 用决策表发 Attack Order，仍走 `AttackController`；不上 BT。电脑玩家宏观 AI 才考虑 BT。
 
 #### 与动画层关系
 
@@ -300,7 +353,7 @@ RNG：`CombatRng` 接口挂在 Session（`randi_range`）；测试可注入固�
 | 规则 | P0 |
 |------|----|
 | 己方 | 智能右键 / 自动索敌 **不**打友军；**显式 Attack（A 点单位）允许**强制攻击友军 |
-| 中立被动 | 野怪 / 小动物：可被玩家攻击；**不**主动反击（本阶段） |
+| 中立被动 | 野怪 / 小动物：可被玩家攻击；**主动反击 / 警戒** 由 [UNIT_AI.md](UNIT_AI.md) 交付（战斗层只提供敌对判定） |
 | 敌对玩家 | `owner` 不同且非中立玩家槽 → 可互攻 |
 | 建筑 | P0 允许打敌方建筑；金矿 `ngol` **不可**当攻击目标（仍走采集） |
 | 树木 | 不走 Attack Order；伐木保持 Harvest |
@@ -536,15 +589,16 @@ F0–F6 ✅ ──► C0–C3（本文件）──► F8–F9 顶盾 ──► F
 | 2026-08-18 | **C3 落地**：公式 selftest 扩表/负甲；死亡离场仍可见尸体（Death → Decay Flesh 定格） |
 | 2026-08-18 | **尸体移除**：Death → 播完 `Decay Flesh` → `Decay Bone`（用动画片长，不定格）后 Director `remove_unit_instance`；死亡立即释人口 |
 | 2026-08-18 | **命中飘字**：Present `DamageFloatText` 订阅 `damage_applied`，挂受击单位 |
+| 2026-08-21 | **as-built**：补 §0a；野怪反击从「战斗非目标」迁出，由 [UNIT_AI.md](UNIT_AI.md) 交付 |
 
 ---
 
-## 13. 实现前检查清单
+## 13. 维护检查清单
 
-写第一行战斗逻辑前确认：
+改战斗管线或接单位 AI 前确认：
 
-- [ ] 读过本文 §0–§5  
-- [ ] `UnitWeaponsDef` / `UnitBalanceDef.def_type` 能查到 `hfoo`/`ngnom` 等验收单位  
-- [ ] `UnitOrder` / `SmartTarget` 扩 Kind 不破坏现有 Handler 注册  
-- [ ] 死亡走 `WorldMembership`（见 WORLD_MEMBERSHIP.md）  
-- [ ] 新文件落在 `game/scripts/logic/combat/`，并在 PR 说明标注 **Game Logic · combat**
+- [x] C0–C3 已接线（见 §0a）  
+- [ ] 新伤害来源只走 `DamagePipeline.apply`  
+- [ ] Present 弹道 / 飘字不 `set_life`  
+- [ ] 单位自主行为进 `logic/ai/`，不进 Controller 公式  
+- [ ] 死亡走 `WorldMembership`（见 WORLD_MEMBERSHIP.md）

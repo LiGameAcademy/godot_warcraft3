@@ -2,16 +2,17 @@
 
 > 与地图编辑器（`editor/`）对称的**运行时**入口：加载已解析地图、跑对战规则、将来接 WE 触发器。  
 > 默认开发地图：**Echo Isles**（`res://assets/map-parsed/echoisles`）  
-> 最后更新：2026-08-17  
-> **当前主线：C0–C3 战斗框架**（F0–F6 已接线）；契约见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)
+> 最后更新：2026-08-21  
+> **当前主线：单位 AI（野怪对抗）**；战斗 C0–C3 已接线，见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [UNIT_AI.md](UNIT_AI.md)
 
 ## 文档
 
 | 文档 | 内容 |
 |------|------|
 | [ROADMAP.md](ROADMAP.md) | **先读**：对战地图阶段 A→F→E；现阶段**不**急着实现完整触发器 VM |
-| [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) | **人族游玩竖切**：F0–F6 ✅ → **C0–C3 战斗** → F8–F10 |
-| [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) | **战斗系统设计**：Attack / 攻移 / 伤害管线 / 死亡 · C0–C3 契约 |
+| [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) | **人族游玩竖切**：F0–F6 ✅ → C0–C3 战斗 ✅ → **单位 AI** → F8–F10 |
+| [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) | **战斗系统**：Attack / 攻移 / 伤害管线 / 死亡 · C0–C3 契约 + **as-built** |
+| [UNIT_AI.md](UNIT_AI.md) | **单位 AI**：野怪反击 / 警戒索敌（非 AI 玩家）· U0–U3 可执行切片 |
 | [BUILD_SYSTEM.md](BUILD_SYSTEM.md) | **建造系统设计**：四族非对称 · Profile/Strategy · 数据钩子（F2 契约） |
 | [TREE_INTERACT.md](TREE_INTERACT.md) | **可交互树**：MultiMesh promote、扣血统一入口、防闪烁 |
 | [SELECTION_RINGS.md](SELECTION_RINGS.md) | **选中环**：己方绿 / 中立目标黄（金矿·树） |

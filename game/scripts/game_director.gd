@@ -465,6 +465,7 @@ func _on_map_loaded() -> void:
 	_setup_portrait_hud()
 	_setup_health_bars()
 	_wire_all_gold_mines()
+	_wire_all_unit_ai()
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -1794,6 +1795,194 @@ func _ensure_attack_controller(unit: Node3D) -> AttackController:
 	return ac
 
 
+## U0-2：可战斗非建筑单位挂 UnitAI + AttackController；中立 → CAMP_CREEP。
+func _ensure_unit_ai(unit: Node3D) -> UnitAI:
+	if unit == null or not is_instance_valid(unit):
+		return null
+	if not CombatQuery.has_weapon(unit):
+		return null
+	var tid := CombatQuery.type_id_of(unit)
+	if BuildingCatalog.is_building(tid) or BuildingVisual.is_building(tid):
+		return null
+	_ensure_attack_controller(unit)
+	var existing := UnitAI.of(unit)
+	if existing != null:
+		_configure_unit_ai(existing, unit)
+		return existing
+	var ai := UnitAI.new()
+	ai.name = UnitAI.NODE_NAME
+	unit.add_child(ai)
+	_configure_unit_ai(ai, unit)
+	ai.set_profile(UnitAI.default_profile_for(unit))
+	ai.captures_home_from_body()
+	return ai
+
+
+func _configure_unit_ai(ai: UnitAI, unit: Node3D) -> void:
+	if ai == null or unit == null:
+		return
+	ai.configure(
+		func() -> bool: return _unit_ai_is_player_occupied(unit),
+		Callable(self, "_ensure_attack_controller"),
+		Callable(self, "_unit_host")
+	)
+
+
+## 当前订单非 UNIT_AI（且非空闲）→ 视为玩家/系统占用，AI 不得抢。
+func _unit_ai_is_player_occupied(unit: Node3D) -> bool:
+	if unit == null or _command_router == null:
+		return false
+	var q := _command_router.queue_for(unit)
+	if q == null or q.is_idle():
+		return false
+	var o: UnitOrder = q.current
+	if o == null:
+		return false
+	return o.source != UnitOrder.Source.UNIT_AI
+
+
+## 地图已有单位 + 开局刷兵：pathing/战斗服务就绪后批量挂 AI。
+func _wire_all_unit_ai() -> void:
+	var host := _unit_host()
+	if host == null:
+		return
+	for c in host.get_children():
+		if c is Node3D:
+			_ensure_unit_ai(c as Node3D)
+
+
+func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
+	if unit == null or not is_instance_valid(unit):
+		return null
+	if not MilitiaController.unit_has_abil(unit):
+		return null
+	var existing := MilitiaController.of(unit)
+	if existing != null:
+		existing.configure(Callable(self, "_apply_unit_form"))
+		return existing
+	var mc := MilitiaController.new()
+	mc.name = MilitiaController.NODE_NAME
+	mc.configure(Callable(self, "_apply_unit_form"))
+	unit.add_child(mc)
+	return mc
+
+
+## 就地换 typeId + 模型（农民↔民兵）。保持同一 Unit 节点与 creationNumber。
+func _apply_unit_form(unit: Node3D, new_type_id: String) -> bool:
+	if unit == null or not is_instance_valid(unit) or new_type_id.is_empty():
+		return false
+	var d: Dictionary = unit.get_meta("unit_data", {}).duplicate(true)
+	var old_tid := str(d.get("typeId", "")).strip_edges()
+	if old_tid == new_type_id:
+		return true
+	var hc := unit.get_node_or_null("HarvestController") as HarvestController
+	if hc != null:
+		hc.abort()
+	var ac := unit.get_node_or_null("AttackController") as AttackController
+	if ac != null:
+		ac.cancel()
+	var uai := UnitAI.of(unit)
+	if uai != null:
+		uai.yield_to_player()
+	var life_ratio := UnitLife.ratio(unit)
+	d["typeId"] = new_type_id
+	unit.set_meta("unit_data", d)
+	if unit.has_meta(UnitLife.META_LIFE):
+		unit.remove_meta(UnitLife.META_LIFE)
+	if unit.has_meta(UnitLife.META_MAX_LIFE):
+		unit.remove_meta(UnitLife.META_MAX_LIFE)
+	UnitLife.ensure(unit)
+	UnitLife.set_ratio(unit, life_ratio)
+	if not _swap_unit_model(unit, new_type_id, int(d.get("owner", 0)), int(d.get("variation", 0))):
+		AppLog.warn(AppLog.Layer.LOGIC, "GameDirector", "morph 模型失败 %s→%s" % [old_tid, new_type_id])
+	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
+	if nav != null:
+		_apply_move_stats(unit, nav)
+	if CombatQuery.has_weapon(unit):
+		_ensure_attack_controller(unit)
+		_ensure_unit_ai(unit)
+	else:
+		# 收回农民：卸掉战斗 AI 空转（可选保留 PASSIVE）
+		var ai2 := UnitAI.of(unit)
+		if ai2 != null:
+			ai2.set_profile(UnitAI.Profile.PASSIVE)
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	if health_bar_manager != null:
+		health_bar_manager.resync()
+	return true
+
+
+func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: int) -> bool:
+	if map_root == null:
+		return false
+	var cache: MapModelCache = null
+	var catalog = null
+	if map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	if map_root.has_method("get_id_catalog"):
+		catalog = map_root.get_id_catalog()
+	if cache == null or catalog == null:
+		return false
+	var glb: String = catalog.converted_glb_path(type_id, variation)
+	if glb.is_empty():
+		return false
+	var inst: Node3D = cache.instance_glb(glb) as Node3D
+	if inst == null:
+		return false
+	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
+	cache.apply_team_color(inst, color_i, false)
+	inst.name = Unit.MODEL_NODE_NAME
+	var u := Unit.of(unit)
+	var old: Node3D = null
+	if u != null:
+		old = u.model_node()
+	else:
+		old = unit.get_node_or_null(Unit.MODEL_NODE_NAME) as Node3D
+	if old != null:
+		old.name = "Model_Old"
+		old.queue_free()
+	unit.add_child(inst)
+	# 新 Model 置顶（旧节点可能延后释放）
+	unit.move_child(inst, 0)
+	var vis := _ensure_unit_visual(unit)
+	if vis != null:
+		vis.bind_cache(cache)
+		var ap := AnimPlayback.find_animation_player(unit)
+		vis.bind_animation_player(ap)
+	cache.autoplay_stand(unit)
+	if cache.has_method("snap_stand_geoset_visibility"):
+		cache.call("snap_stand_geoset_visibility", unit)
+	if Wc3Pe2Particles.has_emitters(glb):
+		Wc3Pe2Particles.attach_to(unit, glb)
+		Wc3Pe2Particles.apply_sequence(unit, "Stand")
+	return true
+
+
+func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return 0
+	var selected: Array = unit_selector.call("get_selected")
+	var n_ok := 0
+	for n in selected:
+		if not (n is Node3D):
+			continue
+		var unit := n as Node3D
+		if not MilitiaController.unit_has_abil(unit):
+			continue
+		if _command_router != null:
+			_command_router.issue_stop([unit], source)
+		var mc := _ensure_militia_controller(unit)
+		if mc != null and mc.toggle_call_to_arms():
+			n_ok += 1
+	if game_hud != null and n_ok > 0:
+		game_hud.set_status("战斗号召：已转换 %d 人" % n_ok)
+	elif game_hud != null:
+		game_hud.set_status("战斗号召：无可用农民/民兵")
+	_refresh_command_card()
+	return n_ok
+
+
 func _on_combat_projectile_launched(info: Dictionary) -> void:
 	var from_wc3: Vector3 = info.get("from_wc3", Vector3.ZERO)
 	var to_wc3: Vector3 = info.get("to_wc3", Vector3.ZERO)
@@ -1830,6 +2019,10 @@ func _on_combat_projectile_resolved(result: Dictionary) -> void:
 
 func _on_damage_applied_present(result: Dictionary) -> void:
 	DamageFloatText.spawn(result.get("target") as Node3D, result)
+	var victim: Node3D = result.get("target") as Node3D
+	var ai := UnitAI.of(victim)
+	if ai != null:
+		ai.notify_damaged(result)
 
 
 func _on_unit_dying(unit: Node3D) -> void:
@@ -1857,6 +2050,12 @@ func _on_unit_dying(unit: Node3D) -> void:
 	var ac := unit.get_node_or_null("AttackController") as AttackController
 	if ac != null:
 		ac.cancel()
+	var uai := UnitAI.of(unit)
+	if uai != null:
+		uai.yield_to_player()
+	var mc := MilitiaController.of(unit)
+	if mc != null:
+		mc.set_process(false)
 	var pc := unit.get_node_or_null("PatrolController") as PatrolController
 	if pc != null:
 		pc.cancel()
@@ -2888,6 +3087,7 @@ func _spawn_trained_unit(
 	)
 	if final_xy != corner_xy:
 		_teleport_unit_wc3(node, final_xy)
+	_ensure_unit_ai(node)
 	_refresh_dynamic_pathing()
 	if health_bar_manager:
 		health_bar_manager.resync()
@@ -3227,8 +3427,7 @@ func _on_command_action(
 		CommandCard.ACTION_CLOSE_BUILD:
 			_set_build_menu_open(false)
 		CommandCard.ACTION_CALL_TO_ARMS:
-			if game_hud:
-				game_hud.set_status("战斗号召：逻辑待接（F3+）")
+			_issue_call_to_arms(source)
 		CommandCard.ACTION_SET_RALLY:
 			_begin_rally_targeting(source)
 		CommandCard.ACTION_DEFEND:

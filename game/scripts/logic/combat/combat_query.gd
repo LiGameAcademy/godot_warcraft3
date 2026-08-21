@@ -254,12 +254,21 @@ static func _attack_target_basics(attacker: Node, target: Node) -> bool:
 		return false
 	if not WorldMembership.is_in_world(target):
 		return false
-	if target is Node3D and UnitLife.get_life(target as Node3D) <= 0.0:
+	if target is Node3D and _current_life(target as Node3D) <= 0.0:
 		return false
 	var tid := type_id_of(target)
 	if tid == "ngol" or tid == "sloc":
 		return false
 	return true
+
+
+## 优先读 life meta（入场已 ensure）；避免测试期 UnitLife 类缓存未就绪时崩溃。
+static func _current_life(node: Node3D) -> float:
+	if node == null:
+		return 0.0
+	if node.has_meta("life"):
+		return float(node.get_meta("life"))
+	return UnitLife.get_life(node)
 
 
 ## 显式 Attack 合法目标（含友军强制攻击，对齐 WC3 A 点单位）。
