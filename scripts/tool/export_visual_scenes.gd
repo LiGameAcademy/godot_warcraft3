@@ -9,7 +9,7 @@ extends SceneTree
 ##
 ## 运行时 MapModelCache 优先 visuals；ExtResource 基座若因 .gdignore 加载失败则运行时拼装。
 
-const _SYNC_SCRIPT_PATH := "res://scripts/map/presentation/wc3_model_scene.gd"
+const _SYNC_SCRIPT_PATH := "res://scripts/presentation/wc3_model/wc3_model_scene.gd"
 
 
 func _initialize() -> void:

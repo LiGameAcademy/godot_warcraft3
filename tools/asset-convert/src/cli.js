@@ -46,7 +46,7 @@ function printHelp() {
   1) 清理 asset-converted 残留（baseColor / .import / 旧 .glb / 旁路 PNG）
   2) BLP→PNG
   3) MDX→.gltf（外链 Textures/）
-  4) passthrough 复制（PathTextures / UnitFunc / UI txt）
+  4) passthrough 复制（Sound / Fonts / PathTextures / wav·mp3·tga… → asset-converted；UnitFunc/UI → slk-exported）
   5) 烘焙 .scn
 
 选项:
@@ -299,7 +299,7 @@ async function main() {
   }
 
   if (doPassthrough) {
-    log.info("\n[passthrough] PathTextures / UnitFunc / UI txt…");
+    log.info("\n[passthrough] Sound / Fonts / PathTextures / 媒体 → asset-converted；UnitFunc/UI → slk-exported…");
     const p = copyPassthroughBatch({
       inDir,
       convertedOut: outDir,

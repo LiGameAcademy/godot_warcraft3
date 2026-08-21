@@ -29,7 +29,7 @@ assets/.staging/wc3-assets/        ← 临时（bootstrap 结束后删）
   └─ tools/asset-convert（ingest）
         ├─ clean：清 baseColor / .import / 旧 .glb / 旁路 PNG
         ├─ 转换：BLP→PNG、MDX→.gltf（外链 Textures/）
-        ├─ 复制：PathTextures → asset-converted/
+        ├─ 复制：PathTextures / Sound / Fonts / wav·mp3·tga… → asset-converted/
         │         UnitFunc/UI txt → slk-exported/
         └─ bake：.scn
   │
@@ -44,7 +44,7 @@ assets/.staging/wc3-assets/        ← 临时（bootstrap 结束后删）
 
 | 车道 | 路径 | 内容 |
 |------|------|------|
-| 视觉 | `assets/asset-converted/` | PNG / GLTF+bin / .scn / PathTextures |
+| 视觉 | `assets/asset-converted/` | PNG / GLTF+bin / .scn / PathTextures / **Sound(wav·mp3)** / Fonts / 其它直拷媒体 |
 | 数据 | `assets/slk-exported/` | SLK JSON + UnitFunc/Strings + UI txt |
 | 地图 | `assets/map-parsed/<slug>/` | 解析地图 |
 

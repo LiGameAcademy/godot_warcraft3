@@ -131,7 +131,7 @@ HeroArchMage 三个发射器（对照用）：
 | `scripts/tool/export_model_scenes.gd` | 调 PE2 + 挂点 Tip |
 | `scripts/map/infra/map_model_cache.gd` | TeamGlow、绑骨 rest、运行时组场景 |
 | `assets/shaders/wc3_team_glow.gdshader` | 脚底 + 杖尖 glow |
-| `scripts/map/presentation/anim_playback.gd` | 切 Sequence 时 `apply_sequence` |
+| `scripts/presentation/wc3_model/anim_playback.gd` | 切 Sequence 时 `apply_sequence` |
 | `tests/unit/selftest_attachment_bake.gd` | ArchMage Tip / glow / Particle01 在 Tip 下 |
 | `tests/integration/selftest_pe2_brazier.gd` | 火盆类全程发射 |
 

@@ -11,6 +11,8 @@ scripts/
 ├── auto/                          Autoload 全局单例脚本
 ├── definitions/                   静态 SLK 表 → Resource（按 SLK 表名分目录）
 │   └── terrain_art/               TerrainArt 四表
+├── presentation/                  跨地图/游戏/编辑器共用表现
+│   └── wc3_model/                 模型 .scn 门面 / AnimPlayer / 名解析
 ├── shared/                        游戏/编辑器共用
 │   ├── infra/                     AppLog 等
 │   ├── selection/
@@ -21,7 +23,7 @@ scripts/
     ├── data/                      Data（纯数据类）
     ├── infra/                     Infra（基础设施）
     ├── logic/                     Logic（规则与计算）
-    └── presentation/              Presentation（场景层）
+    └── presentation/              Presentation（场景层：地形/水/单位层…）
 ```
 
 Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
@@ -47,6 +49,9 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 | `split_meshes_by_group.gd` | 可选：按 VertexGroup 拆 geoset（bake 默认不调用） |
 | `wc3_scn_animkeys.gd` | bake：animkeys → loop/meta + Event Method Track |
 | `wc3_scn_pe2.gd` | bake：pe2.json → Pe2Root + `:emitting` / position |
+
+**模型 .scn 运行时职责（门面 / AP / 策略变薄 / 迁出 map）：**  
+见 [WC3_MODEL_SCENE.md](../design/presentation/WC3_MODEL_SCENE.md)（目录 `scripts/presentation/wc3_model/`）。
 
 粒子字段对照与未做项：[PE2_GODOT.md](../design/asset-convert/PE2_GODOT.md)。
 
@@ -194,7 +199,24 @@ Autoload（见 [LAYERED_ARCHITECTURE.md §2](LAYERED_ARCHITECTURE.md)）：
 | `map_loader.gd` | 读 JSON/内存 hf；建 Context；按序调 Layer；export 开关；状态栏；碰撞；查看栅格 | `_ready` → `Wc3TerrainTileCatalog.load_default()` → [可选] `Wc3IdCatalog.load_default()` → [auto_load_on_ready] `_load_all()`；可走 `reload_from_hf(hf, info, map_dir)` / `rebuild_terrain_only` / `rebuild_terrain_cliffs_water` |
 | `map_build_context.gd` | 共享 `hf` / `meta` / `info` / `tiles` / `catalog` / `cache`；`ensure_cliff_topology()` 只算一次 | 跨层共享状态；不要在 Layer 直读 hf |
 | `orbit_camera.gd` | 主场景预览相机 | WASD/QE/Shift/右键/滚轮 |
-| `wc3_model_scene.gd` | bake `.scn` 根脚本 | `overhead_anchor()` / `origin_anchor()` / `find_socket()` / `animation_player()` |
+
+模型 `.scn` 门面已迁至 [`scripts/presentation/wc3_model/`](#8b-scriptspresentationwc3_model--模型门面)（见下）。
+
+### 8b. `scripts/presentation/wc3_model/` — 模型门面
+
+> 游戏 / 编辑器 / 地图单位层共用；**不是** map 地形拓扑。契约见 [WC3_MODEL_SCENE.md](../design/presentation/WC3_MODEL_SCENE.md)。
+
+| 脚本 | 职责 |
+|------|------|
+| `wc3_model_scene.gd` | bake `.scn` 根门面：挂点 / AP / `play_logical` |
+| `wc3_anim_player.gd` | `extends AnimationPlayer`：族 rarity 抽签 + play |
+| `anim_playback.gd` | 名规范化 / 找 AP / 低层 play（无状态） |
+| `anim_sequence_resolver.gd` | Stance×Activity → 逻辑名 |
+| `anim_soft_loop.gd` | ping-pong 软循环 |
+| `mdx_anim_events.gd` | Event Method Track 回调 |
+| `model_visual_sync.gd` | 旧 `assets/visuals` ExtResource 兼容 |
+
+PE2 / UberSplat 仍在 `scripts/map/presentation/effects/`（地图装饰物与单位共用）。
 
 ### 8.2 `mesh/`
 

@@ -68,7 +68,7 @@ var _query: PathQuery = null
 var _heightfield: Wc3Heightfield = null
 var _crowd: UnitCrowdQuery = null
 var _reservation: PathCellReservation = null
-var _visual: UnitVisual = null
+var _visual: Unit = null
 var _waypoints: Array[Vector2] = [] ## WC3 XY
 var _wp_i: int = 0
 var _moving: bool = false
@@ -114,7 +114,7 @@ func configure(
 	_reservation = reservation
 
 
-func set_visual(visual: UnitVisual) -> void:
+func set_visual(visual: Unit) -> void:
 	_visual = visual
 
 

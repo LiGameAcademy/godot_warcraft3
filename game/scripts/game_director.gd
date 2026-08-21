@@ -1846,7 +1846,7 @@ func _on_unit_dying(unit: Node3D) -> void:
 	else:
 		var tree := get_tree()
 		if tree != null:
-			tree.create_timer(UnitVisual.CORPSE_LINGER_SEC).timeout.connect(
+			tree.create_timer(Unit.CORPSE_LINGER_SEC).timeout.connect(
 				_on_corpse_expired.bind(unit)
 			)
 		else:
@@ -3022,23 +3022,20 @@ func _on_unit_locomotion_changed(_moving: bool) -> void:
 	_refresh_move_executing_ui()
 
 
-func _ensure_unit_visual(unit: Node3D) -> UnitVisual:
+func _ensure_unit_visual(unit: Node3D) -> Unit:
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
-	var existing := unit.get_node_or_null("UnitVisual") as UnitVisual
-	if existing != null:
-		existing.bind_cache(cache)
-		existing.bind_animation_player(AnimPlayback.find_animation_player(unit))
+	var u := Unit.of(unit)
+	if u == null:
+		# 旧存档/非 Unit 根：不应再挂 UnitVisual 子节点；尽量当实体用
+		AppLog.warn(AppLog.Layer.PRESENT, "GameDirector", "ensure_unit: 非 Unit 根 %s" % unit)
 		_ensure_interaction_components(unit)
-		return existing
-	var vis := UnitVisual.new()
-	vis.name = "UnitVisual"
-	vis.bind_cache(cache)
-	vis.bind_animation_player(AnimPlayback.find_animation_player(unit))
-	unit.add_child(vis)
-	_ensure_interaction_components(unit)
-	return vis
+		return null
+	u.bind_cache(cache)
+	u.bind_animation_player(AnimPlayback.find_animation_player(u))
+	_ensure_interaction_components(u)
+	return u
 
 
 ## 刷单位时挂选框场景 + Selectable / Interactable，并注入依赖。

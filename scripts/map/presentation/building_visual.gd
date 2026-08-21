@@ -1,23 +1,30 @@
 class_name BuildingVisual
 extends RefCounted
 
-## 建筑模型视觉：typeId 档位姿态 + 建造/训练阶段 → Sequence。
-## 人族主城 htow/hkee/hcas 共用 TownHall.mdx（Stance = Upgrade First|Second）。
-## 命名/播放委托 AnimSequenceResolver / AnimPlayback（编辑器与游戏共用）。
-## 勿放 game/，避免 map→game 反向依赖。
+## 建筑表现策略：typeId 档位姿态 + 建造/训练 Phase → 逻辑 Sequence，再交给模型门面播放。
+##
+## ## 分层
+## - 本类是**静态工具**（非 Node），Director / 编辑器调用；勿放 `game/`，避免 map→game 反向依赖。
+## - 播放优先走 [Wc3ModelScene] → [Wc3AnimPlayer]；无门面时回退 [AnimPlayback]。
+## - 人族主城 `htow`/`hkee`/`hcas` 共用 TownHall.mdx（Stance = Upgrade First|Second）。
+##
+## ## 职责边界
+## - **做**：Phase↔Activity 映射、`is_building`、播 Birth/Work/Idle/Death。
+## - **不做**：训练队列状态、扣资源；挂点/AP 查找（用 Wc3ModelScene / Wc3AnimPlayer）。
 
 const _TAG := "BuildingVisual"
 
 
+## 建筑视觉阶段（由建造进度 / 训练队列等驱动，再映射到 Activity）。
 enum Phase {
-	IDLE = 0,
-	BIRTH = 1,
-	WORK = 2,
-	UPGRADE_BIRTH = 3,
-	DEATH = 4,
+	IDLE = 0, ## 待机 Stand（含主城档位后缀）。
+	BIRTH = 1, ## 建造出现。
+	WORK = 2, ## 训练/工作烟等 Stand Work。
+	UPGRADE_BIRTH = 3, ## 升级过程出现（仍走 Birth 活动）。
+	DEATH = 4, ## 销毁（金矿塌陷等）。
 }
 
-## 兼容旧调用。
+## 兼容旧调用：typeId → 逻辑名后缀（空格开头）。
 const TOWN_HALL_TIER := {
 	"htow": "",
 	"hkee": " Upgrade First",
@@ -38,6 +45,7 @@ static func _wc3_def_store() -> Node:
 	return tree.root.get_node_or_null("Wc3DefStore")
 
 
+## 是否建筑单位（主城档位表 + UnitBalance.isbldg）。
 static func is_building(type_id: String) -> bool:
 	if type_id.is_empty() or type_id == "sloc":
 		return false
@@ -80,6 +88,7 @@ static func sequence_name(type_id: String, phase: int) -> String:
 	return AnimSequenceResolver.sequence_name(activity, stance)
 
 
+## 按 Phase 播放；成功后可 snap geosetvis。失败则 Stand 回退。
 static func apply_phase(
 	cache: MapModelCache, root: Node, type_id: String, phase: int = Phase.IDLE
 ) -> bool:
@@ -97,13 +106,17 @@ static func apply_phase(
 		_TAG,
 		"apply_phase type=%s phase=%s want=%s" % [type_id, phase, want]
 	)
-	var played: Dictionary = AnimPlayback.play_logical(
-		root, want, 0.0, cache, activity, ["Stand"]
-	)
+	var model := Wc3ModelScene.find_on(root)
+	var played: Dictionary
+	if model != null:
+		played = model.play_logical(want, 0.0, cache, activity, ["Stand"])
+	else:
+		played = AnimPlayback.play_logical(root, want, 0.0, cache, activity, ["Stand"])
+	var snap_root: Node = model if model != null else root
 	if bool(played.get("ok", false)):
 		var played_as := str(played.get("played_as", want))
 		if cache != null and cache.has_method("snap_geoset_visibility_for"):
-			cache.call("snap_geoset_visibility_for", root, played_as)
+			cache.call("snap_geoset_visibility_for", snap_root, played_as)
 		AppLog.debug(
 			AppLog.Layer.PRESENT,
 			_TAG,
@@ -114,8 +127,8 @@ static func apply_phase(
 	if ok:
 		AppLog.debug(AppLog.Layer.PRESENT, _TAG, "apply_phase Stand fallback type=%s" % type_id)
 		if cache.has_method("snap_stand_geoset_visibility"):
-			cache.call("snap_stand_geoset_visibility", root)
-		Wc3Pe2Particles.apply_sequence(root, "Stand")
+			cache.call("snap_stand_geoset_visibility", snap_root)
+		Wc3Pe2Particles.apply_sequence(snap_root, "Stand")
 	else:
 		AppLog.warn(
 			AppLog.Layer.PRESENT,
@@ -129,23 +142,38 @@ static func apply_idle(cache: MapModelCache, root: Node, type_id: String) -> boo
 	return apply_phase(cache, root, type_id, Phase.IDLE)
 
 
-## 建筑销毁（金矿塌陷等）：单次 Death，失败不回退 Stand。返回 {ok, duration}。
+## 建筑销毁（金矿塌陷等）：单次 Death，失败不回退 Stand。返回 `{ok, duration}`。
 static func play_death(cache: MapModelCache, root: Node, type_id: String = "") -> Dictionary:
 	var out := {"ok": false, "duration": 0.0}
 	if root == null:
 		return out
 	var want := sequence_name(type_id, Phase.DEATH) if not type_id.is_empty() else "Death"
-	var played: Dictionary = AnimPlayback.play_logical(
-		root, want, 0.0, cache, AnimSequenceResolver.Activity.DEATH, ["Death"]
-	)
+	var model := Wc3ModelScene.find_on(root)
+	var played: Dictionary
+	if model != null:
+		played = model.play_logical(
+			want, 0.0, cache, AnimSequenceResolver.Activity.DEATH, ["Death"]
+		)
+	else:
+		played = AnimPlayback.play_logical(
+			root, want, 0.0, cache, AnimSequenceResolver.Activity.DEATH, ["Death"]
+		)
 	if not bool(played.get("ok", false)):
 		return out
 	out["ok"] = true
-	var ap := AnimPlayback.find_animation_player(root)
+	var ap: AnimationPlayer = null
+	if model != null:
+		ap = model.animation_player()
+	else:
+		ap = AnimPlayback.find_animation_player(root)
 	if ap != null:
 		out["duration"] = maxf(ap.current_animation_length, 0.0)
 	return out
 
 
+## 解析逻辑名 → 库内动画路径（优先经模型门面）。
 static func resolve_animation(root: Node, logical_name: String) -> String:
+	var model := Wc3ModelScene.find_on(root)
+	if model != null:
+		return model.resolve_logical(logical_name)
 	return AnimPlayback.resolve(root, logical_name)

@@ -117,7 +117,7 @@ GameMain (Node3D)                         # 薄壳：环境光 / 灯光（无玩
 |------|----------|------|
 | 地形/装饰静态 | 磁盘 JSON → MapLoader 内部缓存 | 游戏阶段 A 只读 |
 | 路径 | `Wc3PathingMap`（挂在 Session 或 MapLoader） | 合成或 pathing.json |
-| 运行时单位 | **GameSession 单位表**（阶段 C 起） | 与 Present 同步；勿把笔刷 Document 当权威 |
+| 运行时单位 | **GameSession 单位表**（阶段 C 起）；节点目标为 **Unit 实体根**（子节点才是模型） | 见 [WC3_MODEL_SCENE.md](../presentation/WC3_MODEL_SCENE.md) §2.0 |
 | 资源/科技 | GameSession | Bootstrap 写入 |
 
 阶段 A 可暂用「Present 即真相」（MapLoader 已放置的单位节点）；C 起应显式 Session，避免触发器/命令无处落笔。

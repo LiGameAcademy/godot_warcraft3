@@ -12,7 +12,8 @@
 **包含**：
 - 游戏场景（`game/scenes/`）—— `game_main` / `rts_camera` / `game_hud` / `unit_selector` / `move_confirm_fx`
 - 游戏逻辑（`game/scripts/logic/`）—— `command` / `economy` / `pathing` / `melee_bootstrap`
-- 游戏表现（`game/scripts/presentation/`）—— `rts_camera` / `game_hud` / `unit_navigator` / `unit_visual` / `wc3_game_cursor` / `path_debug_draw` / `move_confirm_fx`
+- 游戏表现（`game/scripts/presentation/`）—— `rts_camera` / `game_hud` / `unit_navigator` / `wc3_game_cursor` / …
+- 单位实体（`game/scripts/unit/unit.gd`）—— Stance×Activity → `Wc3ModelScene`；spawn 树：`Unit` + 子节点 `Model`
 - Session 状态（`game/scripts/session/`）—— `game_session` / `player_stock`
 - GameDirector（`game/scripts/game_director.gd` 37487 行 —— 跨切编排）
 - Units Defs（`scripts/definitions/units/`）—— Data 层支撑

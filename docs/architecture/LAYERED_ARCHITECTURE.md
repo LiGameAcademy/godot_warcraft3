@@ -182,6 +182,9 @@ scripts/map/
 │   │   ├── map_unit_layer.gd
 │   │   └── map_debug_grid_layer.gd
 │   ├── mesh/
+│   ├── …                          # water / cliff 等地图子系统
+│   └── （过渡）wc3_model_scene / wc3_anim_player …
+│       # 目标迁出 → scripts/presentation/wc3_model/，见 docs/design/presentation/WC3_MODEL_SCENE.md
 │   │   └── heightfield_mesh.gd
 │   ├── cliff/
 │   │   ├── wc3_cliff_builder.gd

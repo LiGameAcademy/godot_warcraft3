@@ -1,11 +1,16 @@
 class_name AnimPlayback
 extends RefCounted
 
-## 动画解析与播放：空格/`_`/驼峰/`Stand-2` 名解析、loop / ping-pong 策略、PE2。
-## 无单位业务态；UnitVisual / BuildingVisual 调用本层。
+## 动画解析与播放：空格/`_`/驼峰/`Stand-2` 名解析、loop / ping-pong 策略、PE2 hint。
 ##
-## AnimationPlayer：**优先由调用方注入**（UnitVisual 缓存）；未传时才查找。
-## 查找仅作冷路径回退（建筑 apply_phase、一次性工具），勿在每帧热路径依赖。
+## ## 分层
+## - 无单位/建筑业务态；与 [Wc3AnimPlayer] **同目录**的无状态工具。
+## - 同族 rarity 抽签在 AP（`pick_family`）；本层 resolve 仅委托或编号最小回退。
+## - [Wc3ModelScene] 门面转发；[Unit] / [BuildingVisual] 为策略层。
+## - 命名映射见 [AnimSequenceResolver]。
+##
+## AnimationPlayer：**优先注入**（Wc3AnimPlayer / Unit 缓存）；未传时才查找。
+## 查找仅作冷路径回退，勿在每帧热路径依赖。
 
 const _TAG := "AnimPlayback"
 
@@ -88,7 +93,11 @@ static func resolve(
 	]
 	if logical_name.contains("_"):
 		candidates.append(logical_name.replace("_", " "))
-	var names := ap.get_animation_list()
+	var names: PackedStringArray
+	if ap != null and ap.has_method("animation_names"):
+		names = ap.call("animation_names") as PackedStringArray
+	else:
+		names = ap.get_animation_list()
 	for cand in candidates:
 		var cand_l := cand.to_lower()
 		for n in names:
@@ -101,25 +110,17 @@ static func resolve(
 			if compact_seq_name(str(n)) == want_c:
 				return str(n)
 	var want_l := logical_name.to_lower().strip_edges()
-	if want_l == "stand":
-		for n in names:
-			var leaf2 := anim_leaf(str(n)).to_lower()
-			if leaf2 == "stand":
-				return str(n)
-			if not leaf2.begins_with("stand"):
-				continue
-			if (
-				leaf2.begins_with("stand_work")
-				or leaf2.begins_with("standwork")
-				or leaf2.contains("upgrade")
-				or leaf2.contains("ready")
-				or leaf2.contains("channel")
-				or leaf2.contains("hit")
-			):
-				continue
-			return str(n)
-	# WC3 变体名：Attack-1 / Attack_-_1 / Walk Defend / Death - 1；逻辑名只写 Attack / Walk / Death
-	if want_l == "attack" or want_l == "walk" or want_l == "death":
+	# 同族变体：有 Wc3AnimPlayer 时按 rarity 加权；否则编号最小回退。
+	if (
+		want_l == "attack"
+		or want_l == "walk"
+		or want_l == "death"
+		or want_l == "stand"
+	):
+		if ap != null and ap.has_method("pick_family"):
+			var weighted: String = str(ap.call("pick_family", logical_name))
+			if not weighted.is_empty():
+				return weighted
 		var picked := _resolve_family_prefix(names, want_l)
 		if not picked.is_empty():
 			return picked
@@ -131,7 +132,8 @@ static func resolve(
 	return ""
 
 
-## Attack / Walk 族：叶名以 base 开头，跳过 Defend/Gold/Lumber 变体。
+## Attack / Walk / Death / Stand 族：叶名以 base 开头，跳过姿态/工作等后缀。
+## 无 rarity 时回退：优先编号最小的变体。
 static func _resolve_family_prefix(names: PackedStringArray, base_lower: String) -> String:
 	var prefer: String = ""
 	for n in names:
@@ -143,9 +145,17 @@ static func _resolve_family_prefix(names: PackedStringArray, base_lower: String)
 			or leaf.contains("gold")
 			or leaf.contains("lumber")
 			or leaf.contains("work")
+			or leaf.contains("upgrade")
+			or leaf.contains("ready")
+			or leaf.contains("channel")
+			or leaf.contains("hit")
+			or leaf.contains("victory")
+			or leaf.contains("portrait")
+			or leaf.contains("decay")
+			or leaf.contains("spell")
+			or leaf.contains("birth")
 		):
 			continue
-		# 优先编号最小的变体（Attack-1 优于 Attack-2；旧名 Attack_-_1）
 		if prefer.is_empty() or str(n) < prefer:
 			prefer = str(n)
 	return prefer

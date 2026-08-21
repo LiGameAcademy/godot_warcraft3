@@ -1,4 +1,3 @@
 @tool
-extends Wc3ModelScene
-## 兼容 assets/visuals/**/*.tscn 旧 ExtResource。
-## 对外 API 在 Wc3ModelScene；本文件不再加逻辑。
+extends "res://scripts/presentation/wc3_model/model_visual_sync.gd"
+## 兼容旧 `assets/visuals` ExtResource。正式脚本在 `scripts/presentation/wc3_model/`。

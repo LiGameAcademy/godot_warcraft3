@@ -3,7 +3,7 @@ extends Node
 
 ## 步兵顶盾开关（Logic）。
 ## - 解锁看 PlayerStock.has_upgrade(Rhde)；本组件只负责开/关
-## - Present：UnitVisual Stance.DEFEND
+## - Present：Unit Stance.DEFEND
 ## - 移速：Navigator.speed_mul ← 1 − Adef.DataC
 ## - 穿刺：DamagePipeline 乘 Adef.DataA（承受比例）
 
@@ -95,7 +95,7 @@ func _apply_visual() -> void:
 	var body := get_parent() as Node3D
 	if body == null:
 		return
-	var vis := body.get_node_or_null("UnitVisual") as UnitVisual
+	var vis := Unit.of(body)
 	if vis == null:
 		return
 	vis.set_stance(

@@ -490,10 +490,7 @@ func _arrive_dist(building_id: String) -> float:
 func _set_work_anim(on: bool) -> void:
 	if _peasant == null:
 		return
-	var vis := _peasant.get_node_or_null("UnitVisual") as UnitVisual
-	if vis == null:
-		vis = UnitVisual.new()
-		vis.name = "UnitVisual"
-		_peasant.add_child(vis)
-		vis.bind_animation_player(AnimPlayback.find_animation_player(_peasant))
-	vis.set_building_work(on)
+	var u := Unit.of(_peasant)
+	if u == null:
+		return
+	u.set_building_work(on)

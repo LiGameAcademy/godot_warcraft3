@@ -38,6 +38,13 @@ func _geoset_visible(root: Node, gi: int) -> bool:
 	return false
 
 
+func _wrap_unit(model: Node3D) -> Unit:
+	var unit := Unit.new()
+	model.name = Unit.MODEL_NODE_NAME
+	unit.add_child(model)
+	return unit
+
+
 func _test_footman_death_from_defend() -> void:
 	var proto: Node3D = RuntimeAssets.load_gltf_scene(
 		"res://assets/asset-converted/Units/Human/Footman/Footman.gltf"
@@ -45,29 +52,27 @@ func _test_footman_death_from_defend() -> void:
 	if proto == null:
 		_fail("Footman gltf 加载失败")
 		return
-	root.add_child(proto)
-	var vis := UnitVisual.new()
-	vis.name = "UnitVisual"
-	var ap := AnimPlayback.find_animation_player(proto)
-	vis.bind_animation_player(ap)
-	proto.add_child(vis)
-	vis.set_stance(AnimSequenceResolver.Stance.DEFEND)
-	vis.play_death()
+	var unit := _wrap_unit(proto)
+	root.add_child(unit)
+	var ap := AnimPlayback.find_animation_player(unit)
+	unit.bind_animation_player(ap)
+	unit.set_stance(AnimSequenceResolver.Stance.DEFEND)
+	unit.play_death()
 	if ap == null:
 		_fail("Footman 无 AnimationPlayer")
-		proto.queue_free()
+		unit.queue_free()
 		return
 	if not ap.is_playing():
 		_fail("play_death 后 AnimationPlayer 应在播放")
-		proto.queue_free()
+		unit.queue_free()
 		return
 	var leaf := AnimPlayback.anim_leaf(str(ap.current_animation)).replace(" ", "_").to_lower()
 	if not leaf.begins_with("death"):
 		_fail("顶盾下死亡应播 Death，实际 %s" % ap.current_animation)
-		proto.queue_free()
+		unit.queue_free()
 		return
 	print("  footman_death_from_defend OK anim=%s len=%.2f" % [ap.current_animation, ap.current_animation_length])
-	proto.queue_free()
+	unit.queue_free()
 
 
 func _test_footman_corpse_geoset() -> void:
@@ -78,31 +83,29 @@ func _test_footman_corpse_geoset() -> void:
 	if proto == null:
 		_fail("Footman cache instance 失败")
 		return
-	root.add_child(proto)
-	cache.snap_stand_geoset_visibility(proto)
-	if _geoset_visible(proto, 2):
+	var unit := _wrap_unit(proto)
+	root.add_child(unit)
+	cache.snap_stand_geoset_visibility(unit)
+	if _geoset_visible(unit, 2):
 		_fail("Stand 下 Geoset_2（尸体）应隐藏")
-		proto.queue_free()
+		unit.queue_free()
 		return
-	var vis := UnitVisual.new()
-	vis.name = "UnitVisual"
-	vis.bind_cache(cache)
-	vis.bind_animation_player(AnimPlayback.find_animation_player(proto))
-	proto.add_child(vis)
-	vis.play_death()
-	if _geoset_visible(proto, 2):
+	unit.bind_cache(cache)
+	unit.bind_animation_player(AnimPlayback.find_animation_player(unit))
+	unit.play_death()
+	if _geoset_visible(unit, 2):
 		_fail("Death 进行中 Geoset_2 仍应隐藏")
-		proto.queue_free()
+		unit.queue_free()
 		return
-	vis.enter_corpse_state()
-	if not _geoset_visible(proto, 2):
+	unit.enter_corpse_state()
+	if not _geoset_visible(unit, 2):
 		_fail("enter_corpse_state 后 Geoset_2 尸体片应可见")
-		proto.queue_free()
+		unit.queue_free()
 		return
-	var ap := AnimPlayback.find_animation_player(proto)
+	var ap := AnimPlayback.find_animation_player(unit)
 	if ap == null or not ap.is_playing():
 		_fail("Decay Flesh 应正在播放，不要定格")
-		proto.queue_free()
+		unit.queue_free()
 		return
 	var assigned := str(ap.current_animation)
 	if assigned.is_empty():
@@ -110,14 +113,14 @@ func _test_footman_corpse_geoset() -> void:
 	var leaf := AnimPlayback.anim_leaf(assigned).replace(" ", "_").to_lower()
 	if not leaf.begins_with("decay") or leaf.contains("bone"):
 		_fail("尸体态应变 Decay Flesh 并播放，实际 %s" % assigned)
-		proto.queue_free()
+		unit.queue_free()
 		return
 	if ap.speed_scale < 0.5:
 		_fail("Decay Flesh 不应 freeze speed_scale=%s" % ap.speed_scale)
-		proto.queue_free()
+		unit.queue_free()
 		return
 	print("  footman_corpse_geoset OK decay=%s" % assigned)
-	proto.queue_free()
+	unit.queue_free()
 
 
 func _test_footman_decay_bone() -> void:
@@ -128,30 +131,28 @@ func _test_footman_decay_bone() -> void:
 	if proto == null:
 		_fail("Footman cache instance 失败 (bone)")
 		return
-	root.add_child(proto)
-	var vis := UnitVisual.new()
-	vis.name = "UnitVisual"
-	vis.bind_cache(cache)
-	vis.bind_animation_player(AnimPlayback.find_animation_player(proto))
-	proto.add_child(vis)
-	vis.play_death()
-	vis.enter_corpse_state()
-	vis.enter_decay_bone()
-	if _geoset_visible(proto, 2):
+	var unit := _wrap_unit(proto)
+	root.add_child(unit)
+	unit.bind_cache(cache)
+	unit.bind_animation_player(AnimPlayback.find_animation_player(unit))
+	unit.play_death()
+	unit.enter_corpse_state()
+	unit.enter_decay_bone()
+	if _geoset_visible(unit, 2):
 		_fail("Decay Bone 下 Geoset_2 应隐藏")
-		proto.queue_free()
+		unit.queue_free()
 		return
-	if not _geoset_visible(proto, 4):
+	if not _geoset_visible(unit, 4):
 		_fail("Decay Bone 下 Geoset_4 骨架/血泊应可见")
-		proto.queue_free()
+		unit.queue_free()
 		return
-	var ap := AnimPlayback.find_animation_player(proto)
+	var ap := AnimPlayback.find_animation_player(unit)
 	var leaf := ""
 	if ap != null:
 		leaf = AnimPlayback.anim_leaf(str(ap.current_animation)).replace(" ", "_").to_lower()
-	if not leaf.contains("bone"):
-		_fail("应变 Decay Bone，实际 %s" % leaf)
-		proto.queue_free()
+	if not leaf.begins_with("decay") or not leaf.contains("bone"):
+		_fail("应播 Decay Bone，实际 %s" % (ap.current_animation if ap else "?"))
+		unit.queue_free()
 		return
 	print("  footman_decay_bone OK")
-	proto.queue_free()
+	unit.queue_free()

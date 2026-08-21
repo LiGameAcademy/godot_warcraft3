@@ -89,6 +89,6 @@ node src/cli.js --models-only --force --include "Units/Human/HeroArchMage/**"
 | `tools/asset-convert/src/convert-mdx.js` | 顶点/IBM/动画世界阵 / `writeBoneRestSidecar` |
 | `scripts/map/infra/map_model_cache.gd` | `apply_bone_rest_sidecar`、TeamGlow 杖尖 |
 | `scripts/tool/export_model_scenes.gd` | 先 rest 再拼装 BA+Tip |
-| `scripts/map/presentation/wc3_model_scene.gd` | 编辑器/运行时套 rest |
+| `scripts/presentation/wc3_model/wc3_model_scene.gd` | 编辑器/运行时套 rest |
 
 小件清单仍见 [ATTACHMENTS_BAKE.md](ATTACHMENTS_BAKE.md)。粒子 / TeamGlow 映射见 [PE2_GODOT.md](PE2_GODOT.md)。

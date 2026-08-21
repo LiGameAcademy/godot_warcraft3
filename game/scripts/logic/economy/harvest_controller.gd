@@ -557,6 +557,9 @@ func _do_deposit() -> void:
 			return
 		_go_dropoff()
 		return
+	var body := _body()
+	if body == null:
+		return
 	var nav := _nav()
 	if nav != null:
 		nav.stop()
@@ -1146,24 +1149,24 @@ func _apply_carry_visual(force: bool = false) -> void:
 	var body := _body()
 	if body == null:
 		return
-	var vis := body.get_node_or_null("UnitVisual") as UnitVisual
+	var vis := Unit.of(body)
 	if vis == null:
 		return
 	var rid := "" if _carry.is_empty() else _carry.id
 	match rid:
 		CarrySlot.ID_GOLD:
-			vis.set_carry(UnitVisual.Carry.GOLD, force)
+			vis.set_carry(Unit.Carry.GOLD, force)
 		CarrySlot.ID_LUMBER:
-			vis.set_carry(UnitVisual.Carry.LUMBER, force)
+			vis.set_carry(Unit.Carry.LUMBER, force)
 		_:
-			vis.set_carry(UnitVisual.Carry.NONE, force)
+			vis.set_carry(Unit.Carry.NONE, force)
 
 
 func _set_chop_visual(active: bool) -> void:
 	var body := _body()
 	if body == null:
 		return
-	var vis := body.get_node_or_null("UnitVisual") as UnitVisual
+	var vis := Unit.of(body)
 	if vis == null:
 		return
 	vis.set_chopping(active)

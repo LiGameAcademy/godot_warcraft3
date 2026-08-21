@@ -353,8 +353,9 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 		var sx := float(scale_data.get("x", 1.0))
 		var sy := float(scale_data.get("y", 1.0))
 		var sz := float(scale_data.get("z", 1.0))
-		var b := node.scale
-		node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
+		var scale_node := _scale_target_for(node)
+		var b := scale_node.scale
+		scale_node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
 	node.name = "%s_%s" % [type_id, str(u.get("creationNumber", 0))]
 	node.position = gpos
 	# 单位前进轴 = 本地 +X（与 UnitNavigator 一致）；勿用 doodad 的 -a+π
@@ -468,6 +469,7 @@ static func resolve_team_color_index(type_id: String, owner_id: int) -> int:
 func _make_unit_node(
 	type_id: String, variation: int, owner_id: int, allow_sync_load: bool = true
 ) -> Node3D:
+	var model: Node3D = null
 	if try_load_glb and _catalog != null and _cache != null:
 		var glb := _catalog.converted_glb_path(type_id, variation)
 		if not glb.is_empty():
@@ -478,10 +480,30 @@ func _make_unit_node(
 					# 开始点本体即队伍色环；英雄 Team Glow 也需染色显示
 					var color_i := resolve_team_color_index(type_id, owner_id)
 					_cache.apply_team_color(inst, color_i, false)
-					return inst
-	var ph := MapPlaceholders.make_entity(type_id, owner_id, true)
-	ph.set_meta("is_placeholder", true)
-	return ph
+					model = inst
+	if model == null:
+		model = MapPlaceholders.make_entity(type_id, owner_id, true)
+		model.set_meta("is_placeholder", true)
+	return _wrap_unit_entity(model)
+
+
+## 实体根 Unit + 子节点 Model（表现）；unit_data / 变换挂在 Unit 上。
+func _wrap_unit_entity(model: Node3D) -> Unit:
+	var unit := Unit.new()
+	var is_ph := bool(model.get_meta("is_placeholder", false))
+	unit.set_meta("is_placeholder", is_ph)
+	model.name = Unit.MODEL_NODE_NAME
+	unit.add_child(model)
+	return unit
+
+
+## 地图 scale 乘在 Model 上，避免把选框等逻辑子节点一并缩放。
+func _scale_target_for(node: Node3D) -> Node3D:
+	if node is Unit:
+		var m := (node as Unit).model_node()
+		if m != null:
+			return m
+	return node
 
 
 ## 有死亡掉落时在头顶挂白色提示环（对齐 WE；游戏内可关）。

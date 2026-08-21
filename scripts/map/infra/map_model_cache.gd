@@ -388,9 +388,12 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 	if ap != null:
 		ap.autoplay = ""
 		ap.stop()
+		const _Anim := preload("res://scripts/presentation/wc3_model/wc3_anim_player.gd")
+		if ap.get_script() != _Anim:
+			ap.set_script(_Anim)
 	_inject_geoset_vis_tracks(glb_path, root)
 	const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
-	const _Model := preload("res://scripts/map/presentation/wc3_model_scene.gd")
+	const _Model := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
 	root.set_script(_Model)
@@ -702,6 +705,8 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 		return false
 	apply_bone_rest_sidecar(proto, glb_path)
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
+	# 门面脚本必须在 pack 直前挂上（export 里 set_script 曾未写入 .scn）
+	_ensure_model_scene_scripts(proto)
 	var res_p := RuntimeAssets.model_scene_path(glb_path)
 	var user_p := RuntimeAssets.model_scene_user_path(glb_path)
 	var saved_path := ""
@@ -718,6 +723,19 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 			_packed_cache[glb_path] = packed
 		return true
 	return false
+
+
+## bake 直前：根挂 Wc3ModelScene，AP 挂 Wc3AnimPlayer。
+func _ensure_model_scene_scripts(root: Node) -> void:
+	if root == null:
+		return
+	const _Model := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
+	const _Anim := preload("res://scripts/presentation/wc3_model/wc3_anim_player.gd")
+	if root.get_script() != _Model:
+		root.set_script(_Model)
+	var ap := _find_animation_player(root)
+	if ap != null and ap.get_script() != _Anim:
+		ap.set_script(_Anim)
 
 
 ## Godot 导入丢弃蒙皮 Geoset / 空父节点上的 scale 轨；用旁路 *.geosetvis.json 补 `:visible`。

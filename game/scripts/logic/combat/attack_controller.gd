@@ -378,9 +378,9 @@ func _set_attack_anim(on: bool) -> void:
 	var body := _body()
 	if body == null:
 		return
-	var vis := body.get_node_or_null("UnitVisual") as UnitVisual
-	if vis != null and vis.has_method("set_combat_attack"):
-		vis.call("set_combat_attack", on)
+	var vis := Unit.of(body)
+	if vis != null:
+		vis.set_combat_attack(on)
 
 ## 设置状态
 func _set_state(s: int) -> void:

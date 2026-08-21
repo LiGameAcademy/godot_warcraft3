@@ -13,7 +13,8 @@ extends SceneTree
 const Wc3ScnRebucketScript := preload("res://scripts/tool/wc3_scn_rebucket.gd")
 const Wc3ScnAnimkeysScript := preload("res://scripts/tool/wc3_scn_animkeys.gd")
 const Wc3ScnPe2Script := preload("res://scripts/tool/wc3_scn_pe2.gd")
-const Wc3ModelSceneScript := preload("res://scripts/map/presentation/wc3_model_scene.gd")
+const Wc3ModelSceneScript := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
+const Wc3AnimPlayerScript := preload("res://scripts/presentation/wc3_model/wc3_anim_player.gd")
 
 
 func _initialize() -> void:
@@ -187,6 +188,7 @@ func _run() -> void:
 					% [ak.get("sequences", 0), ak.get("event_keys", 0), logical_glb]
 				)
 			_apply_bone_rest_from_sidecar(proto, logical_glb)
+			_ensure_wc3_anim_player(proto)
 			proto.set_script(Wc3ModelSceneScript)
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
@@ -1015,6 +1017,16 @@ func _find_animation_player(n: Node) -> AnimationPlayer:
 	if found.is_empty():
 		return null
 	return found[0] as AnimationPlayer
+
+
+## bake 前给 AnimationPlayer 挂 Wc3AnimPlayer（播放/meta 职责）。
+func _ensure_wc3_anim_player(proto: Node) -> void:
+	var ap := _find_animation_player(proto)
+	if ap == null:
+		return
+	if ap.get_script() == Wc3AnimPlayerScript:
+		return
+	ap.set_script(Wc3AnimPlayerScript)
 
 
 ## 从轨路径解析骨名（`Skeleton3D:AxHandle01` / `...:AxHandle01:scale`）。

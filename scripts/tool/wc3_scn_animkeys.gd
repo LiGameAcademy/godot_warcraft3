@@ -2,7 +2,7 @@ extends RefCounted
 ## bake:scn：animkeys.json → Animation.loop_mode / Sequence meta / Event Method Track。
 ## 不写原始 Hermite 局部 TRS（glTF 已烤世界矩阵轨）。
 
-const EVENTS_SCRIPT := preload("res://scripts/map/presentation/mdx_anim_events.gd")
+const EVENTS_SCRIPT := preload("res://scripts/presentation/wc3_model/mdx_anim_events.gd")
 const EVENTS_NODE := "MdxEvents"
 const META_MDX_NAME := "wc3_mdx_name"
 const META_RARITY := "wc3_rarity"
