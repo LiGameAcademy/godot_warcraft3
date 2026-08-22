@@ -6,7 +6,10 @@ extends MeshInstance3D
 const SEL_CIRCLE_TEX := "ReplaceableTextures/Selection/SelectionCircleMed.png"
 const COLOR_OWN := Color(0.15, 1.0, 0.25, 1.0)
 const COLOR_NEUTRAL := Color(1.0, 0.92, 0.15, 1.0)
-const Y_BIAS := 0.06
+## 略高于地面 UberSplat / 地形，减轻穿插与贴花遮挡（死亡落环用 0.15）。
+const Y_BIAS := 0.16
+## 悬停环相对选中色的透明度。
+const HOVER_ALPHA := 0.42
 
 var _plane: PlaneMesh = null
 var _mat: StandardMaterial3D = null
@@ -85,6 +88,14 @@ func get_diameter() -> float:
 func show_selected(diameter: float, color: Color) -> void:
 	_kill_flash_tween()
 	configure(diameter, color, 20)
+
+
+## 悬停预览环（半透明；与选中同贴图，alpha 更低）。
+func show_hover(diameter: float, color: Color) -> void:
+	_kill_flash_tween()
+	var c := color
+	c.a = minf(c.a, HOVER_ALPHA)
+	configure(diameter, c, 19)
 
 
 ## 取消选中：隐藏，不销毁节点。

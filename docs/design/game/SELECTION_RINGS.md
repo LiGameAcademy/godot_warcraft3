@@ -3,7 +3,7 @@
 > 对齐 WC3：己方选中 **绿环**；中立金矿左键可选 **黄环**（树**不可**左键选中，只右键伐木）。  
 > 所属层：场景 `scenes/selection/`（环 / UnitSelector）+ 脚本 `scripts/shared/selection/`（组件 / 框选）；游戏与编辑器共用。  
 > 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · [HUD.md](HUD.md)  
-> 最后更新：2026-08-16
+> 最后更新：2026-08-22
 
 ---
 
@@ -18,151 +18,92 @@ scripts/shared/selection/  # 纯脚本组件
   selectable / interactable / interaction_setup
   marquee_selection / marquee_overlay
 
-InteractionSetup.attach(host)   # 刷单位 / promote 时
+InteractionSetup.attach(host)   # 刷单位 / promote / 悬停懒挂
   ├── SelectionRing（tscn 子节点，默认隐藏）
   ├── SelectableComponent（注入 ring）
   └── InteractableComponent（注入 ring + selectable）
 
-UnitSelector（中央：输入 / 2D 脚底圆 / 框选）
-  └── 只调 Selectable.show_selected / hide_selected
+UnitSelector（中央：输入 / 2D 脚底圆 / 框选 / 悬停）
+  └── 只调 Selectable.show_selected / show_hover / hide_*
 ```
 
 | 组件 | 职责 | 不负责 |
 |------|------|--------|
-| `SelectionRing` | 实例方法：选中显示 / 隐藏 / 交互闪 | 按节点名查找、静态工厂 |
-| `SelectableComponent` | 半径、环色、选中态 | 自行 new 环 |
+| `SelectionRing` | 选中 / 悬停 / 交互闪；脚底 `Y_BIAS` 抬高 | 按节点名查找、静态工厂 |
+| `SelectableComponent` | 拾取半径、环径、选中/悬停态 | 自行 new 环 |
 | `InteractableComponent` | `flash()` | SmartTarget 裁决 |
 | `InteractionSetup` | 装配并注入依赖 | 输入 |
 
-树木未 promote 前无 Node：仍由 `TreeRegistry` 拾取；promote 后 `InteractionSetup.attach(..., TREE)`。
+树木未 promote 前无 Node：仍由 `TreeRegistry` 拾取；promote 后 `InteractionSetup.attach(..., TREE)`。**悬停不显示树环。**
 
 ---
 
-## 1. 问题
+## 2. 拾取管线（点选 / 框选靠什么）
 
-现状 `UnitSelector` 己方绿环 / 中立黄环已分色。  
-框选：`marquee_owner = local_player` → **不可多选**中立/敌对（点选金矿仍可）。
+**不依赖** `.scn` 里的 `CollisionShape` / 物理射线。
 
-原作观感（人族竖切最小集）：
+| 步骤 | 做法 |
+|------|------|
+| 点选 | 相机射线 ∩ 单位脚底水平面 → 世界 XZ 距 ≤ `pick_radius_world` |
+| 框选 | 脚底投影落在框内，或脚底圆与屏幕框相交 |
+| 候选集 | `unit_host` 下带 `unit_data` 的 Node3D（树木走 `TreeRegistry`，不进左键选中） |
 
-| 情形 | 环色 | 说明 |
-|------|------|------|
-| 选中己方单位 / 建筑 | **绿** | 当前已有 |
-| 选中中立金矿 `ngol` | **黄** | 左键**点选**可选；**不可框选** |
-| 可伐树木 | — | **不可左键选中**（与原作一致）；右键下令伐木 |
-| 选中敌方（远期） | **红** | 点选信息可后置；**不可框选** |
-| 选中友军（远期） | **蓝** | 本竖切可后置 |
-| 移动 / 攻击地面确认 FX | 另套贴花 | 已有 `move_confirm_fx`，**不是**脚底选中环 |
+为何不用物理：会先打到单位网格/选中环，目标变成「自己脚下」（见 `GameDirector` 地面点注释）。
 
-本文件只定 **脚底选中环** 契约；命令确认 FX 不混入。
+**拾取半径**（世界单位）：`UnitBalance.collision × WORLD_SCALE` → 否则 `UnitUI.scale` → 再与 mesh XZ 有限混合；有上下限。  
+这是 **SLK / 配置数据**（碰撞半径），**不是** `.scn` collision mesh。
 
----
+**选中环直径**：`Wc3IdCatalog.selection_diameter_wc3` — 优先 `path_tex` 脚印格、再 `collision×2`、`UnitUI` Selection Scale；单位再乘系数并与 mesh 混合。同样是配置/Catalog，不是 scn。
 
-## 2. 目标与非目标
-
-**目标**
-
-- 左键选中：己方 → 绿；中立金矿 → 黄 + HUD 储量。  
-- 树木：**不**进左键拾取；promote 仅由伐木/伤害触发。  
-- 环尺寸仍读 Catalog / 碰撞近似（与现 `UnitSelector` 一致）。  
-- API 可扩展敌/友色，但 P0 只落地绿 + 黄。  
-- **多选当前选中（primary）**：环可对 primary 更高亮、其余略淡（与 [HUD.md](HUD.md) §4 联动；Tab 切主选）。  
-- **框选人数**：不设原作 12 上限。
-
-- 右键交互目标（金矿 / 送回建筑 / 工地 / 树）：`TargetFlashFx` 黄环闪一下表示收到指令；不进左键选中集合。
-
-**非目标（P0）**
-
-- 鼠标悬停预览环（hover）。  
-- 多选混合颜色规则的精细化（多选中立时全黄即可）。  
-- 编辑器 doodad 笔刷环改色（可继续用绿作编辑提示）。
+**应否依赖 scn collision？** **否。** 保持脚底 2D 圆：与 WC3 脚底选框一致、与网格复杂度解耦、避免环/贴花干扰射线。
 
 ---
 
-## 3. 分层
+## 3. 环色与悬停
+
+| 情形 | 环 | 说明 |
+|------|-----|------|
+| 选中己方 | 绿、不透明 | primary 多选时可略亮，非 primary 淡 |
+| 选中中立金矿 | 黄 | 可点选、不可框选 |
+| 悬停单位/建筑（未选中） | 同色系、`HOVER_ALPHA≈0.42` | 树木不显示 |
+| 树木 | — | 不可左键选中；右键伐木用闪环 |
+| 移动确认 FX | 另套贴花 | 不是脚底选中环 |
+
+`Y_BIAS ≈ 0.16`：环略高于地面 UberSplat，减轻被建筑底图遮挡 / 地形穿插。
+
+---
+
+## 4. 分层
 
 | 层 | 职责 |
 |----|------|
-| Logic / Session | 判定 `RingKind`：owner、是否中立可交互、是否建筑 |
-| Presentation | `SelectionRing` 贴图 + modulate；挂到目标 Node3D 脚下 |
-| Catalog | 环贴图路径（可先共用 `SelectionCircleMed.png`）；可选 scale |
-| Data | 不存环；金矿在 `unit_data`，树在 doodad `creationNumber` |
+| Logic / Session | `RingKind`、owner、是否可框选 |
+| Presentation | `SelectionRing` 贴图 + modulate + Y_BIAS |
+| Catalog / DefStore | collision、path_tex、Selection Scale → 半径/直径 |
+| Data | 不存环；金矿在 `unit_data`，树在 doodad |
 
-禁止：在 Layer 里写「点了谁算黄」；颜色决策集中在 selector / 一处 `ring_kind_for(node)`。
-
----
-
-## 4. API 草案
-
-```gdscript
-enum RingKind {
-	NONE = 0,
-	OWN = 1,       ## 己方 → 绿
-	NEUTRAL = 2,   ## 中立可交互 → 黄
-	ENEMY = 3,     ## 远期红
-	ALLY = 4,      ## 远期蓝
-}
-
-## 根据节点 meta / owner 解析环种类（唯一决策点）
-func ring_kind_for(node: Node3D) -> int
-
-## 创建或更新脚下环；color 由 kind 映射，禁止调用方直接传随意色（除调试）
-func ensure_ring(node: Node3D, kind: int) -> void
-```
-
-颜色常量（起步值，可微调对齐截图）：
-
-```text
-OWN     ≈ Color(0.15, 1.0, 0.25)   ## 现有绿
-NEUTRAL ≈ Color(1.0, 0.92, 0.15)  ## 黄
-ENEMY   ≈ Color(1.0, 0.15, 0.12)  ## 预留
-ALLY    ≈ Color(0.25, 0.55, 1.0)  ## 预留
-```
-
-**金矿**：`typeId == ngol`（或 owner 中立 + 可采）→ `NEUTRAL`。  
-**树**：promote 节点带 `doodad_data` / `tree_runtime` meta，且可选 → `NEUTRAL`。  
-**己方农民 / 主城**：`OWN`。
+禁止：在 Layer 里写「点了谁算黄」；颜色决策在 `SelectableComponent.ring_kind` / selector。
 
 ---
 
-## 5. 拾取范围
+## 5. 验收
 
-| 目标 | 拾取 | 环挂载 |
-|------|------|--------|
-| 单位 / 建筑（含 ngol） | `UnitSelector`：**脚底水平面 2D 圆**（非 3D 胶囊）；框选同圆/脚底 | 单位 Node |
-| 树木 | `TreeRegistry` 同款脚底圆；**不**对 MultiMesh GPU 拾取 | promote Node |
-
-左键选中树时：若仍为 MultiMesh，**先 promote 再挂黄环**（与受伤入口可共用 promote，见树文档 §4）。
-
----
-
-## 6. 实现步骤（建议）
-
-1. `UnitSelector`：抽出 `RingKind` + `ring_kind_for`；`_make_ring` / `_update_ring` 吃 kind。  
-2. 金矿选中验收：点 ngol → 黄环；点农民 → 绿环。  
-3. 树：等 `TreeInteract.promote` 可用后，selector 增加 doodad 拾取分支 + 黄环。  
-4. ✅ 环 / UnitSelector 在 `scenes/selection/`；组件与框选在 `scripts/shared/selection/`。
+- [ ] 点选/框选不依赖物理 collision。  
+- [ ] 选中己方绿环；金矿黄环；树左键无环。  
+- [ ] 悬停单位/建筑：半透明环；移开消失；已选中不再叠悬停。  
+- [ ] 悬停树木：无环。  
+- [ ] 建筑底图贴花下选中环仍可见（略抬高）。  
 
 ---
 
-## 7. 验收
-
-- [ ] 选中己方农民 / 主城：绿环。  
-- [ ] 选中中立金矿：黄环（不再绿）。  
-- [ ] 左键点树：无选中、无黄环（仍可右键伐木）。  
-- [ ] 取消选中：环移除，无残留 Node。  
-- [ ] 多选仅己方：全绿；选中金矿：黄环 + 储量 status。
-
----
-
-## 8. 相关代码
+## 6. 相关代码
 
 | 路径 | 角色 |
 |------|------|
-| `scenes/selection/` | SelectionRing、UnitSelector（场景 + 脚本） |
+| `scenes/selection/` | SelectionRing、UnitSelector |
 | `scripts/shared/selection/` | Selectable / Interactable / InteractionSetup、框选 |
-| `game/scripts/game_director.gd` | `_setup_selector`、装配调用 |
-| `game/scripts/logic/selection_info_builder.gd` | HUD 选中信息（游戏侧，留在 game/） |
-| `game/scripts/presentation/target_flash_fx.gd` | 目标闪反馈（游戏侧） |
+| `scripts/map/catalog/wc3_id_catalog.gd` | `selection_diameter_wc3` |
+| `game/scripts/game_director.gd` | `_setup_selector`、装配 |
+| `game/scripts/logic/selection_info_builder.gd` | HUD 选中信息 |
+| `game/scripts/presentation/target_flash_fx.gd` | 右键目标闪 |
 | `game/scripts/presentation/move_confirm_fx.gd` | 命令确认（勿混） |
-| `editor/scripts/tools/doodad_brush.gd` | 编辑器 doodad 环（可暂保持绿） |

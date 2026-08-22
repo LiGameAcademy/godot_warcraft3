@@ -43,6 +43,8 @@ var _selected: Array[Node3D] = []
 var _primary: Node3D = null
 ## 上一帧挂着选中环的宿主（用于取消选中时 hide）
 var _ring_hosts: Array[Node3D] = []
+## 当前悬停预览宿主（未选中单位/建筑；不含树木）
+var _hover_host: Node3D = null
 
 
 func _ready() -> void:
@@ -134,6 +136,9 @@ func handle_pointer_event(event: InputEvent) -> bool:
 		var mm := event as InputEventMouseMotion
 		_marquee.update(mm.position)
 		return true
+	if event is InputEventMouseMotion and not _marqueeing:
+		_update_hover((event as InputEventMouseMotion).position)
+		return false
 	return false
 
 
@@ -188,6 +193,51 @@ func select_node(node: Node3D) -> void:
 	_set_selection([node])
 
 
+## 悬停预览：单位/建筑脚底半透明环；树木与已选中目标不显示。
+func _update_hover(screen_pos: Vector2) -> void:
+	_try_autobind()
+	if not enabled or camera == null or unit_host == null:
+		_clear_hover()
+		return
+	if _hud_blocks_screen(screen_pos):
+		_clear_hover()
+		return
+	var picked := _pick_at(screen_pos)
+	if picked != null and _is_tree_like(picked):
+		picked = null
+	if picked != null and _selected.has(picked):
+		picked = null
+	if picked == _hover_host:
+		return
+	_clear_hover()
+	if picked == null:
+		return
+	InteractionSetup.attach(picked)
+	var sel := InteractionSetup.get_selectable(picked)
+	if sel == null:
+		return
+	sel.show_hover()
+	_hover_host = picked
+
+
+func _clear_hover() -> void:
+	if _hover_host == null:
+		return
+	if is_instance_valid(_hover_host):
+		var sel := InteractionSetup.get_selectable(_hover_host)
+		if sel != null:
+			sel.hide_hover()
+	_hover_host = null
+
+
+func _is_tree_like(n: Node3D) -> bool:
+	if n == null:
+		return false
+	if n.has_meta("tree_runtime") or n.has_meta("doodad_data"):
+		return true
+	return false
+
+
 ## 主输入：全屏层 gui_input（可靠）。`_unhandled_input` 仅作无层时的兜底。
 func _on_world_gui_input(event: InputEvent) -> void:
 	_try_autobind()
@@ -217,6 +267,8 @@ func _on_world_gui_input(event: InputEvent) -> void:
 			_marquee.update((event as InputEventMouseMotion).position)
 			if _input_root != null:
 				_input_root.accept_event()
+		else:
+			_update_hover((event as InputEventMouseMotion).position)
 
 
 func _input(event: InputEvent) -> void:
@@ -282,6 +334,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_press(screen_pos: Vector2) -> void:
+	_clear_hover()
 	_marqueeing = true
 	set_process(true)
 	_marquee.begin(screen_pos)
@@ -544,6 +597,7 @@ func _allows_marquee(n: Node3D) -> bool:
 
 func _set_selection(nodes: Array) -> void:
 	# 故意不设原作 12 人框选上限：选中集合可任意大。
+	_clear_hover()
 	_selected.clear()
 	for n in nodes:
 		if n is Node3D and is_instance_valid(n):

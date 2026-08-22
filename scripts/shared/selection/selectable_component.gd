@@ -31,6 +31,7 @@ var _host: Node3D = null						## 宿主。
 var _pick_radius: float = -1.0					## 拾取半径。
 var _ring_diameter: float = -1.0				## 选中环直径。
 var _is_selected: bool = false					## 是否选中。
+var _is_hovered: bool = false					## 是否悬停预览（未选中时）。
 var _last_primary: bool = true					## 上次是否主选。
 var _last_multi: int = 1						## 上次选中数量。
 
@@ -162,6 +163,7 @@ func ring_diameter_world() -> float:
 ## 显示选中环。
 func show_selected(is_primary: bool, multi_count: int) -> void:
 	_is_selected = true
+	_is_hovered = false
 	_last_primary = is_primary
 	_last_multi = maxi(multi_count, 1)
 	if selection_ring == null:
@@ -172,9 +174,34 @@ func show_selected(is_primary: bool, multi_count: int) -> void:
 		col.a *= 0.45
 	selection_ring.show_selected(ring_diameter_world(), col)
 
+
+## 悬停半透明环；已选中则忽略（保持选中外观）。
+func show_hover() -> void:
+	if _is_selected:
+		return
+	_is_hovered = true
+	if selection_ring == null:
+		return
+	var kind := ring_kind()
+	var col: Color = SelectionRing.COLOR_NEUTRAL if kind == RingKind.NEUTRAL else SelectionRing.COLOR_OWN
+	selection_ring.show_hover(ring_diameter_world(), col)
+
+
+## 清除悬停；若仍选中则还原选中环。
+func hide_hover() -> void:
+	if not _is_hovered:
+		return
+	_is_hovered = false
+	if _is_selected:
+		show_selected(_last_primary, _last_multi)
+	elif selection_ring != null:
+		selection_ring.hide_selected()
+
+
 ## 隐藏选中环。
 func hide_selected() -> void:
 	_is_selected = false
+	_is_hovered = false
 	if selection_ring != null:
 		selection_ring.hide_selected()
 
