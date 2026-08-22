@@ -1826,7 +1826,9 @@ func _configure_unit_ai(ai: UnitAI, unit: Node3D) -> void:
 	ai.configure(
 		func() -> bool: return _unit_ai_is_player_occupied(unit),
 		Callable(self, "_ensure_attack_controller"),
-		Callable(self, "_unit_host")
+		Callable(self, "_unit_host"),
+		Callable(),
+		Callable(self, "_ensure_navigator")
 	)
 
 

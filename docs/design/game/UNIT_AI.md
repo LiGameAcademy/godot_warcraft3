@@ -41,7 +41,7 @@
 | 野怪 idle 看见玩家走进 `acquire` | ❌ 无组件在 tick | ❌ 不主动接战 |
 | Hold 索敌 | ✅ 仅出手射程内、不追 | 野怪警戒需要 **acquire 半径 + 可追** |
 | `AttackController` 挂载 | 懒挂（有命令才 ensure） | 野怪入场就要能决策 → **入场 ensure** |
-| 助攻 / 回营 leash | ❌ | P1 |
+| 助攻 / 回营 leash | ❌ 助攻 / ✅ leash | 助攻仍 P1 |
 
 `COMBAT_SYSTEM.md` §1.2 / §3.4 曾写「P0 中立不反击」——那是**战斗竖切**范围；本文件把它升级为**单位 AI 主线**。
 
@@ -57,6 +57,7 @@
 | U1 | 受击反击 | 受伤且来源合法敌对 → 对来源 `start_attack`（打断闲置，不抢玩家显式命令优先级见 §5） |
 | U2 | 警戒索敌 | 闲置时在 `acquire` 内 `find_acquire_target` → `start_attack` |
 | U3 | Echo 验收 | 走近野怪营被拉；互殴致死；Stop/新命令可打断 AI 进攻 |
+| U4 | Leash 归巢 | 追出 `leash_wc3` → 停攻回 `home_wc3`；归途不重开仇恨 |
 
 ### 2.2 明确不做（本分支实现，接口先留）
 
@@ -71,7 +72,7 @@
 
 | 项 | 说明 | 接口落点 |
 |----|------|----------|
-| Leash / 回锚 | 追出营地半径 → 停攻、回 `home_wc3` | `home_wc3` / `RETURNING` |
+| Leash / 回锚 | ✅ 默认 1000 WC3；`RETURNING` 途中不索敌不反击 | `home_wc3` / `leash_wc3` / `State.RETURNING` |
 | 营地助攻 | 同营友方受击 → 加入打同一目标 | `camp_id` · `bind_camp` · `notify_camp_ally_engaged` |
 | 全图 camp 表 | 会话级注册表：成员、营心、助攻半径 | 另文件 `CreepCampRegistry`（后置）；单位只持 `camp_id` |
 | 睡眠 / 苏醒 | 夜间睡、受击醒；读 `UnitData.canSleep` | `State.SLEEPING` · `set_asleep` · `notify_time_of_day` · `try_wake` |
@@ -131,7 +132,7 @@ game/scripts/logic/
 | **U2 警戒索敌** | 敌对进入 **`acquire`** | 是 → 完整 `ATTACK`（可追到交战） | 野怪闲置主路径；「进圈就打」指这个 |
 | **U1 受击反击** | **被打**且来源敌对 | 是 → `start_attack(来源)` | 补洞：远程风筝在 acquire 外先手、睡觉被打醒等；**不是** Hold |
 | **Hold（玩家 H）** | 仅 **出手射程** 内索敌 | **不**追 | `AttackController.HOLD`；与 UnitAI 警戒不同 |
-| **Leash / 追击上限** | 已接战后追出营/锚点半径 | 停攻回营 | **单位 AI（P1）**，不是电脑玩家 AI |
+| **Leash / 追击上限** | 已接战后追出营/锚点半径 | 停攻回营 | **单位 AI（U4）**，不是电脑玩家 AI |
 
 野怪「追到超出范围再回家」= **单位 AI + leash**，与 AI 玩家无关。
 
@@ -172,7 +173,7 @@ enum State {
 }
 ```
 
-- `ENGAGED`：**不**复制追击逻辑；每帧只检查「目标是否仍有效 / 是否被更高优先级命令抢走 /（P1）是否超 leash」
+- `ENGAGED`：**不**复制追击逻辑；每帧只检查「目标是否仍有效 / 是否被更高优先级命令抢走 / 是否超 leash」
 - 玩家下 Move / Attack / Harvest / Build / Stop → AI `yield_to_player()`：清意图，必要时 `AttackController.cancel` 已由 Router 做
 - `SLEEPING`：`wants_idle_acquire()==false`；受击走 `try_wake()` 再反击
 
@@ -200,7 +201,7 @@ U2 索敌必须用 `effective_acquire_range_wc3()`，不要直接裸读 `CombatQ
 | Profile | 谁用 | idle 索敌半径 | 受击反击 | 追击 | leash |
 |---------|------|---------------|----------|------|-------|
 | `PASSIVE` | 小动物等（可选） | 无 | 可选逃跑后置 | 无 | — |
-| `CAMP_CREEP` | Echo 野怪默认 | `CombatQuery.acquire_range_wc3` | ✅ | ✅（经 Attack） | P1 |
+| `CAMP_CREEP` | Echo 野怪默认 | `CombatQuery.acquire_range_wc3` | ✅ | ✅（经 Attack） | ✅ |
 | `PLAYER_MILITARY` | P1：闲置士兵 | 同 acquire 或更短 | ✅ | ✅ | 无（跟玩家命令） |
 
 P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；其余不挂或 `PASSIVE`。
@@ -285,7 +286,7 @@ source = UNIT_AI
 if AttackController 已 IDLE 且 mode NONE:
   # 目标死光或被 cancel
   state = IDLE
-  # P1: 若超 leash → RETURNING
+  # 若超 leash → RETURNING
 ```
 
 ### 6.4 与 Hold / Attack-Move 的边界
@@ -298,15 +299,15 @@ if AttackController 已 IDLE 且 mode NONE:
 
 **不要**让野怪 `start_hold()` 冒充警戒——半径与追击语义都不对。
 
-### 6.5 P1 Leash（预留接口）
+### 6.5 Leash（U4）
 
 ```text
-leash_wc3 = 常量或 balance 字段（竖切可用 800～1200）
+leash_wc3 = UnitAI.leash_wc3（默认 1000）
 if ENGAGED and distance(home, self) > leash:
   AttackController.cancel()
   Navigator.go_to_wc3(home)
   state = RETURNING
-# 回到 home 附近 → IDLE；RETURNING 期间忽略新的 idle 索敌（可仍允许受击反击，按手感二选一）
+# 回到 home 附近 → IDLE；RETURNING 期间忽略 idle 索敌与受击重开打
 ```
 
 ---
@@ -360,9 +361,9 @@ tests/unit/selftest_unit_ai_acquire.gd
 | **U1** | `damage_applied` → 反击 | Director 扇出 + `notify_damaged` | ✅ |
 | **U2** | idle acquire 节流索敌 | `UnitAI._process` | ✅ |
 | **U3** | Echo 剧本 + 自测 | selftest + 手测清单 | `selftest_unit_ai` 已加；Echo 手测待验 |
-| **U4** | （可选）leash / 助攻 | 扩展 Profile | 不挡 U3 合并 |
+| **U4** | leash 归巢 | ✅ `RETURNING`；助攻仍后置 | 不挡 U3 合并 |
 
-建议分支策略：本分支只合 U0–U3；U4 可同分支尾随或下一切片。
+建议分支策略：U0–U4（含 leash）可同分支；营地助攻另切片。
 
 ---
 
@@ -405,7 +406,7 @@ tests/unit/selftest_unit_ai_acquire.gd
 | 2026-08-21 | **U0-1**：`UnitAI` 子节点骨架；`UnitOrder.Source.UNIT_AI`；采集仍归 `HarvestController` |
 | 2026-08-21 | **接口预留**：`camp_id` / 睡眠态 / `notify_time_of_day` / `effective_acquire_range_wc3`（实现后置） |
 | 2026-08-21 | **U0-2**：`_wire_all_unit_ai` + 训练刷兵 ensure；Router 玩家令 `yield_to_player` |
-| 2026-08-21 | **U1+U2**：受击反击 + idle `effective_acquire_range` 索敌；`selftest_unit_ai` |
+| 2026-08-22 | **U4 leash**：`CAMP_CREEP` 超 `leash_wc3` 停攻回 `home_wc3`；归途不重开仇恨 |
 
 ---
 
