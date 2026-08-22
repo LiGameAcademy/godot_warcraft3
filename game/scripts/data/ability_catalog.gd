@@ -13,6 +13,7 @@ const SUPPORTED_ORDERS := {
 	"defend": true,
 	"townbellon": true,
 	"waterelemental": true,
+	"blizzard": true,
 }
 
 

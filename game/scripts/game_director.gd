@@ -1651,7 +1651,7 @@ func _begin_ability_targeting(abil_id: String, source: int) -> void:
 		game_hud.set_status("技能瞄准（%s）· %s · 左键点地 · Esc 取消" % [src, tip])
 
 
-## 技能瞄准落点：点地召唤等（P0：AHwe 水元素）。
+## 技能瞄准落点：点地召唤 / 区域 DOT 等。
 func _issue_ability_at_screen(screen_pos: Vector2, _source: int) -> bool:
 	var abil_id := _pending_ability_id.strip_edges()
 	if abil_id.is_empty():
@@ -1668,16 +1668,44 @@ func _issue_ability_at_screen(screen_pos: Vector2, _source: int) -> bool:
 		return true
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal := Vector2(hit.x * inv, -hit.z * inv)
-	var result := SummonUnitAbility.try_cast(caster, abil_id, goal, _ability_cast_context())
+	var acc := AbilityCastController.ensure_on(caster)
+	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
+		acc.cast_resolved.connect(_on_ability_cast_resolved)
+	var start := acc.begin_cast(abil_id, goal, _ability_cast_context())
+	if game_hud:
+		if not bool(start.get("ok", false)):
+			game_hud.set_status(str(start.get("reason", "施法失败")))
+		else:
+			var ab := AbilityCatalog.data(abil_id)
+			if AbilityCastCatalog.is_channel_ability(abil_id):
+				var lv := AbilityCatalog.level_for(caster, abil_id)
+				var dur := AbilityCastCatalog.channel_duration_sec(abil_id, lv)
+				game_hud.set_status("引导暴风雪 · %.1fs（移动/停止可打断）" % dur)
+			elif ab != null:
+				var cast_sec := ab.cast_time_at(AbilityCatalog.level_for(caster, abil_id))
+				if cast_sec > 0.05:
+					game_hud.set_status("施法中 · %.1fs…" % cast_sec)
+				else:
+					game_hud.set_status("施法中…")
+			else:
+				game_hud.set_status("施法中…")
+	_refresh_command_card()
+	return bool(start.get("ok", false))
+
+
+func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 	if game_hud:
 		if bool(result.get("ok", false)):
 			var spawned := result.get("unit") as Node3D
-			var name_s := abil_id
 			if spawned != null:
-				name_s = TechPresence.display_name(
+				var name_s := TechPresence.display_name(
 					str(spawned.get_meta("unit_data", {}).get("typeId", abil_id))
 				)
-			game_hud.set_status("召唤 · %s" % name_s)
+				game_hud.set_status("召唤 · %s" % name_s)
+			else:
+				var row := CommandButtonCatalog.get_shared().get_ability(abil_id)
+				var name_s := str(row.get("name", abil_id)).strip_edges()
+				game_hud.set_status("施法 · %s" % name_s)
 		else:
 			game_hud.set_status(str(result.get("reason", "施法失败")))
 	if bool(result.get("ok", false)):
@@ -1687,7 +1715,6 @@ func _issue_ability_at_screen(screen_pos: Vector2, _source: int) -> bool:
 				health_bar_manager.resync()
 		_sync_selection_info_panel()
 	_refresh_command_card()
-	return true
 
 
 func _ability_cast_context() -> Dictionary:
@@ -1696,7 +1723,32 @@ func _ability_cast_context() -> Dictionary:
 		"heightfield": _heightfield,
 		"creation_number": _alloc_runtime_cn(),
 		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
+		"damage_pipeline": _damage_pipeline,
+		"unit_host": Callable(self, "_unit_host"),
+		"model_cache": map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null,
+		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
 	}
+
+
+## 引导中：玩家新指令（非 AI）→ 打断暴风雪等。
+func _ability_channel_interrupt_check(caster: Node3D) -> bool:
+	if caster == null or not is_instance_valid(caster) or _command_router == null:
+		return false
+	var q := _command_router.queue_for(caster)
+	if q == null or q.is_idle():
+		return false
+	var o: UnitOrder = q.current
+	if o == null:
+		return false
+	if o.source == UnitOrder.Source.UNIT_AI:
+		return false
+	match o.kind:
+		UnitOrder.Kind.MOVE, UnitOrder.Kind.STOP, UnitOrder.Kind.HOLD,
+		UnitOrder.Kind.ATTACK, UnitOrder.Kind.ATTACK_MOVE, UnitOrder.Kind.PATROL,
+		UnitOrder.Kind.HARVEST_GOLD, UnitOrder.Kind.HARVEST_LUMBER,
+		UnitOrder.Kind.RETURN_GOODS, UnitOrder.Kind.ABILITY, UnitOrder.Kind.BUILD:
+			return true
+	return false
 
 
 func _ability_ui_state_for(primary: Node3D) -> Dictionary:

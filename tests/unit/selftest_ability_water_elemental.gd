@@ -55,6 +55,9 @@ func _test_ahwe_slk() -> void:
 	if not is_equal_approx(ab.cast_range_at(1), 200.0):
 		_fail("AHwe 施法距离应为 200（Area1），实际 %s" % ab.cast_range_at(1))
 		return
+	if not is_equal_approx(ab.cast_time_at(1), 0.0):
+		_fail("AHwe Cast1 应为 0（即时），实际 %s" % ab.cast_time_at(1))
+		return
 	print("  ahwe_slk OK")
 
 

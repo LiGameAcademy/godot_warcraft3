@@ -148,6 +148,42 @@ func cast_range_at(level: int) -> float:
 	return 99999.0
 
 
+func area_at(level: int) -> float:
+	match clamp_level(level):
+		1: return area1
+		2: return area2
+		3: return area3
+		4: return area4
+		_: return area1
+
+
+func data_a_at(level: int) -> float:
+	match clamp_level(level):
+		1: return data_a1
+		2: return data_a2
+		3: return data_a3
+		4: return data_a4
+		_: return data_a1
+
+
+func data_b_at(level: int) -> float:
+	match clamp_level(level):
+		1: return data_b1
+		2: return data_b2
+		3: return data_b3
+		4: return data_b4
+		_: return data_b1
+
+
+func data_d_at(level: int) -> float:
+	match clamp_level(level):
+		1: return data_d1
+		2: return data_d2
+		3: return data_d3
+		4: return data_d4
+		_: return data_d1
+
+
 func summon_unit_id_at(level: int) -> String:
 	match clamp_level(level):
 		1: return unit_id1.strip_edges()

@@ -65,6 +65,7 @@ var _corpse_phase: int = _CORPSE_NONE ## 尸体链阶段。
 var _corpse_watch_id: int = 0 ## 阶段切换时作废旧 timeout。
 var _played_any_decay: bool = false ## 是否已播过 Flesh/Bone。
 var _building_work: bool = false ## 是否施工。
+var _spell_casting: bool = false ## 技能施法动画中。
 var _logical: String = "" ## 逻辑名。
 var _activity: int = AnimSequenceResolver.Activity.IDLE ## 活动。
 var _soft_loop = null ## 软循环。
@@ -174,7 +175,7 @@ func set_stance(stance: int, force: bool = false) -> void:
 	var stance_changed := _stance != stance
 	_stance = stance
 	_logical = ""
-	if _dying or _chopping or _building_work or _combat_attack:
+	if _dying or _chopping or _building_work or _combat_attack or _spell_casting:
 		AppLog.debug(
 			AppLog.Layer.PRESENT,
 			_TAG,
@@ -197,7 +198,7 @@ func set_locomotion(moving: bool) -> void:
 	if _dying:
 		return
 	# 战斗出手中：不因 Navigator 抖动打断 Attack（首刀进距时常先 stop 再残留 moving=true）。
-	if _combat_attack:
+	if _combat_attack or _spell_casting:
 		_moving = moving
 		return
 	if (_chopping or _building_work) and moving:
@@ -528,6 +529,7 @@ func set_combat_attack(active: bool) -> void:
 	_combat_attack = active
 	if active:
 		_chopping = false
+		_spell_casting = false
 		_moving = false
 		_logical = ""
 		# 从 Walk 切入时 blend>0 会「揉」成怪姿；首刀必须硬切 Attack
@@ -537,11 +539,47 @@ func set_combat_attack(active: bool) -> void:
 		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
 
 
+## 英雄技能施法动画（Spell Throw / Spell Channel；与 Activity 分离）。
+func play_spell_cast(logical: String, channel: bool = false) -> void:
+	if _dying:
+		return
+	var body := _host()
+	if body == null:
+		return
+	var nav := body.get_node_or_null("UnitNavigator") as UnitNavigator
+	if nav != null:
+		nav.stop()
+	var ap := _animation_player()
+	var fallbacks := ["Spell Throw", "Spell Channel", "Spell", "Attack"]
+	var play_root: Node = _model if _model != null else body
+	AnimPlayback.play_logical(
+		play_root, logical, 0.0, _cache, 0, fallbacks, ap
+	)
+	Wc3Pe2Particles.apply_sequence(play_root, logical)
+	if not channel:
+		# Cast1=0：只播一次手势，不锁 Activity（效果立即结算）
+		return
+	_spell_casting = true
+	_combat_attack = false
+	_chopping = false
+	_building_work = false
+	_moving = false
+	_logical = logical
+
+
+func end_spell_cast() -> void:
+	if not _spell_casting:
+		return
+	_spell_casting = false
+	_logical = ""
+	_play_current(BLEND_TO_STAND)
+
+
 ## 获取当前活动。
 func _current_activity() -> int:
 	if _dying:
 		return AnimSequenceResolver.Activity.DEATH
-	if _chopping or _combat_attack:
+	if _chopping or _combat_attack or _spell_casting:
 		return AnimSequenceResolver.Activity.ATTACK
 	if _building_work:
 		return AnimSequenceResolver.Activity.WORK

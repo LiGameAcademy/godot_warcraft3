@@ -7,7 +7,7 @@ extends RefCounted
 ## - 纯命名表，无 Node、无播放；编辑器与游戏共用。
 ## - 姿态 = 平行动画族（负金/顶盾/主城升级档）；活动 = 当前在做什么。
 ## - 策略层（UnitVisual / BuildingVisual）组名；门面（Wc3ModelScene）负责播。
-## - 技能施法 Sequence（Spell Throw / Spell Slam 等）尚未纳入 Activity，F10 再扩。
+## - 技能施法 Sequence（Spell Throw / Spell Channel 等）由 Unit.play_spell_cast + AbilityCastCatalog 驱动。
 
 ## 姿态。
 enum Stance {
