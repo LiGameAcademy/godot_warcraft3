@@ -59,6 +59,57 @@ func fire(attacker: Node3D, target: Node3D, visual_only: bool = false) -> int:
 	return id
 
 
+## 技能弹道：命中后走 spell_req（固定伤害等），info 可带 spell_abil_id / missile_art。
+func fire_spell(
+	caster: Node3D,
+	target: Node3D,
+	spell_req: Dictionary,
+	speed_wc3: float = 1000.0,
+	extra: Dictionary = {}
+) -> int:
+	if caster == null or target == null:
+		return -1
+	if not is_instance_valid(caster) or not is_instance_valid(target):
+		return -1
+	var from_xy := Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	var to_xy := Wc3Coords.godot_to_wc3_xy(target.global_position)
+	var launch := CombatQuery.launch_offset_wc3(caster)
+	var impact_z := CombatQuery.impact_z_wc3(caster)
+	var from_wc3 := Vector3(from_xy.x + launch.x, from_xy.y + launch.y, launch.z)
+	var to_wc3 := Vector3(to_xy.x, to_xy.y, impact_z)
+	var dist := _horiz_dist(from_wc3, to_wc3)
+	var speed := maxf(speed_wc3, 1.0)
+	var duration := CombatQuery.travel_time_sec(dist, speed)
+	var id := _next_id
+	_next_id += 1
+	var info := {
+		"id": id,
+		"attacker": caster,
+		"target": target,
+		"from_wc3": from_wc3,
+		"to_wc3": to_wc3,
+		"pos_wc3": from_wc3,
+		"speed_wc3": speed,
+		"duration": duration,
+		"elapsed": 0.0,
+		"visual_only": false,
+		"alive": true,
+		"homing": true,
+		"hit_radius_wc3": HIT_RADIUS_WC3,
+		"impact_z": impact_z,
+		"spell_req": spell_req.duplicate(true),
+		"is_spell": true,
+	}
+	for k in extra.keys():
+		info[k] = extra[k]
+	_flights.append(info)
+	projectile_launched.emit(info.duplicate())
+	if dist <= HIT_RADIUS_WC3:
+		_resolve_flight(info)
+		_remove_flight(id)
+	return id
+
+
 func tick(delta: float) -> void:
 	if _flights.is_empty():
 		return
@@ -139,7 +190,19 @@ func _resolve_flight(f: Dictionary) -> void:
 			{"ok": false, "visual_only": true, "id": int(f.get("id", -1)), "attacker": attacker, "target": target}
 		)
 		return
-	var result := pipeline.apply({"attacker": attacker, "target": target, "source_kind": "weapon"})
+	var result: Dictionary
+	if bool(f.get("is_spell", false)):
+		var req: Dictionary = f.get("spell_req", {}) as Dictionary
+		req["attacker"] = attacker
+		req["target"] = target
+		result = pipeline.apply(req)
+		result["is_spell"] = true
+		result["spell_abil_id"] = str(f.get("spell_abil_id", ""))
+		var stun_sec := float(f.get("stun_sec", 0.0))
+		if stun_sec > 0.0 and target != null and is_instance_valid(target):
+			UnitStatusEffects.apply_stun(target, stun_sec)
+	else:
+		result = pipeline.apply({"attacker": attacker, "target": target, "source_kind": "weapon"})
 	result["id"] = int(f.get("id", -1))
 	result["visual_only"] = false
 	projectile_resolved.emit(result)

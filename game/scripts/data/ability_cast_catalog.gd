@@ -8,6 +8,9 @@ const _SPELL_SEQ_BY_ORDER := {
 	"blizzard": "Spell Channel",
 	"waterelemental": "Spell Throw",
 	"massteleport": "Spell Throw",
+	"thunderbolt": "Spell Throw",
+	"thunderclap": "Spell Slam",
+	"avatar": "Spell Throw",
 }
 
 ## abil_id → Effectart / Areaeffectart（HumanAbilityFunc）
@@ -16,9 +19,19 @@ const _GROUND_EFFECT_BY_ABIL := {
 	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportTo.mdl",
 }
 
+const _MISSILE_BY_ABIL := {
+	"AHtb": "Abilities/Spells/Human/StormBolt/StormBoltMissile.mdl",
+}
+
+const _CASTER_ART_BY_ABIL := {
+	"AHtc": "Abilities/Spells/Human/Thunderclap/ThunderClapCaster.mdl",
+	"AHav": "Abilities/Spells/Human/Avatar/AvatarCaster.mdl",
+}
+
 ## 命中附着特效（HumanAbilityFunc [BH*] Targetart）
 const _HIT_EFFECT_BY_ABIL := {
 	"AHbz": "Abilities/Spells/Other/FrostDamage/FrostDamage.mdl",
+	"AHtb": "Abilities/Spells/Human/StormBolt/StormBoltTarget.mdl",
 }
 
 const _CHANNEL_ORDERS := {
@@ -57,3 +70,23 @@ static func ground_effect_art(abil_id: String) -> String:
 	if _GROUND_EFFECT_BY_ABIL.has(id):
 		return CombatQuery.normalize_model_art(str(_GROUND_EFFECT_BY_ABIL[id]))
 	return ""
+
+
+static func missile_art(abil_id: String) -> String:
+	var id := abil_id.strip_edges()
+	if _MISSILE_BY_ABIL.has(id):
+		return CombatQuery.normalize_model_art(str(_MISSILE_BY_ABIL[id]))
+	return ""
+
+
+static func caster_art(abil_id: String) -> String:
+	var id := abil_id.strip_edges()
+	if _CASTER_ART_BY_ABIL.has(id):
+		return CombatQuery.normalize_model_art(str(_CASTER_ART_BY_ABIL[id]))
+	var row := CommandButtonCatalog.get_shared().get_ability(id)
+	var raw := str(row.get("casterart", "")).strip_edges()
+	if raw.is_empty():
+		raw = str(row.get("targetart", "")).strip_edges()
+	if raw.is_empty():
+		return ""
+	return CombatQuery.normalize_model_art(raw)

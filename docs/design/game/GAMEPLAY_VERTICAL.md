@@ -460,6 +460,7 @@ game/scripts/
 | P0 | 暴风雪 | 目标区域引导 DOT | ✅ |
 | P1 | 辉煌光环 | 光环回蓝 | ✅ |
 | P2 | 群体传送 | 施法者周围友军传送到点目标 | ✅ |
+| P0 | 山丘之王四技 | AHtb/AHtc/AHbh/AHav | ✅ |
 
 详见 [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md)。
 

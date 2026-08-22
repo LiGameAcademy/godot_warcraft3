@@ -1,7 +1,7 @@
 # 技能系统（Ability · as-built + 重构备忘）
 
 > **层别**：Game · data / logic / present  
-> **状态**：F10 大法师四技能竖切已完成（AHwe / AHbz / AHab / AHmt）；本文记录**当前实现**与**计划中的抽象化**，供后续重构对照。  
+> **状态**：F10 大法师四技能 + 山丘之王四技能竖切已完成；本文记录**当前实现**与**计划中的抽象化**，供后续重构对照。  
 > **最后更新**：2026-08-22
 
 ## 1. 设计原则（已定）
@@ -29,10 +29,16 @@ game/scripts/data/
         ├─ Logic
         │    ability_cast_rules.gd      冷却/蓝/距离校验 + commit_cost
         │    ability_cast_controller.gd 即时 Cast / 引导 Channel
-        │    point_target_ability.gd    按 order 分发
+        │    point_target_ability.gd    点地 order 分发
+        │    ability_executor.gd        按 target_kind 路由
         │    summon_unit_ability.gd       AHwe
         │    blizzard_ability.gd          AHbz（+ blizzard_zone.gd）
         │    mass_teleport_ability.gd     AHmt
+        │    storm_bolt_ability.gd        AHtb
+        │    thunder_clap_ability.gd      AHtc
+        │    avatar_ability.gd            AHav（+ avatar_controller.gd）
+        │    bash_controller.gd           AHbh（被动 proc）
+        │    unit_status_effects.gd       眩晕/减速/加甲
         │    brilliance_aura_controller.gd  AHab（被动光环 tick）
         │    unit_mana.gd / ability_cooldowns.gd
         │
@@ -51,9 +57,11 @@ game/scripts/game_director.gd
 
 | 概念 | 判定来源 | UI（命令卡） | Logic |
 |------|----------|--------------|-------|
-| **主动点目标** | Func 有 `Order` | `ability:AHxx`，可点击瞄准 | `PointTargetAbility` → 具体 `*Ability` |
+| **主动点目标** | Func 有 `Order`，`target_kind=POINT` | `ability:AHxx`，点地瞄准 | `AbilityExecutor` → `PointTargetAbility` / 具体 `*Ability` |
+| **主动点单位** | order 如 `thunderbolt` | 同上，点单位瞄准 | `StormBoltAbility` + 魔法弹道 |
+| **主动自身** | order 如 `thunderclap` / `avatar` | 点按钮即施 | `ThunderClapAbility` / `AvatarAbility` |
 | **引导型** | order ∈ `_CHANNEL_ORDERS` | 同上 | `AbilityCastController` CHANNEL + zone |
-| **被动技能** | Func **无** Order | 当前 `passive:AHxx`（不可点） | 学会即挂 Controller（如光环） |
+| **被动技能** | Func **无** Order | 当前 `passive:AHxx`（不可点） | 学会即挂 Controller（光环 / proc） |
 
 > **Tech debt**：`passive:` 表示「被动技能」，不是「光环」。`PASSIVE_AURAS` / `is_passive_aura()` 命名过窄——暴击、闪避等 passive 将来也会走 `passive:` 前缀，但 Logic 不是 aura。
 
@@ -132,6 +140,17 @@ game/scripts/game_director.gd
 | AHab | （无） | — | 被动 Area 回蓝 | `BrillianceAuraController` |
 | AHmt | massteleport | 0 | 自身 Area 友军→点地 | `MassTeleportAbility` |
 
+## 7. 山丘之王四技能速查（Hmkg）
+
+| ID | Order | 目标 | 机制 | Logic 类 |
+|----|-------|------|------|----------|
+| AHtb | thunderbolt | 单位 | 魔法弹道 + 伤害 + 眩晕 | `StormBoltAbility` + `ProjectileService.fire_spell` |
+| AHtc | thunderclap | 自身 | 范围魔法伤害 + 减速 | `ThunderClapAbility` + `UnitStatusEffects` |
+| AHbh | （无） | — | 攻击概率眩晕 + 额外伤害 | `BashController`（监听 `damage_applied`） |
+| AHav | avatar | 自身 | 限时 +HP / +护甲 | `AvatarAbility` + `AvatarController` |
+
+Director 按 `AbilityCatalog.target_kind()` 分流：点地 / 点单位 / 点按钮即 `_issue_self_ability`。
+
 ### AHmt 数值（AbilityData）
 
 | 字段 | Lv1 |
@@ -145,13 +164,14 @@ game/scripts/game_director.gd
 
 P0 简化：不传送建筑；传送前 `halt` 移动/采集/攻击；落点用 `TrainSpawn.resolve_with_displace` 挤位。
 
-## 7. 测试
+## 8. 测试
 
 ```bash
 godot --headless --path . -s res://tests/unit/selftest_ability_water_elemental.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_blizzard.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_brilliance.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_mass_teleport.gd
+godot --headless --path . -s res://tests/unit/selftest_ability_mountain_king.gd
 godot --headless --path . -s res://tests/unit/selftest_summon_lifetime.gd
 godot --headless --path . -s res://tests/unit/selftest_militia.gd
 ```
@@ -163,7 +183,7 @@ godot --headless --path . -s res://tests/unit/selftest_militia.gd
 | 水元素 hwat | AHwe `Dur1`（60s） | `SummonLifetime` → `DeathService.kill`（Death 动画 + 尸体 linger） |
 | 民兵 hmil | Amil `Dur1`（~45s） | `MilitiaController._process` → `_revert_now()` 变回 hpea |
 
-## 8. 重构检查清单（将来 PR 用）
+## 9. 重构检查清单（将来 PR 用）
 
 - [ ] `is_passive_ability()` + 重命名 `passive:` 注释
 - [ ] `AbilityFxCatalog` 读 Func；删除 Presenter 硬编码
@@ -172,7 +192,7 @@ godot --headless --path . -s res://tests/unit/selftest_militia.gd
 - [ ] `AbilityCastController` 与 channel 行为解耦（非仅 Blizzard）
 - [ ] 文档同步 GAMEPLAY_VERTICAL §F10 决策记录
 
-## 9. 相关文档
+## 10. 相关文档
 
 - [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) §F10 — 竖切范围与验收  
 - [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) — 伤害管线（暴风雪）  

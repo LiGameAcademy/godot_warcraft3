@@ -412,11 +412,15 @@ func _input(event: InputEvent) -> void:
 			_set_rally_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
-	# 技能瞄准：左键点地施法
+	# 技能瞄准：左键点地/点单位施法
 	if _ability_targeting and event is InputEventMouseButton:
 		var mb_ab := event as InputEventMouseButton
 		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
-			_issue_ability_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
+			var abil_id := _pending_ability_id.strip_edges()
+			if AbilityCatalog.target_kind(abil_id) == AbilityCatalog.TARGET_UNIT:
+				_issue_ability_at_unit_screen(mb_ab.position, UnitOrder.Source.TARGETING)
+			else:
+				_issue_ability_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
 			_set_ability_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
@@ -664,6 +668,7 @@ func _process(delta: float) -> void:
 	if _projectile_service != null:
 		_projectile_service.tick(delta)
 	_tick_ability_cooldowns_on_map(delta)
+	_tick_status_effects(delta)
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
@@ -1648,7 +1653,84 @@ func _begin_ability_targeting(abil_id: String, source: int) -> void:
 		var tip := str(row.get("name", id)).strip_edges()
 		if tip.is_empty():
 			tip = id
-		game_hud.set_status("技能瞄准（%s）· %s · 左键点地 · Esc 取消" % [src, tip])
+		var aim_hint := "左键点地"
+		if AbilityCatalog.target_kind(id) == AbilityCatalog.TARGET_UNIT:
+			aim_hint = "左键点单位"
+		game_hud.set_status("技能瞄准（%s）· %s · %s · Esc 取消" % [src, tip, aim_hint])
+
+
+## 自身技能（雷霆一击 / 天神下凡）：点按钮即施法。
+func _issue_self_ability(abil_id: String, source: int) -> bool:
+	var id := abil_id.strip_edges()
+	if id.is_empty() or not AbilityCatalog.is_supported(id):
+		if game_hud:
+			game_hud.set_status("技能未实现：%s" % id)
+		return false
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var caster: Node3D = unit_selector.call("get_primary") as Node3D
+	if caster == null:
+		if game_hud:
+			game_hud.set_status("施法：无选中单位")
+		return false
+	_ensure_hero_runtime(caster)
+	var lv := AbilityCatalog.level_for(caster, id)
+	var check := AbilityCastRules.can_cast_self(caster, id, lv)
+	if not bool(check.get("ok", false)):
+		if game_hud:
+			game_hud.set_status(str(check.get("reason", "无法施法")))
+		return false
+	var goal := Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	var acc := AbilityCastController.ensure_on(caster)
+	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
+		acc.cast_resolved.connect(_on_ability_cast_resolved)
+	var ctx := _ability_cast_context()
+	var start := acc.begin_cast(id, goal, ctx)
+	if game_hud:
+		if not bool(start.get("ok", false)):
+			game_hud.set_status(str(start.get("reason", "施法失败")))
+		else:
+			game_hud.set_status("施法中…")
+	_refresh_command_card()
+	return bool(start.get("ok", false))
+
+
+## 单位目标技能（风暴之锤）：瞄准态左键点敌。
+func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
+	var abil_id := _pending_ability_id.strip_edges()
+	if abil_id.is_empty():
+		return false
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var caster: Node3D = unit_selector.call("get_primary") as Node3D
+	if caster == null:
+		return false
+	var target: Node3D = null
+	if unit_selector.has_method("pick_at"):
+		target = unit_selector.call("pick_at", screen_pos) as Node3D
+	if target == null or not is_instance_valid(target):
+		if game_hud:
+			game_hud.set_status("施法：未点到目标")
+		return false
+	if not CombatQuery.is_valid_attack_target(caster, target):
+		if game_hud:
+			game_hud.set_status("施法：不可攻击该目标")
+		return false
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal := Wc3Coords.godot_to_wc3_xy(target.global_position)
+	var acc := AbilityCastController.ensure_on(caster)
+	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
+		acc.cast_resolved.connect(_on_ability_cast_resolved)
+	var ctx := _ability_cast_context()
+	ctx["target"] = target
+	var start := acc.begin_cast(abil_id, goal, ctx)
+	if game_hud:
+		if not bool(start.get("ok", false)):
+			game_hud.set_status(str(start.get("reason", "施法失败")))
+		else:
+			game_hud.set_status("施法中…")
+	_refresh_command_card()
+	return bool(start.get("ok", false))
 
 
 ## 技能瞄准落点：点地召唤 / 区域 DOT 等。
@@ -1698,8 +1780,13 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 		if bool(result.get("ok", false)):
 			var spawned := result.get("unit") as Node3D
 			var tp_count := int(result.get("teleported_count", 0))
+			var hit_count := int(result.get("hit_count", 0))
 			if tp_count > 0:
 				game_hud.set_status("群体传送 · %d 单位" % tp_count)
+			elif hit_count > 0:
+				var row_h := CommandButtonCatalog.get_shared().get_ability(abil_id)
+				var name_h := str(row_h.get("name", abil_id)).strip_edges()
+				game_hud.set_status("%s · %d 目标" % [name_h, hit_count])
 			elif spawned != null:
 				var name_s := TechPresence.display_name(
 					str(spawned.get_meta("unit_data", {}).get("typeId", abil_id))
@@ -1712,7 +1799,11 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 		else:
 			game_hud.set_status(str(result.get("reason", "施法失败")))
 	if bool(result.get("ok", false)):
-		if result.get("unit") is Node3D or int(result.get("teleported_count", 0)) > 0:
+		if (
+			result.get("unit") is Node3D
+			or int(result.get("teleported_count", 0)) > 0
+			or int(result.get("hit_count", 0)) > 0
+		):
 			_refresh_dynamic_pathing()
 			if health_bar_manager:
 				health_bar_manager.resync()
@@ -1727,6 +1818,7 @@ func _ability_cast_context() -> Dictionary:
 		"creation_number": _alloc_runtime_cn(),
 		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
 		"damage_pipeline": _damage_pipeline,
+		"projectile_service": _projectile_service,
 		"unit_host": Callable(self, "_unit_host"),
 		"model_cache": map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null,
 		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
@@ -1801,7 +1893,21 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 		out["ability_mana_ok_map"][abil_id] = mana_ok
 		if not mana_ok:
 			out["ability_mana_ok"] = false
+	var av := AvatarController.of(primary)
+	if av != null and av.is_active():
+		out["avatar_active"] = true
 	return out
+
+
+func _tick_status_effects(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var host := _unit_host()
+	if host == null:
+		return
+	for c in host.get_children():
+		if c is Node3D and is_instance_valid(c):
+			UnitStatusEffects.tick(c as Node3D, delta)
 
 
 func _tick_ability_cooldowns_on_map(delta: float) -> void:
@@ -1825,6 +1931,24 @@ func _ensure_hero_runtime(unit: Node3D) -> void:
 		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
 	UnitMana.ensure(unit)
 	_ensure_brilliance_aura(unit)
+	_ensure_bash_controller(unit)
+	_ensure_avatar_controller(unit)
+
+
+func _ensure_bash_controller(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	if not BashController.unit_can_have(unit):
+		return
+	BashController.ensure_on(unit)
+
+
+func _ensure_avatar_controller(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	if not AvatarController.unit_can_have(unit):
+		return
+	AvatarController.ensure_on(unit)
 
 
 func _ensure_brilliance_aura(unit: Node3D) -> void:
@@ -2273,7 +2397,15 @@ func _on_combat_projectile_launched(info: Dictionary) -> void:
 	var missile_art := ""
 	var arc := 0.0
 	var speed_wc3 := 900.0
-	if attacker != null and is_instance_valid(attacker):
+	if bool(info.get("is_spell", false)):
+		show_tracer = true
+		var spell_missile := str(info.get("missile_art", "")).strip_edges()
+		if not spell_missile.is_empty():
+			missile_art = spell_missile
+		var spell_impact := str(info.get("impact_art", "")).strip_edges()
+		if not spell_impact.is_empty():
+			impact_art = spell_impact
+	elif attacker != null and is_instance_valid(attacker):
 		show_tracer = CombatQuery.wants_tracer_visual(attacker)
 		impact_art = CombatQuery.weapon_impact_art(attacker)
 		missile_art = CombatQuery.weapon_missile_art(attacker)
@@ -2307,6 +2439,18 @@ func _on_combat_projectile_launched(info: Dictionary) -> void:
 
 func _on_combat_projectile_resolved(result: Dictionary) -> void:
 	if bool(result.get("visual_only", false)):
+		return
+	if bool(result.get("is_spell", false)):
+		var target: Node3D = result.get("target") as Node3D
+		var abil_id := str(result.get("spell_abil_id", "")).strip_edges()
+		var hit_art := AbilityCastCatalog.hit_effect_art(abil_id)
+		if not hit_art.is_empty() and target != null and is_instance_valid(target):
+			var cache: MapModelCache = null
+			if map_root != null and map_root.has_method("get_model_cache"):
+				cache = map_root.get_model_cache()
+			SpellHitFx.spawn_on(target, hit_art, cache)
+		if health_bar_manager != null:
+			health_bar_manager.resync()
 		return
 	var attacker: Node3D = result.get("attacker") as Node3D
 	if attacker == null or not is_instance_valid(attacker):
@@ -3738,7 +3882,10 @@ func _on_command_action(
 		_:
 			if action_id.begins_with(CommandCard.ACTION_ABILITY_PREFIX):
 				var aid := action_id.substr(CommandCard.ACTION_ABILITY_PREFIX.length())
-				_begin_ability_targeting(aid, source)
+				if AbilityCatalog.target_kind(aid) == AbilityCatalog.TARGET_SELF:
+					_issue_self_ability(aid, source)
+				else:
+					_begin_ability_targeting(aid, source)
 				return
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())

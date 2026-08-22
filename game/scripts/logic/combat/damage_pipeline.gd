@@ -66,6 +66,7 @@ func apply(req: Dictionary) -> Dictionary:
 	if bal != null:
 		def_type = bal.def_type
 		armor = bal.realdef if bal.realdef != 0.0 else bal.def
+	armor += UnitStatusEffects.bonus_armor(target)
 
 	var mult := CombatDamageTable.multiplier(atk_type, def_type)
 	var after_type := roll * mult

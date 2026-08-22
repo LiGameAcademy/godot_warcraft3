@@ -347,6 +347,9 @@ static func _place_supported_ability(
 	elif not bool((state.get("ability_mana_ok_map", {}) as Dictionary).get(abil_id, state.get("ability_mana_ok", true))):
 		opts_a["enabled"] = false
 		opts_a["disabled_reason"] = "魔法不足"
+	if abil_id == "AHav" and bool(state.get("avatar_active", false)):
+		opts_a["executing"] = true
+		opts_a["use_un"] = true
 	var entry_a := cat.ability_hud_entry(
 		abil_id, ACTION_ABILITY_PREFIX + abil_id, opts_a
 	)

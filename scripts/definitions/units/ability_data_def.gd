@@ -132,6 +132,15 @@ func duration_at(level: int) -> float:
 		_: return dur1
 
 
+func hero_duration_at(level: int) -> float:
+	match clamp_level(level):
+		1: return hero_dur1
+		2: return hero_dur2
+		3: return hero_dur3
+		4: return hero_dur4
+		_: return hero_dur1
+
+
 func cast_range_at(level: int) -> float:
 	## WC3：召唤类常用 AreaN 作施法距离；RngN>0 时优先 Rng。
 	var lv := clamp_level(level)
@@ -173,6 +182,15 @@ func data_b_at(level: int) -> float:
 		3: return data_b3
 		4: return data_b4
 		_: return data_b1
+
+
+func data_c_at(level: int) -> float:
+	match clamp_level(level):
+		1: return data_c1
+		2: return data_c2
+		3: return data_c3
+		4: return data_c4
+		_: return data_c1
 
 
 func data_d_at(level: int) -> float:

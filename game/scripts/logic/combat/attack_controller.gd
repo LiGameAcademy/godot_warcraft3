@@ -171,6 +171,10 @@ func start_hold() -> bool:
 func _process(delta: float) -> void:
 	if not _active:
 		return
+	var body := _body()
+	if body != null and UnitStatusEffects.is_stunned(body):
+		_set_attack_anim(false)
+		return
 	if _repath_cd > 0.0:
 		_repath_cd -= delta
 	if _cooldown_left > 0.0:

@@ -15,16 +15,48 @@ const SUPPORTED_ORDERS := {
 	"waterelemental": true,
 	"blizzard": true,
 	"massteleport": true,
+	"thunderbolt": true,
+	"thunderclap": true,
+	"avatar": true,
 }
 
-## 被动光环（无 order、不可点击；学会即生效）。
+const TARGET_POINT := 0
+const TARGET_UNIT := 1
+const TARGET_SELF := 2
+
+const TARGET_KIND_BY_ORDER := {
+	"waterelemental": TARGET_POINT,
+	"blizzard": TARGET_POINT,
+	"massteleport": TARGET_POINT,
+	"thunderbolt": TARGET_UNIT,
+	"thunderclap": TARGET_SELF,
+	"avatar": TARGET_SELF,
+}
+
+## 被动（光环 / 重击等；命令格展示不可点）。
 const PASSIVE_AURAS := {
 	"AHab": true,
 }
 
+const PASSIVE_PROCS := {
+	"AHbh": true,
+}
+
+
+static func is_passive_ability(abil_id: String) -> bool:
+	var id := abil_id.strip_edges()
+	return bool(PASSIVE_AURAS.get(id, false)) or bool(PASSIVE_PROCS.get(id, false))
+
 
 static func is_passive_aura(abil_id: String) -> bool:
-	return bool(PASSIVE_AURAS.get(abil_id.strip_edges(), false))
+	return is_passive_ability(abil_id)
+
+
+static func target_kind(abil_id: String) -> int:
+	var ord := order_for(abil_id)
+	if TARGET_KIND_BY_ORDER.has(ord):
+		return int(TARGET_KIND_BY_ORDER[ord])
+	return TARGET_POINT
 
 
 static func data(abil_id: String) -> AbilityDataDef:

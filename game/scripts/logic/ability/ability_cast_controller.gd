@@ -15,6 +15,7 @@ var _active: bool = false
 var _left: float = 0.0
 var _abil_id: String = ""
 var _goal := Vector2.ZERO
+var _target: Node3D = null
 var _ctx: Dictionary = {}
 var _zone: BlizzardZone = null
 
@@ -56,11 +57,25 @@ func begin_cast(abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictiona
 		out["reason"] = "无效技能"
 		return out
 	var lv := AbilityCatalog.level_for(caster, id)
-	var check := AbilityCastRules.can_cast_point(caster, id, goal_wc3, lv)
+	_target = ctx.get("target") as Node3D if ctx.get("target") is Node3D else null
+	var kind := AbilityCatalog.target_kind(id)
+	var check: Dictionary
+	match kind:
+		AbilityCatalog.TARGET_SELF:
+			check = AbilityCastRules.can_cast_self(caster, id, lv)
+		AbilityCatalog.TARGET_UNIT:
+			check = AbilityCastRules.can_cast_unit(caster, id, _target, lv)
+		_:
+			check = AbilityCastRules.can_cast_point(caster, id, goal_wc3, lv)
 	if not bool(check.get("ok", false)):
 		return check
 	_abil_id = id
-	_goal = goal_wc3
+	if kind == AbilityCatalog.TARGET_SELF:
+		_goal = Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	elif kind == AbilityCatalog.TARGET_UNIT and _target != null:
+		_goal = Wc3Coords.godot_to_wc3_xy(_target.global_position)
+	else:
+		_goal = goal_wc3
 	_ctx = ctx.duplicate(true)
 	_stop_caster_move(caster)
 	if AbilityCastCatalog.is_channel_ability(id):
@@ -109,6 +124,7 @@ func cancel_cast() -> void:
 	_active = false
 	_left = 0.0
 	_mode = Mode.NONE
+	_target = null
 	set_process(false)
 	var caster := get_parent() as Node3D
 	if caster != null and is_instance_valid(caster):
@@ -195,18 +211,28 @@ func _resolve_instant() -> void:
 	var caster := get_parent() as Node3D
 	var abil_id := _abil_id
 	var goal := _goal
+	var target := _target
 	var ctx := _ctx
 	_active = false
 	_mode = Mode.NONE
 	_left = 0.0
+	_target = null
 	if caster != null and is_instance_valid(caster):
 		AbilityCastPresenter.end(caster)
 	var result := {"ok": false, "reason": "施法中断"}
 	if caster != null and is_instance_valid(caster):
 		var lv := AbilityCatalog.level_for(caster, abil_id)
-		var check := AbilityCastRules.can_cast_point(caster, abil_id, goal, lv)
+		var kind := AbilityCatalog.target_kind(abil_id)
+		var check: Dictionary
+		match kind:
+			AbilityCatalog.TARGET_SELF:
+				check = AbilityCastRules.can_cast_self(caster, abil_id, lv)
+			AbilityCatalog.TARGET_UNIT:
+				check = AbilityCastRules.can_cast_unit(caster, abil_id, target, lv)
+			_:
+				check = AbilityCastRules.can_cast_point(caster, abil_id, goal, lv)
 		if bool(check.get("ok", false)):
-			result = PointTargetAbility.try_cast(caster, abil_id, goal, ctx)
+			result = AbilityExecutor.try_cast(caster, abil_id, goal, target, ctx)
 		else:
 			result = check
 	cast_resolved.emit(result, abil_id)
