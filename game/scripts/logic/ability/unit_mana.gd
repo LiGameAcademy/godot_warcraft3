@@ -77,3 +77,22 @@ static func spend(node: Node3D, amount: float) -> bool:
 
 static func can_spend(node: Node3D, amount: float) -> bool:
 	return get_mana(node) >= maxi(int(round(amount)), 0)
+
+
+## 回蓝（支持小数累积，不超过上限）。
+static func regenerate(node: Node3D, amount: float) -> void:
+	if node == null or amount <= 0.0:
+		return
+	ensure(node)
+	if not has_mana(node):
+		return
+	const ACC_KEY := "mana_regen_accum"
+	var acc := float(node.get_meta(ACC_KEY, 0.0)) + amount
+	var gain := int(floor(acc))
+	if gain <= 0:
+		node.set_meta(ACC_KEY, acc)
+		return
+	acc -= float(gain)
+	node.set_meta(ACC_KEY, acc)
+	var mx := get_max_mana(node)
+	node.set_meta(META_MANA, mini(get_mana(node) + gain, mx))

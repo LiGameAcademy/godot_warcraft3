@@ -388,6 +388,36 @@ static func units_hostile_in_radius(
 	return out
 
 
+## 圆心 WC3 + 半径内、与 provider 同玩家的友方 Node3D（含自身）。
+static func units_friendly_in_radius(
+	unit_host: Node,
+	provider: Node3D,
+	center_wc3: Vector2,
+	radius_wc3: float
+) -> Array:
+	var out: Array = []
+	if unit_host == null or provider == null or center_wc3 == Vector2.INF:
+		return out
+	var owner := owner_of(provider)
+	if owner < 0:
+		return out
+	var r := maxf(radius_wc3, 0.0)
+	for c in unit_host.get_children():
+		if not (c is Node3D) or not is_instance_valid(c):
+			continue
+		var node := c as Node3D
+		if owner_of(node) != owner:
+			continue
+		if not _attack_target_basics(provider, node) and node != provider:
+			continue
+		if node != provider and is_hostile(provider, node):
+			continue
+		var pos := Wc3Coords.godot_to_wc3_xy(node.global_position)
+		if pos.distance_to(center_wc3) <= r:
+			out.append(node)
+	return out
+
+
 ## 是否有单位可以显式攻击该目标（含友军）。
 static func any_can_attack(selected: Array, target: Node) -> bool:
 	for n in selected:

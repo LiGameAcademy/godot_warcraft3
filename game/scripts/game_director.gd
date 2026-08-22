@@ -1743,9 +1743,12 @@ func _ability_channel_interrupt_check(caster: Node3D) -> bool:
 	if o.source == UnitOrder.Source.UNIT_AI:
 		return false
 	match o.kind:
-		UnitOrder.Kind.MOVE, UnitOrder.Kind.STOP, UnitOrder.Kind.HOLD,
-		UnitOrder.Kind.ATTACK, UnitOrder.Kind.ATTACK_MOVE, UnitOrder.Kind.PATROL,
-		UnitOrder.Kind.HARVEST_GOLD, UnitOrder.Kind.HARVEST_LUMBER,
+		UnitOrder.Kind.MOVE, UnitOrder.Kind.STOP, UnitOrder.Kind.HOLD:
+			return true
+		UnitOrder.Kind.ATTACK, UnitOrder.Kind.ATTACK_MOVE, UnitOrder.Kind.PATROL:
+			return true
+		UnitOrder.Kind.HARVEST_GOLD, UnitOrder.Kind.HARVEST_LUMBER:
+			return true
 		UnitOrder.Kind.RETURN_GOODS, UnitOrder.Kind.ABILITY, UnitOrder.Kind.BUILD:
 			return true
 	return false
@@ -1756,6 +1759,7 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 		"ability_cd": {},
 		"ability_mana_ok": true,
 		"ability_mana_ok_map": {},
+		"hero_level": 1,
 	}
 	if primary == null or not is_instance_valid(primary):
 		return out
@@ -1764,6 +1768,7 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 		return out
 	_ensure_hero_runtime(primary)
 	var hl := AbilityCatalog.hero_level_of(primary)
+	out["hero_level"] = hl
 	for abil in CommandButtonCatalog.get_shared().get_all_abil_list(tid):
 		var abil_id := str(abil).strip_edges()
 		if abil_id.is_empty() or not AbilityCatalog.is_supported(abil_id):
@@ -1803,6 +1808,22 @@ func _ensure_hero_runtime(unit: Node3D) -> void:
 	if not unit.has_meta(AbilityCatalog.META_HERO_LEVEL):
 		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
 	UnitMana.ensure(unit)
+	_ensure_brilliance_aura(unit)
+
+
+func _ensure_brilliance_aura(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var existing := BrillianceAuraController.of(unit)
+	if not BrillianceAuraController.unit_can_have(unit):
+		if existing != null:
+			existing.queue_free()
+		return
+	var c := BrillianceAuraController.ensure_on(unit)
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	c.configure(Callable(self, "_unit_host"), cache)
 
 
 func _set_move_targeting(active: bool) -> void:

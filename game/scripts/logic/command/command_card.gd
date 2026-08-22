@@ -25,6 +25,7 @@ const ACTION_DEFEND := "defend"
 const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
 const ACTION_ABILITY_PREFIX := "ability:" ## ability:AHwe
+const ACTION_PASSIVE_PREFIX := "passive:" ## 被动光环，不可点击
 
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
@@ -289,6 +290,9 @@ static func _place_supported_ability(
 	researched: Dictionary = {}
 ) -> void:
 	var order := cat.get_ability_order(abil_id)
+	if AbilityCatalog.is_passive_aura(abil_id):
+		_place_passive_aura(card, cat, abil_id, unit_id, state)
+		return
 	if order.is_empty():
 		return
 	if order == "defend":
@@ -347,6 +351,28 @@ static func _place_supported_ability(
 		abil_id, ACTION_ABILITY_PREFIX + abil_id, opts_a
 	)
 	_place(card, entry_a)
+
+
+static func _place_passive_aura(
+	card: Array[Dictionary],
+	cat: CommandButtonCatalog,
+	abil_id: String,
+	unit_id: String,
+	state: Dictionary
+) -> void:
+	var hl := maxi(int(state.get("hero_level", 1)), 1)
+	var lv := AbilityCatalog.level_for_unit_type(unit_id, abil_id, hl)
+	if lv <= 0:
+		return
+	var opts := {
+		"enabled": false,
+		"executing": true,
+		"disabled_reason": "被动光环",
+	}
+	var entry := cat.ability_hud_entry(
+		abil_id, ACTION_PASSIVE_PREFIX + abil_id, opts
+	)
+	_place(card, entry)
 
 
 static func _place_build_opener(

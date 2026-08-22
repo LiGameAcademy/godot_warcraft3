@@ -16,6 +16,15 @@ const SUPPORTED_ORDERS := {
 	"blizzard": true,
 }
 
+## 被动光环（无 order、不可点击；学会即生效）。
+const PASSIVE_AURAS := {
+	"AHab": true,
+}
+
+
+static func is_passive_aura(abil_id: String) -> bool:
+	return bool(PASSIVE_AURAS.get(abil_id.strip_edges(), false))
+
 
 static func data(abil_id: String) -> AbilityDataDef:
 	var id := abil_id.strip_edges()
