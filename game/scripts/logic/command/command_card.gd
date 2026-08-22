@@ -350,6 +350,12 @@ static func _place_supported_ability(
 	if abil_id == "AHav" and bool(state.get("avatar_active", false)):
 		opts_a["executing"] = true
 		opts_a["use_un"] = true
+	var auto_map: Dictionary = state.get("ability_autocast", {}) as Dictionary
+	if AbilityAutoCast.supports(abil_id):
+		var auto_on := bool(auto_map.get(abil_id, false))
+		opts_a["use_un"] = not auto_on
+		opts_a["auto_cast"] = auto_on
+		opts_a["autocast_capable"] = true
 	var entry_a := cat.ability_hud_entry(
 		abil_id, ACTION_ABILITY_PREFIX + abil_id, opts_a
 	)

@@ -63,7 +63,7 @@ func begin_cast(abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictiona
 	match kind:
 		AbilityCatalog.TARGET_SELF:
 			check = AbilityCastRules.can_cast_self(caster, id, lv)
-		AbilityCatalog.TARGET_UNIT:
+		AbilityCatalog.TARGET_UNIT, AbilityCatalog.TARGET_ALLY:
 			check = AbilityCastRules.can_cast_unit(caster, id, _target, lv)
 		_:
 			check = AbilityCastRules.can_cast_point(caster, id, goal_wc3, lv)
@@ -73,6 +73,8 @@ func begin_cast(abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictiona
 	if kind == AbilityCatalog.TARGET_SELF:
 		_goal = Wc3Coords.godot_to_wc3_xy(caster.global_position)
 	elif kind == AbilityCatalog.TARGET_UNIT and _target != null:
+		_goal = Wc3Coords.godot_to_wc3_xy(_target.global_position)
+	elif kind == AbilityCatalog.TARGET_ALLY and _target != null:
 		_goal = Wc3Coords.godot_to_wc3_xy(_target.global_position)
 	else:
 		_goal = goal_wc3
@@ -227,7 +229,7 @@ func _resolve_instant() -> void:
 		match kind:
 			AbilityCatalog.TARGET_SELF:
 				check = AbilityCastRules.can_cast_self(caster, abil_id, lv)
-			AbilityCatalog.TARGET_UNIT:
+			AbilityCatalog.TARGET_UNIT, AbilityCatalog.TARGET_ALLY:
 				check = AbilityCastRules.can_cast_unit(caster, abil_id, target, lv)
 			_:
 				check = AbilityCastRules.can_cast_point(caster, abil_id, goal, lv)

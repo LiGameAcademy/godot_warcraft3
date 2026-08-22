@@ -59,6 +59,8 @@ func apply(req: Dictionary) -> Dictionary:
 	var roll := dmgplus
 	for _i in range(dice):
 		roll += float(rng.randi_range(1, maxi(sides, 1)))
+	if str(req.get("source_kind", "weapon")) == "weapon" and attacker is Node3D:
+		roll *= UnitStatusEffects.damage_mul(attacker as Node3D)
 
 	var def_type := "none"
 	var armor := 0.0

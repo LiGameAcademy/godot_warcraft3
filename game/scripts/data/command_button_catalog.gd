@@ -244,6 +244,11 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	var cost_line := str(opts.get("cost_line", ""))
 	if not cost_line.is_empty():
 		tooltip += "\n" + cost_line
+	var auto_cast := bool(opts.get("auto_cast", false))
+	if auto_cast:
+		tooltip += "\n|cff00ff00自动施法：开|r\n右键切换"
+	elif bool(opts.get("autocast_capable", false)) and use_un:
+		tooltip += "\n自动施法：关\n右键切换"
 	var executing := bool(opts.get("executing", false))
 	if executing:
 		tooltip += "\n|cff00ff00当前：执行中|r"

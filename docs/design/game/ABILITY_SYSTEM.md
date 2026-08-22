@@ -58,7 +58,8 @@ game/scripts/game_director.gd
 | 概念 | 判定来源 | UI（命令卡） | Logic |
 |------|----------|--------------|-------|
 | **主动点目标** | Func 有 `Order`，`target_kind=POINT` | `ability:AHxx`，点地瞄准 | `AbilityExecutor` → `PointTargetAbility` / 具体 `*Ability` |
-| **主动点单位** | order 如 `thunderbolt` | 同上，点单位瞄准 | `StormBoltAbility` + 魔法弹道 |
+| **主动点单位（敌）** | order 如 `thunderbolt` / `slow` | 点敌军瞄准 | `StormBoltAbility` / `SlowAbility` |
+| **主动点单位（友）** | order 如 `heal` / `innerfire` | 点友军瞄准 | `HealAbility` / `InnerFireAbility` |
 | **主动自身** | order 如 `thunderclap` / `avatar` | 点按钮即施 | `ThunderClapAbility` / `AvatarAbility` |
 | **引导型** | order ∈ `_CHANNEL_ORDERS` | 同上 | `AbilityCastController` CHANNEL + zone |
 | **被动技能** | Func **无** Order | 当前 `passive:AHxx`（不可点） | 学会即挂 Controller（光环 / proc） |
@@ -149,7 +150,17 @@ game/scripts/game_director.gd
 | AHbh | （无） | — | 攻击概率眩晕 + 额外伤害 | `BashController`（监听 `damage_applied`） |
 | AHav | avatar | 自身 | 限时 +HP / +护甲 | `AvatarAbility` + `AvatarController` |
 
-Director 按 `AbilityCatalog.target_kind()` 分流：点地 / 点单位 / 点按钮即 `_issue_self_ability`。
+Director 按 `AbilityCatalog.target_kind()` 分流：点地 / 点敌军 / 点友军 / 点按钮即 `_issue_self_ability`。
+
+## 7.1 支援单位技能（P0）
+
+| ID | 单位 | Order | 目标 | 机制 |
+|----|------|-------|------|------|
+| Ahea | hmpr | heal | 友军 | 即时治疗 DataA（20） |
+| Ainf | hmpr | innerfire | 友军 | 60s +10% 伤 / +5 甲 |
+| Aslo | hsor | slow | 敌军 | 60s 移速×0.6 / 攻速×0.25 |
+
+**自动/手动**：`UnitAbilities.auto` 为默认开启项；Func 有 `Unart` 的技能可右键切换。UI：`auto_cast` 金边 + `Art`，手动 `Unart` 关图标。
 
 ### AHmt 数值（AbilityData）
 
@@ -172,6 +183,8 @@ godot --headless --path . -s res://tests/unit/selftest_ability_blizzard.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_brilliance.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_mass_teleport.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_mountain_king.gd
+godot --headless --path . -s res://tests/unit/selftest_ability_support_units.gd
+godot --headless --path . -s res://tests/unit/selftest_ability_autocast.gd
 godot --headless --path . -s res://tests/unit/selftest_summon_lifetime.gd
 godot --headless --path . -s res://tests/unit/selftest_militia.gd
 ```

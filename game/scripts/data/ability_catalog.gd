@@ -18,11 +18,15 @@ const SUPPORTED_ORDERS := {
 	"thunderbolt": true,
 	"thunderclap": true,
 	"avatar": true,
+	"heal": true,
+	"innerfire": true,
+	"slow": true,
 }
 
 const TARGET_POINT := 0
 const TARGET_UNIT := 1
 const TARGET_SELF := 2
+const TARGET_ALLY := 3
 
 const TARGET_KIND_BY_ORDER := {
 	"waterelemental": TARGET_POINT,
@@ -31,6 +35,9 @@ const TARGET_KIND_BY_ORDER := {
 	"thunderbolt": TARGET_UNIT,
 	"thunderclap": TARGET_SELF,
 	"avatar": TARGET_SELF,
+	"heal": TARGET_ALLY,
+	"innerfire": TARGET_ALLY,
+	"slow": TARGET_UNIT,
 }
 
 ## 被动（光环 / 重击等；命令格展示不可点）。

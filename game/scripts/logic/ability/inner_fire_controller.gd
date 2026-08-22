@@ -1,0 +1,108 @@
+class_name InnerFireController
+extends Node
+
+## 心灵之火 Ainf（Logic）：限时加攻/加甲；Present 由 Catalog 路径驱动。
+
+const ABIL_ID := "Ainf"
+const NODE_NAME := "InnerFireController"
+const ATTACH_NODE := "InnerFireFxAttach"
+
+var _left: float = 0.0
+var _bonus_armor: float = 0.0
+var _dmg_mul: float = 1.0
+var _cache: MapModelCache = null
+
+
+static func of(unit: Node3D) -> InnerFireController:
+	if unit == null:
+		return null
+	return unit.get_node_or_null(NODE_NAME) as InnerFireController
+
+
+static func ensure_on(unit: Node3D) -> InnerFireController:
+	if unit == null:
+		return null
+	var existing := of(unit)
+	if existing != null:
+		return existing
+	var c := InnerFireController.new()
+	c.name = NODE_NAME
+	unit.add_child(c)
+	return c
+
+
+func is_active() -> bool:
+	return _left > 0.0
+
+
+func activate(level: int, cache: MapModelCache = null) -> bool:
+	var host := get_parent() as Node3D
+	if host == null or not is_instance_valid(host):
+		return false
+	var ab := AbilityCatalog.data(ABIL_ID)
+	if ab == null:
+		return false
+	var lv := ab.clamp_level(level)
+	_bonus_armor = maxf(ab.data_b_at(lv), 0.0)
+	var bonus_pct := maxf(ab.data_a_at(lv), 0.0)
+	_dmg_mul = 1.0 + bonus_pct
+	_left = maxf(ab.duration_at(lv), 0.1)
+	_cache = cache
+	UnitStatusEffects.set_inner_fire(host, _bonus_armor, _dmg_mul)
+	_spawn_target_fx(host)
+	set_process(true)
+	return true
+
+
+func refresh(level: int, cache: MapModelCache = null) -> bool:
+	_deactivate(false)
+	return activate(level, cache)
+
+
+func _process(delta: float) -> void:
+	if delta <= 0.0 or _left <= 0.0:
+		return
+	_left -= delta
+	if _left > 0.0:
+		return
+	_deactivate()
+
+
+func _deactivate(clear_fx: bool = true) -> void:
+	_left = 0.0
+	_bonus_armor = 0.0
+	_dmg_mul = 1.0
+	set_process(false)
+	var host := get_parent() as Node3D
+	if host != null and is_instance_valid(host):
+		UnitStatusEffects.clear_inner_fire(host)
+	if clear_fx and host != null and is_instance_valid(host):
+		var fx := host.get_node_or_null(ATTACH_NODE)
+		if fx != null:
+			fx.queue_free()
+
+
+func _spawn_target_fx(host: Node3D) -> void:
+	var art := AbilityCastCatalog.caster_art(ABIL_ID)
+	if art.is_empty():
+		art = AbilityCastCatalog.hit_effect_art(ABIL_ID)
+	if art.is_empty() or host.get_node_or_null(ATTACH_NODE) != null:
+		return
+	var path := RuntimeAssets.converted_path(art)
+	var inst: Node3D = null
+	if _cache != null:
+		inst = _cache.instance_glb(path)
+	if inst == null and ResourceLoader.exists(path):
+		var packed := load(path)
+		if packed is PackedScene:
+			inst = (packed as PackedScene).instantiate() as Node3D
+	if inst == null:
+		return
+	inst.name = ATTACH_NODE
+	host.add_child(inst)
+	inst.position = Vector3(0.0, 0.4, 0.0)
+
+
+func _exit_tree() -> void:
+	if is_active():
+		_deactivate()

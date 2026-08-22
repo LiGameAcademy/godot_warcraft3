@@ -235,6 +235,9 @@ func _begin_windup() -> void:
 	if body == null or _target == null:
 		return
 	var cool := CombatQuery.cooldown_sec(body)
+	var atk_spd := UnitStatusEffects.attack_speed_mul(body)
+	if atk_spd > 0.0 and atk_spd < 1.0:
+		cool /= atk_spd
 	var dmgpt := CombatQuery.damage_point_sec(body)
 	_cooldown_left = cool
 	_dmgpt_left = dmgpt

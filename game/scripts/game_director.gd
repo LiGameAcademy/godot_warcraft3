@@ -297,6 +297,10 @@ func _wire_hud() -> void:
 		game_hud.command_pressed.connect(_on_command_pressed)
 	if game_hud.has_signal("command_action") and not game_hud.command_action.is_connected(_on_command_action):
 		game_hud.command_action.connect(_on_command_action)
+	if game_hud.has_signal("command_action_rclick") and not game_hud.command_action_rclick.is_connected(
+		_on_command_action_rclick
+	):
+		game_hud.command_action_rclick.connect(_on_command_action_rclick)
 	if game_hud.has_signal("multi_select_clicked") and not game_hud.multi_select_clicked.is_connected(_on_multi_select_clicked):
 		game_hud.multi_select_clicked.connect(_on_multi_select_clicked)
 	if game_hud.has_signal("train_queue_cancel") and not game_hud.train_queue_cancel.is_connected(_on_train_queue_cancel):
@@ -417,7 +421,8 @@ func _input(event: InputEvent) -> void:
 		var mb_ab := event as InputEventMouseButton
 		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
 			var abil_id := _pending_ability_id.strip_edges()
-			if AbilityCatalog.target_kind(abil_id) == AbilityCatalog.TARGET_UNIT:
+			var tk := AbilityCatalog.target_kind(abil_id)
+			if tk == AbilityCatalog.TARGET_UNIT or tk == AbilityCatalog.TARGET_ALLY:
 				_issue_ability_at_unit_screen(mb_ab.position, UnitOrder.Source.TARGETING)
 			else:
 				_issue_ability_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
@@ -669,6 +674,7 @@ func _process(delta: float) -> void:
 		_projectile_service.tick(delta)
 	_tick_ability_cooldowns_on_map(delta)
 	_tick_status_effects(delta)
+	_tick_autocast(delta)
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
@@ -1625,7 +1631,7 @@ func _begin_ability_targeting(abil_id: String, source: int) -> void:
 		if game_hud:
 			game_hud.set_status("施法：无选中单位")
 		return
-	_ensure_hero_runtime(primary)
+	_ensure_caster_runtime(primary)
 	var lv := AbilityCatalog.level_for(primary, id)
 	if lv <= 0:
 		if game_hud:
@@ -1654,8 +1660,11 @@ func _begin_ability_targeting(abil_id: String, source: int) -> void:
 		if tip.is_empty():
 			tip = id
 		var aim_hint := "左键点地"
-		if AbilityCatalog.target_kind(id) == AbilityCatalog.TARGET_UNIT:
-			aim_hint = "左键点单位"
+		var tk := AbilityCatalog.target_kind(id)
+		if tk == AbilityCatalog.TARGET_UNIT:
+			aim_hint = "左键点敌军"
+		elif tk == AbilityCatalog.TARGET_ALLY:
+			aim_hint = "左键点友军"
 		game_hud.set_status("技能瞄准（%s）· %s · %s · Esc 取消" % [src, tip, aim_hint])
 
 
@@ -1673,7 +1682,7 @@ func _issue_self_ability(abil_id: String, source: int) -> bool:
 		if game_hud:
 			game_hud.set_status("施法：无选中单位")
 		return false
-	_ensure_hero_runtime(caster)
+	_ensure_caster_runtime(caster)
 	var lv := AbilityCatalog.level_for(caster, id)
 	var check := AbilityCastRules.can_cast_self(caster, id, lv)
 	if not bool(check.get("ok", false)):
@@ -1695,7 +1704,7 @@ func _issue_self_ability(abil_id: String, source: int) -> bool:
 	return bool(start.get("ok", false))
 
 
-## 单位目标技能（风暴之锤）：瞄准态左键点敌。
+## 单位目标技能（风暴之锤 / 治疗 / 减速等）：瞄准态左键点单位。
 func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
 	var abil_id := _pending_ability_id.strip_edges()
 	if abil_id.is_empty():
@@ -1705,6 +1714,7 @@ func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
 	var caster: Node3D = unit_selector.call("get_primary") as Node3D
 	if caster == null:
 		return false
+	_ensure_caster_runtime(caster)
 	var target: Node3D = null
 	if unit_selector.has_method("pick_at"):
 		target = unit_selector.call("pick_at", screen_pos) as Node3D
@@ -1712,9 +1722,20 @@ func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
 		if game_hud:
 			game_hud.set_status("施法：未点到目标")
 		return false
-	if not CombatQuery.is_valid_attack_target(caster, target):
+	var tk := AbilityCatalog.target_kind(abil_id)
+	if tk == AbilityCatalog.TARGET_ALLY:
+		if not CombatQuery.is_valid_ally_spell_target(caster, target):
+			if game_hud:
+				game_hud.set_status("施法：无效友军目标")
+			return false
+	elif tk == AbilityCatalog.TARGET_UNIT:
+		if not CombatQuery.is_valid_hostile_spell_target(caster, target):
+			if game_hud:
+				game_hud.set_status("施法：无效敌军目标")
+			return false
+	else:
 		if game_hud:
-			game_hud.set_status("施法：不可攻击该目标")
+			game_hud.set_status("施法：无效技能目标类型")
 		return false
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal := Wc3Coords.godot_to_wc3_xy(target.global_position)
@@ -1781,8 +1802,11 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 			var spawned := result.get("unit") as Node3D
 			var tp_count := int(result.get("teleported_count", 0))
 			var hit_count := int(result.get("hit_count", 0))
+			var heal_amt := float(result.get("heal_amount", 0.0))
 			if tp_count > 0:
 				game_hud.set_status("群体传送 · %d 单位" % tp_count)
+			elif heal_amt > 0.0:
+				game_hud.set_status("治疗 · +%.0f" % heal_amt)
 			elif hit_count > 0:
 				var row_h := CommandButtonCatalog.get_shared().get_ability(abil_id)
 				var name_h := str(row_h.get("name", abil_id)).strip_edges()
@@ -1803,6 +1827,8 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 			result.get("unit") is Node3D
 			or int(result.get("teleported_count", 0)) > 0
 			or int(result.get("hit_count", 0)) > 0
+			or float(result.get("heal_amount", 0.0)) > 0.0
+			or result.get("buff_target") is Node3D
 		):
 			_refresh_dynamic_pathing()
 			if health_bar_manager:
@@ -1874,7 +1900,7 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 	var tid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
 	if tid.is_empty():
 		return out
-	_ensure_hero_runtime(primary)
+	_ensure_caster_runtime(primary)
 	var hl := AbilityCatalog.hero_level_of(primary)
 	out["hero_level"] = hl
 	for abil in CommandButtonCatalog.get_shared().get_all_abil_list(tid):
@@ -1896,7 +1922,24 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 	var av := AvatarController.of(primary)
 	if av != null and av.is_active():
 		out["avatar_active"] = true
+	var auto_out: Dictionary = {}
+	for abil_id in AbilityAutoCast.map_of(primary).keys():
+		auto_out[str(abil_id)] = AbilityAutoCast.is_enabled(primary, str(abil_id))
+	if not auto_out.is_empty():
+		out["ability_autocast"] = auto_out
 	return out
+
+
+func _tick_autocast(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var host := _unit_host()
+	if host == null:
+		return
+	var ctx := _ability_cast_context()
+	for c in host.get_children():
+		if c is Node3D and is_instance_valid(c):
+			AbilityAutoCastRunner.tick_unit(c as Node3D, ctx, delta)
 
 
 func _tick_status_effects(delta: float) -> void:
@@ -1919,6 +1962,16 @@ func _tick_ability_cooldowns_on_map(delta: float) -> void:
 	for c in host.get_children():
 		if c is Node3D and is_instance_valid(c):
 			AbilityCooldowns.tick_all(c as Node3D, delta)
+
+
+func _ensure_caster_runtime(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	UnitMana.ensure(unit)
+	AbilityAutoCast.ensure_defaults(unit)
+	var tid := str(unit.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	if TechPresence.is_hero_id(tid):
+		_ensure_hero_runtime(unit)
 
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
@@ -3843,6 +3896,41 @@ func _on_command_pressed(_slot: int) -> void:
 	# 有 action_id 时由 _on_command_action 处理；纯文字占位格仍提示
 	if game_hud != null and game_hud.has_method("set_status"):
 		pass
+
+
+func _on_command_action_rclick(action_id: String) -> void:
+	if not action_id.begins_with(CommandCard.ACTION_ABILITY_PREFIX):
+		return
+	var abil_id := action_id.substr(CommandCard.ACTION_ABILITY_PREFIX.length()).strip_edges()
+	if not AbilityAutoCast.supports(abil_id):
+		if game_hud:
+			game_hud.set_status("该技能不支持自动施法切换")
+		return
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return
+	var selected: Array = unit_selector.call("get_selected")
+	if selected.is_empty():
+		return
+	var n_toggled := 0
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var u := n as Node3D
+		_ensure_caster_runtime(u)
+		AbilityAutoCast.toggle(u, abil_id)
+		n_toggled += 1
+	if n_toggled <= 0:
+		return
+	if game_hud:
+		var on := false
+		if unit_selector.has_method("get_primary"):
+			var pri: Node3D = unit_selector.call("get_primary") as Node3D
+			if pri != null:
+				on = AbilityAutoCast.is_enabled(pri, abil_id)
+		var row := CommandButtonCatalog.get_shared().get_ability(abil_id)
+		var name_s := str(row.get("name", abil_id)).strip_edges()
+		game_hud.set_status("%s · 自动施法 %s" % [name_s, "开" if on else "关"])
+	_refresh_command_card()
 
 
 func _on_command_action(

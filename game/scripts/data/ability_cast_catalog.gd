@@ -11,6 +11,9 @@ const _SPELL_SEQ_BY_ORDER := {
 	"thunderbolt": "Spell Throw",
 	"thunderclap": "Spell Slam",
 	"avatar": "Spell Throw",
+	"heal": "Spell Throw",
+	"innerfire": "Spell Throw",
+	"slow": "Spell Throw",
 }
 
 ## abil_id → Effectart / Areaeffectart（HumanAbilityFunc）
@@ -26,12 +29,16 @@ const _MISSILE_BY_ABIL := {
 const _CASTER_ART_BY_ABIL := {
 	"AHtc": "Abilities/Spells/Human/Thunderclap/ThunderClapCaster.mdl",
 	"AHav": "Abilities/Spells/Human/Avatar/AvatarCaster.mdl",
+	"Aslo": "Abilities/Spells/Human/Slow/SlowCaster.mdl",
 }
 
 ## 命中附着特效（HumanAbilityFunc [BH*] Targetart）
 const _HIT_EFFECT_BY_ABIL := {
 	"AHbz": "Abilities/Spells/Other/FrostDamage/FrostDamage.mdl",
 	"AHtb": "Abilities/Spells/Human/StormBolt/StormBoltTarget.mdl",
+	"Ahea": "Abilities/Spells/Human/Heal/HealTarget.mdl",
+	"Ainf": "Abilities/Spells/Human/InnerFire/InnerFireTarget.mdl",
+	"Aslo": "Abilities/Spells/Human/Slow/SlowTarget.mdl",
 }
 
 const _CHANNEL_ORDERS := {

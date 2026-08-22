@@ -5,6 +5,7 @@ extends CanvasLayer
 
 signal command_pressed(slot: int)
 signal command_action(action_id: String)
+signal command_action_rclick(action_id: String)
 signal minimap_clicked(uv: Vector2)
 ## 多选条点击：instance_id → Director 设 primary
 signal multi_select_clicked(instance_id: int)
@@ -727,6 +728,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _plain_tooltip(str(entry.get("tooltip", "")))
 	var executing := bool(entry.get("executing", false))
+	var auto_cast := bool(entry.get("auto_cast", false))
 	# 有图标时尽量不盖字；执行中只靠高亮 + tooltip。
 	var text := str(entry.get("text", ""))
 	var icon_rel := str(entry.get("icon", ""))
@@ -744,6 +746,32 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 			text = "执行中"
 		btn.text = text
 	_set_button_executing(btn, executing)
+	_set_button_auto_cast(btn, auto_cast)
+
+
+func _set_button_auto_cast(btn: Button, active: bool) -> void:
+	if btn == null:
+		return
+	if active:
+		btn.add_theme_stylebox_override("normal", _make_cmd_stylebox(
+			Color(0.18, 0.14, 0.06, 1.0), Color(0.95, 0.72, 0.22, 1.0), 3
+		))
+		btn.add_theme_stylebox_override("hover", _make_cmd_stylebox(
+			Color(0.24, 0.18, 0.08, 1.0), Color(1.0, 0.82, 0.32, 1.0), 3
+		))
+		btn.add_theme_stylebox_override("focus", _make_cmd_stylebox(
+			Color(0.24, 0.18, 0.08, 1.0), Color(1.0, 0.82, 0.32, 1.0), 3
+		))
+	else:
+		btn.add_theme_stylebox_override("normal", _make_cmd_stylebox(
+			Color(0.14, 0.15, 0.2, 1.0), Color(0.55, 0.44, 0.2)
+		))
+		btn.add_theme_stylebox_override("hover", _make_cmd_stylebox(
+			Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
+		))
+		btn.add_theme_stylebox_override("focus", _make_cmd_stylebox(
+			Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
+		))
 
 
 func _set_button_executing(btn: Button, executing: bool) -> void:
@@ -826,10 +854,10 @@ func _style_command_panel() -> void:
 		btn.clip_text = true
 
 
-func _make_cmd_stylebox(bg: Color, border: Color) -> StyleBoxFlat:
+func _make_cmd_stylebox(bg: Color, border: Color, border_w: int = 2) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
-	sb.set_border_width_all(2)
+	sb.set_border_width_all(border_w)
 	sb.border_color = border
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 4
@@ -846,17 +874,27 @@ func _wire_command_buttons() -> void:
 		var btn := _command_grid.get_child(i) as Button
 		if btn == null:
 			continue
-		if not btn.pressed.is_connected(_on_command_pressed.bind(i)):
-			btn.pressed.connect(_on_command_pressed.bind(i))
+		if not btn.gui_input.is_connected(_on_command_gui_input):
+			btn.gui_input.connect(_on_command_gui_input.bind(i))
 
 
-func _on_command_pressed(slot: int) -> void:
-	command_pressed.emit(slot)
-	var action_id := ""
-	if slot >= 0 and slot < _slot_action_ids.size():
-		action_id = str(_slot_action_ids[slot])
-	if not action_id.is_empty():
+func _on_command_gui_input(event: InputEvent, slot: int) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mb := event as InputEventMouseButton
+	if not mb.pressed:
+		return
+	if slot < 0 or slot >= _slot_action_ids.size():
+		return
+	var action_id := str(_slot_action_ids[slot]).strip_edges()
+	if action_id.is_empty():
+		return
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		command_pressed.emit(slot)
 		command_action.emit(action_id)
+	elif mb.button_index == MOUSE_BUTTON_RIGHT:
+		command_action_rclick.emit(action_id)
+	mb.accept_event()
 
 
 func _wire_minimap_input() -> void:

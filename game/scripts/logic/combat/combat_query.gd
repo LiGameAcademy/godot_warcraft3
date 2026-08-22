@@ -360,6 +360,23 @@ static func is_valid_attack_target(attacker: Node, target: Node) -> bool:
 	return oa >= 0 and oa == owner_of(target)
 
 
+## 友军技能合法目标（治疗 / buff）。
+static func is_valid_ally_spell_target(caster: Node, target: Node) -> bool:
+	if caster == null or target == null:
+		return false
+	if not is_instance_valid(caster) or not is_instance_valid(target):
+		return false
+	if not _attack_target_basics(caster, target):
+		return false
+	var oa := owner_of(caster)
+	return oa >= 0 and oa == owner_of(target)
+
+
+## 敌军技能合法目标（减速 / 风暴之锤等）。
+static func is_valid_hostile_spell_target(caster: Node, target: Node) -> bool:
+	return is_auto_acquire_target(caster, target)
+
+
 ## 自动索敌 / 智能右键：仅敌对（不强制打友军）。
 static func is_auto_acquire_target(attacker: Node, target: Node) -> bool:
 	return _attack_target_basics(attacker, target) and is_hostile(attacker, target)
