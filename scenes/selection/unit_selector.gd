@@ -75,11 +75,14 @@ func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = nu
 		_overlay = null
 	_ensure_overlay()
 	if camera == null or unit_host == null:
-		push_warning("UnitSelector.setup: camera 或 unit_host 为空，点选/框选不可用")
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "setup: camera 或 unit_host 为空，点选/框选不可用")
 	else:
-		print("[UnitSelector] setup ok cam=%s host=%s children=%d filter=%d" % [
-			camera.name, unit_host.name, unit_host.get_child_count(), owner_filter
-		])
+		AppLog.info(
+			AppLog.Layer.GAME,
+			"UnitSelector",
+			"setup ok cam=%s host=%s children=%d filter=%d"
+			% [camera.name, unit_host.name, unit_host.get_child_count(), owner_filter]
+		)
 
 
 ## Director 未调用 setup 时，从当前场景查找 RtsCamera / MapRoot.Units。
@@ -107,7 +110,11 @@ func _try_autobind() -> void:
 		set_process_input(true)
 		_ensure_input_layer()
 		_ensure_overlay()
-		print("[UnitSelector] autobind ok cam=%s host=%s" % [camera.name, unit_host.name])
+		AppLog.info(
+			AppLog.Layer.GAME,
+			"UnitSelector",
+			"autobind ok cam=%s host=%s" % [camera.name, unit_host.name]
+		)
 
 
 ## 供 GameDirector._input 转发。处理了左键点选/框选则返回 true。

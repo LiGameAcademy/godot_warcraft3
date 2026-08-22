@@ -1,8 +1,9 @@
-[gd_scene load_steps=3 format=3 uid="uid://jswtl3uxmvo7"]
+[gd_scene load_steps=5 format=3 uid="uid://jswtl3uxmvo7"]
 
 [ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://game/scripts/presentation/game_hud.gd" id="1_hud"]
 [ext_resource type="PackedScene" uid="uid://de0w2wwx4cytc" path="res://game/hud/game_minimap.tscn" id="2_minimap"]
 [ext_resource type="PackedScene" uid="uid://b1ihsk6ogfgxw" path="res://game/hud/unit_portrait_view.tscn" id="3_portrait"]
+[ext_resource type="PackedScene" path="res://game/hud/unit_combat_stat_chip.tscn" id="4_stat_chip"]
 
 [node name="GameHud" type="CanvasLayer" unique_id=1807320661]
 layer = 10
@@ -142,19 +143,72 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PortraitHpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397344]
+[node name="PortraitHpRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 10)
+custom_minimum_size = Vector2(96, 14)
 layout_mode = 2
+
+[node name="PortraitHpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 max_value = 100.0
 show_percentage = false
 
-[node name="PortraitManaBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397345]
+[node name="PortraitHpLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 8)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.95, 0.98, 0.95, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
+
+[node name="PortraitManaRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(96, 12)
 layout_mode = 2
+
+[node name="PortraitManaBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 max_value = 100.0
 show_percentage = false
+
+[node name="PortraitManaLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.9, 0.93, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
 
 [node name="DetailCol" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody" unique_id=2040397346]
 layout_mode = 2
@@ -168,17 +222,16 @@ text = "—"
 
 [node name="UnitHp" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166218]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="AttackLine" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166219]
+[node name="AttackChip" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("4_stat_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
 
-[node name="ArmorLine" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166220]
+[node name="ArmorChip" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("4_stat_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
 
 [node name="SpecialLines" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166221]
 unique_name_in_owner = true

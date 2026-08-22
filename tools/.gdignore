@@ -1,0 +1,1 @@
+# Node 工具链（含 node_modules 二进制）。游戏/编辑器不依赖此树被 Godot 导入。

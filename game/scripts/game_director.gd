@@ -222,8 +222,10 @@ func _resolve_exports() -> void:
 		health_bar_manager = get_node_or_null("../HealthBarManager") as HealthBarManager
 		if health_bar_manager == null and parent_n != null:
 			health_bar_manager = parent_n.get_node_or_null("HealthBarManager") as HealthBarManager
-	print(
-		"[GameDirector] bind map=%s cam=%s hud=%s sel=%s cursor=%s hpbar=%s"
+	AppLog.info(
+		AppLog.Layer.GAME,
+		"GameDirector",
+		"bind map=%s cam=%s hud=%s sel=%s cursor=%s hpbar=%s"
 		% [
 			map_root != null,
 			rts_camera != null,
@@ -1824,7 +1826,9 @@ func _configure_unit_ai(ai: UnitAI, unit: Node3D) -> void:
 	ai.configure(
 		func() -> bool: return _unit_ai_is_player_occupied(unit),
 		Callable(self, "_ensure_attack_controller"),
-		Callable(self, "_unit_host")
+		Callable(self, "_unit_host"),
+		Callable(),
+		Callable(self, "_ensure_navigator")
 	)
 
 
@@ -1933,7 +1937,7 @@ func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: i
 	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
 	cache.apply_team_color(inst, color_i, false)
 	inst.name = Unit.MODEL_NODE_NAME
-	var u := Unit.of(unit)
+	var u: Unit = Unit.of(unit)
 	var old: Node3D = null
 	if u != null:
 		old = u.model_node()
@@ -1991,9 +1995,17 @@ func _on_combat_projectile_launched(info: Dictionary) -> void:
 	var target: Node3D = info.get("target") as Node3D
 	var show_tracer := true
 	var impact_art := ""
+	var missile_art := ""
+	var arc := 0.0
+	var speed_wc3 := 900.0
 	if attacker != null and is_instance_valid(attacker):
 		show_tracer = CombatQuery.wants_tracer_visual(attacker)
 		impact_art = CombatQuery.weapon_impact_art(attacker)
+		missile_art = CombatQuery.weapon_missile_art(attacker)
+		arc = CombatQuery.missile_arc(attacker)
+		speed_wc3 = CombatQuery.missile_speed_wc3(attacker)
+	if info.has("speed_wc3"):
+		speed_wc3 = float(info.get("speed_wc3", speed_wc3))
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
@@ -2003,7 +2015,19 @@ func _on_combat_projectile_launched(info: Dictionary) -> void:
 	shell.name = "CombatProjectileShell_%s" % str(info.get("id", 0))
 	add_child(shell)
 	if shell.has_method("play"):
-		shell.call("play", from_wc3, to_wc3, duration, show_tracer, impact_art, cache, target)
+		shell.call(
+			"play",
+			from_wc3,
+			to_wc3,
+			duration,
+			show_tracer,
+			impact_art,
+			cache,
+			target,
+			missile_art,
+			arc,
+			speed_wc3
+		)
 
 
 func _on_combat_projectile_resolved(result: Dictionary) -> void:
@@ -3226,7 +3250,7 @@ func _ensure_unit_visual(unit: Node3D) -> Unit:
 	var cache: MapModelCache = null
 	if map_root != null and map_root.has_method("get_model_cache"):
 		cache = map_root.get_model_cache()
-	var u := Unit.of(unit)
+	var u: Unit = Unit.of(unit)
 	if u == null:
 		# 旧存档/非 Unit 根：不应再挂 UnitVisual 子节点；尽量当实体用
 		AppLog.warn(AppLog.Layer.PRESENT, "GameDirector", "ensure_unit: 非 Unit 根 %s" % unit)

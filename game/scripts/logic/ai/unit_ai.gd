@@ -3,12 +3,12 @@ extends Node
 
 ## 单位微观自主决策（Game Logic · ai）。
 ## 只决定「该不该打谁」；追击/出手/扣血交给 AttackController / DamagePipeline。
-## U1：受击反击；U2：idle 在 acquire 内警戒索敌。
+## U1：受击反击；U2：idle 在 acquire 内警戒索敌；U4：CAMP_CREEP leash 归巢。
 ##
 ## 挂载：单位 Node3D 子节点（与 AttackController 同构）。默认仅可战斗单位；
 ## 采集循环不在本组件——见 HarvestController（订单执行层）。
 ##
-## 后置接口（本阶段空实现 / 恒等，勿删）：营地 camp_id、睡眠/苏醒、昼夜 aggro 倍率。
+## 后置接口（本阶段空实现 / 恒等，勿删）：营地 camp 表助攻、睡眠/苏醒、昼夜 aggro 倍率。
 
 signal state_changed(state: int)
 signal profile_changed(profile: int)
@@ -20,30 +20,38 @@ const NODE_NAME := "UnitAI"
 const META_ORDER_QUEUE := "order_queue"
 ## idle 索敌节流（秒）；约 6–7Hz，避免全图每帧扫。
 const ACQUIRE_INTERVAL_SEC := 0.15
+## 默认追击上限（WC3 单位）；超出锚点则停攻回巢。竖切 800～1200。
+const DEFAULT_LEASH_WC3 := 1000.0
+## 回到锚点附近视为归巢完成。
+const HOME_ARRIVE_WC3 := 64.0
 
 enum Profile {
 	PASSIVE = 0, ## 不主动索敌、默认不反击（小动物等）
-	CAMP_CREEP = 1, ## 中立野怪：受击反击 + idle acquire（U1/U2）
-	PLAYER_MILITARY = 2, ## P1：闲置士兵同构警戒
+	CAMP_CREEP = 1, ## 中立野怪：受击反击 + idle acquire + leash
+	PLAYER_MILITARY = 2, ## 闲置士兵同构警戒（无营地 leash）
 }
 
 enum State {
 	IDLE = 0, ## 可听受击 / 可索敌
 	ENGAGED = 1, ## 已把进攻意图交给 AttackController
-	RETURNING = 2, ## P1：回锚点
+	RETURNING = 2, ## 超 leash 后回锚点
 	SLEEPING = 3, ## 夜间睡觉（后置；醒着时不用此态）
 }
 
 var _profile: int = Profile.PASSIVE
 var _state: int = State.IDLE
-## 生成时锚点（WC3 XY）；P1 leash / 回营用。
+## 生成时锚点（WC3 XY）；leash / 回营用。
 var home_wc3: Vector2 = Vector2.INF
-## 所属营地（空 = 未入营）。全图 camp 表后置写入；助攻/leash 读此 id。
+## 追击半径（距 home）；≤0 关闭 leash。
+var leash_wc3: float = DEFAULT_LEASH_WC3
+## 所属营地（空 = 未入营）。全图 camp 表后置写入；助攻读此 id。
 var camp_id: StringName = &""
 ## Callable() -> bool：当前是否被玩家（或非 UNIT_AI）订单占用。
 var _is_player_occupied: Callable = Callable()
 ## Callable(unit: Node3D) -> AttackController；U1+ 发 Attack 时 ensure。
 var _ensure_attack: Callable = Callable()
+## Callable(unit: Node3D) -> UnitNavigator；归巢走位。
+var _ensure_navigator: Callable = Callable()
 ## Callable() -> Node：单位宿主（索敌扫子树）；U2 用。
 var _unit_host: Callable = Callable()
 ## Callable() -> float：昼夜等对 acquire 的倍率（默认视作 1.0）。
@@ -61,12 +69,14 @@ func configure(
 	is_player_occupied: Callable = Callable(),
 	ensure_attack: Callable = Callable(),
 	unit_host: Callable = Callable(),
-	aggro_range_mult: Callable = Callable()
+	aggro_range_mult: Callable = Callable(),
+	ensure_navigator: Callable = Callable()
 ) -> void:
 	_is_player_occupied = is_player_occupied
 	_ensure_attack = ensure_attack
 	_unit_host = unit_host
 	_aggro_range_mult = aggro_range_mult
+	_ensure_navigator = ensure_navigator
 	_refresh_process()
 
 
@@ -111,9 +121,23 @@ func wants_retaliate() -> bool:
 	return _profile_retaliates()
 
 
-## Profile 是否允许 idle 警戒索敌（U2）；睡觉时 false。
+## Profile 是否允许 idle 警戒索敌（U2）；睡觉 / 归巢途中 false。
 func wants_idle_acquire() -> bool:
-	return _profile_idle_acquires() and not is_asleep()
+	return _profile_idle_acquires() and not is_asleep() and _state != State.RETURNING
+
+
+## 是否启用营地 leash（仅 CAMP_CREEP + 有效锚点 + leash>0）。
+func uses_leash() -> bool:
+	return (
+		_profile == Profile.CAMP_CREEP
+		and home_wc3 != Vector2.INF
+		and leash_wc3 > 0.0
+	)
+
+
+## 当前距 home 是否已超 leash（供自测 / 调试）。
+func is_beyond_leash() -> bool:
+	return uses_leash() and _dist_from_home_wc3() > leash_wc3
 
 
 func captures_home_from_body() -> void:
@@ -219,9 +243,11 @@ func yield_to_player() -> void:
 	_refresh_process()
 
 
-## 对目标发起 AI 进攻（U1/U2 共用入口）。
+## 对目标发起 AI 进攻（U1/U2 共用入口）。归巢途中不接新仇恨。
 func try_engage(target: Node3D) -> bool:
 	if target == null or not is_instance_valid(target):
+		return false
+	if _state == State.RETURNING:
 		return false
 	if _player_occupied():
 		return false
@@ -238,6 +264,9 @@ func notify_damaged(result: Dictionary) -> void:
 	if _life_of(body) <= 0.0:
 		return
 	try_wake()
+	# 归巢途中不重新开打（WC3 脱战回营手感）
+	if _state == State.RETURNING:
+		return
 	if not _profile_retaliates():
 		return
 	if _player_occupied():
@@ -255,6 +284,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _state == State.RETURNING:
+		_tick_returning()
+		return
 	if _owns_engagement:
 		_tick_engaged()
 		return
@@ -294,14 +326,79 @@ func _tick_engaged() -> void:
 			_set_state(State.IDLE)
 		_refresh_process()
 		return
+	if is_beyond_leash():
+		_begin_return()
+		return
 	var ac := _attack_controller()
 	if ac == null or not _ac_is_active(ac):
 		_owns_engagement = false
 		_clear_ai_order_if_ours()
+		if is_beyond_leash():
+			_begin_return()
+			return
 		if _state != State.SLEEPING:
 			_set_state(State.IDLE)
 		_refresh_process()
 		return
+
+
+func _tick_returning() -> void:
+	if _player_occupied():
+		_owns_engagement = false
+		_set_state(State.IDLE)
+		_refresh_process()
+		return
+	if _is_at_home():
+		_finish_return()
+		return
+	var nav := _resolve_navigator()
+	if nav == null:
+		_finish_return()
+		return
+	if not _nav_is_moving(nav):
+		_nav_go_home(nav)
+
+
+func _begin_return() -> void:
+	_owns_engagement = false
+	var ac := _attack_controller()
+	if ac != null:
+		_ac_cancel(ac)
+	_clear_ai_order_if_ours()
+	if not uses_leash():
+		if _state != State.SLEEPING:
+			_set_state(State.IDLE)
+		_refresh_process()
+		return
+	_write_ai_move_order(home_wc3)
+	var nav := _resolve_navigator()
+	_nav_go_home(nav)
+	_set_state(State.RETURNING)
+	_refresh_process()
+
+
+func _finish_return() -> void:
+	_owns_engagement = false
+	_clear_ai_order_if_ours()
+	var nav := _navigator()
+	if nav != null:
+		_nav_stop(nav)
+	_acquire_cd = ACQUIRE_INTERVAL_SEC
+	_set_state(State.IDLE)
+	_refresh_process()
+
+
+func _is_at_home() -> bool:
+	if not uses_leash():
+		return true
+	return _dist_from_home_wc3() <= HOME_ARRIVE_WC3
+
+
+func _dist_from_home_wc3() -> float:
+	var body := _body()
+	if body == null or home_wc3 == Vector2.INF:
+		return 0.0
+	return Wc3Coords.godot_to_wc3_xy(body.global_position).distance_to(home_wc3)
 
 
 ## 对目标发 AI Attack；成功则 ENGAGED。
@@ -334,6 +431,19 @@ func _write_ai_attack_order(target: Node3D) -> void:
 	var body := _body()
 	if body == null or target == null:
 		return
+	var q := _order_queue(body)
+	q.set_current(UnitOrder.attack(target, UnitOrder.Source.UNIT_AI))
+
+
+func _write_ai_move_order(goal: Vector2) -> void:
+	var body := _body()
+	if body == null or goal == Vector2.INF:
+		return
+	var q := _order_queue(body)
+	q.set_current(UnitOrder.move(goal, UnitOrder.Source.UNIT_AI))
+
+
+func _order_queue(body: Node3D) -> OrderQueue:
 	var q: OrderQueue
 	if body.has_meta(META_ORDER_QUEUE):
 		var raw: Variant = body.get_meta(META_ORDER_QUEUE)
@@ -341,7 +451,7 @@ func _write_ai_attack_order(target: Node3D) -> void:
 	if q == null:
 		q = OrderQueue.new()
 		body.set_meta(META_ORDER_QUEUE, q)
-	q.set_current(UnitOrder.attack(target, UnitOrder.Source.UNIT_AI))
+	return q
 
 
 func _clear_ai_order_if_ours() -> void:
@@ -398,8 +508,50 @@ func _ac_is_active(ac: Node) -> bool:
 	return false
 
 
+func _ac_cancel(ac: Node) -> void:
+	if ac != null and ac.has_method("cancel"):
+		ac.call("cancel")
+
+
+func _resolve_navigator() -> Node:
+	var existing := _navigator()
+	if existing != null:
+		return existing
+	if not _ensure_navigator.is_valid():
+		return null
+	var body := _body()
+	if body == null:
+		return null
+	return _ensure_navigator.call(body) as Node
+
+
+func _navigator() -> Node:
+	var body := _body()
+	if body == null:
+		return null
+	return body.get_node_or_null("UnitNavigator")
+
+
+func _nav_go_home(nav: Node) -> void:
+	if nav == null or home_wc3 == Vector2.INF:
+		return
+	if nav.has_method("go_to_wc3"):
+		nav.call("go_to_wc3", home_wc3)
+
+
+func _nav_is_moving(nav: Node) -> bool:
+	if nav != null and nav.has_method("is_moving"):
+		return bool(nav.call("is_moving"))
+	return false
+
+
+func _nav_stop(nav: Node) -> void:
+	if nav != null and nav.has_method("stop"):
+		nav.call("stop")
+
+
 func _refresh_process() -> void:
-	set_process(wants_idle_acquire() or _owns_engagement)
+	set_process(wants_idle_acquire() or _owns_engagement or _state == State.RETURNING)
 
 
 func _profile_retaliates() -> bool:

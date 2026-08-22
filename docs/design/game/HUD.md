@@ -3,7 +3,7 @@
 > 场景：`game/scenes/game_hud.tscn` · 脚本：`game/scripts/presentation/game_hud.gd`  
 > 选中权威：`scenes/selection/unit_selector.gd`  
 > 命令卡：`game/scripts/logic/command/command_card.gd`  
-> 最后更新：2026-08-14
+> 最后更新：2026-08-22
 
 ## 1. 目标与原则
 
@@ -52,20 +52,22 @@ GameHud (CanvasLayer)
 | 块 | 内容 |
 |----|------|
 | 肖像 | `*_Portrait` 模型（见 §5） |
-| 肖像下 | **生命**进度条；有魔法时再显示 **魔法**进度条（数值可叠在条上或旁注） |
+| 肖像下 | **生命**进度条（数值叠在条上）；有魔法时再显 **魔法**条（同样叠字） |
 | 标题 | 显示名（UnitStrings / Catalog） |
-| 攻击 | 攻击类型 + 伤害（`UnitWeapons`：`atk_type1` + dice/sides/plus 或 min–max） |
-| 防御 | 护甲类型 + 数值（`UnitBalance.def` / `def_type`）；无敌等特殊态单独文案 |
-| 其它 | 移速、视野等可后置；**特殊属性**见下 |
+| 攻击 | `UnitCombatStatChip`：类型图标 + 伤害 + 类型名；可升级单位在图标右下角显示等级角标 |
+| 防御 | 同上护甲；不可升级（英雄等）不显示角标框 |
+| 其它 | 移速等可后置；**特殊属性**见下 |
 
 **特殊属性（按单位类型叠加）：**
 
 | 类型 | 展示 |
 |------|------|
 | 金矿 `ngol` | 剩余金币（`GoldMineRuntime.remaining_gold`） |
-| 英雄 | 主属性（STR/AGI/INT）+ 力量 / 敏捷 / 智力（`UnitBalance`） |
+| **英雄**（`UnitBalance.Primary` ∈ STR/AGI/INT） | 主属性 + 力量/敏捷/智力 |
 | 建造中建筑 / 施工中农民 | 建造进度（已有 `set_build_progress`） |
 | 负重农民 | 可后置：负金 / 负木数量 |
+
+> 英雄判定：数据侧已有——`UnitBalance.Primary` 英雄为 `STR`/`AGI`/`INT`，普通单位为 `_`；另有 `defType=hero`、`UnitData.nameCount` 等辅助信号。HUD 以 `Primary` 为准。
 
 ### 3.2 多选队列
 
@@ -165,11 +167,21 @@ hud.set_selection_info(info: Dictionary)
 #   mode: "single" | "multi" | "train" | "empty"
 #   primary_id / display_name
 #   hp, hp_max, mana, mana_max
-#   attack_line, armor_line, special_lines: PackedStringArray
+#   attack / armor: {
+#     type, type_label, value, icon,
+#     upgradeable,   # false → 不显示图标右下角等级框（英雄等）
+#     upgrade_level, tooltip
+#   }
+#   attack_line, armor_line: 纯文本回退（兼容）
+#   special_lines: PackedStringArray
 #   portrait_type_id
-#   multi: Array[{ node_id, type_id, icon }]   # 多选条
-#   train_queue: Array[…]                     # 训练接通后
+#   multi: Array[{ node_id, type_id, icon }]
+#   train_queue: Array[…]
 ```
+
+攻防图标：`UI/Widgets/Console/Human/infocard-attack-*` / `infocard-armor-*`（`RuntimeAssets`）。
+
+控件：`game/hud/unit_combat_stat_chip.tscn`（`AttackChip` / `ArmorChip`）。
 
 数据来源：
 
@@ -195,6 +207,7 @@ hud.set_selection_info(info: Dictionary)
 | B | 建造二级菜单（主卡 Build → 子卡建筑） | ✅ |
 | C | `cycle_primary` / `set_primary`；无框选人数上限；Tab / 多选条 | ✅ |
 | D | 中栏布局：肖像 SubViewport + 血/蓝条 + 攻防详情 | ✅ |
+| D2 | 攻防独立 `UnitCombatStatChip`（图标/数值/类型；升级等级字段预留） | ✅ |
 | E | 多选条 + Tab 切主选刷新卡面 | ✅ |
 | F | Portrait 启发式相机 → 远期 MDX Camera | 🟡 启发式已用；MDX Camera 待回填 |
 | G | 生产队列 UI 壳 + 训练真数据 | 📋 等 F3+ |

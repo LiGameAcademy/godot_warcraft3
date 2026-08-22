@@ -51,6 +51,7 @@ static func ensure_on(host: Node) -> AnimationPlayer:
 		ap.set_script(script)
 	if ap.has_method("ensure_hooks"):
 		ap.call("ensure_hooks")
+	# 勿在此 prune：PE2 常由 Wc3ModelScene._ready 稍后补挂，过早剪会丢 Death 等轨
 	return ap
 
 
@@ -146,11 +147,12 @@ func collect_family(logical_name: String) -> PackedStringArray:
 		if _is_family_member(AnimPlayback.anim_leaf(str(path)), root):
 			out.append(str(path))
 	_family_cache[root] = out
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"collect_family root=%s n=%d → %s" % [root, out.size(), _family_leaves_preview(out)]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"collect_family root=%s n=%d → %s" % [root, out.size(), _family_leaves_preview(out)]
+		)
 	return out
 
 
@@ -159,18 +161,20 @@ func collect_family(logical_name: String) -> PackedStringArray:
 func pick_family(logical_name: String, rng: RandomNumberGenerator = null) -> String:
 	var members := collect_family(logical_name)
 	if members.is_empty():
-		AppLog.debug(
-			AppLog.Layer.PRESENT,
-			_TAG,
-			"pick_family 空族 logical=%s" % logical_name
-		)
+		if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+			AppLog.debug(
+				AppLog.Layer.PRESENT,
+				_TAG,
+				"pick_family 空族 logical=%s" % logical_name
+			)
 		return ""
 	if members.size() == 1:
-		AppLog.debug(
-			AppLog.Layer.PRESENT,
-			_TAG,
-			"pick_family logical=%s sole=%s" % [logical_name, AnimPlayback.anim_leaf(members[0])]
-		)
+		if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+			AppLog.debug(
+				AppLog.Layer.PRESENT,
+				_TAG,
+				"pick_family logical=%s sole=%s" % [logical_name, AnimPlayback.anim_leaf(members[0])]
+			)
 		return members[0]
 	var r := rng
 	if r == null:
@@ -193,18 +197,19 @@ func pick_family(logical_name: String, rng: RandomNumberGenerator = null) -> Str
 		if roll <= acc:
 			picked = members[i]
 			break
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"pick_family logical=%s → %s rarity=%.0f roll=%.3f among=%s"
-		% [
-			logical_name,
-			AnimPlayback.anim_leaf(picked),
-			seq_rarity(picked),
-			roll,
-			_family_rarity_preview(members),
-		]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"pick_family logical=%s → %s rarity=%.0f roll=%.3f among=%s"
+			% [
+				logical_name,
+				AnimPlayback.anim_leaf(picked),
+				seq_rarity(picked),
+				roll,
+				_family_rarity_preview(members),
+			]
+		)
 	return picked
 
 
@@ -259,6 +264,44 @@ func ensure_hooks() -> void:
 			animation_libraries_updated.connect(_on_animation_libraries_updated)
 
 
+## 删掉指向不存在节点的轨（旧 bake 的 Pe2 :emitting 等），避免 AnimationMixer 每帧警告。
+func prune_unresolved_tracks() -> int:
+	var anim_root: Node = get_node_or_null(root_node)
+	if anim_root == null:
+		anim_root = get_parent()
+	if anim_root == null:
+		return 0
+	var removed := 0
+	for anim_name in get_animation_list():
+		var anim := get_animation(anim_name)
+		if anim == null:
+			continue
+		for i in range(anim.get_track_count() - 1, -1, -1):
+			var full := anim.track_get_path(i)
+			var node_path := _track_node_path(full)
+			if str(node_path).is_empty() or str(node_path) == ".":
+				continue
+			if anim_root.get_node_or_null(node_path) != null:
+				continue
+			anim.remove_track(i)
+			removed += 1
+	if removed > 0 and AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"prune_unresolved_tracks removed=%d host=%s" % [removed, str(name)]
+		)
+	return removed
+
+
+func _track_node_path(track_path: NodePath) -> NodePath:
+	var s := str(track_path)
+	var colon := s.find(":")
+	if colon >= 0:
+		s = s.substr(0, colon)
+	return NodePath(s)
+
+
 func _on_animation_started(anim_name: StringName) -> void:
 	Wc3Pe2Particles.apply_sequence(_sequence_host(), str(anim_name))
 
@@ -278,11 +321,12 @@ func _ensure_anim_list_cache() -> void:
 	_anim_list = get_animation_list()
 	_anim_list_ready = true
 	_family_cache.clear()
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"anim_list cached n=%d host=%s" % [_anim_list.size(), str(name)]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"anim_list cached n=%d host=%s" % [_anim_list.size(), str(name)]
+		)
 
 
 func _family_root(logical_name: String) -> String:

@@ -1,6 +1,6 @@
 extends SceneTree
 
-## C2：weapTp 投送分类 + 弹道飞行时间。
+## C2：weapTp 投送分类 + 弹道飞行时间 + UnitFunc（Hamg/hrif）。
 ## godot --headless --path . -s res://tests/unit/selftest_c_combat_projectile.gd
 
 func _init() -> void:
@@ -41,12 +41,59 @@ func _init() -> void:
 	else:
 		print("  hrif-ish travel OK (%.3fs)" % t)
 
+	ok = _test_unit_func_missile() and ok
+
 	if ok:
 		print("selftest_c_combat_projectile: PASS")
 		quit(0)
 	else:
 		push_error("selftest_c_combat_projectile: FAIL")
 		quit(1)
+
+
+func _test_unit_func_missile() -> bool:
+	var ok := true
+	var hamg_art := CombatQuery.missile_art_for_type("Hamg")
+	if hamg_art.findn("FireBallMissile") < 0:
+		push_error("Hamg missile art 应为 FireBall，得 %s" % hamg_art)
+		ok = false
+	else:
+		print("  Hamg missile_art OK (%s)" % hamg_art)
+	var hamg_spd := CombatQuery.missile_speed_for_type("Hamg")
+	if absf(hamg_spd - 900.0) > 0.1:
+		push_error("Hamg Missilespeed 应为 900，得 %s" % hamg_spd)
+		ok = false
+	else:
+		print("  Hamg missilespeed OK")
+	var hamg_arc := CombatQuery.missile_arc_for_type("Hamg")
+	if absf(hamg_arc - 0.15) > 0.001:
+		push_error("Hamg Missilearc 应为 0.15，得 %s" % hamg_arc)
+		ok = false
+	else:
+		print("  Hamg missilearc OK")
+
+	var hrif_impact := CombatQuery.impact_art_for_type("hrif")
+	if hrif_impact.findn("RifleImpact") < 0:
+		push_error("hrif impact art 应为 RifleImpact，得 %s" % hrif_impact)
+		ok = false
+	else:
+		print("  hrif impact_art OK (%s)" % hrif_impact)
+	var hrif_spd := CombatQuery.missile_speed_for_type("hrif")
+	if absf(hrif_spd - 1900.0) > 0.1:
+		push_error("hrif Missilespeed 应为 1900，得 %s" % hrif_spd)
+		ok = false
+	else:
+		print("  hrif missilespeed OK")
+
+	var norm := CombatQuery.normalize_model_art(
+		"Abilities\\Weapons\\FireBallMissile\\FireBallMissile.mdl"
+	)
+	if norm != "Abilities/Weapons/FireBallMissile/FireBallMissile.gltf":
+		push_error("normalize_model_art 失败：%s" % norm)
+		ok = false
+	else:
+		print("  normalize_model_art OK")
+	return ok
 
 
 func _assert_eq(got: int, want: int, label: String) -> bool:

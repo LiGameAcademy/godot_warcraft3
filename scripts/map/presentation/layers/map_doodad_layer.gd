@@ -274,8 +274,10 @@ func build(ctx: MapBuildContext) -> void:
 				helper_count += 1
 			ph_groups += 1
 
-	print(
-		"Doodads: placed=%d placeholder=%d animated=%d helpers=%d groups(glb=%d mm=%d ph=%d)"
+	AppLog.info(
+		AppLog.Layer.LOAD,
+		"Doodads",
+		"placed=%d placeholder=%d animated=%d helpers=%d groups(glb=%d mm=%d ph=%d)"
 		% [last_placed, last_placeholder, anim_instances, helper_count, glb_groups, mm_groups, ph_groups]
 	)
 

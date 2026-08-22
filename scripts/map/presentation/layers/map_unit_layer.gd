@@ -79,14 +79,10 @@ func build(ctx: MapBuildContext) -> void:
 	var scn_h := int(_cache.last_scn_hits) if _cache != null else 0
 	var gltf_n := int(_cache.last_gltf_loads) if _cache != null else 0
 	var cache_h := int(_cache.last_cache_hits) if _cache != null else 0
-	print(
-		"Units: glb=%d placeholder=%d unique=%d scnDisk=%d/%d loadMs=%d cacheHit=%d scnLoad=%d gltfParse=%d"
-		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
-	)
 	AppLog.info(
 		AppLog.Layer.LOAD,
 		"Units",
-		"placed=%d ph=%d unique=%d scnDisk=%d/%d ms=%d cache=%d scn=%d gltf=%d"
+		"glb=%d placeholder=%d unique=%d scnDisk=%d/%d loadMs=%d cacheHit=%d scnLoad=%d gltfParse=%d"
 		% [last_placed, last_placeholder, unique, scn_ready, unique, ms, cache_h, scn_h, gltf_n]
 	)
 	if not missing_scn.is_empty():
@@ -104,8 +100,12 @@ func build(ctx: MapBuildContext) -> void:
 				stems.append(line.substr(arrow + 1).strip_edges())
 			else:
 				stems.append(line)
-		print("Units missing .scn files: %s" % ", ".join(stems))
-		print("Hint: npm run bake:scn -- --force --include <path-fragment>")
+		AppLog.info(
+			AppLog.Layer.LOAD,
+			"Units",
+			"missing .scn stems: %s | hint: npm run bake:scn -- --force --include <path-fragment>"
+			% ", ".join(stems)
+		)
 
 
 ## 用 Document 的 AoS 条目全量重建（同步，仅小列表或测试用）。
@@ -159,7 +159,11 @@ func rebuild_from_list_batched(hf: Wc3Heightfield, units: Array) -> void:
 			"缺可用旁路 .scn（%d/%d，将分帧 GLTF）：%s"
 			% [missing_scn.size(), unique_paths.size(), ", ".join(missing_scn)]
 		)
-		print("Units missing .scn files: %s" % ", ".join(missing_scn))
+		AppLog.info(
+			AppLog.Layer.LOAD,
+			"Units",
+			"missing .scn: %s" % ", ".join(missing_scn)
+		)
 	_batch_hf = hf
 	_batch_done_count = 0
 	_batch_total = _batch_pending.size()
@@ -209,8 +213,10 @@ func remove_by_creation_number(creation_number: int) -> bool:
 	var node := find_by_creation_number(creation_number)
 	if node == null:
 		return false
+	# 须 queue_free：尸体过期常从 Unit.corpse_expired 信号栈进入；
+	# 信号锁定期间 free() 会报 “Attempted to free a locked object”。
 	remove_child(node)
-	node.free()
+	node.queue_free()
 	return true
 
 
@@ -290,7 +296,11 @@ func _process(_delta: float) -> void:
 		_batch_active = false
 		_batch_hf = null
 		set_process(false)
-		print("Units threaded: glb=%d placeholder=%d" % [last_placed, last_placeholder])
+		AppLog.info(
+			AppLog.Layer.LOAD,
+			"Units",
+			"threaded glb=%d placeholder=%d" % [last_placed, last_placeholder]
+		)
 		if _cache != null:
 			AppLog.info(
 				AppLog.Layer.LOAD,
@@ -316,7 +326,11 @@ func _process(_delta: float) -> void:
 		_batch_active = false
 		_batch_hf = null
 		set_process(false)
-		print("Units threaded(flush): glb=%d placeholder=%d" % [last_placed, last_placeholder])
+		AppLog.info(
+			AppLog.Layer.LOAD,
+			"Units",
+			"threaded(flush) glb=%d placeholder=%d" % [last_placed, last_placeholder]
+		)
 		batch_finished.emit(last_placed, last_placeholder)
 
 

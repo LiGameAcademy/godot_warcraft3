@@ -396,6 +396,9 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 	const _Model := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
+	# PE2 就位后再剪悬空轨（含旧 bake 写进 Stand 的 Death-only :emitting）
+	if ap != null and ap.has_method("prune_unresolved_tracks"):
+		ap.call("prune_unresolved_tracks")
 	root.set_script(_Model)
 	var packed := PackedScene.new()
 	if packed.pack(root) != OK:
@@ -645,10 +648,10 @@ static func apply_bone_rest_sidecar(proto: Node, glb_path: String) -> void:
 	var disk := _resolve_bone_rest_disk(glb_path)
 	if disk.is_empty():
 		return
-	var raw := FileAccess.get_file_as_string(disk)
+	var raw := RuntimeAssets.read_utf8_text(disk)
 	if raw.is_empty():
 		return
-	var parsed: Variant = JSON.parse_string(raw)
+	var parsed: Variant = RuntimeAssets.parse_json_text(raw)
 	if not parsed is Dictionary:
 		return
 	var bones: Array = parsed.get("bones", [])
@@ -802,6 +805,8 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 					continue
 				var mesh_n: Node = mesh_n_v
 				# 轨路径相对 AnimationPlayer.root_node（默认 ..），不是相对 AP 自身
+				if anim_root == null or not _nodes_share_tree(anim_root, mesh_n):
+					continue
 				var rel := anim_root.get_path_to(mesh_n)
 				if str(rel).is_empty() or str(rel) == ".":
 					continue
@@ -1396,7 +1401,22 @@ func _resolve_team_glow_tip_host(root: Node, glow_mi: MeshInstance3D) -> Node3D:
 			parent = root
 		parent.add_child(ba2)
 		ba2.owner = root
-		ba2.external_skeleton = ba2.get_path_to(skeleton)
+		var skel_path := NodePath()
+		var walk: Node = ba2
+		var seen: Dictionary = {}
+		while walk != null:
+			seen[walk] = true
+			walk = walk.get_parent()
+		walk = skeleton
+		while walk != null:
+			if seen.has(walk):
+				skel_path = ba2.get_path_to(skeleton)
+				break
+			walk = walk.get_parent()
+		if skel_path.is_empty():
+			ba2.queue_free()
+			return null
+		ba2.external_skeleton = skel_path
 		return ba2
 	return null
 
@@ -1619,7 +1639,7 @@ func autoplay_stand(root: Node, random_phase: bool = true) -> bool:
 		return false
 	if not play_animation(root, chosen, true):
 		return false
-	if random_phase:
+	if random_phase and not str(ap.current_animation).is_empty():
 		var anim_len: float = ap.current_animation_length
 		if anim_len > 0.05:
 			ap.seek(randf() * anim_len, true)
@@ -1972,3 +1992,20 @@ func _collect_mesh_parts(n: Node, out: Array) -> void:
 			})
 	for c in n.get_children():
 		_collect_mesh_parts(c, out)
+
+
+## 无共同祖先时 `Node.get_path_to` 会引擎 ERROR。
+func _nodes_share_tree(a: Node, b: Node) -> bool:
+	if a == null or b == null:
+		return false
+	var walk: Node = a
+	var seen: Dictionary = {}
+	while walk != null:
+		seen[walk] = true
+		walk = walk.get_parent()
+	walk = b
+	while walk != null:
+		if seen.has(walk):
+			return true
+		walk = walk.get_parent()
+	return false

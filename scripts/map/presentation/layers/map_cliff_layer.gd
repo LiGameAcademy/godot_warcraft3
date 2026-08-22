@@ -60,8 +60,10 @@ func build(ctx: MapBuildContext) -> void:
 			if ctx.cliff_catalog != null:
 				png = ctx.cliff_catalog.png_for_cliff_index(cliff_tilesets, tex_idx)
 			tex_cache[tex_idx] = RuntimeAssets.load_texture(png) if not png.is_empty() else null
-			print(
-				"Cliff tex[%d] %s → %s (%s)"
+			AppLog.debug(
+				AppLog.Layer.PRESENT,
+				"Cliff",
+				"tex[%d] %s → %s (%s)"
 				% [
 					tex_idx,
 					str(cliff_tilesets[tex_idx]) if tex_idx < cliff_tilesets.size() else "?",
@@ -107,8 +109,10 @@ func build(ctx: MapBuildContext) -> void:
 
 	_apply_debug_grid_to_mats()
 
-	print(
-		"Cliffs: placed=%d missing=%d groups=%d"
+	AppLog.info(
+		AppLog.Layer.PRESENT,
+		"Cliff",
+		"placed=%d missing=%d groups=%d"
 		% [
 			last_placed,
 			collected.missing,

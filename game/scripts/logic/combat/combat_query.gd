@@ -143,38 +143,116 @@ static func wants_projectile_visual(node: Node) -> bool:
 	return attack_range_wc3(node) >= 200.0
 
 
-## 命中特效模型（UnitFunc Missileart；未进 Def 时按兵种兜底）。
-const _IMPACT_ART_BY_TYPE := {
-	"hrif": "Abilities/Weapons/Rifle/RifleImpact.gltf",
-}
+## UnitFunc 行（CommandButtonCatalog；键已小写）。
+static func unit_func_row(type_id: String) -> Dictionary:
+	var tid := type_id.strip_edges()
+	if tid.is_empty():
+		return {}
+	return CommandButtonCatalog.get_shared().get_unit_ui(tid)
 
 
-static func weapon_impact_art(node: Node) -> String:
-	var tid := type_id_of(node)
-	if _IMPACT_ART_BY_TYPE.has(tid):
-		return str(_IMPACT_ART_BY_TYPE[tid])
+## WC3 Missileart/模型路径 → asset-converted 相对逻辑路径（.gltf）。
+static func normalize_model_art(raw: String) -> String:
+	var p := raw.strip_edges().replace("\\", "/")
+	if p.is_empty():
+		return ""
+	while p.begins_with("/"):
+		p = p.substr(1)
+	var lower := p.to_lower()
+	if lower.ends_with(".mdl") or lower.ends_with(".mdx"):
+		p = p.substr(0, p.length() - 4) + ".gltf"
+	elif lower.ends_with(".blp"):
+		p = p.substr(0, p.length() - 4) + ".png"
+	return p
+
+
+static func _unit_func_missile_art_raw(type_id: String) -> String:
+	var row := unit_func_row(type_id)
+	return str(row.get("missileart", "")).strip_edges()
+
+
+## 真 missile 飞行模型（Hamg→FireBall）。instant 远程为空（飞的是空，命中用 impact）。
+static func weapon_missile_art(node: Node) -> String:
+	if not uses_projectile_travel(node):
+		return ""
+	return missile_art_for_type(type_id_of(node))
+
+
+static func missile_art_for_type(type_id: String) -> String:
+	var art := normalize_model_art(_unit_func_missile_art_raw(type_id))
+	if not art.is_empty():
+		return art
+	# 兜底：经典大法师火球
+	if type_id.strip_edges() == "Hamg":
+		return "Abilities/Weapons/FireBallMissile/FireBallMissile.gltf"
 	return ""
 
 
-## 是否用可见曳光弹（真 missile）；instant 远程可只播命中特效。
+## 命中特效：instant 远程用 UnitFunc.Missileart（hrif→RifleImpact）；真 missile 可空（飞弹本体到点即终）。
+static func weapon_impact_art(node: Node) -> String:
+	if uses_projectile_travel(node):
+		return ""
+	return impact_art_for_type(type_id_of(node))
+
+
+static func impact_art_for_type(type_id: String) -> String:
+	var art := normalize_model_art(_unit_func_missile_art_raw(type_id))
+	if not art.is_empty():
+		return art
+	if _IMPACT_ART_BY_TYPE.has(type_id):
+		return str(_IMPACT_ART_BY_TYPE[type_id])
+	return ""
+
+
+## 是否用可见曳光/飞弹体（真 missile）；instant 远程只播命中特效。
 static func wants_tracer_visual(node: Node) -> bool:
 	return uses_projectile_travel(node)
 
 
-## 弹道速度（WC3 单位/秒）。UnitFunc Missilespeed 尚未进 Def 时按兵种兜底。
+## 弹道速度（WC3 单位/秒）：UnitFunc.Missilespeed → 兜底表 → 默认。
 const DEFAULT_MISSILE_SPEED_WC3 := 900.0
 const _MISSILE_SPEED_BY_TYPE := {
 	"hrif": 1900.0,
+	"Hamg": 900.0,
 	"earc": 900.0,
 	"esen": 900.0,
 }
 
 
 static func missile_speed_wc3(node: Node) -> float:
-	var tid := type_id_of(node)
+	return missile_speed_for_type(type_id_of(node))
+
+
+static func missile_speed_for_type(type_id: String) -> float:
+	var tid := type_id.strip_edges()
+	var row := unit_func_row(tid)
+	var raw := str(row.get("missilespeed", "")).strip_edges()
+	if not raw.is_empty() and raw.is_valid_float():
+		var s := float(raw)
+		if s > 1.0:
+			return s
 	if _MISSILE_SPEED_BY_TYPE.has(tid):
 		return float(_MISSILE_SPEED_BY_TYPE[tid])
 	return DEFAULT_MISSILE_SPEED_WC3
+
+
+## 弹道弧度（UnitFunc.Missilearc；0=平直）。Present 可用，Logic 飞时仍按直线时长。
+static func missile_arc(node: Node) -> float:
+	return missile_arc_for_type(type_id_of(node))
+
+
+static func missile_arc_for_type(type_id: String) -> float:
+	var row := unit_func_row(type_id)
+	var raw := str(row.get("missilearc", "")).strip_edges()
+	if raw.is_empty() or not raw.is_valid_float():
+		return 0.0
+	return clampf(float(raw), 0.0, 1.0)
+
+
+## 兼容旧硬编码命中表（UnitFunc 缺失时）。
+const _IMPACT_ART_BY_TYPE := {
+	"hrif": "Abilities/Weapons/Rifle/RifleImpact.gltf",
+}
 
 
 static func travel_time_sec(dist_wc3: float, speed_wc3: float) -> float:
