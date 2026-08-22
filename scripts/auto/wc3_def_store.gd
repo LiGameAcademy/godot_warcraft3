@@ -133,7 +133,7 @@ func load_table(table_name: String) -> int:
 		_tables[table_name] = by_id
 		_orders[table_name] = order
 		return 0
-	var data: Variant = JSON.parse_string(text)
+	var data: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		_tables[table_name] = by_id
 		_orders[table_name] = order

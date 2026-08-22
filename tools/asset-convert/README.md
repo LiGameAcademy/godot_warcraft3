@@ -39,6 +39,19 @@ npm run bake:scn -- --include Units/Human/
 npm run convert -- --scn-only --include Units/Human/
 ```
 
+### 增量更新（推荐日常）
+
+**默认不加 `--force`**：按源文件与产物 **mtime** 跳过已是最新的项（贴图 / 模型旁路 / passthrough / `.scn` 同理）。
+
+| 场景 | 命令 |
+|------|------|
+| 日常同步（只转有变动的） | `npm run convert --` |
+| 改了转换工具、要对全库吃新算法 | `npm run convert -- --force` |
+| 只重转某个英雄/技能 | `npm run convert -- --include "Units/Human/HeroArchMage/**" --include "Abilities/Weapons/FireBallMissile/**"` |
+| 只重烤 .scn | `npm run bake:scn -- --include Units/Human/HeroArchMage/` |
+
+工具代码 hash 变化时会打日志提醒，但**不会**再自动全量 force。
+
 输出根目录默认：`../../assets/asset-converted`（`Foo.glb` + `Foo.scn` 同目录，已 gitignore）。
 
 未烘焙时：编辑器首次预览后会懒写入同目录（失败则 `user://model-scenes/`）。

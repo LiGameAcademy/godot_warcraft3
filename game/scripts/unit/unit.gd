@@ -324,7 +324,7 @@ func _anim_leaf_key(anim: StringName) -> String:
 
 func _is_death_clip(anim: StringName) -> bool:
 	if str(anim).is_empty():
-		return true
+		return false
 	var leaf := _anim_leaf_key(anim)
 	if leaf.begins_with("decay"):
 		return false
@@ -355,7 +355,8 @@ func _arm_corpse_watch(min_wait: float) -> void:
 	var id := _corpse_watch_id
 	var ap := _animation_player()
 	var wait := min_wait
-	if ap != null:
+	# 无 current 时读 length/position 会引擎报错刷屏。
+	if ap != null and _ap_has_current_anim(ap):
 		wait = maxf(wait, ap.current_animation_length + 0.35)
 	var tree := _scene_tree()
 	if tree == null:
@@ -368,6 +369,12 @@ func _arm_corpse_watch(min_wait: float) -> void:
 	)
 
 
+func _ap_has_current_anim(ap: AnimationPlayer) -> bool:
+	if ap == null:
+		return false
+	return not str(ap.current_animation).is_empty()
+
+
 func _process(_delta: float) -> void:
 	if not _dying or _corpse_phase == _CORPSE_DONE or _corpse_phase == _CORPSE_NONE:
 		set_process(false)
@@ -375,6 +382,9 @@ func _process(_delta: float) -> void:
 	var ap := _animation_player()
 	if ap == null:
 		_advance_corpse_phase()
+		return
+	# 尚无轨：等 timer / animation_finished，勿读 position（否则每帧 ERROR）。
+	if not _ap_has_current_anim(ap):
 		return
 	var cur := StringName(ap.current_animation)
 	if not _clip_matches_phase(cur):
@@ -390,6 +400,8 @@ func _process(_delta: float) -> void:
 
 
 func _clip_matches_phase(anim: StringName) -> bool:
+	if str(anim).is_empty():
+		return false
 	match _corpse_phase:
 		_CORPSE_DEATH:
 			return _is_death_clip(anim)

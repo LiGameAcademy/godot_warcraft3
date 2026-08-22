@@ -1,9 +1,9 @@
 // tools/asset-convert/src/m2g-tool-version.js
 // 老李 P3-9：m2g 工具版本变化自动 force 重烤
 // ──────────────────────────────────────────────────────────────
-// 算 src/*.js + anim/mat4/paths/convert-blp/*.js 的 SHA256，存到 .cache/m2g-tool-hash。
-// 工具代码变化时 hash 不一致 → 自动 force=true → m2g 强制重转所有 GLB。
-// 避免改 m2g 工具一行业务逻辑后，老 PC 跑 bootstrap 时漏改、产出过期 .glb。
+// 算 src/*.js + bake 脚本的 SHA256，存到 assets/.staging/m2g-tool-hash。
+// 工具代码变化时只打日志提醒，**默认不**自动全量 force（避免数小时重转）。
+// 需要新算法生效：显式 --force，或 --include 子集。
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -69,14 +69,17 @@ export function reconcileM2gToolVersion(rootRepo, opts) {
     return { force: false, reason: "first run（写入基线 hash）", hash: newHash };
   }
   if (oldHash === newHash) {
-    return { force: false, reason: "tool hash 一致（用现有 mtime 增量）", hash: newHash };
+    return { force: false, reason: "tool hash 一致（mtime 增量）", hash: newHash };
   }
-  // 工具变了 → 强制 force 全量重转
+  // 工具变了：默认仍走 mtime 增量，避免无意全量重转（数小时）。
+  // 需要吃到新算法时显式：npm run convert -- --force 或 --include 子集。
   fs.mkdirSync(path.dirname(hashFile), { recursive: true });
   fs.writeFileSync(hashFile, newHash, "utf8");
   return {
-    force: true,
-    reason: `m2g 工具变更（hash 变了）\n    old: ${oldHash.slice(0, 12)}...\n    new: ${newHash.slice(0, 12)}...`,
+    force: false,
+    reason:
+      `m2g 工具已变更（hash ${oldHash.slice(0, 12)}…→${newHash.slice(0, 12)}…）；` +
+      `仍用 mtime 增量。若输出格式变了请加 --force 或 --include`,
     hash: newHash,
   };
 }

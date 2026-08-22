@@ -40,6 +40,23 @@ static func pe2_path_from_glb(glb_path: String) -> String:
 	return p + ".pe2.json"
 
 
+## 无共同祖先时 `get_path_to` 会引擎 ERROR；先探测再取路径。
+static func _safe_path_to(from: Node, to: Node) -> NodePath:
+	if from == null or to == null:
+		return NodePath()
+	var walk: Node = from
+	var seen: Dictionary = {}
+	while walk != null:
+		seen[walk] = true
+		walk = walk.get_parent()
+	walk = to
+	while walk != null:
+		if seen.has(walk):
+			return from.get_path_to(to)
+		walk = walk.get_parent()
+	return NodePath()
+
+
 ## GLB / 逻辑路径 → 可提交的 pe2 预制路径（assets/pe2-prefabs/...）。
 static func pe2_tscn_path_from_glb(glb_path: String) -> String:
 	return RuntimeAssets.pe2_prefab_path(glb_path)
@@ -166,7 +183,11 @@ static func bind_emitters_to_bones(root: Node, pe2_root: Node) -> int:
 		ba.bone_name = bone
 		ba.use_external_skeleton = true
 		pe2_root.add_child(ba)
-		ba.external_skeleton = ba.get_path_to(skeleton)
+		var skel_path := _safe_path_to(ba, skeleton)
+		if skel_path.is_empty():
+			ba.queue_free()
+			continue
+		ba.external_skeleton = skel_path
 		ba.add_child(p)
 		p.position = local_pos
 		if p.has_meta(META_PIVOT_BY_SEQ):

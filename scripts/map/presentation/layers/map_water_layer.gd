@@ -40,7 +40,11 @@ func build(ctx) -> void:
 	var ms_mesh := Time.get_ticks_msec() - t0
 	if built.is_empty():
 		AppLog.debug(AppLog.Layer.PRESENT, "Water", "无水面网格（地图无水时正常）")
-		print("Water timing: params=%dms mesh=%dms (no water) total=%dms" % [ms_params, ms_mesh, Time.get_ticks_msec() - t_all])
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			"Water",
+			"timing params=%dms mesh=%dms (no water) total=%dms" % [ms_params, ms_mesh, Time.get_ticks_msec() - t_all]
+		)
 		return
 
 	var mesh: ArrayMesh = built["mesh"]
@@ -60,8 +64,10 @@ func build(ctx) -> void:
 	var ms_tex := Time.get_ticks_msec() - t0
 	if tex_array == null:
 		AppLog.warn(AppLog.Layer.PRESENT, "Water", "水面贴图数组为空（检查 I_Water00.png …）")
-		print(
-			"Water timing: params=%dms mesh=%dms tex=%dms (fail) total=%dms"
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			"Water",
+			"timing params=%dms mesh=%dms tex=%dms (fail) total=%dms"
 			% [ms_params, ms_mesh, ms_tex, Time.get_ticks_msec() - t_all]
 		)
 		return
@@ -74,8 +80,10 @@ func build(ctx) -> void:
 	mat.render_priority = 1
 	_water.apply_uniform_material(mat)
 
-	print(
-		"Water: tiles=%d underRamp=%d frames=%d id=%s tex0=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle) texCache=%s"
+	AppLog.info(
+		AppLog.Layer.PRESENT,
+		"Water",
+		"tiles=%d underRamp=%d frames=%d id=%s tex0=%s offset=%.1f bias=%.1f texRate=%.0f uvCells=%.0f (%.1fs/cycle) texCache=%s"
 		% [
 			last_cell_count,
 			int(built.get("under_ramp", 0)),
@@ -98,8 +106,10 @@ func build(ctx) -> void:
 	t0 = Time.get_ticks_msec()
 	_build_shore_foam(ctx, params)
 	var ms_foam := Time.get_ticks_msec() - t0
-	print(
-		"Water timing: params=%dms mesh=%dms tex=%dms foam=%dms total=%dms"
+	AppLog.debug(
+		AppLog.Layer.PRESENT,
+		"Water",
+		"timing params=%dms mesh=%dms tex=%dms foam=%dms total=%dms"
 		% [ms_params, ms_mesh, ms_tex, ms_foam, Time.get_ticks_msec() - t_all]
 	)
 
@@ -122,7 +132,9 @@ func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
 	var ms_scan := Time.get_ticks_msec() - t0
 	var list: Array = collected.get("placements", []) as Array
 	if list.is_empty():
-		print(
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			"Water",
 			"Shore foam: none (candidates=%d shallowSkip=%d cliff=%s roll=%s) scan=%dms"
 			% [
 				int(collected.get("edge_candidates", 0)),
@@ -140,7 +152,9 @@ func _build_shore_foam(ctx, params: Wc3WaterParams) -> void:
 	t0 = Time.get_ticks_msec()
 	last_shore_count = Wc3ShoreFoam.build_systems(_shore_root, list)
 	var ms_mm := Time.get_ticks_msec() - t0
-	print(
+	AppLog.info(
+		AppLog.Layer.PRESENT,
+		"Water",
 		"Shore foam: S=%d OC=%d IC=%d contour=%d cliff=%d instances=%d pull(r=%.2f s=%.2f) cliffOut+=%.2f scan=%dms mm=%dms"
 		% [
 			int(collected.get("count_s", 0)),

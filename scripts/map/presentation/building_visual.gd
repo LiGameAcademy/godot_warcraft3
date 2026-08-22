@@ -166,7 +166,7 @@ static func play_death(cache: MapModelCache, root: Node, type_id: String = "") -
 		ap = model.animation_player()
 	else:
 		ap = AnimPlayback.find_animation_player(root)
-	if ap != null:
+	if ap != null and not str(ap.current_animation).is_empty():
 		out["duration"] = maxf(ap.current_animation_length, 0.0)
 	return out
 

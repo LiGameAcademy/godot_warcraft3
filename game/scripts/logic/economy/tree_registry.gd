@@ -71,7 +71,11 @@ func rebuild_from_map() -> void:
 		_max_life[cn] = hp
 		_life[cn] = hp
 		_grid_insert(cn, _pos_wc3_of(d))
-	print("[TreeRegistry] harvestable trees=%d / doodads=%d" % [_entries.size(), arr.size()])
+	AppLog.info(
+		AppLog.Layer.LOGIC,
+		"TreeRegistry",
+		"harvestable trees=%d / doodads=%d" % [_entries.size(), arr.size()]
+	)
 
 
 func is_harvestable_type(type_id: String) -> bool:
@@ -445,6 +449,8 @@ func _play_tree_anim(node: Node3D, logical_names: Array, loop: bool) -> float:
 	if anim != null:
 		anim.loop_mode = Animation.LOOP_NONE if not loop else Animation.LOOP_LINEAR
 		return maxf(anim.length, 0.1)
+	if str(ap.current_animation).is_empty():
+		return 0.8
 	return maxf(ap.current_animation_length, 0.1)
 
 

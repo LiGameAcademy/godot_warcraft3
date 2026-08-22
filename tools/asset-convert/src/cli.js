@@ -343,9 +343,12 @@ async function main() {
     }
   }
 
-  log.info(
-    "\n全部完成。输出: asset-converted/*.gltf（外链 Textures）+ .scn；数据车道 slk-exported/。",
-  );
+  log.info("\n全部完成。输出: asset-converted/*.gltf（外链 Textures）+ .scn；数据车道 slk-exported/。");
+  if (!opts.force) {
+    log.info(
+      "提示: 未加 --force 时按源/产物 mtime 增量跳过；工具变更也不会自动全量。需要全量请 --force，子集请 --include。",
+    );
+  }
   log.endSession({ errors, exit: errors > 0 ? 2 : 0 });
   process.exit(errors > 0 ? 2 : 0);
 }

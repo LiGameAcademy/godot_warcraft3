@@ -146,11 +146,12 @@ func collect_family(logical_name: String) -> PackedStringArray:
 		if _is_family_member(AnimPlayback.anim_leaf(str(path)), root):
 			out.append(str(path))
 	_family_cache[root] = out
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"collect_family root=%s n=%d → %s" % [root, out.size(), _family_leaves_preview(out)]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"collect_family root=%s n=%d → %s" % [root, out.size(), _family_leaves_preview(out)]
+		)
 	return out
 
 
@@ -159,18 +160,20 @@ func collect_family(logical_name: String) -> PackedStringArray:
 func pick_family(logical_name: String, rng: RandomNumberGenerator = null) -> String:
 	var members := collect_family(logical_name)
 	if members.is_empty():
-		AppLog.debug(
-			AppLog.Layer.PRESENT,
-			_TAG,
-			"pick_family 空族 logical=%s" % logical_name
-		)
+		if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+			AppLog.debug(
+				AppLog.Layer.PRESENT,
+				_TAG,
+				"pick_family 空族 logical=%s" % logical_name
+			)
 		return ""
 	if members.size() == 1:
-		AppLog.debug(
-			AppLog.Layer.PRESENT,
-			_TAG,
-			"pick_family logical=%s sole=%s" % [logical_name, AnimPlayback.anim_leaf(members[0])]
-		)
+		if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+			AppLog.debug(
+				AppLog.Layer.PRESENT,
+				_TAG,
+				"pick_family logical=%s sole=%s" % [logical_name, AnimPlayback.anim_leaf(members[0])]
+			)
 		return members[0]
 	var r := rng
 	if r == null:
@@ -193,18 +196,19 @@ func pick_family(logical_name: String, rng: RandomNumberGenerator = null) -> Str
 		if roll <= acc:
 			picked = members[i]
 			break
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"pick_family logical=%s → %s rarity=%.0f roll=%.3f among=%s"
-		% [
-			logical_name,
-			AnimPlayback.anim_leaf(picked),
-			seq_rarity(picked),
-			roll,
-			_family_rarity_preview(members),
-		]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"pick_family logical=%s → %s rarity=%.0f roll=%.3f among=%s"
+			% [
+				logical_name,
+				AnimPlayback.anim_leaf(picked),
+				seq_rarity(picked),
+				roll,
+				_family_rarity_preview(members),
+			]
+		)
 	return picked
 
 
@@ -278,11 +282,12 @@ func _ensure_anim_list_cache() -> void:
 	_anim_list = get_animation_list()
 	_anim_list_ready = true
 	_family_cache.clear()
-	AppLog.debug(
-		AppLog.Layer.PRESENT,
-		_TAG,
-		"anim_list cached n=%d host=%s" % [_anim_list.size(), str(name)]
-	)
+	if AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"anim_list cached n=%d host=%s" % [_anim_list.size(), str(name)]
+		)
 
 
 func _family_root(logical_name: String) -> String:

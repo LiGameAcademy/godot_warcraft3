@@ -11,11 +11,17 @@ enum Level { DEBUG, INFO, WARN, ERROR }
 const CONFIG_RES := "res://game/config/debug_log.json"
 const CONFIG_USER := "user://debug_log.json"
 
-## 低于此级别的日志不输出。
-static var min_level: Level = Level.DEBUG
+## 低于此级别的日志不输出。默认 WARN：安静模式；细查时改 debug_log.json → DEBUG。
+static var min_level: Level = Level.WARN
 ## layer_name → bool
 static var _layer_on: Dictionary = {}
 static var _config_loaded: bool = false
+
+
+## 热路径拼字符串前先问：避免 `%` 格式化白干。
+static func enabled(level: Level, layer: Layer = Layer.PRESENT) -> bool:
+	_ensure_config()
+	return int(level) >= int(min_level) and _layer_enabled(layer)
 
 
 ## 调试日志
@@ -30,9 +36,10 @@ static func info(layer: Layer, tag: String, msg: String) -> void:
 
 ## 警告日志
 static func warn(layer: Layer, tag: String, msg: String) -> void:
+	if not enabled(Level.WARN, layer):
+		return
 	_emit(Level.WARN, layer, tag, msg)
-	if _layer_enabled(layer):
-		push_warning("[%s/%s] %s" % [_layer_name(layer), tag, msg])
+	push_warning("[%s/%s] %s" % [_layer_name(layer), tag, msg])
 
 
 ## 错误日志
@@ -57,10 +64,7 @@ static func is_layer_enabled(layer: Layer) -> bool:
 
 
 static func _emit(level: Level, layer: Layer, tag: String, msg: String) -> void:
-	_ensure_config()
-	if int(level) < int(min_level):
-		return
-	if not _layer_enabled(layer):
+	if not enabled(level, layer):
 		return
 	print_rich(
 		"[color=%s][%s][/color][color=%s][%s][/color] [color=%s]%s[/color] %s"
@@ -104,10 +108,11 @@ static func _ensure_config() -> void:
 static func _apply_config_file(path: String) -> void:
 	if path.is_empty() or not FileAccess.file_exists(path):
 		return
-	var text := FileAccess.get_file_as_string(path)
+	# 勿用 get_file_as_string：含 NUL 的误读会刷引擎 Unicode ERROR。
+	var text := _read_utf8_safe(path)
 	if text.is_empty():
 		return
-	# 去 BOM / NUL
+	# 去 BOM / NUL 转义
 	if text.unicode_at(0) == 0xFEFF:
 		text = text.substr(1)
 	text = text.replace("\u0000", "")
@@ -129,6 +134,40 @@ static func _apply_config_file(path: String) -> void:
 	if typeof(layers) == TYPE_DICTIONARY:
 		for k in (layers as Dictionary).keys():
 			_layer_on[str(k).to_upper()] = bool((layers as Dictionary)[k])
+
+
+static func _read_utf8_safe(path: String) -> String:
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if bytes.is_empty():
+		return ""
+	for i in range(bytes.size()):
+		if bytes[i] == 0:
+			return ""
+	# 简单 UTF-8 校验：遇非法则放弃，避免 get_string_from_utf8 刷 ERROR
+	var i := 0
+	var n := bytes.size()
+	while i < n:
+		var c := bytes[i]
+		if c <= 0x7F:
+			i += 1
+			continue
+		var need := 0
+		if c >= 0xC2 and c <= 0xDF:
+			need = 1
+		elif c >= 0xE0 and c <= 0xEF:
+			need = 2
+		elif c >= 0xF0 and c <= 0xF4:
+			need = 3
+		else:
+			return ""
+		if i + need >= n:
+			return ""
+		for j in range(1, need + 1):
+			var cc := bytes[i + j]
+			if cc < 0x80 or cc > 0xBF:
+				return ""
+		i += need + 1
+	return bytes.get_string_from_utf8()
 
 
 static func _layer_name(layer: Layer) -> String:

@@ -309,7 +309,6 @@ func _apply_dynamic_pathing() -> void:
 	merged.append_array(_pathing_doodad_entries)
 	var n: int = _pathing_map.apply_entity_pathing(merged, get_id_catalog())
 	if n > 0:
-		print("Pathing: blit pathTex ×%d (units=%d doodads=%d)" % [n, _pathing_unit_entries.size(), _pathing_doodad_entries.size()])
 		AppLog.info(
 			AppLog.Layer.PRESENT,
 			"Pathing",
@@ -330,7 +329,7 @@ func _rebuild_pathing_overlay() -> void:
 	# 无论是否显示 overlay，都要 blit 动态脚印（树木不可走依赖此步）
 	_apply_dynamic_pathing()
 	if _pathing_layer == null:
-		push_warning("MapLoader: 缺少 Pathing 层，无法显示路径-地面")
+		AppLog.warn(AppLog.Layer.PRESENT, "MapLoader", "缺少 Pathing 层，无法显示路径-地面")
 		return
 	_pathing_layer.set_visible_overlay(show_pathing_ground)
 	if not show_pathing_ground:
@@ -735,28 +734,16 @@ func _load_all() -> void:
 		% [ms, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n],
 		0.96
 	)
-	print(
+	AppLog.info(
+		AppLog.Layer.LOAD,
+		"MapLoader",
 		"Terrain load in %d ms from %s (gaps=%d cliffs=%d ramps=%d water=%d shore=%d doodads=%d)"
 		% [ms, map_dir, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n]
-	)
-	print(
-		"Load timing: read=%dms terrain=%dms cliffs=%dms ramps=%dms water=%dms units=%dms doodads=%dms pathing=%dms total=%dms"
-		% [
-			int(timing.get("read", 0)),
-			int(timing.get("terrain", 0)),
-			int(timing.get("cliffs", 0)),
-			int(timing.get("ramps", 0)),
-			int(timing.get("water", 0)),
-			int(timing.get("units", 0)),
-			int(timing.get("doodads", 0)),
-			int(timing.get("pathing", 0)),
-			ms,
-		]
 	)
 	AppLog.info(
 		AppLog.Layer.LOAD,
 		"MapLoader",
-		"read=%d terrain=%d cliffs=%d ramps=%d water=%d units=%d doodads=%d pathing=%d total=%d"
+		"Load timing: read=%dms terrain=%dms cliffs=%dms ramps=%dms water=%dms units=%dms doodads=%dms pathing=%dms total=%dms"
 		% [
 			int(timing.get("read", 0)),
 			int(timing.get("terrain", 0)),
@@ -846,7 +833,7 @@ func _coerce_unit_entries(src: Variant) -> Array:
 
 func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
-		push_warning("缺少 %s" % path)
+		AppLog.warn(AppLog.Layer.LOAD, "MapLoader", "缺少 %s" % path)
 		return {}
 	return RuntimeAssets.read_json_dict(path)
 
@@ -856,5 +843,6 @@ func _set_status(text: String, progress: float = -1.0) -> void:
 		_load_progress = clampf(progress, 0.0, 1.0)
 	if _status:
 		_status.text = text
-	print(text)
+	# 进度文案走 AppLog.debug（安静模式下不刷屏）；HUD 仍更新。
+	AppLog.debug(AppLog.Layer.LOAD, "MapLoader", text)
 	load_progress.emit(text, _load_progress)

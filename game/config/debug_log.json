@@ -1,5 +1,5 @@
 {
-	"min_level": "DEBUG",
+	"min_level": "WARN",
 	"layers": {
 		"DATA": true,
 		"CATALOG": true,
@@ -10,5 +10,5 @@
 		"GAME": true,
 		"GM": true
 	},
-	"comment": "分类日志开关。min_level: DEBUG|INFO|WARN|ERROR。改后进局或 AppLog.reload_config() 生效。也可放 user://debug_log.json 覆盖。"
+	"comment": "分类日志开关。min_level: DEBUG|INFO|WARN|ERROR。当前 WARN=安静模式（关掉 DBG/INF 刷屏）。需要细查动画/加载时改回 DEBUG。改后进局或 AppLog.reload_config() 生效；也可放 user://debug_log.json 覆盖。"
 }
