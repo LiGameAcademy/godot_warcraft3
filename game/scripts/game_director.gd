@@ -1697,7 +1697,10 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 	if game_hud:
 		if bool(result.get("ok", false)):
 			var spawned := result.get("unit") as Node3D
-			if spawned != null:
+			var tp_count := int(result.get("teleported_count", 0))
+			if tp_count > 0:
+				game_hud.set_status("群体传送 · %d 单位" % tp_count)
+			elif spawned != null:
 				var name_s := TechPresence.display_name(
 					str(spawned.get_meta("unit_data", {}).get("typeId", abil_id))
 				)
@@ -1709,7 +1712,7 @@ func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 		else:
 			game_hud.set_status(str(result.get("reason", "施法失败")))
 	if bool(result.get("ok", false)):
-		if result.get("unit") is Node3D:
+		if result.get("unit") is Node3D or int(result.get("teleported_count", 0)) > 0:
 			_refresh_dynamic_pathing()
 			if health_bar_manager:
 				health_bar_manager.resync()
@@ -1727,7 +1730,20 @@ func _ability_cast_context() -> Dictionary:
 		"unit_host": Callable(self, "_unit_host"),
 		"model_cache": map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null,
 		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
+		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
+		"path_query": _path_query,
+		"crowd_query": _crowd_query,
+		"kill_unit": Callable(self, "_kill_unit"),
 	}
+
+
+func _kill_unit(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	if _death_service != null:
+		_death_service.kill(unit)
+	else:
+		unit.queue_free()
 
 
 ## 引导中：玩家新指令（非 AI）→ 打断暴风雪等。
@@ -2339,6 +2355,9 @@ func _on_unit_dying(unit: Node3D) -> void:
 	var mc := MilitiaController.of(unit)
 	if mc != null:
 		mc.set_process(false)
+	var sl := unit.get_node_or_null("SummonLifetime") as SummonLifetime
+	if sl != null:
+		sl.set_process(false)
 	var pc := unit.get_node_or_null("PatrolController") as PatrolController
 	if pc != null:
 		pc.cancel()

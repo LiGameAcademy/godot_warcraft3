@@ -57,7 +57,8 @@ static func _cast_water_elemental(caster: Node3D, goal_wc3: Vector2, ctx: Dictio
 		var life := SummonLifetime.new()
 		life.name = "SummonLifetime"
 		node.add_child(life)
-		life.configure(dur)
+		var kill_cb: Callable = ctx.get("kill_unit", Callable())
+		life.configure(dur, kill_cb)
 	node.set_meta("summon_caster_id", caster.get_instance_id())
 	AbilityCastRules.commit_cost(caster, abil_id, lv)
 	return {"ok": true, "reason": "", "unit": node}

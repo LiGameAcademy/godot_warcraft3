@@ -15,6 +15,8 @@ static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Di
 			return SummonUnitAbility.try_cast(caster, id, goal_wc3, ctx)
 		"blizzard":
 			return BlizzardAbility.try_cast(caster, id, goal_wc3, ctx)
+		"massteleport":
+			return MassTeleportAbility.try_cast(caster, id, goal_wc3, ctx)
 		_:
 			out["reason"] = "未实现的技能"
 			return out

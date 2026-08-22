@@ -14,6 +14,7 @@ const SUPPORTED_ORDERS := {
 	"townbellon": true,
 	"waterelemental": true,
 	"blizzard": true,
+	"massteleport": true,
 }
 
 ## 被动光环（无 order、不可点击；学会即生效）。

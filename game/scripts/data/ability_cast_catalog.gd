@@ -7,11 +7,13 @@ extends RefCounted
 const _SPELL_SEQ_BY_ORDER := {
 	"blizzard": "Spell Channel",
 	"waterelemental": "Spell Throw",
+	"massteleport": "Spell Throw",
 }
 
-## abil_id → Effectart（HumanAbilityFunc [X*] 段；缺省走 order）
+## abil_id → Effectart / Areaeffectart（HumanAbilityFunc）
 const _GROUND_EFFECT_BY_ABIL := {
 	"AHbz": "Abilities/Spells/Human/Blizzard/BlizzardTarget.mdl",
+	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportTo.mdl",
 }
 
 ## 命中附着特效（HumanAbilityFunc [BH*] Targetart）
