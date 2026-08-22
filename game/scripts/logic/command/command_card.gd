@@ -24,6 +24,7 @@ const ACTION_RESEARCH_PREFIX := "research:" ## 研究科技：research:Rhde
 const ACTION_DEFEND := "defend"
 const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
+const ACTION_ABILITY_PREFIX := "ability:" ## ability:AHwe
 
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
@@ -86,6 +87,9 @@ static func _place(card: Array[Dictionary], entry: Dictionary) -> void:
 ##   defend_active（顶盾开启 → Unart 停盾图标）
 ##   hide_trains（true：隐藏训兵按钮，仍可显示集结点；建造中用）
 ##   worker_race（可选；空则按 human）
+##   ability_cd（Dictionary abil_id→剩余秒，命令卡灰显/执行中）
+##   ability_mana_ok（false → 全部英雄技能不可用；优先用 ability_mana_ok_map）
+##   ability_mana_ok_map（abil_id→bool，按技能魔法是否足够）
 static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionary]:
 	var uid := unit_id.strip_edges()
 	var cat := _cat()
@@ -150,8 +154,8 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			_place(card, cat.upgrade_hud_entry(rid, ACTION_RESEARCH_PREFIX + rid, opts))
 
 	var carrying := bool(state.get("carrying", false))
-	for abil_id in cat.get_abil_list(uid):
-		_place_supported_ability(card, cat, str(abil_id), state, carrying, owned, researched)
+	for abil_id in cat.get_all_abil_list(uid):
+		_place_supported_ability(card, cat, str(abil_id), uid, state, carrying, owned, researched)
 
 	if not building_ids.is_empty():
 		_place_build_opener(card, cat, str(state.get("worker_race", "human")))
@@ -278,19 +282,20 @@ static func _place_supported_ability(
 	card: Array[Dictionary],
 	cat: CommandButtonCatalog,
 	abil_id: String,
+	unit_id: String,
 	state: Dictionary,
 	carrying: bool,
 	owned: Dictionary = {},
 	researched: Dictionary = {}
 ) -> void:
 	var order := cat.get_ability_order(abil_id)
-	if order.is_empty() or not _ORDER_SPEC.has(order):
+	if order.is_empty():
 		return
-	var spec: Dictionary = _ORDER_SPEC[order]
-	var use_un := false
-	var action_id := str(spec.get("action", ""))
-	var opts := {"enabled": true, "executing": false}
 	if order == "defend":
+		var spec: Dictionary = _ORDER_SPEC[order]
+		var use_un := false
+		var action_id := str(spec.get("action", ""))
+		var opts := {"enabled": true, "executing": false}
 		var missing := TechPresence.missing_requires(
 			owned, cat.get_ability_requires(abil_id), researched
 		)
@@ -301,16 +306,47 @@ static func _place_supported_ability(
 			use_un = bool(state.get("defend_active", false))
 			opts["executing"] = use_un
 			opts["use_un"] = use_un
-	elif order == "harvest":
-		use_un = carrying
-		action_id = str(spec.get("un_action" if use_un else "action", action_id))
-		if use_un:
-			opts["executing"] = bool(state.get("return_executing", false))
+		var entry := cat.ability_hud_entry(abil_id, action_id, opts)
+		_place(card, entry)
+		return
+	if order == "harvest":
+		var spec_h: Dictionary = _ORDER_SPEC[order]
+		var use_un_h := carrying
+		var action_id_h := str(spec_h.get("un_action" if use_un_h else "action", ""))
+		var opts_h := {"enabled": true, "executing": false, "use_un": use_un_h}
+		if use_un_h:
+			opts_h["executing"] = bool(state.get("return_executing", false))
 		else:
-			opts["executing"] = bool(state.get("harvest_executing", false))
-		opts["use_un"] = use_un
-	var entry := cat.ability_hud_entry(abil_id, action_id, opts)
-	_place(card, entry)
+			opts_h["executing"] = bool(state.get("harvest_executing", false))
+		var entry_h := cat.ability_hud_entry(abil_id, action_id_h, opts_h)
+		_place(card, entry_h)
+		return
+	if order == "townbellon":
+		var spec_t: Dictionary = _ORDER_SPEC[order]
+		var entry_t := cat.ability_hud_entry(
+			abil_id, str(spec_t.get("action", ACTION_CALL_TO_ARMS)), {"enabled": true}
+		)
+		_place(card, entry_t)
+		return
+	if not AbilityCatalog.is_supported(abil_id):
+		return
+	var lv := AbilityCatalog.level_for_unit_type(unit_id, abil_id)
+	var cd_map: Dictionary = state.get("ability_cd", {}) as Dictionary
+	var cd_left := maxf(float(cd_map.get(abil_id, 0.0)), 0.0)
+	var opts_a := {"enabled": true, "executing": cd_left > 0.0}
+	if lv <= 0:
+		opts_a["enabled"] = false
+		opts_a["disabled_reason"] = "等级不足"
+	elif cd_left > 0.0:
+		opts_a["enabled"] = false
+		opts_a["disabled_reason"] = "冷却中"
+	elif not bool((state.get("ability_mana_ok_map", {}) as Dictionary).get(abil_id, state.get("ability_mana_ok", true))):
+		opts_a["enabled"] = false
+		opts_a["disabled_reason"] = "魔法不足"
+	var entry_a := cat.ability_hud_entry(
+		abil_id, ACTION_ABILITY_PREFIX + abil_id, opts_a
+	)
+	_place(card, entry_a)
 
 
 static func _place_build_opener(

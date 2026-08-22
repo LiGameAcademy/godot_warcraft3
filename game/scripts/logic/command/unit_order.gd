@@ -38,6 +38,8 @@ var source: int = Source.UNKNOWN				## 命令来源
 var target_id: int = 0
 ## 建筑 id（仅 BUILD Order；其他 Kind 留空）。F2-3 引入。
 var building_id: String = ""
+## 技能 id（仅 ABILITY Order；四字符 SLK alias）。
+var ability_id: String = ""
 
 ## 移动命令
 static func move(goal: Vector2, src: int = Source.UNKNOWN) -> UnitOrder:
@@ -126,6 +128,16 @@ static func train(p_unit_id: String, site_wc3: Vector2, src: int = Source.PANEL)
 	o.source = src
 	o.building_id = p_unit_id ## 复用：训的是哪类单位
 	o.goal_wc3 = site_wc3
+	return o
+
+
+## 技能 Order（点目标等）。ability_id = 四字符 SLK id（如 AHwe）。
+static func ability(abil_id: String, goal: Vector2, src: int = Source.PANEL) -> UnitOrder:
+	var o := UnitOrder.new()
+	o.kind = Kind.ABILITY
+	o.source = src
+	o.ability_id = abil_id.strip_edges()
+	o.goal_wc3 = goal
 	return o
 
 ## 命令类型名称

@@ -81,12 +81,16 @@ var _patrol_targeting: bool = false
 var _harvest_targeting: bool = false
 ## 点了「集结点」后，等待左键指定地点/矿/树
 var _rally_targeting: bool = false
+## 英雄技能瞄准：左键点地/点目标
+var _ability_targeting: bool = false
+var _pending_ability_id: String = ""
 ## 选中可训建筑时显示的集结旗（长驻，复用）
 var _rally_flag: RallyFlagFx = null
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
 var _last_move_executing: bool = false
 var _last_harvest_ui: Dictionary = {}
+var _last_ability_ui: Dictionary = {}
 ## 当前命令卡：keycode → action_id（热键走 Catalog，不写死 M/G/R…）
 var _card_hotkey_actions: Dictionary = {}
 ## 农民建造二级面板是否打开（主卡仅 AHbu 入口）。
@@ -408,6 +412,18 @@ func _input(event: InputEvent) -> void:
 			_set_rally_targeting(false)
 			get_viewport().set_input_as_handled()
 			return
+	# 技能瞄准：左键点地施法
+	if _ability_targeting and event is InputEventMouseButton:
+		var mb_ab := event as InputEventMouseButton
+		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
+			_issue_ability_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
+			_set_ability_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
+		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_RIGHT:
+			_set_ability_targeting(false)
+			get_viewport().set_input_as_handled()
+			return
 	# F2-4：建造瞄准 → 左键 commit / 右键 cancel / mousemove 跟手 ghost
 	# 任何鼠标事件都记录最新位置，给 build_placement 跟手用
 	if event is InputEventMouseMotion:
@@ -644,9 +660,10 @@ func _ensure_path_debug() -> void:
 	_path_debug.set_enabled(show_path_debug)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _projectile_service != null:
-		_projectile_service.tick(_delta)
+		_projectile_service.tick(delta)
+	_tick_ability_cooldowns_on_map(delta)
 	_refresh_move_executing_ui()
 	_refresh_path_debug()
 
@@ -778,6 +795,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			or _patrol_targeting
 			or _harvest_targeting
 			or _rally_targeting
+			or _ability_targeting
 			or _is_build_targeting()
 		)
 		and event is InputEventKey
@@ -790,6 +808,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_set_patrol_targeting(false)
 			_set_harvest_targeting(false)
 			_set_rally_targeting(false)
+			_set_ability_targeting(false)
 			if _is_build_targeting():
 				_cancel_build_targeting()
 			get_viewport().set_input_as_handled()
@@ -1494,10 +1513,12 @@ func _begin_move_targeting(source: int) -> void:
 		if game_hud:
 			game_hud.set_status("移动：无可用单位")
 		return
+	_set_move_targeting(false)
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
+	_set_ability_targeting(false)
 	_set_move_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
@@ -1516,6 +1537,7 @@ func _begin_attack_targeting(source: int) -> void:
 	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
+	_set_ability_targeting(false)
 	_set_attack_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 A"
@@ -1534,6 +1556,7 @@ func _begin_patrol_targeting(source: int) -> void:
 	_set_attack_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
+	_set_ability_targeting(false)
 	_set_patrol_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 P"
@@ -1553,6 +1576,7 @@ func _begin_harvest_targeting(source: int) -> void:
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
 	_set_rally_targeting(false)
+	_set_ability_targeting(false)
 	_set_harvest_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
@@ -1576,10 +1600,157 @@ func _begin_rally_targeting(source: int) -> void:
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
+	_set_ability_targeting(false)
 	_set_rally_targeting(true)
 	if game_hud:
 		var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
 		game_hud.set_status("集结瞄准（%s）· 左键点地面/金矿/树 · Esc 取消" % src)
+
+
+func _begin_ability_targeting(abil_id: String, source: int) -> void:
+	var id := abil_id.strip_edges()
+	if id.is_empty() or not AbilityCatalog.is_supported(id):
+		if game_hud:
+			game_hud.set_status("技能未实现：%s" % id)
+		return
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		if game_hud:
+			game_hud.set_status("施法：无选中单位")
+		return
+	_ensure_hero_runtime(primary)
+	var lv := AbilityCatalog.level_for(primary, id)
+	if lv <= 0:
+		if game_hud:
+			game_hud.set_status("技能等级不足")
+		return
+	if not AbilityCooldowns.is_ready(primary, id):
+		if game_hud:
+			game_hud.set_status("冷却中")
+		return
+	var ab := AbilityCatalog.data(id)
+	if ab != null and UnitMana.has_mana(primary):
+		if not UnitMana.can_spend(primary, ab.cost_at(lv)):
+			if game_hud:
+				game_hud.set_status("魔法不足")
+			return
+	_set_move_targeting(false)
+	_set_attack_targeting(false)
+	_set_patrol_targeting(false)
+	_set_harvest_targeting(false)
+	_set_rally_targeting(false)
+	_set_ability_targeting(true, id)
+	if game_hud:
+		var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
+		var row := CommandButtonCatalog.get_shared().get_ability(id)
+		var tip := str(row.get("name", id)).strip_edges()
+		if tip.is_empty():
+			tip = id
+		game_hud.set_status("技能瞄准（%s）· %s · 左键点地 · Esc 取消" % [src, tip])
+
+
+## 技能瞄准落点：点地召唤等（P0：AHwe 水元素）。
+func _issue_ability_at_screen(screen_pos: Vector2, _source: int) -> bool:
+	var abil_id := _pending_ability_id.strip_edges()
+	if abil_id.is_empty():
+		return false
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var caster: Node3D = unit_selector.call("get_primary") as Node3D
+	if caster == null:
+		return false
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		if game_hud:
+			game_hud.set_status("施法：未点到地面")
+		return true
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal := Vector2(hit.x * inv, -hit.z * inv)
+	var result := SummonUnitAbility.try_cast(caster, abil_id, goal, _ability_cast_context())
+	if game_hud:
+		if bool(result.get("ok", false)):
+			var spawned := result.get("unit") as Node3D
+			var name_s := abil_id
+			if spawned != null:
+				name_s = TechPresence.display_name(
+					str(spawned.get_meta("unit_data", {}).get("typeId", abil_id))
+				)
+			game_hud.set_status("召唤 · %s" % name_s)
+		else:
+			game_hud.set_status(str(result.get("reason", "施法失败")))
+	if bool(result.get("ok", false)):
+		if result.get("unit") is Node3D:
+			_refresh_dynamic_pathing()
+			if health_bar_manager:
+				health_bar_manager.resync()
+		_sync_selection_info_panel()
+	_refresh_command_card()
+	return true
+
+
+func _ability_cast_context() -> Dictionary:
+	return {
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"creation_number": _alloc_runtime_cn(),
+		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
+	}
+
+
+func _ability_ui_state_for(primary: Node3D) -> Dictionary:
+	var out := {
+		"ability_cd": {},
+		"ability_mana_ok": true,
+		"ability_mana_ok_map": {},
+	}
+	if primary == null or not is_instance_valid(primary):
+		return out
+	var tid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	if tid.is_empty():
+		return out
+	_ensure_hero_runtime(primary)
+	var hl := AbilityCatalog.hero_level_of(primary)
+	for abil in CommandButtonCatalog.get_shared().get_all_abil_list(tid):
+		var abil_id := str(abil).strip_edges()
+		if abil_id.is_empty() or not AbilityCatalog.is_supported(abil_id):
+			continue
+		var cd := AbilityCooldowns.remaining(primary, abil_id)
+		if cd > 0.0:
+			out["ability_cd"][abil_id] = cd
+		var lv := AbilityCatalog.level_for_unit_type(tid, abil_id, hl)
+		var mana_ok := true
+		if lv > 0:
+			var ab := AbilityCatalog.data(abil_id)
+			if ab != null and UnitMana.has_mana(primary):
+				mana_ok = UnitMana.can_spend(primary, ab.cost_at(lv))
+		out["ability_mana_ok_map"][abil_id] = mana_ok
+		if not mana_ok:
+			out["ability_mana_ok"] = false
+	return out
+
+
+func _tick_ability_cooldowns_on_map(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var host := _unit_host()
+	if host == null:
+		return
+	for c in host.get_children():
+		if c is Node3D and is_instance_valid(c):
+			AbilityCooldowns.tick_all(c as Node3D, delta)
+
+
+func _ensure_hero_runtime(unit: Node3D) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var tid := str(unit.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	if not TechPresence.is_hero_id(tid):
+		return
+	if not unit.has_meta(AbilityCatalog.META_HERO_LEVEL):
+		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
+	UnitMana.ensure(unit)
 
 
 func _set_move_targeting(active: bool) -> void:
@@ -1631,6 +1802,19 @@ func _set_rally_targeting(active: bool) -> void:
 		game_cursor.call("set_mode", Wc3GameCursor.Mode.IDLE)
 
 
+func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
+	_ability_targeting = active
+	_pending_ability_id = abil_id.strip_edges() if active else ""
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_attack_targeting"):
+		game_cursor.call("set_attack_targeting", active)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call(
+			"set_mode",
+			Wc3GameCursor.Mode.TARGET if active else Wc3GameCursor.Mode.IDLE
+		)
+
+
 func _sync_selector_enabled_for_targeting() -> void:
 	if unit_selector == null:
 		return
@@ -1641,6 +1825,7 @@ func _sync_selector_enabled_for_targeting() -> void:
 		or _patrol_targeting
 		or _harvest_targeting
 		or _rally_targeting
+		or _ability_targeting
 		or _is_build_targeting()
 	)
 
@@ -1853,6 +2038,7 @@ func _wire_all_unit_ai() -> void:
 	for c in host.get_children():
 		if c is Node3D:
 			_ensure_unit_ai(c as Node3D)
+			_ensure_hero_runtime(c as Node3D)
 
 
 func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
@@ -3112,6 +3298,7 @@ func _spawn_trained_unit(
 	if final_xy != corner_xy:
 		_teleport_unit_wc3(node, final_xy)
 	_ensure_unit_ai(node)
+	_ensure_hero_runtime(node)
 	_refresh_dynamic_pathing()
 	if health_bar_manager:
 		health_bar_manager.resync()
@@ -3457,6 +3644,10 @@ func _on_command_action(
 		CommandCard.ACTION_DEFEND:
 			_try_toggle_defend(source)
 		_:
+			if action_id.begins_with(CommandCard.ACTION_ABILITY_PREFIX):
+				var aid := action_id.substr(CommandCard.ACTION_ABILITY_PREFIX.length())
+				_begin_ability_targeting(aid, source)
+				return
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())
 				_begin_build_targeting(bid, source)
@@ -3500,6 +3691,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
+	_set_ability_targeting(false)
 	_build_menu_open = false
 	if _is_build_targeting():
 		_cancel_build_targeting()
@@ -3832,18 +4024,16 @@ func _refresh_command_card() -> void:
 				primary_b = unit_selector.call("get_primary") as Node3D
 			_apply_building_train_card(primary_b, tid)
 		else:
-			_apply_command_card(
-				CommandCard.for_unit(
-					tid,
-					{
-						"move_executing": moving,
-						"include_locomotion": true,
-						"owned_buildings": _owned_buildings_for_local(),
-						"researched": _researched_for_local(),
-						"defend_active": _primary_defend_active(),
-					}
-				)
-			)
+			var state := {
+				"move_executing": moving,
+				"include_locomotion": true,
+				"owned_buildings": _owned_buildings_for_local(),
+				"researched": _researched_for_local(),
+				"defend_active": _primary_defend_active(),
+			}
+			if primary != null:
+				state.merge(_ability_ui_state_for(primary), true)
+			_apply_command_card(CommandCard.for_unit(tid, state))
 
 
 func _apply_peasant_command_card(
@@ -3887,11 +4077,17 @@ func _refresh_move_executing_ui() -> void:
 	var harvesting := false
 	var returning := false
 	var is_peasant := false
-	if _command_router != null and unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null:
-			is_peasant = not _command_router.filter_peasants([primary]).is_empty()
+	var primary: Node3D = null
+	if unit_selector.has_method("get_primary"):
+		primary = unit_selector.call("get_primary") as Node3D
+	if _command_router != null and primary != null:
+		is_peasant = not _command_router.filter_peasants([primary]).is_empty()
 	_card_is_peasant = is_peasant
+	var is_hero := false
+	if primary != null:
+		var ptid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+		is_hero = TechPresence.is_hero_id(ptid)
+	var ab_ui := _ability_ui_state_for(primary) if is_hero else {}
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
 		if is_peasant:
@@ -3906,13 +4102,16 @@ func _refresh_move_executing_ui() -> void:
 		"returning": returning,
 		"moving": moving,
 	}
-	if snap == _last_harvest_ui and moving == _last_move_executing:
+	if snap == _last_harvest_ui and moving == _last_move_executing and ab_ui == _last_ability_ui:
 		return
 	_last_move_executing = moving
 	_last_harvest_ui = snap
+	_last_ability_ui = ab_ui.duplicate(true)
 	# 互斥格可能从采集切到交回，需整卡刷新（保留建造二级面板）
 	if is_peasant:
 		_apply_peasant_command_card(selected, moving, carrying, harvesting, returning)
+	elif is_hero:
+		_refresh_command_card()
 	else:
 		game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
 

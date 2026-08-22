@@ -22,6 +22,45 @@ func display_name() -> String:
 	var c := comment.strip_edges()
 	return c if not c.is_empty() and c != "_" else unit_abil_id
 
+
+## 普通技能 id 列表（逗号分隔 → 数组）。
+func normal_ability_ids() -> PackedStringArray:
+	return _split_ids(abil_list)
+
+
+## 英雄技能 id 列表。
+func hero_ability_ids() -> PackedStringArray:
+	return _split_ids(hero_abil_list)
+
+
+## 普通 + 英雄（去重，顺序：普通 → 英雄）。
+func all_ability_ids() -> PackedStringArray:
+	var out := PackedStringArray()
+	var seen: Dictionary = {}
+	for id in normal_ability_ids():
+		if seen.has(id):
+			continue
+		seen[id] = true
+		out.append(id)
+	for id in hero_ability_ids():
+		if seen.has(id):
+			continue
+		seen[id] = true
+		out.append(id)
+	return out
+
+
+static func _split_ids(raw: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var seen: Dictionary = {}
+	for piece in raw.split(","):
+		var s := str(piece).strip_edges()
+		if s.is_empty() or s == "_" or seen.has(s):
+			continue
+		seen[s] = true
+		out.append(s)
+	return out
+
 static func from_slk_record(rec: Dictionary) -> UnitAbilitiesDef:
 	var d := UnitAbilitiesDef.new()
 	d.unit_abil_id = str(rec.get("unitAbilID", "")).strip_edges()

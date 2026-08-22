@@ -91,6 +91,21 @@ func get_abil_list(unit_id: String) -> PackedStringArray:
 	return _split_csv(def.abil_list)
 
 
+## 普通 + 英雄技能（UnitAbilities.slk）。
+func get_all_abil_list(unit_id: String) -> PackedStringArray:
+	var uid := unit_id.strip_edges()
+	if uid.is_empty():
+		return PackedStringArray()
+	var store := _def_store()
+	if store == null:
+		return PackedStringArray()
+	store.ensure_table(UnitAbilitiesDef.TABLE_NAME)
+	var def: UnitAbilitiesDef = store.get_row(UnitAbilitiesDef.TABLE_NAME, uid) as UnitAbilitiesDef
+	if def == null:
+		return PackedStringArray()
+	return def.all_ability_ids()
+
+
 func get_ability_order(abil_id: String) -> String:
 	var row := get_ability(abil_id)
 	return str(row.get("order", "")).strip_edges().to_lower()

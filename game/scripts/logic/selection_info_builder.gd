@@ -111,6 +111,9 @@ static func build(primary: Node3D, selected: Array) -> Dictionary:
 		mana_max = bal.mana_n
 		mana = int(primary.get_meta("mana", mana_max if bal.mana0 <= 0 else bal.mana0))
 		mana = clampi(mana, 0, mana_max)
+	elif UnitMana.has_mana(primary):
+		mana_max = UnitMana.get_max_mana(primary)
+		mana = UnitMana.get_mana(primary)
 	var mode := "multi" if selected.size() > 1 else "single"
 	var display := _display_name(tid, d)
 	var attack := _attack_stat(tid)

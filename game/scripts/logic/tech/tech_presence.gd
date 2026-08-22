@@ -36,6 +36,10 @@ const _EQUIV := {
 }
 
 
+static func is_hero_id(unit_id: String) -> bool:
+	return bool(_HERO_IDS.get(unit_id.strip_edges(), false))
+
+
 ## unit_host 下、指定 owner、已完工建筑的 typeId → 数量。
 static func collect_owned_buildings(unit_host: Node, owner_id: int) -> Dictionary:
 	var out: Dictionary = {}
@@ -112,10 +116,6 @@ static func is_upgrade_queued(unit_host: Node, owner_id: int, upgrade_id: String
 			if str((e as Dictionary).get("unit_id", "")) == want:
 				return true
 	return false
-
-
-static func is_hero_id(unit_id: String) -> bool:
-	return _HERO_IDS.has(unit_id.strip_edges())
 
 
 ## 玩家是否已满足 required_id（含升级链等价）。

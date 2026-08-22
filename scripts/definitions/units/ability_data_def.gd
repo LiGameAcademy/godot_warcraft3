@@ -89,6 +89,73 @@ func display_name() -> String:
 	var c := comment.strip_edges()
 	return c if not c.is_empty() and c != "_" else alias
 
+
+## 有效等级（1…levels；无等级数据时至少 1）。
+func clamp_level(level: int) -> int:
+	var max_lv := maxi(levels, 1)
+	return clampi(level, 1, max_lv)
+
+
+func cost_at(level: int) -> float:
+	match clamp_level(level):
+		1: return cost1
+		2: return cost2
+		3: return cost3
+		4: return cost4
+		_: return cost1
+
+
+func cool_at(level: int) -> float:
+	match clamp_level(level):
+		1: return cool1
+		2: return cool2
+		3: return cool3
+		4: return cool4
+		_: return cool1
+
+
+func cast_time_at(level: int) -> float:
+	match clamp_level(level):
+		1: return cast1
+		2: return cast2
+		3: return cast3
+		4: return cast4
+		_: return 0.0
+
+
+func duration_at(level: int) -> float:
+	match clamp_level(level):
+		1: return dur1
+		2: return dur2
+		3: return dur3
+		4: return dur4
+		_: return dur1
+
+
+func cast_range_at(level: int) -> float:
+	## WC3：召唤类常用 AreaN 作施法距离；RngN>0 时优先 Rng。
+	var lv := clamp_level(level)
+	var rng := rng1
+	var area := area1
+	match lv:
+		2: rng = rng2; area = area2
+		3: rng = rng3; area = area3
+		4: rng = rng4; area = area4
+	if rng > 0.0:
+		return rng
+	if area > 0.0:
+		return area
+	return 99999.0
+
+
+func summon_unit_id_at(level: int) -> String:
+	match clamp_level(level):
+		1: return unit_id1.strip_edges()
+		2: return unit_id2.strip_edges()
+		3: return unit_id3.strip_edges()
+		4: return unit_id4.strip_edges()
+		_: return unit_id1.strip_edges()
+
 static func from_slk_record(rec: Dictionary) -> AbilityDataDef:
 	var d := AbilityDataDef.new()
 	d.alias = str(rec.get("alias", "")).strip_edges()
