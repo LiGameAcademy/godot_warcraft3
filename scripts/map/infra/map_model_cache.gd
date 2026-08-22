@@ -396,6 +396,9 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 	const _Model := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
+	# PE2 就位后再剪悬空轨（含旧 bake 写进 Stand 的 Death-only :emitting）
+	if ap != null and ap.has_method("prune_unresolved_tracks"):
+		ap.call("prune_unresolved_tracks")
 	root.set_script(_Model)
 	var packed := PackedScene.new()
 	if packed.pack(root) != OK:

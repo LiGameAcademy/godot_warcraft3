@@ -51,6 +51,7 @@ static func ensure_on(host: Node) -> AnimationPlayer:
 		ap.set_script(script)
 	if ap.has_method("ensure_hooks"):
 		ap.call("ensure_hooks")
+	# 勿在此 prune：PE2 常由 Wc3ModelScene._ready 稍后补挂，过早剪会丢 Death 等轨
 	return ap
 
 
@@ -261,6 +262,44 @@ func ensure_hooks() -> void:
 	if has_signal("animation_libraries_updated"):
 		if not animation_libraries_updated.is_connected(_on_animation_libraries_updated):
 			animation_libraries_updated.connect(_on_animation_libraries_updated)
+
+
+## 删掉指向不存在节点的轨（旧 bake 的 Pe2 :emitting 等），避免 AnimationMixer 每帧警告。
+func prune_unresolved_tracks() -> int:
+	var anim_root: Node = get_node_or_null(root_node)
+	if anim_root == null:
+		anim_root = get_parent()
+	if anim_root == null:
+		return 0
+	var removed := 0
+	for anim_name in get_animation_list():
+		var anim := get_animation(anim_name)
+		if anim == null:
+			continue
+		for i in range(anim.get_track_count() - 1, -1, -1):
+			var full := anim.track_get_path(i)
+			var node_path := _track_node_path(full)
+			if str(node_path).is_empty() or str(node_path) == ".":
+				continue
+			if anim_root.get_node_or_null(node_path) != null:
+				continue
+			anim.remove_track(i)
+			removed += 1
+	if removed > 0 and AppLog.enabled(AppLog.Level.DEBUG, AppLog.Layer.PRESENT):
+		AppLog.debug(
+			AppLog.Layer.PRESENT,
+			_TAG,
+			"prune_unresolved_tracks removed=%d host=%s" % [removed, str(name)]
+		)
+	return removed
+
+
+func _track_node_path(track_path: NodePath) -> NodePath:
+	var s := str(track_path)
+	var colon := s.find(":")
+	if colon >= 0:
+		s = s.substr(0, colon)
+	return NodePath(s)
 
 
 func _on_animation_started(anim_name: StringName) -> void:

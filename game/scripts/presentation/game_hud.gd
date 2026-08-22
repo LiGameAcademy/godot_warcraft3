@@ -20,13 +20,17 @@ signal train_queue_cancel(slot_index: int)
 @onready var _food_label: Label = %FoodValue
 @onready var _unit_name: Label = %UnitName
 @onready var _unit_hp: Label = %UnitHp
-@onready var _attack_line: Label = %AttackLine
-@onready var _armor_line: Label = %ArmorLine
+@onready var _attack_chip: Node = %AttackChip
+@onready var _armor_chip: Node = %ArmorChip
 @onready var _special_lines: Label = %SpecialLines
 @onready var _portrait_host: Control = %PortraitHost
 @onready var _portrait: UnitPortraitView = %UnitPortraitView
 @onready var _portrait_hp: ProgressBar = %PortraitHpBar
 @onready var _portrait_mana: ProgressBar = %PortraitManaBar
+@onready var _portrait_hp_row: Control = %PortraitHpRow
+@onready var _portrait_mana_row: Control = %PortraitManaRow
+@onready var _portrait_hp_label: Label = %PortraitHpLabel
+@onready var _portrait_mana_label: Label = %PortraitManaLabel
 @onready var _multi_strip: HBoxContainer = %MultiSelectStrip
 @onready var _build_row: Control = %BuildProgressRow
 @onready var _build_bar: ProgressBar = %BuildProgressBar
@@ -136,12 +140,8 @@ func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
 	## 兼容旧调用；完整态请用 set_selection_info。
 	if _unit_name:
 		_unit_name.text = unit_name if not unit_name.is_empty() else "—"
-	if _unit_hp:
-		if hp_max > 0:
-			_unit_hp.text = "生命 %d / %d" % [hp, hp_max]
-		else:
-			_unit_hp.text = ""
-	_set_bar(_portrait_hp, hp, hp_max, true)
+	_set_resource_bar(_portrait_hp_row, _portrait_hp, _portrait_hp_label, hp, hp_max, true)
+	_set_resource_bar(_portrait_mana_row, _portrait_mana, _portrait_mana_label, 0, 0, false)
 
 
 ## 中栏完整刷新。info 见 SelectionInfoBuilder / docs/design/game/HUD.md。
@@ -156,23 +156,39 @@ func set_selection_info(info: Dictionary) -> void:
 	var mana_max := int(info.get("mana_max", 0))
 	if _unit_name:
 		_unit_name.text = display if not display.is_empty() else "—"
+	# 生命/魔法数值叠在肖像条上，不再单独列一行
 	if _unit_hp:
-		if hp_max > 0:
-			_unit_hp.text = "生命 %d / %d" % [hp, hp_max]
-			if mana_max > 0:
-				_unit_hp.text += " · 魔法 %d / %d" % [mana, mana_max]
+		_unit_hp.visible = false
+		_unit_hp.text = ""
+	_set_resource_bar(
+		_portrait_hp_row, _portrait_hp, _portrait_hp_label, hp, hp_max, mode != "empty"
+	)
+	_set_resource_bar(
+		_portrait_mana_row,
+		_portrait_mana,
+		_portrait_mana_label,
+		mana,
+		mana_max,
+		mana_max > 0 and mode != "empty"
+	)
+	if _attack_chip and _attack_chip.has_method("set_stat"):
+		if mode == "empty":
+			_attack_chip.call("clear")
 		else:
-			_unit_hp.text = ""
-	_set_bar(_portrait_hp, hp, hp_max, mode != "empty")
-	_set_bar(_portrait_mana, mana, mana_max, mana_max > 0 and mode != "empty")
-	if _attack_line:
-		var atk := str(info.get("attack_line", ""))
-		_attack_line.text = atk
-		_attack_line.visible = not atk.is_empty() and mode != "empty"
-	if _armor_line:
-		var arm := str(info.get("armor_line", ""))
-		_armor_line.text = arm
-		_armor_line.visible = not arm.is_empty() and mode != "empty"
+			var atk_info: Variant = info.get("attack", {})
+			if typeof(atk_info) == TYPE_DICTIONARY and not (atk_info as Dictionary).is_empty():
+				_attack_chip.call("set_stat", atk_info)
+			else:
+				_attack_chip.call("clear")
+	if _armor_chip and _armor_chip.has_method("set_stat"):
+		if mode == "empty":
+			_armor_chip.call("clear")
+		else:
+			var arm_info: Variant = info.get("armor", {})
+			if typeof(arm_info) == TYPE_DICTIONARY and not (arm_info as Dictionary).is_empty():
+				_armor_chip.call("set_stat", arm_info)
+			else:
+				_armor_chip.call("clear")
 	if _special_lines:
 		var specials: PackedStringArray = info.get("special_lines", PackedStringArray()) as PackedStringArray
 		if specials == null:
@@ -198,15 +214,28 @@ func configure_portrait(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:
 		_portrait.configure(cache, catalog)
 
 
-func _set_bar(bar: ProgressBar, cur: int, mx: int, show_bar: bool) -> void:
+func _set_resource_bar(
+	row: Control, bar: ProgressBar, label: Label, cur: int, mx: int, show_bar: bool
+) -> void:
+	var on := show_bar and mx > 0
+	if row:
+		row.visible = on
 	if bar == null:
 		return
-	bar.visible = show_bar and mx > 0
-	if not bar.visible:
+	bar.visible = on
+	if not on:
+		if label:
+			label.text = ""
 		return
 	bar.max_value = 100.0
 	bar.value = 100.0 * float(cur) / float(maxi(mx, 1))
+	if label:
+		label.text = "%d/%d" % [cur, mx]
 
+
+func _set_bar(bar: ProgressBar, cur: int, mx: int, show_bar: bool) -> void:
+	## 兼容旧路径；新代码走 _set_resource_bar。
+	_set_resource_bar(null, bar, null, cur, mx, show_bar)
 
 func _refresh_multi_strip(entries: Array, show_strip: bool) -> void:
 	if _multi_strip == null:
@@ -537,12 +566,15 @@ func _style_center_panel() -> void:
 		_unit_name.add_theme_font_size_override("font_size", 16)
 		_unit_name.add_theme_color_override("font_color", Color(0.95, 0.95, 0.92))
 	if _unit_hp:
-		_unit_hp.add_theme_color_override("font_color", Color(0.55, 0.9, 0.55))
-		_unit_hp.add_theme_font_size_override("font_size", 12)
-	if _attack_line:
-		_attack_line.add_theme_color_override("font_color", Color(0.9, 0.82, 0.55))
-	if _armor_line:
-		_armor_line.add_theme_color_override("font_color", Color(0.7, 0.78, 0.9))
+		_unit_hp.visible = false
+	if _attack_chip and _attack_chip.get_node_or_null("%ValueLabel") is Label:
+		(_attack_chip.get_node("%ValueLabel") as Label).add_theme_color_override(
+			"font_color", Color(0.9, 0.82, 0.55)
+		)
+	if _armor_chip and _armor_chip.get_node_or_null("%ValueLabel") is Label:
+		(_armor_chip.get_node("%ValueLabel") as Label).add_theme_color_override(
+			"font_color", Color(0.7, 0.78, 0.9)
+		)
 	if _special_lines:
 		_special_lines.add_theme_color_override("font_color", Color(0.75, 0.75, 0.72))
 	if _build_bar:

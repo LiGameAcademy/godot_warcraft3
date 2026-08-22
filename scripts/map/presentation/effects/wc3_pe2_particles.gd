@@ -116,16 +116,23 @@ static func build_root_from_payload(data: Dictionary) -> Node3D:
 
 ## 挂到「带 MODEL_SCALE 的模型根」下（勿挂 GLTF 外包层，否则 pivot 变成百米级）。
 ## 已有 Pe2Root（bake 进 .scn）则只同步 meta；否则从 pe2.json 动态构建。
+## 若 Pe2Root 缺发射器（旧 bake / 残缺 scn）则拆掉重建，避免 :emitting 轨悬空刷警告。
 ## 返回发射器数量。
 static func attach_to(root: Node3D, glb_path: String) -> int:
 	if root == null or glb_path.is_empty():
 		return 0
-	# visuals 场景已内嵌 Pe2Root：用 pe2.json 刷新 active_sequences（修旧 bake 空数组），勿重复挂
+	var payload := load_payload(glb_path)
 	var existing := root.find_child(PE2_ROOT_NAME, true, false)
 	if existing != null:
-		_sync_active_seqs_from_payload(existing, load_payload(glb_path))
-		apply_sequence(root, "Stand")
-		return _count_particle_nodes(existing)
+		if _pe2_root_complete(existing, payload):
+			_sync_active_seqs_from_payload(existing, payload)
+			apply_sequence(root, "Stand")
+			return _count_particle_nodes(existing)
+		# 残缺：拆掉后按 payload 重建
+		var ep := existing.get_parent()
+		if ep != null:
+			ep.remove_child(existing)
+		existing.free()
 	var parent := _resolve_model_root(root)
 	var pe2_root := _instantiate_prefab(glb_path)
 	if pe2_root == null:
@@ -141,6 +148,30 @@ static func attach_to(root: Node3D, glb_path: String) -> int:
 	# 默认按「空闲 Stand」关闸；装饰物 always_on 不受影响
 	apply_sequence(root, "Stand")
 	return _count_particle_nodes(pe2_root)
+
+
+## Pe2Root 是否覆盖 payload 中全部发射器名（绑骨后可能不在 Pe2Root 下，故扫整棵 root 祖先）。
+static func _pe2_root_complete(pe2_root: Node, payload: Dictionary) -> bool:
+	if pe2_root == null:
+		return false
+	var emitters: Array = payload.get("emitters", []) if typeof(payload) == TYPE_DICTIONARY else []
+	if emitters.is_empty():
+		return true
+	var host: Node = pe2_root.get_parent()
+	if host == null:
+		host = pe2_root
+	var present: Dictionary = {}
+	for n in host.find_children("*", "GPUParticles3D", true, false):
+		present[str(n.name)] = true
+	for em in emitters:
+		if typeof(em) != TYPE_DICTIONARY:
+			continue
+		var nm := str((em as Dictionary).get("name", "")).strip_edges()
+		if nm.is_empty():
+			continue
+		if not present.has(nm):
+			return false
+	return true
 
 
 ## 把 pe2_bone 发射器挂到 BoneAttachment3D（跟杖尖等）。bake 与运行时回退共用。

@@ -30,6 +30,10 @@ func _ready() -> void:
 	_apply_stand_bind_rest()
 	_ensure_anim_player()
 	_ensure_pe2_attached()
+	# PE2 补挂后再剪悬空 :emitting 轨（否则 AP._ready 时粒子尚未就位会误删）
+	var ap := wc3_anim_player()
+	if ap != null and ap.has_method("prune_unresolved_tracks"):
+		ap.call("prune_unresolved_tracks")
 
 
 ## 在 host 自身或子树中找 bake 根（host 常为单位/建筑实体，脚本在 .scn 根上）。
@@ -196,10 +200,8 @@ func _socket_key(s: String) -> String:
 	return s.strip_edges().replace(" ", "").replace("-", "").replace("_", "").to_lower()
 
 
-## 旧 .scn 无 Pe2Root 时从 pe2.json 补挂。
+## 旧 / 残缺 Pe2Root：交给 attach_to（缺发射器会重建），避免 :emitting 轨悬空。
 func _ensure_pe2_attached() -> void:
-	if find_child(Wc3Pe2Particles.PE2_ROOT_NAME, true, false) != null:
-		return
 	var glb := _resolve_model_glb_path()
 	if glb.is_empty() or not Wc3Pe2Particles.has_emitters(glb):
 		return
