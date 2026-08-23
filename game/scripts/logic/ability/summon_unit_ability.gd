@@ -76,6 +76,7 @@ static func _spawn_at(
 		"flags": 2,
 		"creationNumber": int(ctx.get("creation_number", 0)),
 		"variation": 0,
+		"spawn_anim": "Birth",
 	}
 	var hf_dict: Dictionary = {}
 	if hf is Dictionary:

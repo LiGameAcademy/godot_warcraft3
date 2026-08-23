@@ -54,7 +54,12 @@ static func set_enabled(unit: Node3D, abil_id: String, enabled: bool) -> void:
 		return
 	ensure_defaults(unit)
 	var m := map_of(unit).duplicate(true)
-	m[id] = enabled
+	# WC3：同一单位同一时刻最多一个自动施法开启。
+	if enabled:
+		for other in m.keys():
+			m[str(other)] = str(other) == id
+	else:
+		m[id] = false
 	unit.set_meta(META, m)
 
 

@@ -34,6 +34,18 @@ static func balance_of(node: Node) -> UnitBalanceDef:
 	store.ensure_table(UnitBalanceDef.TABLE_NAME)
 	return store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 
+## 获取单位 UnitData 定义。
+static func unit_data_of(node: Node) -> UnitDataDef:
+	var tid := type_id_of(node)
+	if tid.is_empty():
+		return null
+	var store := _def_store()
+	if store == null:
+		return null
+	store.ensure_table(UnitDataDef.TABLE_NAME)
+	return store.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
+
+
 ## 获取单位武器定义
 static func weapons_of(node: Node) -> UnitWeaponsDef:
 	var tid := type_id_of(node)
@@ -360,7 +372,7 @@ static func is_valid_attack_target(attacker: Node, target: Node) -> bool:
 	return oa >= 0 and oa == owner_of(target)
 
 
-## 友军技能合法目标（治疗 / buff）。
+## 友军技能合法目标（治疗 / buff）。不含 SLK targs；优先用 is_valid_ability_unit_target。
 static func is_valid_ally_spell_target(caster: Node, target: Node) -> bool:
 	if caster == null or target == null:
 		return false
@@ -372,7 +384,25 @@ static func is_valid_ally_spell_target(caster: Node, target: Node) -> bool:
 	return oa >= 0 and oa == owner_of(target)
 
 
-## 敌军技能合法目标（减速 / 风暴之锤等）。
+## 点目标技能合法目标：基础过滤 + AbilityData.targs。
+static func is_valid_ability_unit_target(caster: Node, target: Node, abil_id: String) -> bool:
+	if caster == null or target == null:
+		return false
+	if not is_instance_valid(caster) or not is_instance_valid(target):
+		return false
+	# 自疗/自拍：_attack_target_basics 排除 self，改由 targs 的 self 决定。
+	if caster == target:
+		if not WorldMembership.is_in_world(target):
+			return false
+		if target is Node3D and _current_life(target as Node3D) <= 0.0:
+			return false
+		return AbilityTargetFilter.matches(caster, target, abil_id)
+	if not _attack_target_basics(caster, target):
+		return false
+	return AbilityTargetFilter.matches(caster, target, abil_id)
+
+
+## 敌军技能合法目标（减速 / 风暴之锤等）。不含 SLK targs；优先用 is_valid_ability_unit_target。
 static func is_valid_hostile_spell_target(caster: Node, target: Node) -> bool:
 	return is_auto_acquire_target(caster, target)
 

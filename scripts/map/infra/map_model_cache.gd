@@ -33,17 +33,17 @@ func reset_load_stats() -> void:
 	last_cache_hits = 0
 
 
-func instance_glb(path: String) -> Node3D:
-	return _instance_glb_internal(path, true)
+func instance_glb(path: String, unit_soft_blend: bool = false) -> Node3D:
+	return _instance_glb_internal(path, true, unit_soft_blend)
 
 
 ## HUD 肖像热路径：跳过材质修正 / mesh 消毒（bake 过的 .scn 已处理）。
 ## 战场单位仍走 instance_glb，保证旧资产也安全。
 func instance_glb_hud(path: String) -> Node3D:
-	return _instance_glb_internal(path, false)
+	return _instance_glb_internal(path, false, false)
 
 
-func _instance_glb_internal(path: String, sanitize: bool) -> Node3D:
+func _instance_glb_internal(path: String, sanitize: bool, unit_soft_blend: bool = false) -> Node3D:
 	if has_cached(path):
 		last_cache_hits += 1
 	var packed: PackedScene = _ensure_packed(path)
@@ -51,7 +51,8 @@ func _instance_glb_internal(path: String, sanitize: bool) -> Node3D:
 		var inst := packed.instantiate()
 		if inst is Node3D:
 			if sanitize:
-				_fix_wc3_blend_materials(inst as Node3D)
+				_mark_waterish_if_needed(inst as Node3D, path, unit_soft_blend)
+				_fix_wc3_blend_materials(inst as Node3D, unit_soft_blend)
 				_sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
@@ -61,9 +62,18 @@ func _instance_glb_internal(path: String, sanitize: bool) -> Node3D:
 		return null
 	var dup := proto.duplicate() as Node3D
 	if dup != null and sanitize:
-		_fix_wc3_blend_materials(dup)
+		_mark_waterish_if_needed(dup, path, unit_soft_blend)
+		_fix_wc3_blend_materials(dup, unit_soft_blend)
 		_sanitize_triangle_meshes(dup)
 	return dup
+
+
+func _mark_waterish_if_needed(root: Node, path: String, unit_soft_blend: bool) -> void:
+	if root == null or not unit_soft_blend:
+		return
+	var logical := path.replace("\\", "/").to_lower()
+	if logical.contains("water"):
+		root.set_meta("wc3_waterish_model", true)
 
 
 ## 是否已有可实例化的缓存（点选热路径可跳过磁盘/解析）。
@@ -271,14 +281,17 @@ func take_cached_bytes(path: String) -> PackedByteArray:
 
 ## Inspect 预览：只 ensure 场景 + duplicate，**不做 PackedScene.pack**（首次点选少一半主线程成本）。
 ## prefer_visuals=false：跳过 assets/visuals（导出 visuals 时避免套娃）。
-func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
+func instance_glb_preview(
+	path: String, prefer_visuals: bool = true, unit_soft_blend: bool = false
+) -> Node3D:
 	if path.is_empty():
 		return null
 	if prefer_visuals and _packed_cache.has(path):
 		var packed: PackedScene = _packed_cache[path] as PackedScene
 		var inst := packed.instantiate()
 		if inst is Node3D:
-			_fix_wc3_blend_materials(inst as Node3D)
+			_mark_waterish_if_needed(inst as Node3D, path, unit_soft_blend)
+			_fix_wc3_blend_materials(inst as Node3D, unit_soft_blend)
 			_sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
@@ -296,9 +309,33 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 		return null
 	var dup := proto.duplicate() as Node3D
 	if dup != null:
-		_fix_wc3_blend_materials(dup)
+		_mark_waterish_if_needed(dup, path, unit_soft_blend)
+		_fix_wc3_blend_materials(dup, unit_soft_blend)
 		_sanitize_triangle_meshes(dup)
 	return dup
+
+
+## 烘焙 .scn 时无 typeId：Units/ 下非建筑目录名 → 单位软混合（fm2 保留 alpha）。
+static func glb_path_uses_unit_soft_blend(logical_path: String) -> bool:
+	var p := logical_path.replace("\\", "/").strip_edges().to_lower()
+	if not p.begins_with("units/"):
+		return false
+	const BUILDING_MARKERS: Array[String] = [
+		"townhall", "greathall", "stronghold", "fortress", "hall",
+		"barracks", "altar", "blacksmith", "workshop", "arcanevault",
+		"sanctuary", "tavern", "market", "guild", "tower", "temple",
+		"crypt", "slaughterhouse", "beastiary", "goldmine", "mine",
+		"farm", "house", "keep", "castle", "lumbermill", "mill",
+		"foundry", "vault", "armory", "arcane", "shipyard", "foundry",
+		"spirit", "lodge", "den", "voodoo", "troll", "hatchery",
+		"spawning", "cannibal", "burrow", "ziggurat", "necropolis",
+		"crypt", "slaughter", "temple", "treeoflife", "ancient",
+		"hunters", "chimaera", "moonwell", "altarof", "huntershall",
+	]
+	for m in BUILDING_MARKERS:
+		if p.contains("/%s" % m) or p.ends_with("/%s" % m):
+			return false
+	return true
 
 
 ## 用已读字节灌入场景缓存并 duplicate（预览用，不 pack）。
@@ -329,13 +366,13 @@ func instance_glb_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 		_packed_cache[path] = packed
 		var inst := packed.instantiate()
 		if inst is Node3D:
-			_fix_wc3_blend_materials(inst as Node3D)
+			_fix_wc3_blend_materials(inst as Node3D, false)
 			return inst as Node3D
 		if inst != null:
 			inst.free()
 	var dup := proto.duplicate() as Node3D
 	if dup != null:
-		_fix_wc3_blend_materials(dup)
+		_fix_wc3_blend_materials(dup, false)
 	return dup
 
 
@@ -386,7 +423,8 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 			root_n.free()
 		return null
 	var root := root_n as Node3D
-	_fix_wc3_blend_materials(root)
+	var logical := glb_path.replace("\\", "/").trim_prefix("res://assets/asset-converted/")
+	_fix_wc3_blend_materials(root, glb_path_uses_unit_soft_blend(logical))
 	var ap := _find_animation_player(root)
 	if ap != null:
 		ap.autoplay = ""
@@ -460,7 +498,8 @@ func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true
 		last_gltf_loads += 1
 	else:
 		last_scn_hits += 1
-	_fix_wc3_blend_materials(loaded)
+	var logical := path.replace("\\", "/").trim_prefix("res://assets/asset-converted/")
+	_fix_wc3_blend_materials(loaded, glb_path_uses_unit_soft_blend(logical))
 	_sanitize_triangle_meshes(loaded)
 	# 原型上清掉 autoplay，避免实例化瞬间播 Attack
 	var ap := _find_animation_player(loaded)
@@ -709,6 +748,13 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 		proto = _scene_cache[glb_path] as Node3D
 	if proto == null:
 		return false
+	# 材质修正必须进 .scn：编辑器直接打开 scn 不会再走 instance_glb 修正。
+	# （export 里 instance_glb_preview 修的是临时 dup，bake 烤的是 proto。）
+	var logical := glb_path.replace("\\", "/").trim_prefix("res://assets/asset-converted/")
+	var unit_soft := glb_path_uses_unit_soft_blend(logical)
+	if unit_soft and logical.to_lower().contains("water"):
+		proto.set_meta("wc3_waterish_model", true)
+	_fix_wc3_blend_materials(proto, unit_soft)
 	apply_bone_rest_sidecar(proto, glb_path)
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
 	# 门面脚本必须在 pack 直前挂上（export 里 set_script 曾未写入 .scn）
@@ -1713,11 +1759,14 @@ func mesh_parts_from_glb(path: String) -> Array:
 
 ## WC3 材质在 glTF/Godot 中的修正：
 ## - FilterMode Additive/AddAlpha：glTF 只能标 BLEND，需改成 ADD（否则黑底 Glow 变实心牌）
-## - FilterMode Blend：Godot Alpha Blend / 甚至 DEPTH_PRE_PASS 仍可能透视 → 改 ALPHA_SCISSOR
-## - 默认双面（旧 convert）→ 非 TwoSided/非 Additive 强制 cull_back，避免屋顶背面发黑
-func _fix_wc3_blend_materials(root: Node) -> void:
+## - FilterMode Blend（建筑）：改 ALPHA_SCISSOR，避免酒馆/市场透视
+## - FilterMode Blend（单位 _fm2）：DEPTH_PRE_PASS + 双面（水元素体、火枪披风等软 alpha）
+## - FilterMode Transparent（_fm1）：袍/披风常是单面壳，强制双面
+## - 默认双面（旧 convert）→ 非 TwoSided/非 Additive/非 fm1/fm2 强制 cull_back
+func _fix_wc3_blend_materials(root: Node, unit_soft_blend: bool = false) -> void:
 	if root == null:
 		return
+	var waterish_model := unit_soft_blend and _node_tree_looks_waterish(root)
 	var stack: Array[Node] = [root]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
@@ -1732,17 +1781,110 @@ func _fix_wc3_blend_materials(root: Node) -> void:
 			var mat: Material = mi.get_active_material(si)
 			if mat == null:
 				continue
-			var fixed := _as_wc3_material_fix(mat)
+			var fixed := _as_wc3_material_fix(mat, unit_soft_blend, waterish_model)
 			if fixed != null and fixed != mat:
 				mi.set_surface_override_material(si, fixed)
 
 
-func _as_wc3_material_fix(mat: Material) -> Material:
+## 模型名 / 贴图路径 / meta 含 water（WaterElemental、WaterEnv…）；bake 内嵌贴图后仍可靠。
+func _node_tree_looks_waterish(root: Node) -> bool:
+	if root == null:
+		return false
+	if bool(root.get_meta("wc3_waterish_model", false)):
+		return true
+	var key := str(root.name).to_lower()
+	if key.contains("water"):
+		return true
+	var p := str(root.get_path()).to_lower() if root.is_inside_tree() else ""
+	return p.contains("water")
+
+
+func _as_wc3_material_fix(
+	mat: Material, unit_soft_blend: bool = false, waterish_model: bool = false
+) -> Material:
 	var add := _as_wc3_additive_material(mat)
 	if add != mat:
 		return add
+	if unit_soft_blend:
+		var soft := _as_wc3_unit_fm2_soft_fix(mat, waterish_model)
+		# _fm2 已软化时 soft 可能 == mat；绝不能再落入建筑 scissor。
+		if soft != mat:
+			return soft
+		if mat is StandardMaterial3D:
+			var key := (
+				str((mat as StandardMaterial3D).resource_name)
+				+ " "
+				+ str((mat as StandardMaterial3D).get_name())
+			).to_lower()
+			if key.contains("_fm2"):
+				return mat
 	var scissor := _as_wc3_blend_scissor_fix(mat)
-	return _as_wc3_cull_back_fix(scissor)
+	var cull := _as_wc3_cull_back_fix(scissor)
+	return _as_wc3_transparent_two_sided_fix(cull)
+
+
+## 单位 FilterMode=2 Blend（_fm2）：保留软 alpha，对齐 WC3 水元素/披风。
+## 水体模型/贴图走真 Alpha Blend，比 DEPTH_PRE_PASS 更通透。
+func _as_wc3_unit_fm2_soft_fix(mat: Material, waterish_model: bool = false) -> Material:
+	if not (mat is StandardMaterial3D):
+		return mat
+	var sm := mat as StandardMaterial3D
+	if sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
+		return mat
+	var key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
+	if not key.contains("_fm2"):
+		return mat
+	var needs := (
+		sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA
+		or sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		or sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+		or sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	)
+	if not needs:
+		return mat
+	var tex_key := ""
+	if sm.albedo_texture != null:
+		tex_key = (
+			str(sm.albedo_texture.resource_path) + " " + str(sm.albedo_texture.resource_name)
+		).to_lower()
+	var waterish := (
+		waterish_model
+		or tex_key.contains("water")
+		or key.contains("water")
+	)
+	var want_transp := (
+		BaseMaterial3D.TRANSPARENCY_ALPHA
+		if waterish
+		else BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	)
+	var want_depth := (
+		BaseMaterial3D.DEPTH_DRAW_DISABLED
+		if waterish
+		else BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	)
+	var want_a := sm.albedo_color.a
+	if waterish:
+		# WC3 Blend 中段 alpha 偏「实」；略压整体 alpha 更像流体体积
+		want_a = clampf(sm.albedo_color.a * 0.72, 0.35, 0.85)
+	if (
+		sm.transparency == want_transp
+		and sm.cull_mode == BaseMaterial3D.CULL_DISABLED
+		and sm.depth_draw_mode == want_depth
+		and absf(sm.albedo_color.a - want_a) < 0.01
+	):
+		return mat
+	var out := sm.duplicate() as StandardMaterial3D
+	out.transparency = want_transp
+	out.cull_mode = BaseMaterial3D.CULL_DISABLED
+	out.depth_draw_mode = want_depth
+	out.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	if waterish:
+		var c := out.albedo_color
+		c.a = want_a
+		out.albedo_color = c
+		out.roughness = minf(out.roughness, 0.35)
+		out.metallic = 0.0
+	return out
 
 
 ## FilterMode=2 Blend → Alpha Scissor（写深度），避免酒馆/市场/雇佣兵营地等建筑透视。
@@ -1778,7 +1920,7 @@ func _as_wc3_blend_scissor_fix(mat: Material) -> Material:
 	return out
 
 
-## 旧 GLB 一律 doubleSided；非 Additive 改回 cull_back（屋顶背面不再透出发黑）。
+## 旧 GLB 一律 doubleSided；非 Additive / 非 Transparent 改回 cull_back（屋顶背面不再透出发黑）。
 func _as_wc3_cull_back_fix(mat: Material) -> Material:
 	if not (mat is StandardMaterial3D):
 		return mat
@@ -1788,10 +1930,27 @@ func _as_wc3_cull_back_fix(mat: Material) -> Material:
 	if sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
 		return mat
 	var key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
-	if key.contains("_fm3") or key.contains("_fm4") or key.contains("_rep2"):
+	# fm1 Transparent / fm2 软混合 / Additive：保留双面
+	if key.contains("_fm1") or key.contains("_fm2") or key.contains("_fm3") or key.contains("_fm4") or key.contains("_rep2"):
 		return mat
 	var out := sm.duplicate() as StandardMaterial3D
 	out.cull_mode = BaseMaterial3D.CULL_BACK
+	return out
+
+
+## FilterMode=1 Transparent：MDX 常不标 TwoSided，但袍/披风是单面壳；
+## cull_back 会把前胸多数三角剔掉，只剩侧面轮廓，并能透视到背后披风（hmpr 等）。
+func _as_wc3_transparent_two_sided_fix(mat: Material) -> Material:
+	if not (mat is StandardMaterial3D):
+		return mat
+	var sm := mat as StandardMaterial3D
+	var key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
+	if not key.contains("_fm1"):
+		return mat
+	if sm.cull_mode == BaseMaterial3D.CULL_DISABLED:
+		return mat
+	var out := sm.duplicate() as StandardMaterial3D
+	out.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return out
 
 

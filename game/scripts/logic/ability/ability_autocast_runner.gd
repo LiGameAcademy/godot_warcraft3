@@ -93,7 +93,7 @@ static func _pick_heal_target(caster: Node3D, abil_id: String, ctx: Dictionary) 
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var ally := n as Node3D
-		if not CombatQuery.is_valid_ally_spell_target(caster, ally):
+		if not CombatQuery.is_valid_ability_unit_target(caster, ally, abil_id):
 			continue
 		UnitLife.ensure(ally)
 		var mx := maxf(UnitLife.get_max_life(ally), 1.0)
@@ -125,7 +125,7 @@ static func _pick_inner_fire_target(caster: Node3D, abil_id: String, ctx: Dictio
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var ally := n as Node3D
-		if not CombatQuery.is_valid_ally_spell_target(caster, ally):
+		if not CombatQuery.is_valid_ability_unit_target(caster, ally, abil_id):
 			continue
 		var ctrl := InnerFireController.of(ally)
 		if ctrl != null and ctrl.is_active():
@@ -152,7 +152,7 @@ static func _pick_slow_target(caster: Node3D, abil_id: String, ctx: Dictionary) 
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var foe := n as Node3D
-		if not CombatQuery.is_valid_hostile_spell_target(caster, foe):
+		if not CombatQuery.is_valid_ability_unit_target(caster, foe, abil_id):
 			continue
 		if UnitStatusEffects.is_slowed(foe):
 			continue

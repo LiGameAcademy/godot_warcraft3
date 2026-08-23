@@ -16,6 +16,7 @@ func _run() -> void:
 	_test_try_engage()
 	_test_player_occupied_blocks_engage()
 	_test_leash_return()
+	_test_target_lost_return()
 	if failed == 0:
 		print("selftest_unit_ai: PASS")
 		quit(0)
@@ -230,6 +231,44 @@ func _test_leash_return() -> void:
 			_fail("回到锚点附近应变 IDLE，实际 state=%d" % ai.get_state())
 		else:
 			print("  leash_return OK")
+
+	body.queue_free()
+	attacker.queue_free()
+
+
+func _test_target_lost_return() -> void:
+	var pair: Array = _make_pair()
+	var body: Node3D = pair[0]
+	var attacker: Node3D = pair[1]
+	var fake: FakeAttack = pair[2]
+	var ai: UnitAI = pair[3]
+	var nav := FakeNav.new()
+	nav.name = "UnitNavigator"
+	body.add_child(nav)
+
+	ai.home_wc3 = Vector2.ZERO
+	ai.leash_wc3 = 1000.0
+	body.global_position = Wc3Coords.wc3_xy_to_godot(200.0, 0.0)
+	ai.configure(
+		func() -> bool: return false,
+		func(_u: Node3D) -> Node: return fake,
+		Callable(),
+		Callable(),
+		func(_u: Node3D) -> Node: return nav
+	)
+	if not ai.try_engage(attacker):
+		_fail("目标丢失测试：应先接战")
+		body.queue_free()
+		attacker.queue_free()
+		return
+	fake.cancel()
+	ai.notify_combat_target_lost(attacker)
+	if ai.get_state() != UnitAI.State.RETURNING:
+		_fail("目标死亡后应归巢 RETURNING，实际 state=%d" % ai.get_state())
+	elif nav.go_count < 1 or nav.last_goal != Vector2.ZERO:
+		_fail("目标死亡后应 go_to_wc3(home)")
+	else:
+		print("  target_lost_return OK")
 
 	body.queue_free()
 	attacker.queue_free()

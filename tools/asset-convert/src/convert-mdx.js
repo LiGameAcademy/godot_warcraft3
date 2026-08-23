@@ -1241,8 +1241,11 @@ function isAdditiveFilter(filterMode) {
   return filterMode === 3 || filterMode === 4;
 }
 
-/** MDX Layer.Shading bit 4 (16) = TwoSided；勿默认双面，否则屋顶背面透出来发黑。 */
+/** MDX Layer.Shading bit 4 (16) = TwoSided；勿默认双面，否则屋顶背面透出来发黑。
+ *  FilterMode Transparent(1) 例外：袍/披风多为单面壳，强制双面（否则 Godot cull_back 前胸镂空）。 */
 function isTwoSidedLayer(layer) {
+  const filterMode = Number(layer?.FilterMode) || 0;
+  if (filterMode === 1) return true;
   const shading = Number(layer?.Shading ?? layer?.Flags ?? 0) || 0;
   return (shading & 16) !== 0;
 }

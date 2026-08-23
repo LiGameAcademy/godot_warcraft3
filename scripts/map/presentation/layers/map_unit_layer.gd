@@ -367,6 +367,12 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 		var sx := float(scale_data.get("x", 1.0))
 		var sy := float(scale_data.get("y", 1.0))
 		var sz := float(scale_data.get("z", 1.0))
+		if _catalog != null and not BuildingVisual.is_building(type_id):
+			var ms := float(_catalog.lookup(type_id).get("model_scale", 1.0))
+			if ms > 0.0:
+				sx *= ms
+				sy *= ms
+				sz *= ms
 		var scale_node := _scale_target_for(node)
 		var b := scale_node.scale
 		scale_node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
@@ -391,12 +397,16 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 				BuildingVisual.apply_idle(_cache, node, type_id)
 			_apply_building_ground(node, type_id, hf)
 		else:
-			# Stand + geosetvis 定格：藏尸体/无关 Geoset（羊、野猪、野怪等同建筑/树）
-			_cache.autoplay_stand(node)
-			if _cache.has_method("snap_stand_geoset_visibility"):
-				_cache.call("snap_stand_geoset_visibility", node)
-			if not glb.is_empty():
-				Wc3Pe2Particles.apply_sequence(node, "Stand")
+			var spawn_anim := str(u.get("spawn_anim", ""))
+			if spawn_anim == "Birth":
+				_play_unit_birth_then_stand(node, type_id, glb)
+			else:
+				# Stand + geosetvis 定格：藏尸体/无关 Geoset（羊、野猪、野怪等同建筑/树）
+				_cache.autoplay_stand(node)
+				if _cache.has_method("snap_stand_geoset_visibility"):
+					_cache.call("snap_stand_geoset_visibility", node)
+				if not glb.is_empty():
+					Wc3Pe2Particles.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
 	UnitLife.ensure(node)
 	_apply_unit_render_layers(node)
@@ -498,7 +508,8 @@ func _make_unit_node(
 		var glb := _catalog.converted_glb_path(type_id, variation)
 		if not glb.is_empty():
 			if _cache.has_cached(glb) or allow_sync_load:
-				var inst := _cache.instance_glb(glb)
+				var unit_soft := not BuildingVisual.is_building(type_id)
+				var inst := _cache.instance_glb(glb, unit_soft)
 				if inst:
 					inst.set_meta("is_placeholder", false)
 					# 开始点本体即队伍色环；英雄 Team Glow 也需染色显示
@@ -519,6 +530,99 @@ func _wrap_unit_entity(model: Node3D) -> Unit:
 	model.name = Unit.MODEL_NODE_NAME
 	unit.add_child(model)
 	return unit
+
+
+func _unit_anim_blend(type_id: String) -> float:
+	var store := _def_store()
+	if store == null:
+		return 0.15
+	store.ensure_table(UnitUiDef.TABLE_NAME)
+	var row := store.get_row(UnitUiDef.TABLE_NAME, type_id) as UnitUiDef
+	if row != null and row.blend > 0.0:
+		return row.blend
+	return 0.15
+
+
+func _play_unit_birth_then_stand(unit_root: Node3D, type_id: String, glb: String) -> void:
+	if _cache == null or unit_root == null:
+		return
+	var model := Wc3ModelScene.find_on(unit_root)
+	var body: Node = model if model != null else unit_root
+	var blend := _unit_anim_blend(type_id)
+	var played: Dictionary
+	if model != null:
+		played = model.play_logical(
+			"Birth", 0.0, _cache, AnimSequenceResolver.Activity.BIRTH, ["Stand"]
+		)
+	else:
+		played = AnimPlayback.play_logical(
+			body,
+			"Birth",
+			0.0,
+			_cache,
+			AnimSequenceResolver.Activity.BIRTH,
+			["Stand"]
+		)
+	if not bool(played.get("ok", false)):
+		_cache.autoplay_stand(unit_root)
+		if _cache.has_method("snap_stand_geoset_visibility"):
+			_cache.call("snap_stand_geoset_visibility", unit_root)
+		if not glb.is_empty():
+			Wc3Pe2Particles.apply_sequence(unit_root, "Stand")
+		return
+	var snap_root: Node = model if model != null else unit_root
+	if _cache.has_method("snap_geoset_visibility_for"):
+		_cache.call(
+			"snap_geoset_visibility_for",
+			snap_root,
+			str(played.get("played_as", "Birth"))
+		)
+	_restart_pe2_emitters(unit_root)
+	var ap := AnimPlayback.find_animation_player(body)
+	if ap == null:
+		_finish_unit_birth_to_stand(unit_root, glb, blend)
+		return
+	var birth_resolved := str(played.get("resolved", ""))
+	var on_finished := func(anim_name: StringName) -> void:
+		if not is_instance_valid(unit_root):
+			return
+		if not birth_resolved.is_empty() and str(anim_name) != birth_resolved:
+			var leaf := AnimPlayback.compact_seq_name(str(anim_name))
+			if not leaf.begins_with("birth"):
+				return
+		_finish_unit_birth_to_stand(unit_root, glb, blend)
+	ap.animation_finished.connect(on_finished, CONNECT_ONE_SHOT)
+
+
+func _finish_unit_birth_to_stand(unit_root: Node3D, glb: String, blend: float) -> void:
+	if _cache == null or unit_root == null:
+		return
+	var model := Wc3ModelScene.find_on(unit_root)
+	var body: Node = model if model != null else unit_root
+	if model != null:
+		model.play_logical("Stand", blend, _cache, AnimSequenceResolver.Activity.IDLE, [])
+	else:
+		AnimPlayback.play_logical(
+			body, "Stand", blend, _cache, AnimSequenceResolver.Activity.IDLE, []
+		)
+	var snap_root: Node = model if model != null else unit_root
+	if _cache.has_method("snap_stand_geoset_visibility"):
+		_cache.call("snap_stand_geoset_visibility", snap_root)
+	elif _cache.has_method("snap_geoset_visibility_for"):
+		_cache.call("snap_geoset_visibility_for", snap_root, "Stand")
+	if not glb.is_empty():
+		Wc3Pe2Particles.apply_sequence(unit_root, "Stand")
+
+
+func _restart_pe2_emitters(root: Node) -> void:
+	if root == null:
+		return
+	if root is GPUParticles3D:
+		var p := root as GPUParticles3D
+		p.restart()
+		p.emitting = true
+	for c in root.get_children():
+		_restart_pe2_emitters(c)
 
 
 ## 地图 scale 乘在 Model 上，避免把选框等逻辑子节点一并缩放。

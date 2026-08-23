@@ -125,7 +125,11 @@ func _run() -> void:
 			DirAccess.remove_absolute(disk_scn)
 			cache.evict(glb_res)
 		# 烤基座时跳过 visuals（避免套娃 / 基座已删时 ExtResource 失败）
-		var root: Node3D = cache.instance_glb_preview(glb_res, false)
+		var root: Node3D = cache.instance_glb_preview(
+			glb_res,
+			false,
+			MapModelCache.glb_path_uses_unit_soft_blend(logical_glb)
+		)
 		if root == null:
 			_plog("WARN", "export_model_scenes: load failed %s" % logical_glb)
 			print("  ⚠ load failed %s" % logical_glb)

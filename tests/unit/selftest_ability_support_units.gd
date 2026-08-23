@@ -88,11 +88,15 @@ func _test_target_queries() -> void:
 	var ally := Node3D.new()
 	ally.set_meta("unit_data", {"typeId": "hfoo", "owner": 0})
 	ally.set_meta("life", 50.0)
+	var building := Node3D.new()
+	building.set_meta("unit_data", {"typeId": "htow", "owner": 0})
+	building.set_meta("life", 1500.0)
 	var foe := Node3D.new()
 	foe.set_meta("unit_data", {"typeId": "hfoo", "owner": 1})
 	foe.set_meta("life", 100.0)
 	root.add_child(caster)
 	root.add_child(ally)
+	root.add_child(building)
 	root.add_child(foe)
 	if not CombatQuery.is_valid_ally_spell_target(caster, ally):
 		_fail("同玩家友军应合法")
@@ -103,8 +107,28 @@ func _test_target_queries() -> void:
 	if not CombatQuery.is_valid_hostile_spell_target(caster, foe):
 		_fail("敌军应合法")
 		return
+	if not CombatQuery.is_valid_ability_unit_target(caster, ally, "Ainf"):
+		_fail("Ainf 应对步兵合法")
+		return
+	caster.set_meta("life", 80.0)
+	if not CombatQuery.is_valid_ability_unit_target(caster, caster, "Ahea"):
+		_fail("Ahea 应对自身合法（targs 含 self）")
+		return
+	if CombatQuery.is_valid_ability_unit_target(caster, building, "Ainf"):
+		_fail("Ainf 不应对城镇大厅施放")
+		return
+	if CombatQuery.is_valid_ability_unit_target(caster, building, "Ahea"):
+		_fail("Ahea 不应对建筑施放")
+		return
+	if not CombatQuery.is_valid_ability_unit_target(caster, foe, "Aslo"):
+		_fail("Aslo 应对敌军步兵合法")
+		return
+	if CombatQuery.is_valid_ability_unit_target(caster, building, "Aslo"):
+		_fail("Aslo 不应对建筑施放")
+		return
 	caster.queue_free()
 	ally.queue_free()
+	building.queue_free()
 	foe.queue_free()
 	print("  target_queries OK")
 

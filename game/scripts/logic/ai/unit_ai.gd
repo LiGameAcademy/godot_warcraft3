@@ -232,6 +232,16 @@ func notify_camp_ally_engaged(_target: Node3D) -> void:
 	pass
 
 
+## 当前攻击目标死亡/离场（DeathService 广播）。脱战并归巢（leash）。
+func notify_combat_target_lost(_dead: Node3D) -> void:
+	if not _owns_engagement and _state != State.ENGAGED:
+		return
+	var ac := _attack_controller()
+	if ac != null and _ac_is_active(ac):
+		return
+	_on_combat_ended()
+
+
 ## 玩家（或其它非 AI）命令占用单位：清 AI 意图。Router abort Attack 仍由命令层负责。
 func yield_to_player() -> void:
 	_owns_engagement = false
@@ -331,15 +341,22 @@ func _tick_engaged() -> void:
 		return
 	var ac := _attack_controller()
 	if ac == null or not _ac_is_active(ac):
-		_owns_engagement = false
-		_clear_ai_order_if_ours()
-		if is_beyond_leash():
-			_begin_return()
-			return
-		if _state != State.SLEEPING:
-			_set_state(State.IDLE)
-		_refresh_process()
+		_on_combat_ended()
 		return
+
+
+func _on_combat_ended() -> void:
+	_owns_engagement = false
+	_clear_ai_order_if_ours()
+	var nav := _navigator()
+	if nav != null:
+		_nav_stop(nav)
+	if uses_leash() and not _is_at_home():
+		_begin_return()
+		return
+	if _state != State.SLEEPING:
+		_set_state(State.IDLE)
+	_refresh_process()
 
 
 func _tick_returning() -> void:

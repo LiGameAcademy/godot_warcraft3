@@ -20,7 +20,7 @@ static func try_cast(
 	if caster == null or target == null or not is_instance_valid(caster) or not is_instance_valid(target):
 		out["reason"] = "无效目标"
 		return out
-	if not CombatQuery.is_valid_hostile_spell_target(caster, target):
+	if not CombatQuery.is_valid_ability_unit_target(caster, target, abil_id):
 		out["reason"] = "无效敌军目标"
 		return out
 	var lv := AbilityCatalog.level_for(caster, ABIL_ID)

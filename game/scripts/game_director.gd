@@ -1858,15 +1858,11 @@ func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
 			game_hud.set_status("施法：未点到目标")
 		return false
 	var tk := AbilityCatalog.target_kind(abil_id)
-	if tk == AbilityCatalog.TARGET_ALLY:
-		if not CombatQuery.is_valid_ally_spell_target(caster, target):
+	if tk == AbilityCatalog.TARGET_ALLY or tk == AbilityCatalog.TARGET_UNIT:
+		if not CombatQuery.is_valid_ability_unit_target(caster, target, abil_id):
 			if game_hud:
-				game_hud.set_status("施法：无效友军目标")
-			return false
-	elif tk == AbilityCatalog.TARGET_UNIT:
-		if not CombatQuery.is_valid_hostile_spell_target(caster, target):
-			if game_hud:
-				game_hud.set_status("施法：无效敌军目标")
+				var msg := "施法：无效友军目标" if tk == AbilityCatalog.TARGET_ALLY else "施法：无效敌军目标"
+				game_hud.set_status(msg)
 			return false
 	else:
 		if game_hud:

@@ -82,6 +82,9 @@ func cancel() -> void:
 	_dmgpt_left = 0.0
 	_set_state(State.IDLE)
 	_set_attack_anim(false)
+	var nav := _nav()
+	if nav != null:
+		nav.stop()
 
 ## 弹道命中后的结算转发（由会话层接 ProjectileService.projectile_resolved）。
 func notify_strike_result(result: Dictionary) -> void:

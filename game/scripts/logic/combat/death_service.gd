@@ -34,3 +34,6 @@ func _clear_attackers_of(dead: Node3D) -> void:
 		var ac := (c as Node3D).get_node_or_null("AttackController") as AttackController
 		if ac != null:
 			ac.notify_target_died(dead)
+		var ai := UnitAI.of(c as Node3D)
+		if ai != null:
+			ai.notify_combat_target_lost(dead)

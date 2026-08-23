@@ -75,5 +75,20 @@ func _test_toggle() -> void:
 	if AbilityAutoCast.is_enabled(u, "Ainf") == was:
 		_fail("toggle 应改变 Ainf 状态")
 		return
+	# 开启 Ainf 时应关掉默认的 Ahea（互斥）
+	if AbilityAutoCast.is_enabled(u, "Ainf") and AbilityAutoCast.is_enabled(u, "Ahea"):
+		_fail("开启 Ainf 后 Ahea 应关闭（互斥）")
+		return
+	AbilityAutoCast.set_enabled(u, "Ahea", true)
+	if not AbilityAutoCast.is_enabled(u, "Ahea"):
+		_fail("应能开启 Ahea")
+		return
+	if AbilityAutoCast.is_enabled(u, "Ainf"):
+		_fail("开启 Ahea 后 Ainf 应关闭（互斥）")
+		return
+	AbilityAutoCast.set_enabled(u, "Ahea", false)
+	if AbilityAutoCast.is_enabled(u, "Ahea") or AbilityAutoCast.is_enabled(u, "Ainf"):
+		_fail("关闭后应可全关")
+		return
 	u.queue_free()
 	print("  toggle OK")

@@ -1038,13 +1038,18 @@ func _on_command_gui_input(event: InputEvent, slot: int) -> void:
 		return
 	if slot < 0 or slot >= _slot_action_ids.size():
 		return
+	var btn: Button = null
 	if slot < _command_grid.get_child_count():
-		var btn := _command_grid.get_child(slot) as Button
-		if btn != null and btn.disabled:
-			return
+		btn = _command_grid.get_child(slot) as Button
 	var action_id := str(_slot_action_ids[slot]).strip_edges()
 	if action_id.is_empty():
 		return
+	# 灰显（蓝不足/冷却）仍允许右键切换自动施法；左键施法仍拦截。
+	if btn != null and btn.disabled:
+		if mb.button_index != MOUSE_BUTTON_RIGHT:
+			return
+		if int(btn.get_meta("_ac_state", 0)) < 1:
+			return
 	if mb.button_index == MOUSE_BUTTON_LEFT:
 		command_pressed.emit(slot)
 		command_action.emit(action_id)
