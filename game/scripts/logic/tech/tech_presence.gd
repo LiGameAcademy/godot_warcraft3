@@ -130,16 +130,22 @@ static func owns_requirement(owned_buildings: Dictionary, required_id: String) -
 	return false
 
 
-## 未满足的 Requires 列表（保持原顺序）。researched：upgradeid→level，满足科技需求。
+## 未满足的 Requires 列表（保持原顺序）。
+## researched：upgradeid→level；require_levels：upgradeid→最低等级（缺省 1）。
 static func missing_requires(
-	owned_buildings: Dictionary, requires: PackedStringArray, researched: Dictionary = {}
+	owned_buildings: Dictionary,
+	requires: PackedStringArray,
+	researched: Dictionary = {},
+	require_levels: Dictionary = {}
 ) -> PackedStringArray:
 	var out := PackedStringArray()
 	for r in requires:
 		var rid := str(r)
-		if int(researched.get(rid, 0)) > 0:
+		var need := maxi(int(require_levels.get(rid, 1)), 1)
+		if int(researched.get(rid, 0)) >= need:
 			continue
-		if owns_requirement(owned_buildings, rid):
+		# 建筑类需求：仅当要求等级为 1 时可用场上建筑等价满足
+		if need <= 1 and owns_requirement(owned_buildings, rid):
 			continue
 		out.append(rid)
 	return out

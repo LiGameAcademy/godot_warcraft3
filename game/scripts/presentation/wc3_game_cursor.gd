@@ -38,6 +38,9 @@ enum Mode {
 
 var _sheet: Texture2D
 var _atlas: AtlasTexture
+## mode*100+frame → 预烘焙 ImageTexture（CPU），避免每帧 Atlas 走 GPU 读回
+var _frame_cache: Dictionary = {}
+var _cursor_broken: bool = false
 var _mode: int = Mode.IDLE
 var _frame: int = 0
 var _accum: float = 0.0
@@ -141,7 +144,7 @@ func flash_move() -> void:
 
 
 func _process(delta: float) -> void:
-	if not _active or not enabled:
+	if not _active or not enabled or _cursor_broken:
 		return
 	var n := _mode_frame_count(_mode)
 	if n <= 1:
@@ -181,6 +184,8 @@ func _load_sheet(race_id: String) -> bool:
 		_atlas = AtlasTexture.new()
 		_atlas.filter_clip = true
 	_atlas.atlas = _sheet
+	_cursor_broken = false
+	_prebake_frames(img)
 	return true
 
 
@@ -205,16 +210,56 @@ static func _normalize_race(race_id: String) -> String:
 			return "human"
 
 
+func _prebake_frames(sheet_img: Image) -> void:
+	_frame_cache.clear()
+	if sheet_img == null:
+		return
+	for mode in [
+		Mode.IDLE, Mode.TARGET, Mode.ALLY, Mode.INVALID, Mode.SELECT,
+		Mode.HAND_ALT_A, Mode.HAND_ALT_B, Mode.MOVE,
+	]:
+		var n := _mode_frame_count(mode)
+		for f in range(maxi(n, 1)):
+			var cell := _mode_cell(mode, f)
+			var region := Rect2i(cell.x * CELL, cell.y * CELL, CELL, CELL)
+			if region.position.x + CELL > sheet_img.get_width() or region.position.y + CELL > sheet_img.get_height():
+				continue
+			var sub := sheet_img.get_region(region)
+			if sub == null or sub.is_empty():
+				continue
+			_frame_cache[_frame_key(mode, f)] = ImageTexture.create_from_image(sub)
+
+
+func _frame_key(mode: int, frame: int) -> int:
+	return mode * 100 + frame
+
+
 func _apply_frame() -> void:
-	var cell := _mode_cell(_mode, _frame)
-	_atlas.region = Rect2(cell.x * CELL, cell.y * CELL, CELL, CELL)
+	if _cursor_broken or not _active:
+		return
+	var tex: Texture2D = _frame_cache.get(_frame_key(_mode, _frame)) as Texture2D
+	if tex == null and _atlas != null:
+		# 回退：旧路径（可能触发 GPU 读回）
+		var cell := _mode_cell(_mode, _frame)
+		_atlas.region = Rect2(cell.x * CELL, cell.y * CELL, CELL, CELL)
+		tex = _atlas.duplicate() as AtlasTexture
+	if tex == null:
+		_fail_cursor("无可用光标帧")
+		return
 	var hotspot := _mode_hotspot(_mode)
-	# 每次提交副本，避免部分平台缓存旧 region
-	var frame_tex := _atlas.duplicate() as AtlasTexture
-	Input.set_custom_mouse_cursor(frame_tex, Input.CURSOR_ARROW, hotspot)
-	Input.set_custom_mouse_cursor(frame_tex, Input.CURSOR_POINTING_HAND, hotspot)
-	Input.set_custom_mouse_cursor(frame_tex, Input.CURSOR_MOVE, hotspot)
-	Input.set_custom_mouse_cursor(frame_tex, Input.CURSOR_CROSS, hotspot)
+	Input.set_custom_mouse_cursor(tex, Input.CURSOR_ARROW, hotspot)
+	Input.set_custom_mouse_cursor(tex, Input.CURSOR_POINTING_HAND, hotspot)
+	Input.set_custom_mouse_cursor(tex, Input.CURSOR_MOVE, hotspot)
+	Input.set_custom_mouse_cursor(tex, Input.CURSOR_CROSS, hotspot)
+
+
+func _fail_cursor(reason: String) -> void:
+	if _cursor_broken:
+		return
+	_cursor_broken = true
+	push_warning("Wc3GameCursor: 停用自定义光标（%s）" % reason)
+	_restore_system_cursor()
+	set_process(false)
 
 
 func _restore_system_cursor() -> void:

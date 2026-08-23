@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_inner_fire()
 	_test_dispel()
 	_test_unit_status_facade()
+	_test_hud_entries()
 	if failed == 0:
 		print("selftest_buff_system: PASS")
 		quit(0)
@@ -101,3 +102,39 @@ func _test_unit_status_facade() -> void:
 	UnitStatusEffects.tick(unit, 0.0)
 	unit.queue_free()
 	print("  facade OK")
+
+
+func _test_hud_entries() -> void:
+	var unit := Node3D.new()
+	root.add_child(unit)
+	var bh := BuffHost.ensure_on(unit)
+	bh.apply(BuffCatalog.ID_INNER_FIRE, 10.0, {"armor": 5.0, "dmg_mul": 1.1})
+	var entries := BuffQuery.hud_entries(unit)
+	if entries.size() != 1:
+		_fail("hud_entries 应有 1 条")
+		unit.queue_free()
+		return
+	var e := entries[0] as Dictionary
+	if str(e.get("id", "")) != BuffCatalog.ID_INNER_FIRE:
+		_fail("hud_entries id")
+		unit.queue_free()
+		return
+	if str(e.get("tooltip", "")).find("心灵之火") < 0:
+		_fail("hud_entries tooltip 标题")
+		unit.queue_free()
+		return
+	if float(e.get("left", 0.0)) <= 0.0:
+		_fail("hud_entries left")
+		unit.queue_free()
+		return
+	var icon := str(e.get("icon", ""))
+	if icon.find("InnerFireOn") >= 0 or icon.find("InnerFireOff") >= 0:
+		_fail("buff 图标不应使用 On/Off 角标图: %s" % icon)
+		unit.queue_free()
+		return
+	if icon.find("InnerFire") < 0:
+		_fail("buff 图标应指向 BTNInnerFire: %s" % icon)
+		unit.queue_free()
+		return
+	unit.queue_free()
+	print("  hud_entries OK")

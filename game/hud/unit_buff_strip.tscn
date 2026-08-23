@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/hud/unit_buff_strip.gd" id="1_strip"]
+
+[node name="UnitBuffStrip" type="HBoxContainer"]
+custom_minimum_size = Vector2(0, 28)
+theme_override_constants/separation = 4
+script = ExtResource("1_strip")

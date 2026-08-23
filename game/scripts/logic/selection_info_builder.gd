@@ -97,8 +97,22 @@ static func build_empty() -> Dictionary:
 		"portrait_bar_mode": "none",
 		"timed_life_left": 0.0,
 		"timed_life_total": 0.0,
+		"buffs": [],
 		"multi": [],
 		"status_hint": "未选中",
+	}
+
+
+## 轻量：仅攻/甲（含 Buff），供 Buff 条每帧刷新。
+static func combat_stats(primary: Node3D) -> Dictionary:
+	if primary == null or not is_instance_valid(primary):
+		return {"attack": {}, "armor": {}}
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	var bal := _balance(tid)
+	return {
+		"attack": _attack_stat(tid, primary),
+		"armor": _armor_stat(bal, primary),
 	}
 
 
@@ -124,8 +138,8 @@ static func build(primary: Node3D, selected: Array) -> Dictionary:
 		mana = UnitMana.get_mana(primary)
 	var mode := "multi" if selected.size() > 1 else "single"
 	var display := _display_name(tid, d)
-	var attack := _attack_stat(tid)
-	var armor := _armor_stat(bal)
+	var attack := _attack_stat(tid, primary)
+	var armor := _armor_stat(bal, primary)
 	var info := {
 		"mode": mode,
 		"display_name": display,
@@ -154,6 +168,7 @@ static func build(primary: Node3D, selected: Array) -> Dictionary:
 		info["hero_xp_need"] = int(prog.get("xp_need", 1))
 		info["hero_at_max_level"] = bool(prog.get("at_max", false))
 	_apply_portrait_bar_mode(info, primary)
+	info["buffs"] = BuffQuery.hud_entries(primary)
 	return info
 
 
@@ -255,7 +270,7 @@ static func is_hero_balance(bal: UnitBalanceDef) -> bool:
 	return p == "STR" or p == "AGI" or p == "INT"
 
 
-static func _attack_stat(type_id: String) -> Dictionary:
+static func _attack_stat(type_id: String, unit: Node3D = null) -> Dictionary:
 	var w := _weapons(type_id)
 	if w == null:
 		return {}
@@ -264,11 +279,18 @@ static func _attack_stat(type_id: String) -> Dictionary:
 	var at := str(w.atk_type1).strip_edges().to_lower()
 	var at_cn := str(_ATK_TYPE_CN.get(at, at if not at.is_empty() else "—"))
 	var dmg := _damage_text(w)
+	var dmg_mul := 1.0
+	if unit != null:
+		dmg_mul = BuffQuery.damage_mul(unit)
+	if dmg_mul > 1.001:
+		dmg = _scale_damage_text(dmg, dmg_mul)
 	var bal := _balance(type_id)
 	var upgradeable := _has_upgrade(bal, _ATK_UPGRADE_IDS) and not is_hero_balance(bal)
 	# 铁匠实际等级后接 PlayerStock / Tech；此处先 0
 	var upgrade_lv := 0
 	var tip := "攻击 · %s %s" % [at_cn, dmg]
+	if dmg_mul > 1.001:
+		tip += " · 伤害 x%.0f%%" % int(round(dmg_mul * 100.0))
 	if upgradeable:
 		tip += " · 升级 %d" % upgrade_lv
 	return {
@@ -283,7 +305,7 @@ static func _attack_stat(type_id: String) -> Dictionary:
 	}
 
 
-static func _armor_stat(bal: UnitBalanceDef) -> Dictionary:
+static func _armor_stat(bal: UnitBalanceDef, unit: Node3D = null) -> Dictionary:
 	if bal == null:
 		return {}
 	var dt := str(bal.def_type).strip_edges().to_lower()
@@ -300,6 +322,10 @@ static func _armor_stat(bal: UnitBalanceDef) -> Dictionary:
 		}
 	var dt_cn := str(_DEF_TYPE_CN.get(dt, dt if not dt.is_empty() else "—"))
 	var def_v := bal.realdef if bal.realdef != 0.0 else bal.def
+	var bonus := 0.0
+	if unit != null:
+		bonus = BuffQuery.bonus_armor(unit)
+	def_v += bonus
 	var def_s := (
 		str(int(round(def_v)))
 		if absf(def_v - round(def_v)) < 0.05
@@ -308,6 +334,8 @@ static func _armor_stat(bal: UnitBalanceDef) -> Dictionary:
 	var upgradeable := _has_upgrade(bal, _ARM_UPGRADE_IDS) and not is_hero_balance(bal)
 	var upgrade_lv := 0
 	var tip := "护甲 · %s %s" % [dt_cn, def_s]
+	if bonus > 0.05:
+		tip += " · 加成 +%.0f" % bonus
 	if upgradeable:
 		tip += " · 升级 %d" % upgrade_lv
 	return {
@@ -349,6 +377,29 @@ static func _damage_text(w: UnitWeaponsDef) -> String:
 	return "—"
 
 
+static func _scale_damage_text(raw: String, mul: float) -> String:
+	var s := raw.strip_edges()
+	if s.is_empty() or s == "—" or mul <= 0.0:
+		return s
+	# 兼容 en-dash / hyphen / 全角破折号
+	var parts := PackedStringArray()
+	for sep in ["–", "-", "—"]:
+		if s.contains(sep):
+			parts = s.split(sep)
+			break
+	if parts.size() == 2:
+		var a_s := str(parts[0]).strip_edges()
+		var b_s := str(parts[1]).strip_edges()
+		if a_s.is_valid_int() and b_s.is_valid_int():
+			return "%d–%d" % [
+				int(round(float(a_s.to_int()) * mul)),
+				int(round(float(b_s.to_int()) * mul)),
+			]
+	if s.is_valid_int():
+		return str(int(round(float(s.to_int()) * mul)))
+	return s
+
+
 static func _infocard_icon(kind: String, stem: String) -> String:
 	if stem.is_empty():
 		return ""
@@ -378,13 +429,12 @@ static func _special_lines(
 		elif gold_left < 0:
 			gold_left = 12500
 		lines.append("储量 %d 金" % gold_left)
-	# 力/敏/智与主属性：仅英雄（Primary=STR/AGI/INT）
+	# 英雄属性压成一行，避免详情面板比普通单位更高
 	if is_hero_balance(bal):
 		var pri := str(bal.primary_attr).strip_edges().to_upper()
 		var pri_cn := str(_PRIMARY_CN.get(pri, pri))
-		lines.append("主属性 %s" % pri_cn)
 		lines.append(
-			"力量 %d · 敏捷 %d · 智力 %d" % [bal.str_base, bal.agi_base, bal.int_base]
+			"主%s · 力%d 敏%d 智%d" % [pri_cn, bal.str_base, bal.agi_base, bal.int_base]
 		)
 	if bal != null and bal.spd > 0.0 and not bal.isbldg:
 		lines.append("移动 %.0f" % bal.spd)

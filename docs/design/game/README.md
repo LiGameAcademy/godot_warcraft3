@@ -22,6 +22,7 @@
 | [HUD.md](HUD.md) | **游戏 HUD**：三分栏、中栏三种形态、肖像、主选/Tab、命令卡二级建造 |
 | [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) | **技能系统**：F10 as-built、Data/Logic/Present 分层 |
 | [ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md) | **技能重构计划**：BehaviorCatalog → FxCatalog → BuffSystem → Director 瘦身 |
+| [BUFF_SYSTEM.md](BUFF_SYSTEM.md) | **Buff 系统**：BuffHost / BuffQuery / HUD 图标条 as-built |
 
 ## 与编辑器的关系
 

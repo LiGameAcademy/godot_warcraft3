@@ -3,16 +3,16 @@ extends CanvasLayer
 
 ## 全局头顶血条（Present）。跟随 MapUnitLayer 单位/建筑；读 UnitLife，不写战斗逻辑。
 ## 默认常显；GM 可关。关闭后按住 Alt 临时显示。
-## 挂点优先模型 API `overhead_anchor()`（OverHead Ref），再骨骼 Bone_Head / Overhead，否则 AABB 顶。
+## 挂点：`Wc3ModelScene.overhead_anchor()`（OverHead Ref）→ 骨骼回退 → AABB 顶。
 
 const BAR_W := 52.0
 const BAR_H := 6.0
-const Y_BIAS := 0.15
+const Y_BIAS := 0.12
 const SKIP_META := {
 	"SelectionRing": true,
 	"DeathDropRing": true,
 }
-## 优先匹配的骨骼名（MDX→GLTF 常见）
+## 无 OverHead Ref 时的骨骼名回退（MDX→GLTF 常见）
 const BONE_CANDIDATES := [
 	"Bone_Head",
 	"Bone_Overhead",
@@ -170,21 +170,38 @@ func _should_show(node: Node3D, id: int) -> bool:
 func _bar_world_pos(e: Dictionary, node: Node3D) -> Vector3:
 	var sk: Skeleton3D = e.get("skeleton") as Skeleton3D
 	var bone_idx: int = int(e.get("bone_idx", -1))
-	if sk != null and is_instance_valid(sk) and bone_idx >= 0:
-		return sk.to_global(sk.get_bone_global_pose(bone_idx).origin) + Vector3(0.0, Y_BIAS, 0.0)
 	var attach: Node3D = e.get("attach") as Node3D
+	# 建条时模型可能未就绪；缺挂点则懒解析一次
+	if (attach == null or not is_instance_valid(attach)) and (sk == null or not is_instance_valid(sk) or bone_idx < 0):
+		var resolved := _resolve_attach(node)
+		e["attach"] = resolved.get("attach")
+		e["skeleton"] = resolved.get("skeleton")
+		e["bone_idx"] = int(resolved.get("bone_idx", -1))
+		attach = e.get("attach") as Node3D
+		sk = e.get("skeleton") as Skeleton3D
+		bone_idx = int(e.get("bone_idx", -1))
+	# OverHead Ref 优先于骨骼
 	if attach != null and is_instance_valid(attach):
 		return attach.global_position + Vector3(0.0, Y_BIAS, 0.0)
+	if sk != null and is_instance_valid(sk) and bone_idx >= 0:
+		return sk.to_global(sk.get_bone_global_pose(bone_idx).origin) + Vector3(0.0, Y_BIAS, 0.0)
 	var h := _estimate_height(node)
 	return node.global_position + Vector3(0.0, h + Y_BIAS, 0.0)
 
 
 func _resolve_attach(node: Node3D) -> Dictionary:
+	# 1) bake OverHead Ref（经 Wc3ModelScene 门面；单位实体本身通常没有 overhead_anchor）
+	var scene := Wc3ModelScene.find_on(node)
+	if scene != null:
+		var oh := scene.overhead_anchor()
+		if oh != null and is_instance_valid(oh):
+			return {"attach": oh, "skeleton": null, "bone_idx": -1}
+	# 2) 节点自身即门面（少见）
 	if node != null and node.has_method("overhead_anchor"):
 		var from_api: Variant = node.call("overhead_anchor")
 		if from_api is Node3D:
 			return {"attach": from_api as Node3D, "skeleton": null, "bone_idx": -1}
-	# BoneAttachment3D（若转换器已挂）
+	# 3) BoneAttachment3D（旧资产回退）
 	for c in node.find_children("*", "BoneAttachment3D", true, false):
 		var ba := c as BoneAttachment3D
 		if ba == null:
@@ -193,7 +210,7 @@ func _resolve_attach(node: Node3D) -> Dictionary:
 		for cand in BONE_CANDIDATES:
 			if bn == cand or bn.to_lower().contains("head") or bn.to_lower().contains("overhead"):
 				return {"attach": ba, "skeleton": null, "bone_idx": -1}
-	# Skeleton3D 按名找骨
+	# 4) Skeleton 按名
 	for c in node.find_children("*", "Skeleton3D", true, false):
 		var sk := c as Skeleton3D
 		if sk == null:
@@ -202,7 +219,6 @@ func _resolve_attach(node: Node3D) -> Dictionary:
 			var idx := sk.find_bone(cand)
 			if idx >= 0:
 				return {"attach": null, "skeleton": sk, "bone_idx": idx}
-		# 模糊：任意含 Head / Overhead 的骨
 		for i in range(sk.get_bone_count()):
 			var nm := sk.get_bone_name(i).to_lower()
 			if nm.contains("overhead") or nm.ends_with("head") or nm.contains("bone_head"):

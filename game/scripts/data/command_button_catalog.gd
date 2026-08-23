@@ -131,6 +131,20 @@ func get_ability_requires(abil_id: String) -> PackedStringArray:
 	return _split_csv(str(row.get("requires", "")))
 
 
+## Requiresamount 与 Requires 对齐；缺省每项为 1。
+func get_ability_require_levels(abil_id: String) -> Dictionary:
+	var reqs := get_ability_requires(abil_id)
+	var amounts := _split_csv(str(get_ability(abil_id).get("requiresamount", "")))
+	var out: Dictionary = {}
+	for i in range(reqs.size()):
+		var rid := str(reqs[i])
+		var lv := 1
+		if i < amounts.size():
+			lv = maxi(int(amounts[i]), 1)
+		out[rid] = lv
+	return out
+
+
 ## Builds ∩ allowlist。
 ## allow 空 → 原 Builds 顺序；allow 非空 → **按 allowlist 顺序**（F2 锁死表稳定槽位）。
 func filter_builds(unit_id: String, allowlist: PackedStringArray = PackedStringArray()) -> PackedStringArray:
@@ -281,9 +295,10 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	if not cost_line.is_empty():
 		tooltip += "\n" + cost_line
 	var auto_cast := bool(opts.get("auto_cast", false))
+	var autocast_capable := bool(opts.get("autocast_capable", false))
 	if auto_cast:
 		tooltip += "\n|cff00ff00自动施法：开|r\n右键切换"
-	elif bool(opts.get("autocast_capable", false)) and use_un:
+	elif autocast_capable and use_un:
 		tooltip += "\n自动施法：关\n右键切换"
 	var executing := bool(opts.get("executing", false))
 	if executing:
@@ -294,6 +309,9 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		if reason.is_empty():
 			reason = "资源不足"
 		tooltip += "\n|cffff6060%s|r" % reason
+	# 可自动施法：图标用干净底图（BTNHeal），角标/粒子由 AutocastButtonOverlay 叠层
+	if autocast_capable:
+		art = AbilityFxCatalog.strip_autocast_art_suffix(art)
 	var icon := icon_path(art)
 	return {
 		"id": action_id,
@@ -308,6 +326,8 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		"slot": slot,
 		"button_pos": pos,
 		"name": str(row.get("name", "")),
+		"auto_cast": auto_cast,
+		"autocast_capable": autocast_capable,
 	}
 
 

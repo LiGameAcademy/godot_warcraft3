@@ -74,6 +74,21 @@ func get_params(buff_id: String) -> Dictionary:
 	return ((_entries[id] as Dictionary).get("params", {}) as Dictionary).duplicate()
 
 
+func list_active() -> Array:
+	var out: Array = []
+	for id in _entries.keys():
+		var sid := str(id)
+		var left := _time_left(sid)
+		if left <= 0.0:
+			continue
+		out.append({
+			"id": sid,
+			"left": left,
+			"params": get_params(sid),
+		})
+	return out
+
+
 func tick(delta: float) -> void:
 	if delta <= 0.0:
 		return
@@ -116,6 +131,8 @@ func bonus_armor() -> float:
 	var total := 0.0
 	if has_buff(BuffCatalog.ID_BONUS_ARMOR):
 		total += maxf(float(get_params(BuffCatalog.ID_BONUS_ARMOR).get("amount", 0.0)), 0.0)
+	if has_buff(BuffCatalog.ID_AVATAR):
+		total += maxf(float(get_params(BuffCatalog.ID_AVATAR).get("armor", 0.0)), 0.0)
 	if has_buff(BuffCatalog.ID_INNER_FIRE):
 		total += maxf(float(get_params(BuffCatalog.ID_INNER_FIRE).get("armor", 0.0)), 0.0)
 	return total

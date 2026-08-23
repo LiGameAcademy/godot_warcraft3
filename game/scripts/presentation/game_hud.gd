@@ -48,12 +48,13 @@ signal train_queue_cancel(slot_index: int)
 @onready var _train_active_label: Label = %TrainActiveLabel
 @onready var _train_strip: HBoxContainer = %TrainQueueStrip
 @onready var _train_hint: Label = %TrainQueueHint
+@onready var _buff_strip: UnitBuffStrip = %UnitBuffStrip
 @onready var _minimap: GameMinimap = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _command_panel: Control = $Root/MarginContainer3/CommandPanel
 @onready var _command_title: Label = $Root/MarginContainer3/CommandPanel/Inner/CommandTitle
 @onready var _center_host: Control = $Root/MarginContainer2
-@onready var _status: Label = %StatusLabel
+@onready var _status: Label = %DebugStatusLabel
 @onready var _hint: Label = %HintLabel
 @onready var _bottom: Control = $Root/MarginContainer3
 
@@ -118,6 +119,10 @@ func _apply_bottom_height() -> void:
 	if _hint:
 		_hint.offset_top = _bottom.offset_top - 28.0
 		_hint.offset_bottom = _bottom.offset_top - 8.0
+	if _status:
+		_status.offset_top = _bottom.offset_top - 52.0
+		_status.offset_bottom = _bottom.offset_top - 32.0
+		_status.visible = show_dev_hint
 
 
 func set_resources(gold: int, lumber: int, food: int, food_max: int) -> void:
@@ -185,29 +190,30 @@ func set_selection_info(info: Dictionary) -> void:
 	var at_max := bool(info.get("hero_at_max_level", false))
 	var bar_mode := str(info.get("portrait_bar_mode", "none")).strip_edges()
 	_portrait_bar_mode = bar_mode
-	if mode == "empty" or bar_mode == "none":
-		if _portrait_xp_row != null:
+	# 经验/限时条常驻占位，英雄与普通单位详情高度一致
+	if _portrait_xp_row != null:
+		if mode == "empty":
 			_portrait_xp_row.visible = false
-	elif bar_mode == "timed_life" and _portrait_xp_row != null:
-		_style_portrait_bar_timed()
-		_set_timed_life_bar(
-			float(info.get("timed_life_left", 0.0)),
-			float(info.get("timed_life_total", 1.0))
-		)
-	elif bar_mode == "hero_xp" and is_hero and _portrait_xp_row != null:
-		_style_portrait_bar_hero()
-		if at_max:
-			_set_resource_bar(_portrait_xp_row, _portrait_xp, _portrait_xp_label, 1, 1, true)
-			if _portrait_xp_label:
-				_portrait_xp_label.text = "Lv %d · MAX" % hl
-		else:
-			_set_resource_bar(
-				_portrait_xp_row, _portrait_xp, _portrait_xp_label, xp_in, xp_need, true
+		elif bar_mode == "timed_life":
+			_style_portrait_bar_timed()
+			_set_timed_life_bar(
+				float(info.get("timed_life_left", 0.0)),
+				float(info.get("timed_life_total", 1.0))
 			)
-			if _portrait_xp_label:
-				_portrait_xp_label.text = "Lv %d · %d / %d" % [hl, xp_in, xp_need]
-	elif _portrait_xp_row != null:
-		_portrait_xp_row.visible = false
+		elif bar_mode == "hero_xp" and is_hero:
+			_style_portrait_bar_hero()
+			if at_max:
+				_set_resource_bar(_portrait_xp_row, _portrait_xp, _portrait_xp_label, 1, 1, true)
+				if _portrait_xp_label:
+					_portrait_xp_label.text = "Lv %d · MAX" % hl
+			else:
+				_set_resource_bar(
+					_portrait_xp_row, _portrait_xp, _portrait_xp_label, xp_in, xp_need, true
+				)
+				if _portrait_xp_label:
+					_portrait_xp_label.text = "Lv %d · %d / %d" % [hl, xp_in, xp_need]
+		else:
+			_reserve_portrait_bar_slot()
 	if _attack_chip and _attack_chip.has_method("set_stat"):
 		if mode == "empty":
 			_attack_chip.call("clear")
@@ -231,7 +237,9 @@ func set_selection_info(info: Dictionary) -> void:
 		if specials == null:
 			specials = PackedStringArray()
 		_special_lines.text = "\n".join(specials)
-		_special_lines.visible = not specials.is_empty()
+		# 常驻两行高度（英雄属性 + 移动 / 普通仅移动），避免切换跳动
+		_special_lines.custom_minimum_size = Vector2(0, 32)
+		_special_lines.visible = mode != "empty"
 	var tid := str(info.get("portrait_type_id", ""))
 	var owner_id := int(info.get("owner_id", 0))
 	if mode == "empty" or tid.is_empty():
@@ -240,6 +248,10 @@ func set_selection_info(info: Dictionary) -> void:
 	elif _portrait != null:
 		_portrait.show_type(tid, owner_id)
 	_refresh_multi_strip(info.get("multi", []) as Array, mode == "multi")
+	var buffs: Array = info.get("buffs", []) as Array
+	if buffs == null:
+		buffs = []
+	update_buff_strip(buffs)
 	var hint := str(info.get("status_hint", ""))
 	if not hint.is_empty() and _status:
 		# 不覆盖更具体的 Director 状态时：仅空/默认时写入
@@ -275,6 +287,37 @@ func update_portrait_timed_life(left: float, total: float) -> void:
 	if _portrait_bar_mode != "timed_life":
 		return
 	_set_timed_life_bar(left, total)
+
+
+func update_buff_strip(entries: Array) -> void:
+	if _buff_strip == null:
+		return
+	_buff_strip.set_entries(entries)
+
+
+func update_combat_stat_chips(attack: Dictionary, armor: Dictionary) -> void:
+	if _attack_chip and _attack_chip.has_method("set_stat"):
+		if attack.is_empty():
+			_attack_chip.call("clear")
+		else:
+			_attack_chip.call("set_stat", attack)
+	if _armor_chip and _armor_chip.has_method("set_stat"):
+		if armor.is_empty():
+			_armor_chip.call("clear")
+		else:
+			_armor_chip.call("set_stat", armor)
+
+
+func _reserve_portrait_bar_slot() -> void:
+	if _portrait_xp_row == null:
+		return
+	_portrait_xp_row.visible = true
+	_clear_hero_level_border_style()
+	if _portrait_xp:
+		_portrait_xp.visible = false
+		_portrait_xp.value = 0
+	if _portrait_xp_label:
+		_portrait_xp_label.text = ""
 
 
 func _set_timed_life_bar(left: float, total: float) -> void:
@@ -762,11 +805,13 @@ func set_command_executing(action_id: String, executing: bool) -> void:
 
 
 func set_status(text: String) -> void:
+	## DEBUG：不进详情面板；写到顶栏旁 DebugStatusLabel / HintLabel。
 	if _status:
 		_status.text = text
+		_status.visible = show_dev_hint and not text.is_empty()
 
 
-## 命令面板上方飘字（资源不够等）；同时写入状态栏。
+## 命令面板上方飘字（资源不够等）；DEBUG 状态栏同步。
 func show_command_tip(text: String) -> void:
 	set_status(text)
 	if _command_panel == null:
@@ -820,12 +865,14 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		btn.tooltip_text = ""
 		btn.modulate = Color(1, 1, 1, 0.55)
 		btn.focus_mode = Control.FOCUS_NONE
+		_set_button_auto_cast(btn, false, false)
 		return
 	btn.disabled = not enabled
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _plain_tooltip(str(entry.get("tooltip", "")))
 	var executing := bool(entry.get("executing", false))
 	var auto_cast := bool(entry.get("auto_cast", false))
+	var autocast_capable := bool(entry.get("autocast_capable", false))
 	# 有图标时尽量不盖字；执行中只靠高亮 + tooltip。
 	var text := str(entry.get("text", ""))
 	var icon_rel := str(entry.get("icon", ""))
@@ -843,32 +890,44 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 			text = "执行中"
 		btn.text = text
 	_set_button_executing(btn, executing)
-	_set_button_auto_cast(btn, auto_cast)
+	_set_button_auto_cast(btn, auto_cast, autocast_capable)
 
 
-func _set_button_auto_cast(btn: Button, active: bool) -> void:
+func _set_button_auto_cast(btn: Button, active: bool, capable: bool = false) -> void:
 	if btn == null:
 		return
-	if active:
-		btn.add_theme_stylebox_override("normal", _make_cmd_stylebox(
-			Color(0.18, 0.14, 0.06, 1.0), Color(0.95, 0.72, 0.22, 1.0), 3
-		))
-		btn.add_theme_stylebox_override("hover", _make_cmd_stylebox(
-			Color(0.24, 0.18, 0.08, 1.0), Color(1.0, 0.82, 0.32, 1.0), 3
-		))
-		btn.add_theme_stylebox_override("focus", _make_cmd_stylebox(
-			Color(0.24, 0.18, 0.08, 1.0), Color(1.0, 0.82, 0.32, 1.0), 3
-		))
-	else:
-		btn.add_theme_stylebox_override("normal", _make_cmd_stylebox(
-			Color(0.14, 0.15, 0.2, 1.0), Color(0.55, 0.44, 0.2)
-		))
-		btn.add_theme_stylebox_override("hover", _make_cmd_stylebox(
-			Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
-		))
-		btn.add_theme_stylebox_override("focus", _make_cmd_stylebox(
-			Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
-		))
+	var state := 0
+	if capable:
+		state = 2 if active else 1
+	if int(btn.get_meta("_ac_state", -1)) == state:
+		return
+	btn.set_meta("_ac_state", state)
+	# 去掉金框 StyleBox 方案；状态只由独立覆盖层表达
+	btn.add_theme_stylebox_override("normal", _make_cmd_stylebox(
+		Color(0.14, 0.15, 0.2, 1.0), Color(0.55, 0.44, 0.2)
+	))
+	btn.add_theme_stylebox_override("hover", _make_cmd_stylebox(
+		Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
+	))
+	btn.add_theme_stylebox_override("focus", _make_cmd_stylebox(
+		Color(0.22, 0.2, 0.14, 1.0), Color(0.85, 0.7, 0.28)
+	))
+	var overlay := btn.get_node_or_null("AutocastOverlay") as AutocastButtonOverlay
+	if overlay == null:
+		overlay = AutocastButtonOverlay.new()
+		overlay.name = "AutocastOverlay"
+		overlay.z_index = 10
+		btn.add_child(overlay)
+	overlay.set_autocast_state(capable, active)
+	# 清理旧 ColorRect 角标（若有）
+	var legacy := btn.get_node_or_null("AutoCastCorners") as Control
+	if legacy != null:
+		legacy.queue_free()
+
+
+func _make_autocast_corner_overlay() -> Control:
+	## 兼容残留调用；新路径用 AutocastButtonOverlay。
+	return AutocastButtonOverlay.new()
 
 
 func _set_button_executing(btn: Button, executing: bool) -> void:

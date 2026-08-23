@@ -1,9 +1,9 @@
 # 技能系统重构计划（Ability Refactor Plan）
 
 > **层别**：Game · data / logic / present / orchestration  
-> **状态**：Phase A 进行中  
+> **状态**：Phase A–C 完成；Phase D（Effect 原子）待做  
 > **原则**：数据驱动、模块化、**组合优于继承**、Effect 可复用、Buff 独立统一体系  
-> **最后更新**：2026-08-22
+> **最后更新**：2026-08-23
 
 ## 0. 为何重构
 
@@ -64,7 +64,7 @@ Buff 状态分散在 `UnitStatusEffects` meta、`InnerFireController`、`AvatarC
 |-------|------|------|------|
 | **A** | Behavior 注册表 | `AbilityBehaviorCatalog` | ✅ 现有 selftest 全绿 |
 | **B** | FX 数据化 | `AbilityFxCatalog` + `AbilityAttachFxPresenter` | ✅ fallback + 附着迁移 |
-| **C** | Buff 统一体系 | `BuffHost` + `BuffCatalog` + `BuffQuery` | ✅ 门面 + dispel；Adis 待接 |
+| **C** | Buff 统一体系 | `BuffHost` + `BuffCatalog` + `BuffQuery` + HUD strip | ✅ 门面 + dispel + Avatar；见 [BUFF_SYSTEM.md](BUFF_SYSTEM.md) |
 | **D** | Director 瘦身 | `AbilityTargetingService` 等 | 见 §5 完整设计；Director 技能相关 <200 行 |
 
 **不做（现阶段）**：引入 godot_ability_system；纯数据驱动 channel/proc 全部逻辑；动地图 Ground 主线。
@@ -368,6 +368,7 @@ Phase E 新增：
 ## 10. 相关文档
 
 - [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) — as-built 模块图与速查表  
+- [BUFF_SYSTEM.md](BUFF_SYSTEM.md) — BuffHost / HUD strip as-built  
 - [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) — 伤害管线与 Buff 查询挂点  
 - [HUD.md](HUD.md) — 命令卡 / autocast UI  
 - [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) — F10 竖切验收

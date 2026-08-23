@@ -33,6 +33,8 @@ const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_
 @export var spawn_melee_base: bool = true
 ## TODO(临时)：开局刷大法师便于测英雄技能，验收后删除。
 @export var dev_spawn_archmage: bool = true
+## TODO(临时)：开局刷牧师（含牧师大师训练 → 心灵之火），验收后删除。
+@export var dev_spawn_priest: bool = true
 ## 开发：F6 Birth / F7 Stand Work（训练烟）/ F8 Stand
 @export var debug_building_fx_hotkeys: bool = true
 
@@ -502,6 +504,8 @@ func _on_map_loaded() -> void:
 	_wire_all_unit_ai()
 	if dev_spawn_archmage:
 		call_deferred("_dev_spawn_archmage")
+	if dev_spawn_priest:
+		call_deferred("_dev_spawn_priest")
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -686,6 +690,7 @@ func _process(delta: float) -> void:
 	_tick_autocast(delta)
 	_refresh_move_executing_ui()
 	_refresh_portrait_timed_life_bar()
+	_refresh_buff_strip()
 	_refresh_path_debug()
 
 
@@ -846,6 +851,50 @@ func _dev_spawn_archmage() -> void:
 		unit_selector.call("select_node", node)
 	if game_hud:
 		game_hud.set_status("开发：已刷大法师（dev_spawn_archmage）")
+
+
+## TODO(临时)：开局在己方主城旁刷 hmpr，并授予牧师大师训练（Rhpt L2 → 心灵之火）。
+func _dev_spawn_priest() -> void:
+	if map_root == null or _heightfield == null:
+		return
+	var hall := _find_local_town_hall()
+	if hall == null:
+		push_warning("GameDirector[dev]: 未找到己方主城，跳过牧师")
+		return
+	var stock := _local_stock()
+	if stock != null:
+		stock.grant_upgrade("Rhpt", 2)
+	var hall_wc3 := Wc3Coords.godot_to_wc3_xy(hall.global_position)
+	var spawn_xy := hall_wc3 + Vector2(64.0, -256.0)
+	var entry := {
+		"typeId": "hmpr",
+		"position": {"x": spawn_xy.x, "y": spawn_xy.y, "z": 0.0},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"owner": local_player,
+		"flags": 2,
+		"creationNumber": _alloc_runtime_cn(),
+		"variation": 0,
+	}
+	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if node == null:
+		push_warning("GameDirector[dev]: 牧师刷出失败")
+		return
+	UnitLife.ensure(node)
+	_ensure_unit_ai(node)
+	_ensure_caster_runtime(node)
+	var stock_after := _local_stock()
+	if stock_after != null:
+		var food := BuildingCatalog.get_food_used("hmpr")
+		if food > 0:
+			stock_after.add_food_used(food)
+	_refresh_dynamic_pathing()
+	if health_bar_manager:
+		health_bar_manager.resync()
+	if unit_selector != null and unit_selector.has_method("select_node"):
+		unit_selector.call("select_node", node)
+	if game_hud:
+		game_hud.set_status("开发：已刷牧师（Rhpt 大师 · 心灵之火）")
 
 
 func _find_local_town_hall() -> Node3D:
@@ -4439,6 +4488,25 @@ func _refresh_portrait_timed_life_bar() -> void:
 	if game_hud.has_method("update_portrait_timed_life"):
 		game_hud.update_portrait_timed_life(
 			float(timed.get("left", 0.0)), float(timed.get("total", 1.0))
+		)
+
+
+func _refresh_buff_strip() -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		if game_hud.has_method("update_buff_strip"):
+			game_hud.update_buff_strip([])
+		return
+	if game_hud.has_method("update_buff_strip"):
+		game_hud.update_buff_strip(BuffQuery.hud_entries(primary))
+	# Buff 改攻/甲时同步芯片（心灵之火等）
+	if game_hud.has_method("update_combat_stat_chips"):
+		var stats := SelectionInfoBuilder.combat_stats(primary)
+		game_hud.update_combat_stat_chips(
+			stats.get("attack", {}) as Dictionary,
+			stats.get("armor", {}) as Dictionary
 		)
 
 

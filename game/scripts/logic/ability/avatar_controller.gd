@@ -66,7 +66,11 @@ func activate(level: int, cache: MapModelCache = null) -> bool:
 	var life := UnitLife.get_life(host)
 	UnitLife.set_life(host, life + _bonus_hp)
 	host.set_meta(UnitLife.META_MAX_LIFE, mx + _bonus_hp)
-	UnitStatusEffects.set_bonus_armor(host, _bonus_armor)
+	var bh := BuffHost.ensure_on(host)
+	bh.apply(BuffCatalog.ID_AVATAR, _left, {
+		"armor": _bonus_armor,
+		"bonus_hp": _bonus_hp,
+	})
 	AbilityAttachFxPresenter.sync_caster_abil(host, ABIL_ID, true, _cache, ATTACH_NODE)
 	set_process(true)
 	return true
@@ -75,6 +79,12 @@ func activate(level: int, cache: MapModelCache = null) -> bool:
 func _process(delta: float) -> void:
 	if delta <= 0.0 or _left <= 0.0:
 		return
+	var host := get_parent() as Node3D
+	if host != null and is_instance_valid(host):
+		var bh := BuffHost.of(host)
+		if bh != null and not bh.has_buff(BuffCatalog.ID_AVATAR):
+			_deactivate()
+			return
 	_left -= delta
 	if _left > 0.0:
 		return
@@ -93,7 +103,9 @@ func _deactivate() -> void:
 		UnitLife.set_life(host, mini(UnitLife.get_life(host), mx))
 	_bonus_hp = 0.0
 	_bonus_armor = 0.0
-	UnitStatusEffects.set_bonus_armor(host, 0.0)
+	var bh := BuffHost.of(host)
+	if bh != null:
+		bh.remove(BuffCatalog.ID_AVATAR)
 	AbilityAttachFxPresenter.sync_attach(host, ATTACH_NODE, "", false, _cache)
 
 

@@ -94,6 +94,51 @@ static func buff_beneficiary_art(abil_id: String) -> String:
 	return _first_art(_row(buff_id), ["targetart"])
 
 
+## Buff 面板图标（Buffart）；无则回退技能 Art 并去掉 On/Off 后缀。
+static func buff_icon_art(abil_id: String) -> String:
+	var id := abil_id.strip_edges()
+	if id.is_empty():
+		return ""
+	var buff_id := buff_row_id(id)
+	var art := str(_row(buff_id).get("buffart", "")).strip_edges()
+	if art.is_empty():
+		art = str(_row(id).get("art", "")).strip_edges()
+		art = strip_autocast_art_suffix(art)
+	return art.replace("\\", "/")
+
+
+## Targetattach（如 overhead）；优先读 Buff 行。
+static func target_attach(abil_id: String) -> String:
+	var id := abil_id.strip_edges()
+	var buff_id := buff_row_id(id)
+	var a := str(_row(buff_id).get("targetattach", "")).strip_edges().to_lower()
+	if a.is_empty():
+		a = str(_row(id).get("targetattach", "")).strip_edges().to_lower()
+	return a
+
+
+## BTNHealOn.blp → BTNHeal.blp（Buff 条勿用带角标的 On/Off 图）
+static func strip_autocast_art_suffix(art: String) -> String:
+	var a := art.strip_edges().replace("\\", "/")
+	if a.is_empty():
+		return ""
+	var dir := a.get_base_dir()
+	var file := a.get_file()
+	var ext := ""
+	var stem := file
+	var dot := file.rfind(".")
+	if dot >= 0:
+		ext = file.substr(dot)
+		stem = file.substr(0, dot)
+	if stem.ends_with("Off"):
+		stem = stem.substr(0, stem.length() - 3)
+	elif stem.ends_with("On"):
+		stem = stem.substr(0, stem.length() - 2)
+	if dir.is_empty() or dir == ".":
+		return stem + ext
+	return dir.path_join(stem + ext)
+
+
 static func _row(abil_id: String) -> Dictionary:
 	if abil_id.is_empty():
 		return {}

@@ -419,12 +419,23 @@ static func _place_supported_ability(
 		"executing": cd_left > 0.0,
 		"ability_level": lv,
 	}
+	# 未满足 Requires 时技能灰显（含 Ainf→Rhpt×2 等）
+	var missing_abil := TechPresence.missing_requires(
+		owned,
+		cat.get_ability_requires(abil_id),
+		researched,
+		cat.get_ability_require_levels(abil_id)
+	)
+	if not missing_abil.is_empty():
+		opts_a["enabled"] = false
+		opts_a["disabled_reason"] = TechPresence.requires_tip(missing_abil)
 	if cd_left > 0.0:
 		opts_a["enabled"] = false
 		opts_a["disabled_reason"] = "冷却中"
 	elif not bool((state.get("ability_mana_ok_map", {}) as Dictionary).get(abil_id, state.get("ability_mana_ok", true))):
-		opts_a["enabled"] = false
-		opts_a["disabled_reason"] = "魔法不足"
+		if bool(opts_a.get("enabled", true)):
+			opts_a["enabled"] = false
+			opts_a["disabled_reason"] = "魔法不足"
 	if abil_id == "AHav" and bool(state.get("avatar_active", false)):
 		opts_a["executing"] = true
 		opts_a["use_un"] = true

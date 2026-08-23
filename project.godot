@@ -36,7 +36,6 @@ enabled=PackedStringArray()
 
 [internationalization]
 
-locale/translations=PackedStringArray()
 locale/locale_filter_mode=0
 locale/fallbacks=["en"]
 

@@ -65,6 +65,12 @@ func refresh(level: int, cache: MapModelCache = null) -> bool:
 func _process(delta: float) -> void:
 	if delta <= 0.0 or _left <= 0.0:
 		return
+	var host := get_parent() as Node3D
+	if host != null and is_instance_valid(host):
+		var bh := BuffHost.of(host)
+		if bh != null and not bh.has_buff(BuffCatalog.ID_INNER_FIRE):
+			_deactivate()
+			return
 	_left -= delta
 	if _left > 0.0:
 		return
@@ -89,8 +95,12 @@ func _spawn_target_fx(host: Node3D) -> void:
 	var art := AbilityFxCatalog.target_art(ABIL_ID)
 	if art.is_empty():
 		art = AbilityFxCatalog.caster_art(ABIL_ID)
+	var attach := AbilityFxCatalog.target_attach(ABIL_ID)
+	if attach.is_empty():
+		attach = "overhead"
+	# 原作 overhead 粒子相对单位偏小；默认 1.0 在 Godot 转换模型上过大
 	AbilityAttachFxPresenter.sync_attach(
-		host, ATTACH_NODE, art, true, _cache, Vector3(0.0, 0.4, 0.0)
+		host, ATTACH_NODE, art, true, _cache, Vector3(0.0, 0.1, 0.0), true, attach, 0.45
 	)
 
 

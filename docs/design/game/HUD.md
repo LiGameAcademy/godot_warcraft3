@@ -116,6 +116,35 @@ UnitSelector
   - Attack：瞄准态 — 点单位追击目标，点地面 Attack-Move（索敌扣血见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md)）。  
   - Patrol：瞄准另一端，当前位置↔目标往返。
 
+### 4.1 自动施法命令格（原作对齐）
+
+原作（WC3）分层：
+
+| 层 | 资产 / 行为 |
+|----|-------------|
+| 图标底图 | `Art=BTN*On` / `Unart=BTN*Off`（**角标烘焙进位图**） |
+| 开自动时叠加 | `UI\Feedback\Autocast\UI-ModalButtonOn.mdx`（黄金粒子沿边游走；纹理 `Textures/HeroLevel-Particle.png`） |
+| 交互 | 右键切换；开时额外播放 `Sound\Interface\AutoCastButtonClick1.wav` |
+
+本仓库目标结构（**图标与角标分离**，避免把 On/Off 角标图当 Buff/命令底图）：
+
+```
+CommandButton (Button)
+├── icon → 干净底图 BTNHeal / BTNInnerFire（strip On/Off）
+└── AutocastButtonOverlay（独立 Control，非 icon 像素）
+    ├── CAPABLE_OFF：四角暗色 L 形（静态）
+    └── ON：四角亮金 L + 沿边游走火花（近似 ModalButtonOn）
+```
+
+实现要点：
+
+- `CommandButtonCatalog.make_hud_entry`：`autocast_capable` 时 `AbilityFxCatalog.strip_autocast_art_suffix`
+- Present：`game/hud/autocast_button_overlay.gd`；**禁止**再用金框 `StyleBox` 冒充开自动
+- Buff 条继续只用 `Buffart`（`BTNInnerFire`），永不 `BTN*On`
+- 远期可选：把 `UI-ModalButtonOn.scn` 投到 SubViewport 做像素级叠加；现用 2D 粒子近似即可
+
+中栏高度：`PortraitXpRow` 与 `SpecialLines` 常驻占位；英雄属性压成一行，与普通单位详情高度一致。
+
 ---
 
 ## 5. 肖像（Portrait）
@@ -189,8 +218,8 @@ hud.set_selection_info(info: Dictionary)
 |------|------|
 | HP | `UnitLife` |
 | 魔法上限 | `UnitBalance.mana_n`（当前魔法运行时 meta，可后补） |
-| 攻击 | `UnitWeaponsDef` |
-| 护甲 | `UnitBalanceDef.def` / `def_type` |
+| 攻击 | `UnitWeaponsDef` × `BuffQuery.damage_mul` |
+| 护甲 | `UnitBalanceDef.def` + `BuffQuery.bonus_armor` |
 | 英雄属性 | `UnitBalanceDef` STR/AGI/INT / Primary |
 | 金矿 | `GoldMineRuntime` |
 | 显示名 / 图标 | `CommandButtonCatalog` / UnitStrings |
