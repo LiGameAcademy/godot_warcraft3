@@ -52,8 +52,8 @@ func _test_ahwe_slk() -> void:
 	if ab.summon_unit_id_at(1) != "hwat":
 		_fail("AHwe UnitID1 应为 hwat，实际 %s" % ab.summon_unit_id_at(1))
 		return
-	if not is_equal_approx(ab.cast_range_at(1), 200.0):
-		_fail("AHwe 施法距离应为 200（Area1），实际 %s" % ab.cast_range_at(1))
+	if not is_equal_approx(ab.area_at(1), 200.0):
+		_fail("AHwe Area1 应为 200（面前召唤偏移），实际 %s" % ab.area_at(1))
 		return
 	if not is_equal_approx(ab.cast_time_at(1), 0.0):
 		_fail("AHwe Cast1 应为 0（即时），实际 %s" % ab.cast_time_at(1))
@@ -77,31 +77,46 @@ func _test_catalog() -> void:
 	if not has_we:
 		_fail("Hamg 应含英雄技能 AHwe")
 		return
-	if AbilityCatalog.level_for_unit_type("Hamg", "AHwe", 1) <= 0:
-		_fail("1 级 Hamg 应能学 AHwe")
+	if AbilityCatalog.level_for_unit_type("Hamg", "AHwe", 1, {}) != 0:
+		_fail("1 级 Hamg 未学 AHwe 时应为 0")
 		return
 	print("  catalog OK")
+
+
+func _learn(caster: Node3D, abil_id: String) -> void:
+	caster.set_meta(AbilityCatalog.META_HERO_LEVEL, 2)
+	var m: Dictionary = {abil_id: 1}
+	caster.set_meta(AbilityCatalog.META_ABILITY_LEVELS, m)
 
 
 func _test_cast_rules() -> void:
 	var caster := Node3D.new()
 	caster.name = "TestHamg"
-	caster.set_meta("unit_data", {"typeId": "Hamg", "owner": 0})
-	caster.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
+	caster.set_meta("unit_data", {"typeId": "Hamg", "owner": 0, "angle": 0.0})
+	_learn(caster, "AHwe")
 	UnitMana.ensure(caster)
-	if UnitMana.get_max_mana(caster) <= 0:
-		_fail("Hamg 应有魔法上限（mana0）")
+	UnitMana.sync_hero_max(caster)
+	if UnitMana.get_max_mana(caster) < 125:
+		_fail("Hamg 魔法上限应 ≥125，实际 %d" % UnitMana.get_max_mana(caster))
 		caster.free()
 		return
-	# 距离过远
-	var far := AbilityCastRules.can_cast_point(caster, "AHwe", Vector2(99999.0, 99999.0), 1)
-	if bool(far.get("ok", true)):
-		_fail("超距施法应失败")
+	if AbilityCatalog.target_kind("AHwe") != AbilityCatalog.TARGET_SELF:
+		_fail("AHwe 应为非指向即时召唤")
 		caster.free()
 		return
-	# 魔法不足
+	var ok := AbilityCastRules.can_cast_self(caster, "AHwe", 1)
+	if not bool(ok.get("ok", false)):
+		_fail("满蓝应能施放水元素：%s" % ok.get("reason", ""))
+		caster.free()
+		return
+	var goal := SummonUnitAbility.summon_goal_in_front(caster, "AHwe", 1)
+	var caster_xy := Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	if caster_xy.distance_to(goal) < 50.0 or caster_xy.distance_to(goal) > 250.0:
+		_fail("召唤落点应在面前 ~200，实际距离 %s" % caster_xy.distance_to(goal))
+		caster.free()
+		return
 	UnitMana.spend(caster, float(UnitMana.get_mana(caster)))
-	var no_mana := AbilityCastRules.can_cast_point(caster, "AHwe", Vector2.ZERO, 1)
+	var no_mana := AbilityCastRules.can_cast_self(caster, "AHwe", 1)
 	if bool(no_mana.get("ok", true)):
 		_fail("无蓝施法应失败")
 		caster.free()

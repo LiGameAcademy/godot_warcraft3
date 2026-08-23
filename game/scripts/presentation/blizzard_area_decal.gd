@@ -29,6 +29,32 @@ static func spawn(
 	return fx
 
 
+## 瞄准预览：lifetime<=0 不自动消失，由 Director 清理。
+static func spawn_preview(
+	parent: Node,
+	center_wc3: Vector2,
+	radius_wc3: float,
+	heightfield: Wc3Heightfield = null
+) -> BlizzardAreaDecal:
+	return spawn(parent, center_wc3, radius_wc3, 0.0, heightfield)
+
+
+func reposition(center_wc3: Vector2, radius_wc3: float, heightfield: Wc3Heightfield) -> void:
+	if center_wc3 == Vector2.INF:
+		return
+	var z := 0.0
+	if heightfield != null and heightfield.is_valid():
+		z = heightfield.interpolated_height(center_wc3.x, center_wc3.y)
+	global_position = Wc3Coords.wc3_xy_to_godot(
+		center_wc3.x, center_wc3.y, z + Y_OFFSET_WC3 * Wc3Coords.WORLD_SCALE
+	)
+	if _mi != null:
+		var diam_g := maxf(radius_wc3 * 2.0 * Wc3Coords.WORLD_SCALE, 0.5)
+		var plane := _mi.mesh as PlaneMesh
+		if plane != null:
+			plane.size = Vector2(diam_g, diam_g)
+
+
 func _setup(
 	center_wc3: Vector2,
 	radius_wc3: float,
@@ -76,5 +102,7 @@ func _process(delta: float) -> void:
 		var pulse := 0.85 + 0.15 * sin(_age * 8.0)
 		var base_a := EDGE_COLOR.a if mat.albedo_texture != null else COLOR.a
 		mat.albedo_color.a = base_a * pulse
+	if _lifetime <= 0.0:
+		return
 	if _age >= _lifetime:
 		queue_free()

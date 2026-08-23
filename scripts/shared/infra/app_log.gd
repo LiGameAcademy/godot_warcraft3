@@ -115,8 +115,8 @@ static func _apply_config_file(path: String) -> void:
 	# 去 BOM / NUL 转义
 	if text.unicode_at(0) == 0xFEFF:
 		text = text.substr(1)
-	text = text.replace("\u0000", "")
-	var data: Variant = JSON.parse_string(text)
+	text = text.replace(String.chr(0), "")
+	var data: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	var d: Dictionary = data

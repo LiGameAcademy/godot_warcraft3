@@ -18,6 +18,8 @@ var last_placeholder: int = 0
 var _mm_by_cn: Dictionary = {}
 ## 已提升为独立 Node 的树/装饰物
 var _promoted_by_cn: Dictionary = {}
+## promote 无可见 mesh 的 cn 只 warn 一次（避免刷屏）。
+var _warned_promote_no_mesh: Dictionary = {}
 
 
 func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
@@ -124,7 +126,9 @@ func ensure_promoted(creation_number: int) -> Node3D:
 		_cache.call("snap_stand_geoset_visibility", node)
 	# 无可见 mesh 则绝不藏 MM（否则「树瞬间消失」）
 	if not _has_any_visible_mesh(node):
-		push_warning("[MapDoodadLayer] promote cn=%d 无可见 mesh，保留 MM" % creation_number)
+		if not _warned_promote_no_mesh.has(creation_number):
+			_warned_promote_no_mesh[creation_number] = true
+			push_warning("[MapDoodadLayer] promote cn=%d 无可见 mesh，保留 MM" % creation_number)
 		return node
 	_hide_mm_instance(creation_number)
 	return node

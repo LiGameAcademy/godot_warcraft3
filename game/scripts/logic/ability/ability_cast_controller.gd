@@ -18,6 +18,7 @@ var _goal := Vector2.ZERO
 var _target: Node3D = null
 var _ctx: Dictionary = {}
 var _zone: BlizzardZone = null
+var _channel_left: float = 0.0
 
 
 static func of(unit: Node3D) -> AbilityCastController:
@@ -101,10 +102,11 @@ func _begin_cast_delay(caster: Node3D, abil_id: String, lv: int) -> Dictionary:
 	return {"ok": true}
 
 
-func _begin_channel(caster: Node3D, abil_id: String, goal_wc3: Vector2, _lv: int) -> Dictionary:
+func _begin_channel(caster: Node3D, abil_id: String, goal_wc3: Vector2, lv: int) -> Dictionary:
 	_mode = Mode.CHANNEL
 	_active = true
 	_zone = null
+	_channel_left = AbilityCastCatalog.channel_duration_sec(abil_id, lv) + 0.75
 	AbilityCastPresenter.begin(caster, abil_id, true, goal_wc3)
 	var start := BlizzardAbility.begin_channel(caster, abil_id, goal_wc3, _ctx)
 	if not bool(start.get("ok", false)):
@@ -149,8 +151,12 @@ func _process(delta: float) -> void:
 
 func _tick_channel() -> void:
 	var caster := get_parent() as Node3D
+	_channel_left -= get_process_delta_time()
 	if _channel_broken(caster):
 		_interrupt_channel("引导打断")
+		return
+	if _channel_left <= 0.0:
+		_finish_channel(true)
 		return
 	if _zone == null or not is_instance_valid(_zone):
 		_finish_channel(false)
@@ -204,6 +210,7 @@ func _reset_channel_state(caster: Node3D) -> void:
 	_active = false
 	_mode = Mode.NONE
 	_left = 0.0
+	_channel_left = 0.0
 	set_process(false)
 	if caster != null and is_instance_valid(caster):
 		AbilityCastPresenter.end(caster)

@@ -1,16 +1,39 @@
 class_name UnitMana
 extends RefCounted
 
-## 单位运行时魔法（Logic）。英雄 P0：mana_n 缺省时用 mana0 作上限。
+## 单位运行时魔法（Logic）。
+## 英雄：上限 = 智力 × 12（WC3）；非英雄：mana_n / mana0。
 
 const META_MANA := "mana"
 const META_MAX_MANA := "max_mana"
+const HERO_MANA_PER_INT := 12
 
 
-static func max_for_type(type_id: String) -> int:
+static func intelligence_at_level(bal: UnitBalanceDef, hero_level: int) -> float:
+	if bal == null:
+		return 0.0
+	var lv := maxi(hero_level, 1)
+	return float(bal.int_base) + float(lv - 1) * bal.in_tplus
+
+
+static func max_for_hero_type(type_id: String, hero_level: int = 1) -> int:
 	var tid := type_id.strip_edges()
 	if tid.is_empty():
 		return 0
+	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
+	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	if bal == null:
+		return 0
+	var intel := intelligence_at_level(bal, hero_level)
+	return maxi(int(floor(intel * float(HERO_MANA_PER_INT))), 0)
+
+
+static func max_for_type(type_id: String, hero_level: int = 1) -> int:
+	var tid := type_id.strip_edges()
+	if tid.is_empty():
+		return 0
+	if TechPresence.is_hero_id(tid):
+		return max_for_hero_type(tid, hero_level)
 	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
 	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal == null:
@@ -22,20 +45,42 @@ static func max_for_type(type_id: String) -> int:
 	return 0
 
 
+## 英雄升级后刷新魔法上限（当前蓝量 += 增量，不超过新上限）。
+static func sync_hero_max(node: Node3D) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var d: Dictionary = node.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	if not TechPresence.is_hero_id(tid):
+		return
+	ensure(node)
+	var old_max := get_max_mana(node)
+	var new_max := max_for_hero_type(tid, AbilityCatalog.hero_level_of(node))
+	if new_max <= 0:
+		return
+	var cur := get_mana(node)
+	node.set_meta(META_MAX_MANA, new_max)
+	if new_max > old_max:
+		node.set_meta(META_MANA, mini(cur + (new_max - old_max), new_max))
+	else:
+		node.set_meta(META_MANA, mini(cur, new_max))
+
+
 static func ensure(node: Node3D) -> void:
 	if node == null or not is_instance_valid(node):
 		return
 	if node.has_meta(META_MANA) and node.has_meta(META_MAX_MANA):
 		return
 	var d: Dictionary = node.get_meta("unit_data", {})
-	var tid := str(d.get("typeId", ""))
-	var mx := max_for_type(tid)
+	var tid := str(d.get("typeId", "")).strip_edges()
+	var hl := AbilityCatalog.hero_level_of(node) if TechPresence.is_hero_id(tid) else 1
+	var mx := max_for_type(tid, hl)
 	if mx <= 0:
 		return
 	var start := mx
 	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
 	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
-	if bal != null and bal.mana0 > 0:
+	if bal != null and bal.mana0 > 0 and not TechPresence.is_hero_id(tid):
 		start = mini(bal.mana0, mx)
 	node.set_meta(META_MAX_MANA, mx)
 	node.set_meta(META_MANA, start)

@@ -96,6 +96,13 @@ func clamp_level(level: int) -> int:
 	return clampi(level, 1, max_lv)
 
 
+## 学习下一 rank 所需英雄等级（current_rank=0 表示尚未学习）。
+func required_hero_level_for_rank(current_rank: int) -> int:
+	var base := req_level if req_level > 0 else 1
+	var skip := maxi(level_skip, 0)
+	return base + skip * maxi(current_rank, 0)
+
+
 func cost_at(level: int) -> float:
 	match clamp_level(level):
 		1: return cost1

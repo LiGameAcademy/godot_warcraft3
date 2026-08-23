@@ -26,6 +26,9 @@ const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
 const ACTION_ABILITY_PREFIX := "ability:" ## ability:AHwe
 const ACTION_PASSIVE_PREFIX := "passive:" ## 被动光环，不可点击
+const ACTION_OPEN_HERO_SKILLS := "open_hero_skills"
+const ACTION_CLOSE_HERO_SKILLS := "close_hero_skills"
+const ACTION_LEARN_PREFIX := "learn:" ## learn:AHwe
 
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
@@ -100,6 +103,8 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	var building_ids := _resolve_building_ids(uid, state)
 	if bool(state.get("build_menu_open", false)) and not building_ids.is_empty():
 		return for_build_menu(building_ids, state)
+	if bool(state.get("hero_skill_menu_open", false)) and TechPresence.is_hero_id(uid):
+		return for_hero_skill_menu(uid, state)
 
 	var card := _empty_card()
 	var is_bldg := BuildingCatalog.is_building(uid)
@@ -155,8 +160,17 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			_place(card, cat.upgrade_hud_entry(rid, ACTION_RESEARCH_PREFIX + rid, opts))
 
 	var carrying := bool(state.get("carrying", false))
+	var hl := maxi(int(state.get("hero_level", 1)), 1)
+	var ab_levels: Dictionary = state.get("ability_levels", {}) as Dictionary
+	if ab_levels == null:
+		ab_levels = {}
 	for abil_id in cat.get_all_abil_list(uid):
-		_place_supported_ability(card, cat, str(abil_id), uid, state, carrying, owned, researched)
+		_place_supported_ability(
+			card, cat, str(abil_id), uid, state, carrying, owned, researched, hl, ab_levels
+		)
+
+	if TechPresence.is_hero_id(uid):
+		_place_hero_skill_opener(card, cat, state)
 
 	if not building_ids.is_empty():
 		_place_build_opener(card, cat, str(state.get("worker_race", "human")))
@@ -213,6 +227,63 @@ static func for_build_menu(
 			entry = _build_button_fallback(bid, ok, exec, -1, reason)
 		_place(card, entry)
 	_place_build_cancel(card, cat)
+	return card
+
+
+## 英雄技能学习二级面板：可学英雄技能（Buttonpos 与命令卡一致）+ 取消（右下）。
+static func for_hero_skill_menu(unit_id: String, state: Dictionary = {}) -> Array[Dictionary]:
+	var cat := _cat()
+	var card := _empty_card()
+	var hl := maxi(int(state.get("hero_level", 1)), 1)
+	var ab_levels: Dictionary = state.get("ability_levels", {}) as Dictionary
+	if ab_levels == null:
+		ab_levels = {}
+	var points := maxi(int(state.get("hero_skill_points", 0)), 0)
+	for abil_id in cat.get_hero_abil_list(unit_id):
+		var id := str(abil_id).strip_edges()
+		if id.is_empty():
+			continue
+		var ab := AbilityCatalog.data(id)
+		if ab == null:
+			continue
+		var cur := maxi(int(ab_levels.get(id, 0)), 0)
+		var max_lv := ab.clamp_level(ab.levels)
+		if cur >= max_lv:
+			continue
+		var req_hl := ab.required_hero_level_for_rank(cur)
+		var meets_level := hl >= req_hl
+		var can := points > 0 and meets_level
+		var row := cat.get_ability(id)
+		var lv_line := "等级 %d / %d" % [cur, max_lv]
+		lv_line += " · 需英雄 %d 级" % req_hl
+		if points <= 0:
+			lv_line += "\n|cffff6060无可用技能点|r"
+		elif not meets_level:
+			lv_line += "\n|cffff6060英雄等级不足|r"
+		var reason := ""
+		if points <= 0:
+			reason = "无可用技能点"
+		elif not meets_level:
+			reason = "需要英雄 %d 级" % req_hl
+		var opts := {
+			"enabled": can,
+			"executing": false,
+			"disabled_reason": reason,
+			"ability_level": maxi(cur, 1),
+			"tooltip_all_levels": true,
+			"learn_menu": true,
+		}
+		opts["cost_line"] = lv_line
+		var entry := cat.make_hud_entry(row, ACTION_LEARN_PREFIX + id, opts)
+		_place(card, entry)
+	_place(
+		card,
+		cat.command_hud_entry(
+			CMD_CANCEL_BUILD,
+			ACTION_CLOSE_HERO_SKILLS,
+			{"enabled": true, "executing": false, "slot_override": 11}
+		)
+	)
 	return card
 
 
@@ -287,11 +358,13 @@ static func _place_supported_ability(
 	state: Dictionary,
 	carrying: bool,
 	owned: Dictionary = {},
-	researched: Dictionary = {}
+	researched: Dictionary = {},
+	hero_level: int = 1,
+	ability_levels: Dictionary = {}
 ) -> void:
 	var order := cat.get_ability_order(abil_id)
 	if AbilityCatalog.is_passive_aura(abil_id):
-		_place_passive_aura(card, cat, abil_id, unit_id, state)
+		_place_passive_aura(card, cat, abil_id, unit_id, state, hero_level, ability_levels)
 		return
 	if order.is_empty():
 		return
@@ -334,14 +407,19 @@ static func _place_supported_ability(
 		return
 	if not AbilityCatalog.is_supported(abil_id):
 		return
-	var lv := AbilityCatalog.level_for_unit_type(unit_id, abil_id)
+	var lv := AbilityCatalog.level_for_unit_type(
+		unit_id, abil_id, hero_level, ability_levels
+	)
+	if lv <= 0:
+		return
 	var cd_map: Dictionary = state.get("ability_cd", {}) as Dictionary
 	var cd_left := maxf(float(cd_map.get(abil_id, 0.0)), 0.0)
-	var opts_a := {"enabled": true, "executing": cd_left > 0.0}
-	if lv <= 0:
-		opts_a["enabled"] = false
-		opts_a["disabled_reason"] = "等级不足"
-	elif cd_left > 0.0:
+	var opts_a := {
+		"enabled": true,
+		"executing": cd_left > 0.0,
+		"ability_level": lv,
+	}
+	if cd_left > 0.0:
 		opts_a["enabled"] = false
 		opts_a["disabled_reason"] = "冷却中"
 	elif not bool((state.get("ability_mana_ok_map", {}) as Dictionary).get(abil_id, state.get("ability_mana_ok", true))):
@@ -367,10 +445,12 @@ static func _place_passive_aura(
 	cat: CommandButtonCatalog,
 	abil_id: String,
 	unit_id: String,
-	state: Dictionary
+	state: Dictionary,
+	hero_level: int = 1,
+	ability_levels: Dictionary = {}
 ) -> void:
-	var hl := maxi(int(state.get("hero_level", 1)), 1)
-	var lv := AbilityCatalog.level_for_unit_type(unit_id, abil_id, hl)
+	var hl := maxi(int(state.get("hero_level", hero_level)), 1)
+	var lv := AbilityCatalog.level_for_unit_type(unit_id, abil_id, hl, ability_levels)
 	if lv <= 0:
 		return
 	var opts := {
@@ -381,6 +461,31 @@ static func _place_passive_aura(
 	var entry := cat.ability_hud_entry(
 		abil_id, ACTION_PASSIVE_PREFIX + abil_id, opts
 	)
+	_place(card, entry)
+
+
+static func _place_hero_skill_opener(
+	card: Array[Dictionary], cat: CommandButtonCatalog, state: Dictionary
+) -> void:
+	if bool(state.get("hero_skill_menu_open", false)):
+		return
+	var points := maxi(int(state.get("hero_skill_points", 0)), 0)
+	var tip := "英雄技能"
+	if points > 0:
+		tip += "\n|cffffcc00可用技能点：%d|r" % points
+	tip += "\n|cff00ff00O|r 打开"
+	var entry := {
+		"id": ACTION_OPEN_HERO_SKILLS,
+		"text": "",
+		"tooltip": tip,
+		"hotkey": KEY_O,
+		"hotkey_label": "O",
+		"icon": "ReplaceableTextures/CommandButtons/BTNSkillz.png",
+		"icon_disabled": "ReplaceableTextures/CommandButtonsDisabled/DISBTNSkillz.png",
+		"executing": false,
+		"enabled": true,
+		"slot": 7,
+	}
 	_place(card, entry)
 
 
@@ -574,6 +679,6 @@ static func _building_display_name(building_id: String) -> String:
 static func plain_tooltip(raw: String) -> String:
 	var re := RegEx.new()
 	if re.compile("\\|c[0-9a-fA-F]{8}") != OK:
-		return raw.replace("|r", "")
+		return raw.replace("|r", "").replace("|n", "\n")
 	var s := re.sub(raw, "", true)
-	return s.replace("|r", "")
+	return s.replace("|r", "").replace("|n", "\n")

@@ -51,6 +51,10 @@ func revert_left_sec() -> float:
 	return maxf(_revert_left, 0.0)
 
 
+func duration_sec() -> float:
+	return maxf(_duration_sec, 0.0)
+
+
 ## 农民→民兵；已是民兵→收回农民。成功 true。
 func toggle_call_to_arms() -> bool:
 	if is_militia():

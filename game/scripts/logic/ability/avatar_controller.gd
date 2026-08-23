@@ -67,7 +67,7 @@ func activate(level: int, cache: MapModelCache = null) -> bool:
 	UnitLife.set_life(host, life + _bonus_hp)
 	host.set_meta(UnitLife.META_MAX_LIFE, mx + _bonus_hp)
 	UnitStatusEffects.set_bonus_armor(host, _bonus_armor)
-	_spawn_caster_fx(host)
+	AbilityAttachFxPresenter.sync_caster_abil(host, ABIL_ID, true, _cache, ATTACH_NODE)
 	set_process(true)
 	return true
 
@@ -94,28 +94,7 @@ func _deactivate() -> void:
 	_bonus_hp = 0.0
 	_bonus_armor = 0.0
 	UnitStatusEffects.set_bonus_armor(host, 0.0)
-	var fx := host.get_node_or_null(ATTACH_NODE)
-	if fx != null:
-		fx.queue_free()
-
-
-func _spawn_caster_fx(host: Node3D) -> void:
-	var art := AbilityCastCatalog.caster_art(ABIL_ID)
-	if art.is_empty() or host.get_node_or_null(ATTACH_NODE) != null:
-		return
-	var path := RuntimeAssets.converted_path(art)
-	var inst: Node3D = null
-	if _cache != null:
-		inst = _cache.instance_glb(path)
-	if inst == null and ResourceLoader.exists(path):
-		var packed := load(path)
-		if packed is PackedScene:
-			inst = (packed as PackedScene).instantiate() as Node3D
-	if inst == null:
-		return
-	inst.name = ATTACH_NODE
-	host.add_child(inst)
-	inst.position = Vector3(0.0, 0.4, 0.0)
+	AbilityAttachFxPresenter.sync_attach(host, ATTACH_NODE, "", false, _cache)
 
 
 func _exit_tree() -> void:

@@ -89,6 +89,14 @@ static func build_empty() -> Dictionary:
 		"special_lines": PackedStringArray(),
 		"portrait_type_id": "",
 		"owner_id": 0,
+		"is_hero": false,
+		"hero_xp_in_level": 0,
+		"hero_xp_need": 0,
+		"hero_level": 1,
+		"hero_at_max_level": false,
+		"portrait_bar_mode": "none",
+		"timed_life_left": 0.0,
+		"timed_life_total": 0.0,
 		"multi": [],
 		"status_hint": "未选中",
 	}
@@ -138,7 +146,51 @@ static func build(primary: Node3D, selected: Array) -> Dictionary:
 	}
 	if mode == "multi":
 		info["status_hint"] = "多选 %d · Tab 切换当前" % selected.size()
+	if is_hero_balance(bal):
+		var prog := HeroProgression.progress_for(primary)
+		info["is_hero"] = true
+		info["hero_level"] = int(prog.get("level", 1))
+		info["hero_xp_in_level"] = int(prog.get("xp_in_level", 0))
+		info["hero_xp_need"] = int(prog.get("xp_need", 1))
+		info["hero_at_max_level"] = bool(prog.get("at_max", false))
+	_apply_portrait_bar_mode(info, primary)
 	return info
+
+
+## 限时单位（召唤物 / 民兵）剩余时间；供 HUD 每帧刷新。
+static func timed_life_progress(unit: Node3D) -> Dictionary:
+	var out := {"show": false, "left": 0.0, "total": 0.0}
+	if unit == null or not is_instance_valid(unit):
+		return out
+	var sl := unit.get_node_or_null("SummonLifetime") as SummonLifetime
+	if sl != null:
+		var total: float = sl.total_sec()
+		if total > 0.0:
+			out["show"] = true
+			out["left"] = sl.remaining_sec()
+			out["total"] = total
+			return out
+	var mc := MilitiaController.of(unit)
+	if mc != null and mc.is_militia():
+		var dur: float = mc.duration_sec()
+		if dur > 0.0:
+			out["show"] = true
+			out["left"] = mc.revert_left_sec()
+			out["total"] = dur
+	return out
+
+
+static func _apply_portrait_bar_mode(info: Dictionary, primary: Node3D) -> void:
+	var timed := timed_life_progress(primary)
+	if bool(timed.get("show", false)):
+		info["portrait_bar_mode"] = "timed_life"
+		info["timed_life_left"] = float(timed.get("left", 0.0))
+		info["timed_life_total"] = float(timed.get("total", 0.0))
+		return
+	if bool(info.get("is_hero", false)):
+		info["portrait_bar_mode"] = "hero_xp"
+		return
+	info["portrait_bar_mode"] = "none"
 
 
 static func _multi_entries(selected: Array, primary: Node3D) -> Array:

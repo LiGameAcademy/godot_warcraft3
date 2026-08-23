@@ -19,6 +19,7 @@ var _ctx: Dictionary = {}
 var _cancelled: bool = false
 var _decal: BlizzardAreaDecal = null
 var _ground_fx: AbilityGroundFx = null
+var _total_waves: int = 0
 
 
 func is_active() -> bool:
@@ -41,22 +42,17 @@ func configure(
 	_abil_id = abil_id.strip_edges()
 	_center_wc3 = center_wc3
 	_radius = maxf(radius, 1.0)
-	_waves_left = maxi(waves, 1)
+	_total_waves = maxi(waves, 1)
+	_waves_left = _total_waves
 	_damage = maxf(damage_per_wave, 0.0)
 	_interval = maxf(interval_sec, 0.05)
 	_pipeline = pipeline
 	_unit_host = unit_host
 	_ctx = ctx.duplicate(true)
-	_timer = 0.0
-	var dur := float(_waves_left) * _interval + 0.15
+	_timer = _interval
+	var dur := float(_total_waves) * _interval + 0.5
 	_spawn_presentation(dur)
-	_apply_wave()
-	_waves_left -= 1
-	if _waves_left <= 0:
-		_finish(true)
-	else:
-		_timer = _interval
-		set_process(true)
+	set_process(true)
 
 
 func cancel() -> void:
@@ -65,6 +61,7 @@ func cancel() -> void:
 	_cancelled = true
 	_waves_left = 0
 	set_process(false)
+	_teardown_presentation()
 	_finish(false)
 
 
@@ -87,6 +84,15 @@ func _spawn_presentation(duration_sec: float) -> void:
 			cache,
 			hf as Wc3Heightfield if hf != null else null
 		)
+
+
+func _teardown_presentation() -> void:
+	if _decal != null and is_instance_valid(_decal):
+		_decal.queue_free()
+		_decal = null
+	if _ground_fx != null and is_instance_valid(_ground_fx):
+		_ground_fx.queue_free()
+		_ground_fx = null
 
 
 func _process(delta: float) -> void:
@@ -120,7 +126,7 @@ func _apply_wave() -> void:
 		return
 	var cache: MapModelCache = _ctx.get("model_cache") as MapModelCache
 	var hit_art := AbilityCastCatalog.hit_effect_art(_abil_id)
-	for target in CombatQuery.units_hostile_in_radius(
+	for target in CombatQuery.units_blizzard_victims_in_radius(
 		_unit_host, _caster, _center_wc3, _radius
 	):
 		if not (target is Node3D) or not is_instance_valid(target):

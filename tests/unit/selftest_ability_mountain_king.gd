@@ -112,11 +112,14 @@ func _test_catalog() -> void:
 		if not bool(want[k]):
 			_fail("Hmkg 应含技能 %s" % k)
 			return
-	if AbilityCatalog.level_for_unit_type("Hmkg", "AHav", 5) > 0:
-		_fail("5 级 Hmkg 不应能学 AHav")
+	if AbilityCatalog.level_for_unit_type("Hmkg", "AHav", 5, {}) > 0:
+		_fail("5 级 Hmkg 未学 AHav 时不应可用")
 		return
-	if AbilityCatalog.level_for_unit_type("Hmkg", "AHav", 6) <= 0:
-		_fail("6 级 Hmkg 应能学 AHav")
+	if AbilityCatalog.level_for_unit_type("Hmkg", "AHav", 6, {}) > 0:
+		_fail("6 级 Hmkg 未学 AHav 时不应可用")
+		return
+	if AbilityCatalog.level_for_unit_type("Hmkg", "AHav", 6, {"AHav": 1}) != 1:
+		_fail("6 级已学 AHav 应为 rank 1")
 		return
 	print("  catalog OK")
 
@@ -148,7 +151,8 @@ func _test_avatar_controller() -> void:
 	var hero := Node3D.new()
 	hero.name = "Hmkg"
 	hero.set_meta("unit_data", {"typeId": "Hmkg", "owner": 0})
-	hero.set_meta("hero_level", 6)
+	hero.set_meta(AbilityCatalog.META_HERO_LEVEL, 6)
+	hero.set_meta(AbilityCatalog.META_ABILITY_LEVELS, {"AHav": 1})
 	root.add_child(hero)
 	UnitLife.ensure(hero)
 	UnitLife.set_life(hero, 500.0)

@@ -1,26 +1,61 @@
 class_name SummonUnitAbility
 extends RefCounted
 
-## 点目标召唤（Logic · P0 具体实现：AHwe 水元素）。
-## 依赖由 Director 注入，避免 map 层反向引用。
+## 召唤单位（Logic）：AHwe 水元素等在施法者面前即时召唤（非点目标）。
 
 const ABIL_WATER_ELEMENTAL := "AHwe"
 
 
 static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictionary:
+	var id := abil_id.strip_edges()
+	if id == ABIL_WATER_ELEMENTAL:
+		return try_cast_instant(caster, id, ctx)
+	return {"ok": false, "reason": "未实现的召唤技能", "unit": null}
+
+
+static func try_cast_instant(caster: Node3D, abil_id: String, ctx: Dictionary) -> Dictionary:
 	var out := {"ok": false, "reason": "", "unit": null}
-	if abil_id.strip_edges() != ABIL_WATER_ELEMENTAL:
-		out["reason"] = "未实现的技能"
+	if caster == null or not is_instance_valid(caster):
+		out["reason"] = "无施法者"
 		return out
-	return _cast_water_elemental(caster, goal_wc3, ctx)
-
-
-static func _cast_water_elemental(caster: Node3D, goal_wc3: Vector2, ctx: Dictionary) -> Dictionary:
-	var abil_id := ABIL_WATER_ELEMENTAL
-	var lv := AbilityCatalog.level_for(caster, abil_id)
-	var check := AbilityCastRules.can_cast_point(caster, abil_id, goal_wc3, lv)
+	var id := abil_id.strip_edges()
+	var lv := AbilityCatalog.level_for(caster, id)
+	var check := AbilityCastRules.can_cast_self(caster, id, lv)
 	if not bool(check.get("ok", false)):
 		return check
+	var goal := summon_goal_in_front(caster, id, lv)
+	return _spawn_at(caster, id, lv, goal, ctx)
+
+
+static func summon_goal_in_front(caster: Node3D, abil_id: String, level: int) -> Vector2:
+	var ab := AbilityCatalog.data(abil_id)
+	var offset := 128.0
+	if ab != null:
+		var area := ab.area_at(ab.clamp_level(level))
+		if area > 0.0:
+			offset = area
+	var caster_xy := Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	var facing := _caster_facing_wc3(caster)
+	var dir := Vector2(cos(facing), sin(facing))
+	if dir.length_squared() < 0.0001:
+		dir = Vector2(0.0, -1.0)
+	return caster_xy + dir.normalized() * offset
+
+
+static func _caster_facing_wc3(caster: Node3D) -> float:
+	var ud: Dictionary = caster.get_meta("unit_data", {})
+	if ud.has("angle"):
+		return float(ud.get("angle", 0.0))
+	return float(caster.rotation.y)
+
+
+static func _spawn_at(
+	caster: Node3D,
+	abil_id: String,
+	lv: int,
+	goal_wc3: Vector2,
+	ctx: Dictionary
+) -> Dictionary:
 	var ab := AbilityCatalog.data(abil_id)
 	if ab == null:
 		return {"ok": false, "reason": "无技能数据"}
@@ -35,14 +70,20 @@ static func _cast_water_elemental(caster: Node3D, goal_wc3: Vector2, ctx: Dictio
 	var entry := {
 		"typeId": unit_id,
 		"position": {"x": goal_wc3.x, "y": goal_wc3.y, "z": 0.0},
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"angle": _caster_facing_wc3(caster),
 		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
 		"owner": owner,
 		"flags": 2,
 		"creationNumber": int(ctx.get("creation_number", 0)),
 		"variation": 0,
 	}
-	var hf_dict: Dictionary = hf.as_dict_view() if hf.has_method("as_dict_view") else hf as Dictionary
+	var hf_dict: Dictionary = {}
+	if hf is Dictionary:
+		hf_dict = hf as Dictionary
+	elif hf != null and hf.has_method("as_dict_view"):
+		hf_dict = hf.call("as_dict_view") as Dictionary
+	elif hf != null and hf.has_method("to_dict"):
+		hf_dict = hf.call("to_dict") as Dictionary
 	var node := map_root.call("add_unit_instance", entry, hf_dict) as Node3D
 	if node == null:
 		return {"ok": false, "reason": "召唤失败"}

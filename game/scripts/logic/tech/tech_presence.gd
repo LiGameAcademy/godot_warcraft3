@@ -4,9 +4,9 @@ extends RefCounted
 ## 玩家已完工建筑/单位存在性（供 Requires 判定）。
 ## 升级链：需要 htow 时，hkee/hcas 也算满足（经典 Melee）。
 
-## 人族竖切：祭坛只训大法师；兵营只训步兵/火枪手。
+## 人族竖切：祭坛训四英雄；兵营只训步兵/火枪手。
 const VERTICAL_TRAINS := {
-	"halt": ["Hamg"],
+	"halt": ["Hamg", "Hmkg", "Hpal", "Hblm"],
 	"hbar": ["hfoo", "hrif"],
 	"htow": ["hpea"],
 	"hkee": ["hpea"],

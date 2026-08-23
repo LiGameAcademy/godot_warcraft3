@@ -64,7 +64,9 @@ func _test_ahbz_slk() -> void:
 	if not is_equal_approx(ab.cast_time_at(1), 1.0):
 		_fail("AHbz Cast1 在 SLK 为 1（波次节奏字段）；引导时长用 DataA×DataD")
 		return
-	var ch_dur := AbilityCastCatalog.channel_duration_sec("AHbz", 1)
+	var waves := maxi(int(round(ab.data_a1)), 1)
+	var interval := maxf(ab.data_d1, 0.05)
+	var ch_dur := float(waves) * interval
 	if not is_equal_approx(ch_dur, 3.0):
 		_fail("AHbz 引导时长应为 3s（6×0.5），实际 %s" % ch_dur)
 		return
@@ -105,19 +107,17 @@ func _test_hostile_radius() -> void:
 	ally.name = "Ally"
 	ally.set_meta("unit_data", {"typeId": "hpea", "owner": 0})
 	ally.set_meta("life", 100.0)
-	ally.global_position = Vector3(0.0, 0.0, 0.0)
 	host.add_child(ally)
 	var foe := Node3D.new()
 	foe.name = "Foe"
 	foe.set_meta("unit_data", {"typeId": "hfoo", "owner": 1})
 	foe.set_meta("life", 100.0)
-	foe.global_position = Vector3(0.0, 0.0, 0.0)
 	host.add_child(foe)
-	var center := Wc3Coords.godot_to_wc3_xy(foe.global_position)
-	var hits := CombatQuery.units_hostile_in_radius(host, caster, center, 250.0)
-	if hits.size() != 1 or hits[0] != foe:
-		_fail("半径内应仅命中 1 个敌对单位，实际 %d" % hits.size())
+	var center := Vector2.ZERO
+	var victims := CombatQuery.units_blizzard_victims_in_radius(host, caster, center, 250.0)
+	if victims.size() != 2:
+		_fail("暴风雪半径内应命中友军+敌军，实际 %d" % victims.size())
 		host.queue_free()
 		return
 	host.queue_free()
-	print("  hostile_radius OK")
+	print("  blizzard_victims OK")

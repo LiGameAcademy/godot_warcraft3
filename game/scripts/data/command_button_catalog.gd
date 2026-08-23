@@ -91,6 +91,21 @@ func get_abil_list(unit_id: String) -> PackedStringArray:
 	return _split_csv(def.abil_list)
 
 
+## 英雄可学技能（UnitAbilities.heroAbilList）。
+func get_hero_abil_list(unit_id: String) -> PackedStringArray:
+	var uid := unit_id.strip_edges()
+	if uid.is_empty():
+		return PackedStringArray()
+	var store := _def_store()
+	if store == null:
+		return PackedStringArray()
+	store.ensure_table(UnitAbilitiesDef.TABLE_NAME)
+	var def: UnitAbilitiesDef = store.get_row(UnitAbilitiesDef.TABLE_NAME, uid) as UnitAbilitiesDef
+	if def == null:
+		return PackedStringArray()
+	return def.hero_ability_ids()
+
+
 ## 普通 + 英雄技能（UnitAbilities.slk）。
 func get_all_abil_list(unit_id: String) -> PackedStringArray:
 	var uid := unit_id.strip_edges()
@@ -221,26 +236,47 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	if row.is_empty() or action_id.is_empty():
 		return {}
 	var use_un := bool(opts.get("use_un", false))
+	var learn_menu := bool(opts.get("learn_menu", false))
 	var art := str(row.get("unart" if use_un else "art", ""))
+	if learn_menu:
+		var research_art := str(row.get("researchart", "")).strip_edges()
+		if not research_art.is_empty():
+			art = research_art
 	if art.is_empty():
 		art = str(row.get("art", ""))
 	var tip := str(row.get("untip" if use_un else "tip", ""))
 	if tip.is_empty():
 		tip = str(row.get("tip", ""))
+	if learn_menu:
+		var rt := str(row.get("researchtip", "")).strip_edges()
+		if not rt.is_empty():
+			tip = rt
 	var ubertip := str(row.get("unubertip" if use_un else "ubertip", ""))
 	if ubertip.is_empty():
 		ubertip = str(row.get("ubertip", ""))
+	if learn_menu:
+		var rub := str(row.get("researchubertip", "")).strip_edges()
+		if not rub.is_empty():
+			ubertip = rub
 	var hotkey_s := str(row.get("unhotkey" if use_un else "hotkey", ""))
 	if hotkey_s.is_empty():
 		hotkey_s = str(row.get("hotkey", ""))
-	var pos_raw := str(row.get("unbuttonpos" if use_un else "buttonpos", ""))
+	var pos_raw := ""
+	if learn_menu:
+		pos_raw = str(row.get("researchbuttonpos", "")).strip_edges()
+	if pos_raw.is_empty():
+		pos_raw = str(row.get("unbuttonpos" if use_un else "buttonpos", ""))
 	if pos_raw.is_empty():
 		pos_raw = str(row.get("buttonpos", "0,0"))
 	var pos := parse_buttonpos(pos_raw)
 	var slot := int(opts.get("slot_override", slot_of(pos)))
+	var abil_level := int(opts.get("ability_level", 0))
+	var pick_level := not bool(opts.get("tooltip_all_levels", false))
 	var tooltip := tip
 	if not ubertip.is_empty():
 		tooltip = tip + "\n" + ubertip if not tip.is_empty() else ubertip
+	if abil_level > 0 or not pick_level:
+		tooltip = Wc3TooltipText.format(tooltip, maxi(abil_level, 1), pick_level)
 	var cost_line := str(opts.get("cost_line", ""))
 	if not cost_line.is_empty():
 		tooltip += "\n" + cost_line
@@ -342,6 +378,14 @@ func _normalize_key(key: String) -> String:
 			return "unart"
 		"buttonpos":
 			return "buttonpos"
+		"researchbuttonpos":
+			return "researchbuttonpos"
+		"researchtip":
+			return "researchtip"
+		"researchubertip":
+			return "researchubertip"
+		"researchart":
+			return "researchart"
 		"unbuttonpos":
 			return "unbuttonpos"
 		"tip":

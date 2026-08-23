@@ -471,13 +471,23 @@ func _refresh_one_height(node: Node, hf: Wc3Heightfield) -> void:
 static func resolve_team_color_index(type_id: String, owner_id: int) -> int:
 	if type_id.is_empty():
 		return clampi(owner_id, 0, 15)
-	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
-	var row: Resource = Wc3DefStore.get_row(UnitUiDef.TABLE_NAME, type_id)
+	var store := _def_store()
+	if store == null:
+		return clampi(owner_id, 0, 15)
+	store.ensure_table(UnitUiDef.TABLE_NAME)
+	var row: Resource = store.get_row(UnitUiDef.TABLE_NAME, type_id)
 	if row is UnitUiDef:
 		var tc: int = (row as UnitUiDef).team_color
 		if tc >= 0:
 			return clampi(tc, 0, 15)
 	return clampi(owner_id, 0, 15)
+
+
+static func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 func _make_unit_node(

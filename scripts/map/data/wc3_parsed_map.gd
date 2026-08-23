@@ -41,7 +41,7 @@ static func _load_json_dict(res_path: String) -> Dictionary:
 	var text := RuntimeAssets.read_utf8_text(disk_path)
 	if text.is_empty():
 		return {}
-	var parsed: Variant = JSON.parse_string(text)
+	var parsed: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	return parsed as Dictionary

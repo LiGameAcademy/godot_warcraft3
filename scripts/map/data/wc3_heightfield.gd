@@ -234,7 +234,7 @@ static func load_json_path(res_or_abs: String) -> Wc3Heightfield:
 	if text.is_empty():
 		push_error("Wc3Heightfield: 无法读取或含非法字符 %s" % disk_path)
 		return null
-	var parsed: Variant = JSON.parse_string(text)
+	var parsed: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("Wc3Heightfield: JSON 根不是对象 %s" % disk_path)
 		return null

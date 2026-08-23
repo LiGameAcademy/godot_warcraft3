@@ -382,7 +382,7 @@ static func is_auto_acquire_target(attacker: Node, target: Node) -> bool:
 	return _attack_target_basics(attacker, target) and is_hostile(attacker, target)
 
 
-## 圆心 WC3 坐标 + 半径内、对 attacker 敌对的 Node3D 单位。
+## 圆心 WC3 + 半径内、对 attacker 敌对的 Node3D 单位。
 static func units_hostile_in_radius(
 	unit_host: Node,
 	attacker: Node3D,
@@ -398,6 +398,29 @@ static func units_hostile_in_radius(
 			continue
 		var node := c as Node3D
 		if not is_auto_acquire_target(attacker, node):
+			continue
+		var pos := Wc3Coords.godot_to_wc3_xy(node.global_position)
+		if pos.distance_to(center_wc3) <= r:
+			out.append(node)
+	return out
+
+
+## 暴风雪等：半径内所有可受伤目标（不分敌我，含建筑）。
+static func units_blizzard_victims_in_radius(
+	unit_host: Node,
+	caster: Node3D,
+	center_wc3: Vector2,
+	radius_wc3: float
+) -> Array:
+	var out: Array = []
+	if unit_host == null or caster == null or center_wc3 == Vector2.INF:
+		return out
+	var r := maxf(radius_wc3, 0.0)
+	for c in unit_host.get_children():
+		if not (c is Node3D) or not is_instance_valid(c):
+			continue
+		var node := c as Node3D
+		if not _attack_target_basics(caster, node):
 			continue
 		var pos := Wc3Coords.godot_to_wc3_xy(node.global_position)
 		if pos.distance_to(center_wc3) <= r:

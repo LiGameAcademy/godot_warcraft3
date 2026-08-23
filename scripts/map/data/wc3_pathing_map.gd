@@ -92,7 +92,7 @@ static func load_json_path(res_or_abs: String) -> Wc3PathingMap:
 	var text := RuntimeAssets.read_utf8_text(disk)
 	if text.is_empty():
 		return null
-	var parsed: Variant = JSON.parse_string(text)
+	var parsed: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return null
 	var m := from_dict(parsed as Dictionary)

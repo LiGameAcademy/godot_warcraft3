@@ -21,6 +21,8 @@ const MODEL_SCENES_USER_ROOT := "user://model-scenes"
 
 ## 解析失败的 GLB 绝对路径 → 跳过重试（避免装饰扫描刷引擎 ERROR）。
 static var _gltf_fail_cache: Dictionary = {}
+## 图片 load 失败路径 → 只 warn 一次。
+static var _warned_image_load: Dictionary = {}
 ## 磁盘绝对路径 → 是否 unsafe（避免反复读盘扫描）。
 static var _scn_unsafe_cache: Dictionary = {}
 
@@ -58,12 +60,16 @@ static func read_utf8_text(res_or_abs: String) -> String:
 	return bytes.get_string_from_utf8()
 
 
-## 解析 JSON 文本。剥离 `\\u0000`（map-parse 空 FourCC），避免 Godot Unexpected NUL ERROR。
+## 解析 JSON 文本。剥离 `\\u0000` / 真实 NUL（map-parse 空 FourCC），避免 Godot Unexpected NUL ERROR。
 static func parse_json_text(text: String) -> Variant:
 	if text.is_empty():
 		return null
 	if text.find("\\u0000") >= 0:
 		text = text.replace("\\u0000", "")
+	# 勿在源码写 U+0000 字面量（会刷 Unicode NUL ERROR）；用 String.chr(0)。
+	var nul := String.chr(0)
+	if text.find(nul) >= 0:
+		text = text.replace(nul, "")
 	return JSON.parse_string(text)
 
 
@@ -481,7 +487,9 @@ static func load_image(res_or_abs: String) -> Image:
 	var img := Image.new()
 	var err := img.load(disk_path)
 	if err != OK:
-		push_warning("RuntimeAssets: 无法加载图片 %s (%s)" % [disk_path, error_string(err)])
+		if not _warned_image_load.has(disk_path):
+			_warned_image_load[disk_path] = true
+			push_warning("RuntimeAssets: 无法加载图片 %s (%s)" % [disk_path, error_string(err)])
 		return null
 	return img
 

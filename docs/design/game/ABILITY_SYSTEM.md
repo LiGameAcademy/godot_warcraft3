@@ -1,7 +1,7 @@
 # 技能系统（Ability · as-built + 重构备忘）
 
 > **层别**：Game · data / logic / present  
-> **状态**：F10 大法师四技能 + 山丘之王四技能竖切已完成；本文记录**当前实现**与**计划中的抽象化**，供后续重构对照。  
+> **状态**：F10 大法师 + 山丘 + P0 支援单位（Ahea/Ainf/Aslo + autocast）已完成；**重构计划**见 [ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md)。  
 > **最后更新**：2026-08-22
 
 ## 1. 设计原则（已定）
@@ -22,15 +22,19 @@ assets/slk-exported/Units/
         │
         ▼
 game/scripts/data/
-  ability_catalog.gd        ← SLK 门面 + SUPPORTED_ORDERS + 被动注册
-  ability_cast_catalog.gd   ← 施法动画 / 地面&命中特效（部分硬编码）
+  ability_catalog.gd        ← SLK 数值门面（target/supported 委托 BehaviorCatalog）
+  ability_behavior_catalog.gd ← order/behavior/target/passive 唯一注册表（Phase A）
+  ability_fx_catalog.gd        ← Func 特效路径 + fallback（Phase B）
+  ability_cast_catalog.gd      ← order→Sequence、channel 时长
   command_button_catalog.gd ← Func+Strings → HUD 槽位/图标
         │
         ├─ Logic
         │    ability_cast_rules.gd      冷却/蓝/距离校验 + commit_cost
         │    ability_cast_controller.gd 即时 Cast / 引导 Channel
         │    point_target_ability.gd    点地 order 分发
-        │    ability_executor.gd        按 target_kind 路由
+        │    ability_autocast.gd / ability_autocast_runner.gd
+        │    heal_ability.gd / inner_fire_*.gd / slow_ability.gd
+        │    ability_executor.gd        按 target_kind + behavior 路由
         │    summon_unit_ability.gd       AHwe
         │    blizzard_ability.gd          AHbz（+ blizzard_zone.gd）
         │    mass_teleport_ability.gd     AHmt
@@ -38,7 +42,8 @@ game/scripts/data/
         │    thunder_clap_ability.gd      AHtc
         │    avatar_ability.gd            AHav（+ avatar_controller.gd）
         │    bash_controller.gd           AHbh（被动 proc）
-        │    unit_status_effects.gd       眩晕/减速/加甲
+        │    unit_status_effects.gd       门面 → BuffHost
+        │    logic/buff/                  BuffHost · BuffCatalog · BuffQuery
         │    brilliance_aura_controller.gd  AHab（被动光环 tick）
         │    unit_mana.gd / ability_cooldowns.gd
         │
@@ -46,7 +51,8 @@ game/scripts/data/
              ability_cast_presenter.gd   朝向 + Spell Sequence + 地面 FX
              ability_ground_fx.gd
              blizzard_area_decal.gd / spell_hit_fx.gd
-             brilliance_aura_presenter.gd  ← 待收敛（见 §4）
+             ability_attach_fx_presenter.gd  通用单位附着 FX
+             brilliance_aura_presenter.gd    薄封装 → AttachFxPresenter
         │
 game/scripts/game_director.gd
   瞄准 → AbilityCastController.begin_cast → cast_resolved
@@ -178,6 +184,8 @@ P0 简化：不传送建筑；传送前 `halt` 移动/采集/攻击；落点用 
 ## 8. 测试
 
 ```bash
+godot --headless --path . -s res://tests/unit/selftest_ability_fx_catalog.gd
+godot --headless --path . -s res://tests/unit/selftest_buff_system.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_water_elemental.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_blizzard.gd
 godot --headless --path . -s res://tests/unit/selftest_ability_brilliance.gd
@@ -196,14 +204,16 @@ godot --headless --path . -s res://tests/unit/selftest_militia.gd
 | 水元素 hwat | AHwe `Dur1`（60s） | `SummonLifetime` → `DeathService.kill`（Death 动画 + 尸体 linger） |
 | 民兵 hmil | Amil `Dur1`（~45s） | `MilitiaController._process` → `_revert_now()` 变回 hpea |
 
-## 9. 重构检查清单（将来 PR 用）
+## 9. 重构检查清单
 
-- [ ] `is_passive_ability()` + 重命名 `passive:` 注释
-- [ ] `AbilityFxCatalog` 读 Func；删除 Presenter 硬编码
-- [ ] `AbilityBehaviorCatalog` 统一 order/behavior 注册
-- [ ] `AuraController(abil_id)` 泛化 AHab/AHad…
-- [ ] `AbilityCastController` 与 channel 行为解耦（非仅 Blizzard）
-- [ ] 文档同步 GAMEPLAY_VERTICAL §F10 决策记录
+> 完整分阶段设计与 Director 瘦身方案：[ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md)
+
+- [x] `AbilityBehaviorCatalog` 统一 order/behavior 注册（Phase A）
+- [x] `AbilityFxCatalog` + `AbilityAttachFxPresenter`（Phase B）
+- [x] `BuffHost` / `BuffCatalog` / `BuffQuery` 统一 Buff（Phase C 骨架）
+- [ ] Effect 原子 + `*Ability` 变薄（Phase D）
+- [ ] `AbilityTargetingService` + Director 瘦身（Phase E）
+- [ ] `is_passive_aura()` 调用方改 `is_passive_ability()`（随 Phase A 清理）
 
 ## 10. 相关文档
 

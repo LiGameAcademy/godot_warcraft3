@@ -32,6 +32,9 @@ signal train_queue_cancel(slot_index: int)
 @onready var _portrait_mana_row: Control = %PortraitManaRow
 @onready var _portrait_hp_label: Label = %PortraitHpLabel
 @onready var _portrait_mana_label: Label = %PortraitManaLabel
+@onready var _portrait_xp_row: Control = %PortraitXpRow
+@onready var _portrait_xp: ProgressBar = %PortraitXpBar
+@onready var _portrait_xp_label: Label = %PortraitXpLabel
 @onready var _multi_strip: HBoxContainer = %MultiSelectStrip
 @onready var _build_row: Control = %BuildProgressRow
 @onready var _build_bar: ProgressBar = %BuildProgressBar
@@ -61,6 +64,9 @@ const _TRAIN_SLOT_SIZE := 40
 const _TRAIN_MAX_SLOTS := 7
 ## 上次建槽用的 unit_id 序列；组成未变时只刷进度，避免每帧重建导致点不中
 var _train_slot_sig: String = ""
+## portrait_bar_mode：none / hero_xp / timed_life（与 SelectionInfoBuilder 一致）
+var _portrait_bar_mode: String = "none"
+const _HERO_LEVEL_BORDER := "UI/Buttons/HeroLevel/HeroLevel-Border.png"
 
 
 func _ready() -> void:
@@ -172,6 +178,36 @@ func set_selection_info(info: Dictionary) -> void:
 		mana_max,
 		mana_max > 0 and mode != "empty"
 	)
+	var is_hero := bool(info.get("is_hero", false))
+	var hl := int(info.get("hero_level", 1))
+	var xp_in := int(info.get("hero_xp_in_level", 0))
+	var xp_need := int(info.get("hero_xp_need", 1))
+	var at_max := bool(info.get("hero_at_max_level", false))
+	var bar_mode := str(info.get("portrait_bar_mode", "none")).strip_edges()
+	_portrait_bar_mode = bar_mode
+	if mode == "empty" or bar_mode == "none":
+		if _portrait_xp_row != null:
+			_portrait_xp_row.visible = false
+	elif bar_mode == "timed_life" and _portrait_xp_row != null:
+		_style_portrait_bar_timed()
+		_set_timed_life_bar(
+			float(info.get("timed_life_left", 0.0)),
+			float(info.get("timed_life_total", 1.0))
+		)
+	elif bar_mode == "hero_xp" and is_hero and _portrait_xp_row != null:
+		_style_portrait_bar_hero()
+		if at_max:
+			_set_resource_bar(_portrait_xp_row, _portrait_xp, _portrait_xp_label, 1, 1, true)
+			if _portrait_xp_label:
+				_portrait_xp_label.text = "Lv %d · MAX" % hl
+		else:
+			_set_resource_bar(
+				_portrait_xp_row, _portrait_xp, _portrait_xp_label, xp_in, xp_need, true
+			)
+			if _portrait_xp_label:
+				_portrait_xp_label.text = "Lv %d · %d / %d" % [hl, xp_in, xp_need]
+	elif _portrait_xp_row != null:
+		_portrait_xp_row.visible = false
 	if _attack_chip and _attack_chip.has_method("set_stat"):
 		if mode == "empty":
 			_attack_chip.call("clear")
@@ -232,6 +268,66 @@ func _set_resource_bar(
 	bar.value = 100.0 * float(cur) / float(maxi(mx, 1))
 	if label:
 		label.text = "%d/%d" % [cur, mx]
+
+
+## 限时单位条：选中期间由 Director 每帧刷新。
+func update_portrait_timed_life(left: float, total: float) -> void:
+	if _portrait_bar_mode != "timed_life":
+		return
+	_set_timed_life_bar(left, total)
+
+
+func _set_timed_life_bar(left: float, total: float) -> void:
+	var mx := maxf(total, 0.001)
+	var cur := clampf(left, 0.0, mx)
+	_set_resource_bar(
+		_portrait_xp_row,
+		_portrait_xp,
+		_portrait_xp_label,
+		int(round(cur)),
+		int(round(mx)),
+		true
+	)
+	if _portrait_xp_label:
+		_portrait_xp_label.text = "剩余 %ds" % maxi(int(ceil(cur)), 0)
+
+
+func _style_portrait_bar_hero() -> void:
+	_style_resource_bar(_portrait_xp, Color(0.92, 0.78, 0.22), Color(0.12, 0.10, 0.06))
+	_apply_hero_level_border_style()
+
+
+func _style_portrait_bar_timed() -> void:
+	# WC3 限时单位：紫色调（与英雄经验金条区分）
+	_style_resource_bar(_portrait_xp, Color(0.58, 0.32, 0.92), Color(0.10, 0.08, 0.14))
+	_clear_hero_level_border_style()
+
+
+func _apply_hero_level_border_style() -> void:
+	if _portrait_xp == null:
+		return
+	var logical := _HERO_LEVEL_BORDER
+	var path := RuntimeAssets.converted_path(logical)
+	if not RuntimeAssets.file_exists(path):
+		return
+	var tex := RuntimeAssets.load_texture(logical)
+	if tex == null:
+		return
+	var fill_sb := StyleBoxTexture.new()
+	fill_sb.texture = tex
+	fill_sb.texture_margin_left = 2.0
+	fill_sb.texture_margin_top = 2.0
+	fill_sb.texture_margin_right = 2.0
+	fill_sb.texture_margin_bottom = 2.0
+	fill_sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	fill_sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	_portrait_xp.add_theme_stylebox_override("background", fill_sb)
+
+
+func _clear_hero_level_border_style() -> void:
+	if _portrait_xp == null:
+		return
+	_portrait_xp.remove_theme_stylebox_override("background")
 
 
 func _set_bar(bar: ProgressBar, cur: int, mx: int, show_bar: bool) -> void:
@@ -587,6 +683,7 @@ func _style_center_panel() -> void:
 		_style_train_active_bar(_train_active_bar)
 	_style_resource_bar(_portrait_hp, Color(0.2, 0.55, 0.22), Color(0.12, 0.14, 0.12))
 	_style_resource_bar(_portrait_mana, Color(0.25, 0.4, 0.85), Color(0.1, 0.12, 0.18))
+	_style_portrait_bar_hero()
 
 
 func _style_resource_bar(bar: ProgressBar, fill: Color, bg: Color) -> void:
@@ -787,11 +884,7 @@ func _move_tooltip(executing: bool) -> String:
 
 
 func _plain_tooltip(raw: String) -> String:
-	var re := RegEx.new()
-	if re.compile("\\|c[0-9a-fA-F]{8}") != OK:
-		return raw.replace("|r", "")
-	var s := re.sub(raw, "", true)
-	return s.replace("|r", "")
+	return CommandCard.plain_tooltip(raw)
 
 
 func _load_icon(rel_or_res: String) -> Texture2D:
@@ -886,6 +979,10 @@ func _on_command_gui_input(event: InputEvent, slot: int) -> void:
 		return
 	if slot < 0 or slot >= _slot_action_ids.size():
 		return
+	if slot < _command_grid.get_child_count():
+		var btn := _command_grid.get_child(slot) as Button
+		if btn != null and btn.disabled:
+			return
 	var action_id := str(_slot_action_ids[slot]).strip_edges()
 	if action_id.is_empty():
 		return
@@ -894,7 +991,7 @@ func _on_command_gui_input(event: InputEvent, slot: int) -> void:
 		command_action.emit(action_id)
 	elif mb.button_index == MOUSE_BUTTON_RIGHT:
 		command_action_rclick.emit(action_id)
-	mb.accept_event()
+	get_viewport().set_input_as_handled()
 
 
 func _wire_minimap_input() -> void:

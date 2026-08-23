@@ -20,7 +20,8 @@
 | [PATHFINDING_CHOICE.md](../pathfinding/CHOICE.md) | **寻路选型**：网格 A\* vs NavMesh+RVO（主推网格） |
 | [ENVIRONMENT.md](ENVIRONMENT.md) | 天空 / 天气 / 光照 / 阴影复刻方案（WC3→Godot） |
 | [HUD.md](HUD.md) | **游戏 HUD**：三分栏、中栏三种形态、肖像、主选/Tab、命令卡二级建造 |
-| [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) | **技能系统**：F10 as-built、Data/Logic/Present 分层、重构备忘 |
+| [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) | **技能系统**：F10 as-built、Data/Logic/Present 分层 |
+| [ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md) | **技能重构计划**：BehaviorCatalog → FxCatalog → BuffSystem → Director 瘦身 |
 
 ## 与编辑器的关系
 

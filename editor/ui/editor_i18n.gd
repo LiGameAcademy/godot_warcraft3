@@ -1,5 +1,7 @@
 extends Node
 ## 编辑器多语言门面：CSV（zh_CN / en）为主；中文下可用 WorldEditStrings 覆盖。
+## 勿在 project.godot 注册 *.translation：二进制翻译资源会刷 Unicode NUL ERROR；
+## 文案以 CSV + 本脚本 _tables 为准，TranslationServer 仅同步 locale 字符串。
 ## MPQ 文案：`assets/slk-exported/UI/`（经 AssetProvider：converted → slk-exported）。
 ## 同步：`node tools/sync-data-assets.mjs`
 
@@ -141,7 +143,7 @@ func _load_zh_name_sort() -> void:
 	var text := RuntimeAssets.read_utf8_text(ZH_NAME_SORT_PATH)
 	if text.is_empty():
 		return
-	var parsed: Variant = JSON.parse_string(text)
+	var parsed: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	_zh_name_sort = parsed as Dictionary

@@ -48,7 +48,10 @@ func activate(level: int, cache: MapModelCache = null) -> bool:
 	_dmg_mul = 1.0 + bonus_pct
 	_left = maxf(ab.duration_at(lv), 0.1)
 	_cache = cache
-	UnitStatusEffects.set_inner_fire(host, _bonus_armor, _dmg_mul)
+	BuffHost.ensure_on(host).apply(BuffCatalog.ID_INNER_FIRE, _left, {
+		"armor": _bonus_armor,
+		"dmg_mul": _dmg_mul,
+	})
 	_spawn_target_fx(host)
 	set_process(true)
 	return true
@@ -75,32 +78,20 @@ func _deactivate(clear_fx: bool = true) -> void:
 	set_process(false)
 	var host := get_parent() as Node3D
 	if host != null and is_instance_valid(host):
-		UnitStatusEffects.clear_inner_fire(host)
+		var bh := BuffHost.of(host)
+		if bh != null:
+			bh.remove(BuffCatalog.ID_INNER_FIRE)
 	if clear_fx and host != null and is_instance_valid(host):
-		var fx := host.get_node_or_null(ATTACH_NODE)
-		if fx != null:
-			fx.queue_free()
+		AbilityAttachFxPresenter.sync_attach(host, ATTACH_NODE, "", false, _cache)
 
 
 func _spawn_target_fx(host: Node3D) -> void:
-	var art := AbilityCastCatalog.caster_art(ABIL_ID)
+	var art := AbilityFxCatalog.target_art(ABIL_ID)
 	if art.is_empty():
-		art = AbilityCastCatalog.hit_effect_art(ABIL_ID)
-	if art.is_empty() or host.get_node_or_null(ATTACH_NODE) != null:
-		return
-	var path := RuntimeAssets.converted_path(art)
-	var inst: Node3D = null
-	if _cache != null:
-		inst = _cache.instance_glb(path)
-	if inst == null and ResourceLoader.exists(path):
-		var packed := load(path)
-		if packed is PackedScene:
-			inst = (packed as PackedScene).instantiate() as Node3D
-	if inst == null:
-		return
-	inst.name = ATTACH_NODE
-	host.add_child(inst)
-	inst.position = Vector3(0.0, 0.4, 0.0)
+		art = AbilityFxCatalog.caster_art(ABIL_ID)
+	AbilityAttachFxPresenter.sync_attach(
+		host, ATTACH_NODE, art, true, _cache, Vector3(0.0, 0.4, 0.0)
+	)
 
 
 func _exit_tree() -> void:

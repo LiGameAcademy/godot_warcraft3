@@ -233,6 +233,41 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="PortraitXpRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PortraitXpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="PortraitXpLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.98, 0.94, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
+
 [node name="SpecialLines" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166221]
 unique_name_in_owner = true
 layout_mode = 2

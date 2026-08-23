@@ -1,7 +1,7 @@
 class_name AbilityExecutor
 extends RefCounted
 
-## 技能效果分发（Logic）：按 order / 目标类型路由。
+## 技能效果分发（Logic）：按 target_kind + behavior 路由。
 
 
 static func try_cast(
@@ -31,10 +31,10 @@ static func _try_hostile_unit(
 	target: Node3D,
 	ctx: Dictionary
 ) -> Dictionary:
-	match AbilityCatalog.order_for(abil_id):
-		"thunderbolt":
+	match AbilityBehaviorCatalog.behavior_for(abil_id):
+		AbilityBehaviorCatalog.BEHAVIOR_STORM_BOLT:
 			return StormBoltAbility.try_cast(caster, abil_id, target, ctx)
-		"slow":
+		AbilityBehaviorCatalog.BEHAVIOR_SLOW:
 			return SlowAbility.try_cast(caster, abil_id, target, ctx)
 		_:
 			return {"ok": false, "reason": "未实现的敌军指向技能"}
@@ -46,20 +46,22 @@ static func _try_ally_unit(
 	target: Node3D,
 	ctx: Dictionary
 ) -> Dictionary:
-	match AbilityCatalog.order_for(abil_id):
-		"heal":
+	match AbilityBehaviorCatalog.behavior_for(abil_id):
+		AbilityBehaviorCatalog.BEHAVIOR_HEAL:
 			return HealAbility.try_cast(caster, abil_id, target, ctx)
-		"innerfire":
+		AbilityBehaviorCatalog.BEHAVIOR_INNER_FIRE:
 			return InnerFireAbility.try_cast(caster, abil_id, target, ctx)
 		_:
 			return {"ok": false, "reason": "未实现的友军指向技能"}
 
 
 static func _try_self(caster: Node3D, abil_id: String, ctx: Dictionary) -> Dictionary:
-	match AbilityCatalog.order_for(abil_id):
-		"thunderclap":
+	match AbilityBehaviorCatalog.behavior_for(abil_id):
+		AbilityBehaviorCatalog.BEHAVIOR_THUNDER_CLAP:
 			return ThunderClapAbility.try_cast(caster, abil_id, ctx)
-		"avatar":
+		AbilityBehaviorCatalog.BEHAVIOR_AVATAR:
 			return AvatarAbility.try_cast(caster, abil_id, ctx)
+		AbilityBehaviorCatalog.BEHAVIOR_SUMMON_INSTANT:
+			return SummonUnitAbility.try_cast_instant(caster, abil_id, ctx)
 		_:
 			return {"ok": false, "reason": "未实现的自身技能"}

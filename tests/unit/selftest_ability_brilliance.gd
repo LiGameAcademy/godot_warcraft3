@@ -78,10 +78,15 @@ func _test_catalog() -> void:
 	if not has_ab:
 		_fail("Hamg 应含英雄技能 AHab")
 		return
-	if AbilityCatalog.level_for_unit_type("Hamg", "AHab", 1) <= 0:
-		_fail("1 级 Hamg 应能学 AHab")
+	if AbilityCatalog.level_for_unit_type("Hamg", "AHab", 1, {}) != 0:
+		_fail("1 级 Hamg 未学 AHab 时应为 0")
 		return
 	print("  catalog OK")
+
+
+func _learn(unit: Node3D, abil_id: String) -> void:
+	unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 2)
+	unit.set_meta(AbilityCatalog.META_ABILITY_LEVELS, {abil_id: 1})
 
 
 func _test_friendly_radius() -> void:
@@ -116,6 +121,7 @@ func _test_regenerate() -> void:
 	var unit := Node3D.new()
 	unit.name = "Hamg"
 	unit.set_meta("unit_data", {"typeId": "Hamg", "owner": 0})
+	_learn(unit, "AHab")
 	root.add_child(unit)
 	UnitMana.ensure(unit)
 	var before := UnitMana.get_mana(unit)

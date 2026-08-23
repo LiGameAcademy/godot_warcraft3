@@ -12,7 +12,8 @@
     "tools/lib",
     "tools/map-parse",
     "tools/mpq-extract",
-    "tools/slk-export"
+    "tools/slk-export",
+    "tools/godot-mcp"
   ],
   "scripts": {
     "bootstrap": "node tools/bootstrap.mjs",
@@ -29,6 +30,8 @@
     "check:scn:100": "node tools/check-scn-coverage.mjs --threshold 100",
     "check:scn:fail": "node tools/check-scn-coverage.mjs --fail",
     "check:pe2": "node tools/check-pe2-coverage.mjs",
-    "check:assets": "node tools/check-asset-integrity.mjs"
+    "check:assets": "node tools/check-asset-integrity.mjs",
+    "mcp:godot": "npm run start --workspace godot-mcp",
+    "test:selftest": "node tools/godot-mcp/scripts/run-selftest.mjs"
   }
 }

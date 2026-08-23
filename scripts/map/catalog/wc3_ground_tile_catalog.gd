@@ -6,6 +6,7 @@ extends RefCounted
 
 const ATLAS_W := 512								## 纹理宽度
 const ATLAS_H := 256								## 纹理高度
+static var _warned_missing_png: Dictionary = {}
 
 ## 各 tileset PNG 组成 Texture2DArray（shader `tilesets` 采样）。
 ## [param ground_tilesets: Array] 地面纹理集
@@ -17,7 +18,9 @@ static func build_texture_array(ground_tilesets: Array, tiles: Wc3TerrainTileCat
 		var png := tiles.png_for_ground_index(ground_tilesets, i)
 		var img := RuntimeAssets.load_image(png)
 		if img == null:
-			push_warning("Wc3GroundTileCatalog: 缺少贴图 %s" % png)
+			if not _warned_missing_png.has(png):
+				_warned_missing_png[png] = true
+				push_warning("Wc3GroundTileCatalog: 缺少贴图 %s" % png)
 			img = Image.create(ATLAS_W, ATLAS_H, false, Image.FORMAT_RGBA8)
 			img.fill(Color(0.4, 0.45, 0.35, 1))
 		else:

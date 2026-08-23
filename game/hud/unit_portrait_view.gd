@@ -49,7 +49,6 @@ func _ready() -> void:
 	if _bg != null:
 		_bg.color = _EMPTY_BG
 	if _vp != null:
-		_vp.size = PORTRAIT_SIZE
 		_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if _vp_host != null:
 		_vp_host.visible = false
@@ -420,7 +419,7 @@ func _load_cameras_sidecar(model_path: String) -> Dictionary:
 	var text := RuntimeAssets.read_utf8_text(disk)
 	if text.is_empty():
 		return {}
-	var parsed: Variant = JSON.parse_string(text)
+	var parsed: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	return parsed as Dictionary

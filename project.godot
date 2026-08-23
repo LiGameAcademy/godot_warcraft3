@@ -36,7 +36,7 @@ enabled=PackedStringArray()
 
 [internationalization]
 
-locale/translations=PackedStringArray("res://editor/locale/editor_strings.en.translation", "res://editor/locale/editor_strings.zh_CN.translation")
+locale/translations=PackedStringArray()
 locale/locale_filter_mode=0
 locale/fallbacks=["en"]
 

@@ -31,6 +31,8 @@ const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_
 ## true：在地图 sloc 中随机选一个；false：优先匹配 local_player 的 owner
 @export var random_start_location: bool = true
 @export var spawn_melee_base: bool = true
+## TODO(临时)：开局刷大法师便于测英雄技能，验收后删除。
+@export var dev_spawn_archmage: bool = true
 ## 开发：F6 Birth / F7 Stand Work（训练烟）/ F8 Stand
 @export var debug_building_fx_hotkeys: bool = true
 
@@ -95,6 +97,9 @@ var _last_ability_ui: Dictionary = {}
 var _card_hotkey_actions: Dictionary = {}
 ## 农民建造二级面板是否打开（主卡仅 AHbu 入口）。
 var _build_menu_open: bool = false
+## 英雄技能学习二级面板。
+var _hero_skill_menu_open: bool = false
+var _ability_preview_decal: BlizzardAreaDecal = null
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
@@ -437,6 +442,8 @@ func _input(event: InputEvent) -> void:
 	# 任何鼠标事件都记录最新位置，给 build_placement 跟手用
 	if event is InputEventMouseMotion:
 		_last_screen_pos = (event as InputEventMouseMotion).position
+		if _ability_targeting:
+			_update_ability_preview(_last_screen_pos)
 		if _build_placement != null and _build_placement.is_active():
 			_build_confirm_armed = true
 			_build_placement.update_screen(_last_screen_pos)
@@ -493,6 +500,8 @@ func _on_map_loaded() -> void:
 	_setup_health_bars()
 	_wire_all_gold_mines()
 	_wire_all_unit_ai()
+	if dev_spawn_archmage:
+		call_deferred("_dev_spawn_archmage")
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -676,6 +685,7 @@ func _process(delta: float) -> void:
 	_tick_status_effects(delta)
 	_tick_autocast(delta)
 	_refresh_move_executing_ui()
+	_refresh_portrait_timed_life_bar()
 	_refresh_path_debug()
 
 
@@ -797,6 +807,66 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 	return {}
 
 
+## TODO(临时)：开局在己方主城旁刷 Hamg，便于测技能/暴风雪；验收后整段删除。
+func _dev_spawn_archmage() -> void:
+	if map_root == null or _heightfield == null:
+		return
+	var hall := _find_local_town_hall()
+	if hall == null:
+		push_warning("GameDirector[dev]: 未找到己方主城，跳过大法师")
+		return
+	var hall_wc3 := Wc3Coords.godot_to_wc3_xy(hall.global_position)
+	var spawn_xy := hall_wc3 + Vector2(192.0, -192.0)
+	var entry := {
+		"typeId": "Hamg",
+		"position": {"x": spawn_xy.x, "y": spawn_xy.y, "z": 0.0},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"owner": local_player,
+		"flags": 2,
+		"creationNumber": _alloc_runtime_cn(),
+		"variation": 0,
+	}
+	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if node == null:
+		push_warning("GameDirector[dev]: 大法师刷出失败")
+		return
+	UnitLife.ensure(node)
+	_ensure_unit_ai(node)
+	_ensure_hero_runtime(node)
+	var stock := _local_stock()
+	if stock != null:
+		var food := BuildingCatalog.get_food_used("Hamg")
+		if food > 0:
+			stock.add_food_used(food)
+	_refresh_dynamic_pathing()
+	if health_bar_manager:
+		health_bar_manager.resync()
+	if unit_selector != null and unit_selector.has_method("select_node"):
+		unit_selector.call("select_node", node)
+	if game_hud:
+		game_hud.set_status("开发：已刷大法师（dev_spawn_archmage）")
+
+
+func _find_local_town_hall() -> Node3D:
+	var host := _unit_host()
+	if host == null:
+		return null
+	for tid in ["htow", "hkee", "hcas"]:
+		for c in host.get_children():
+			if not (c is Node3D) or not is_instance_valid(c):
+				continue
+			var node := c as Node3D
+			var ud: Variant = node.get_meta("unit_data", {})
+			if typeof(ud) != TYPE_DICTIONARY:
+				continue
+			if str((ud as Dictionary).get("typeId", "")) != tid:
+				continue
+			if int((ud as Dictionary).get("owner", -1)) == local_player:
+				return node
+	return null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
 	if (
@@ -833,6 +903,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		and (event as InputEventKey).keycode == KEY_ESCAPE
 	):
 		_set_build_menu_open(false)
+		get_viewport().set_input_as_handled()
+		return
+	# 英雄技能二级面板：Esc → 回主卡
+	if (
+		_hero_skill_menu_open
+		and event is InputEventKey
+		and event.pressed
+		and not event.echo
+		and (event as InputEventKey).keycode == KEY_ESCAPE
+	):
+		_set_hero_skill_menu_open(false)
 		get_viewport().set_input_as_handled()
 		return
 	# 右键智能：解析目标 → CommandRouter.issue_smart（能力优先级：采集/送回/建造 → 集结 → 移动）。
@@ -910,6 +991,7 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if not unit_selector.has_method("get_selected"):
 		return false
 	var selected: Array = unit_selector.call("get_selected")
+	_interrupt_channels_for_units(selected)
 	var n_stop := _command_router.issue_stop(selected, source)
 	if n_stop > 0 and game_hud:
 		game_hud.set_status("停止 · %d 单位" % n_stop)
@@ -923,6 +1005,7 @@ func _issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if not unit_selector.has_method("get_selected"):
 		return false
 	var selected: Array = unit_selector.call("get_selected")
+	_interrupt_channels_for_units(selected)
 	var n := _command_router.issue_hold(selected, source)
 	if n > 0 and game_hud:
 		game_hud.set_status("保持原位 · %d 单位" % n)
@@ -1524,6 +1607,7 @@ func _begin_move_targeting(source: int) -> void:
 		if game_hud:
 			game_hud.set_status("移动：无可用单位")
 		return
+	_interrupt_channels_for_units(selected)
 	_set_move_targeting(false)
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
@@ -1666,6 +1750,8 @@ func _begin_ability_targeting(abil_id: String, source: int) -> void:
 		elif tk == AbilityCatalog.TARGET_ALLY:
 			aim_hint = "左键点友军"
 		game_hud.set_status("技能瞄准（%s）· %s · %s · Esc 取消" % [src, tip, aim_hint])
+	if id == "AHbz":
+		_update_ability_preview(_last_screen_pos)
 
 
 ## 自身技能（雷霆一击 / 天神下凡）：点按钮即施法。
@@ -1903,6 +1989,9 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 	_ensure_caster_runtime(primary)
 	var hl := AbilityCatalog.hero_level_of(primary)
 	out["hero_level"] = hl
+	out["ability_levels"] = HeroSkill.ability_levels(primary)
+	var ab_levels: Dictionary = out["ability_levels"]
+	out["hero_skill_points"] = HeroSkill.points_available(primary)
 	for abil in CommandButtonCatalog.get_shared().get_all_abil_list(tid):
 		var abil_id := str(abil).strip_edges()
 		if abil_id.is_empty() or not AbilityCatalog.is_supported(abil_id):
@@ -1910,7 +1999,7 @@ func _ability_ui_state_for(primary: Node3D) -> Dictionary:
 		var cd := AbilityCooldowns.remaining(primary, abil_id)
 		if cd > 0.0:
 			out["ability_cd"][abil_id] = cd
-		var lv := AbilityCatalog.level_for_unit_type(tid, abil_id, hl)
+		var lv := AbilityCatalog.level_for_unit_type(tid, abil_id, hl, ab_levels)
 		var mana_ok := true
 		if lv > 0:
 			var ab := AbilityCatalog.data(abil_id)
@@ -1982,7 +2071,10 @@ func _ensure_hero_runtime(unit: Node3D) -> void:
 		return
 	if not unit.has_meta(AbilityCatalog.META_HERO_LEVEL):
 		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
+	HeroProgression.ensure(unit)
+	HeroSkill.ensure_levels_meta(unit)
 	UnitMana.ensure(unit)
+	UnitMana.sync_hero_max(unit)
 	_ensure_brilliance_aura(unit)
 	_ensure_bash_controller(unit)
 	_ensure_avatar_controller(unit)
@@ -2071,6 +2163,8 @@ func _set_rally_targeting(active: bool) -> void:
 func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
 	_ability_targeting = active
 	_pending_ability_id = abil_id.strip_edges() if active else ""
+	if not active:
+		_clear_ability_preview()
 	_sync_selector_enabled_for_targeting()
 	if game_cursor != null and game_cursor.has_method("set_attack_targeting"):
 		game_cursor.call("set_attack_targeting", active)
@@ -2729,6 +2823,90 @@ func _set_build_menu_open(open: bool) -> void:
 			game_hud.set_status("建造：选择建筑 · Esc/取消 返回")
 		elif _card_is_peasant:
 			game_hud.set_status("已选农民 · 建造见命令卡")
+
+
+func _set_hero_skill_menu_open(open: bool) -> void:
+	if _hero_skill_menu_open == open:
+		if open:
+			_refresh_command_card()
+		return
+	_hero_skill_menu_open = open
+	if open:
+		_set_move_targeting(false)
+		_set_attack_targeting(false)
+		_set_patrol_targeting(false)
+		_set_harvest_targeting(false)
+		_set_ability_targeting(false)
+		_build_menu_open = false
+	_refresh_command_card()
+	if game_hud:
+		if open:
+			game_hud.set_status("英雄技能 · 点击学习 · Esc/取消 返回")
+
+
+func _try_learn_hero_skill(abil_id: String) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var check := HeroSkill.can_learn(primary, abil_id)
+	if not bool(check.get("ok", false)):
+		if game_hud:
+			game_hud.set_status(str(check.get("reason", "无法学习")))
+		return
+	var result := HeroSkill.learn(primary, abil_id)
+	if game_hud:
+		var row := CommandButtonCatalog.get_shared().get_ability(abil_id)
+		var name_s := str(row.get("name", abil_id)).strip_edges()
+		if bool(result.get("ok", false)):
+			game_hud.set_status("学习 · %s Lv%d" % [name_s, int(result.get("level", 1))])
+		else:
+			game_hud.set_status(str(result.get("reason", "无法学习")))
+	if bool(result.get("ok", false)):
+		_set_hero_skill_menu_open(false)
+	else:
+		_refresh_command_card()
+
+
+func _clear_ability_preview() -> void:
+	if _ability_preview_decal != null and is_instance_valid(_ability_preview_decal):
+		_ability_preview_decal.queue_free()
+	_ability_preview_decal = null
+
+
+func _update_ability_preview(screen_pos: Vector2) -> void:
+	if not _ability_targeting or _pending_ability_id != "AHbz" or map_root == null:
+		_clear_ability_preview()
+		return
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var hit := _ground_at_screen(screen_pos)
+	if hit == Vector3.INF:
+		return
+	var inv := 1.0 / Wc3Coords.WORLD_SCALE
+	var goal := Vector2(hit.x * inv, -hit.z * inv)
+	var lv := AbilityCatalog.level_for(primary, "AHbz")
+	var ab := AbilityCatalog.data("AHbz")
+	var radius := ab.area_at(lv) if ab != null else 200.0
+	if _ability_preview_decal == null or not is_instance_valid(_ability_preview_decal):
+		_ability_preview_decal = BlizzardAreaDecal.spawn_preview(
+			map_root, goal, radius, _heightfield
+		)
+	else:
+		_ability_preview_decal.reposition(goal, radius, _heightfield)
+
+
+func _interrupt_channels_for_units(units: Array) -> void:
+	for u in units:
+		if not (u is Node3D) or not is_instance_valid(u):
+			continue
+		var acc := AbilityCastController.of(u as Node3D)
+		if acc != null and acc.is_channeling():
+			acc.cancel_cast()
 
 
 func _commit_build_targeting(screen_pos: Vector2) -> void:
@@ -3961,6 +4139,10 @@ func _on_command_action(
 				_set_build_menu_open(true)
 		CommandCard.ACTION_CLOSE_BUILD:
 			_set_build_menu_open(false)
+		CommandCard.ACTION_OPEN_HERO_SKILLS:
+			_set_hero_skill_menu_open(true)
+		CommandCard.ACTION_CLOSE_HERO_SKILLS:
+			_set_hero_skill_menu_open(false)
 		CommandCard.ACTION_CALL_TO_ARMS:
 			_issue_call_to_arms(source)
 		CommandCard.ACTION_SET_RALLY:
@@ -3986,6 +4168,10 @@ func _on_command_action(
 			if action_id.begins_with(CommandCard.ACTION_RESEARCH_PREFIX):
 				var rid := action_id.substr(CommandCard.ACTION_RESEARCH_PREFIX.length())
 				_try_issue_research(rid)
+				return
+			if action_id.begins_with(CommandCard.ACTION_LEARN_PREFIX):
+				var lid := action_id.substr(CommandCard.ACTION_LEARN_PREFIX.length())
+				_try_learn_hero_skill(lid)
 				return
 			if game_hud:
 				game_hud.set_status("指令：%s（未实现）" % action_id)
@@ -4020,6 +4206,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_set_rally_targeting(false)
 	_set_ability_targeting(false)
 	_build_menu_open = false
+	_hero_skill_menu_open = false
 	if _is_build_targeting():
 		_cancel_build_targeting()
 	if health_bar_manager:
@@ -4240,6 +4427,21 @@ func _sync_selection_info_panel_hp_only() -> void:
 	_apply_selection_info_to_hud(primary, selected)
 
 
+func _refresh_portrait_timed_life_bar() -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var timed := SelectionInfoBuilder.timed_life_progress(primary)
+	if not bool(timed.get("show", false)):
+		return
+	if game_hud.has_method("update_portrait_timed_life"):
+		game_hud.update_portrait_timed_life(
+			float(timed.get("left", 0.0)), float(timed.get("total", 1.0))
+		)
+
+
 func _update_build_hud_if_relevant(key: String, ratio: float, elapsed: float, total: float) -> void:
 	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
 		return
@@ -4357,6 +4559,7 @@ func _refresh_command_card() -> void:
 				"owned_buildings": _owned_buildings_for_local(),
 				"researched": _researched_for_local(),
 				"defend_active": _primary_defend_active(),
+				"hero_skill_menu_open": _hero_skill_menu_open,
 			}
 			if primary != null:
 				state.merge(_ability_ui_state_for(primary), true)

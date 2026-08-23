@@ -1,8 +1,8 @@
 class_name AbilityCastCatalog
 extends RefCounted
 
-## 技能施法表现映射（Game · data）：Sequence / 地面特效路径。
-## 权威：HumanAbilityFunc（XHbz 等）+ 大法师模型 Sequence 名。
+## 技能施法表现映射（Game · data）：Sequence / channel 时长。
+## 特效路径已迁至 AbilityFxCatalog；本类保留 order→Sequence 与引导参数。
 
 const _SPELL_SEQ_BY_ORDER := {
 	"blizzard": "Spell Channel",
@@ -16,39 +16,9 @@ const _SPELL_SEQ_BY_ORDER := {
 	"slow": "Spell Throw",
 }
 
-## abil_id → Effectart / Areaeffectart（HumanAbilityFunc）
-const _GROUND_EFFECT_BY_ABIL := {
-	"AHbz": "Abilities/Spells/Human/Blizzard/BlizzardTarget.mdl",
-	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportTo.mdl",
-}
-
-const _MISSILE_BY_ABIL := {
-	"AHtb": "Abilities/Spells/Human/StormBolt/StormBoltMissile.mdl",
-}
-
-const _CASTER_ART_BY_ABIL := {
-	"AHtc": "Abilities/Spells/Human/Thunderclap/ThunderClapCaster.mdl",
-	"AHav": "Abilities/Spells/Human/Avatar/AvatarCaster.mdl",
-	"Aslo": "Abilities/Spells/Human/Slow/SlowCaster.mdl",
-}
-
-## 命中附着特效（HumanAbilityFunc [BH*] Targetart）
-const _HIT_EFFECT_BY_ABIL := {
-	"AHbz": "Abilities/Spells/Other/FrostDamage/FrostDamage.mdl",
-	"AHtb": "Abilities/Spells/Human/StormBolt/StormBoltTarget.mdl",
-	"Ahea": "Abilities/Spells/Human/Heal/HealTarget.mdl",
-	"Ainf": "Abilities/Spells/Human/InnerFire/InnerFireTarget.mdl",
-	"Aslo": "Abilities/Spells/Human/Slow/SlowTarget.mdl",
-}
-
-const _CHANNEL_ORDERS := {
-	"blizzard": true,
-}
-
 
 static func is_channel_ability(abil_id: String) -> bool:
-	var order := AbilityCatalog.order_for(abil_id)
-	return bool(_CHANNEL_ORDERS.get(order, false))
+	return AbilityBehaviorCatalog.is_channel(abil_id)
 
 
 static func channel_duration_sec(abil_id: String, level: int) -> float:
@@ -61,10 +31,7 @@ static func channel_duration_sec(abil_id: String, level: int) -> float:
 
 
 static func hit_effect_art(abil_id: String) -> String:
-	var id := abil_id.strip_edges()
-	if _HIT_EFFECT_BY_ABIL.has(id):
-		return CombatQuery.normalize_model_art(str(_HIT_EFFECT_BY_ABIL[id]))
-	return ""
+	return AbilityFxCatalog.hit_effect_art(abil_id)
 
 
 static func spell_sequence_for(abil_id: String) -> String:
@@ -73,27 +40,12 @@ static func spell_sequence_for(abil_id: String) -> String:
 
 
 static func ground_effect_art(abil_id: String) -> String:
-	var id := abil_id.strip_edges()
-	if _GROUND_EFFECT_BY_ABIL.has(id):
-		return CombatQuery.normalize_model_art(str(_GROUND_EFFECT_BY_ABIL[id]))
-	return ""
+	return AbilityFxCatalog.ground_effect_art(abil_id)
 
 
 static func missile_art(abil_id: String) -> String:
-	var id := abil_id.strip_edges()
-	if _MISSILE_BY_ABIL.has(id):
-		return CombatQuery.normalize_model_art(str(_MISSILE_BY_ABIL[id]))
-	return ""
+	return AbilityFxCatalog.missile_art(abil_id)
 
 
 static func caster_art(abil_id: String) -> String:
-	var id := abil_id.strip_edges()
-	if _CASTER_ART_BY_ABIL.has(id):
-		return CombatQuery.normalize_model_art(str(_CASTER_ART_BY_ABIL[id]))
-	var row := CommandButtonCatalog.get_shared().get_ability(id)
-	var raw := str(row.get("casterart", "")).strip_edges()
-	if raw.is_empty():
-		raw = str(row.get("targetart", "")).strip_edges()
-	if raw.is_empty():
-		return ""
-	return CombatQuery.normalize_model_art(raw)
+	return AbilityFxCatalog.caster_art(abil_id)

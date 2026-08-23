@@ -24,6 +24,7 @@ var _preload: Dictionary = {}
 var last_scn_hits: int = 0
 var last_gltf_loads: int = 0
 var last_cache_hits: int = 0
+var _warned_preview_fail: Dictionary = {}
 
 
 func reset_load_stats() -> void:
@@ -286,10 +287,12 @@ func instance_glb_preview(path: String, prefer_visuals: bool = true) -> Node3D:
 	if proto == null:
 		var disk_abs := RuntimeAssets.project_abs(path)
 		var exists := not disk_abs.is_empty() and FileAccess.file_exists(disk_abs)
-		push_warning(
-			"MapModelCache.instance_glb_preview failed: path=%s prefer_visuals=%s disk_abs=%s exists=%s"
-			% [path, prefer_visuals, disk_abs, exists]
-		)
+		if not _warned_preview_fail.has(path):
+			_warned_preview_fail[path] = true
+			push_warning(
+				"MapModelCache.instance_glb_preview failed: path=%s prefer_visuals=%s disk_abs=%s exists=%s"
+				% [path, prefer_visuals, disk_abs, exists]
+			)
 		return null
 	var dup := proto.duplicate() as Node3D
 	if dup != null:
@@ -752,7 +755,7 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 	var text := RuntimeAssets.read_utf8_text(disk)
 	if text.is_empty():
 		return false
-	var data: Variant = JSON.parse_string(text)
+	var data: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
 	var sequences: Variant = (data as Dictionary).get("sequences", [])
