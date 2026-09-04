@@ -115,11 +115,62 @@ func _build_ui() -> void:
 	_hp_bar_check.toggled.connect(_on_hp_bar_toggled)
 	v.add_child(_hp_bar_check)
 
+	var sep := HSeparator.new()
+	v.add_child(sep)
+	var hero_title := Label.new()
+	hero_title.text = "英雄（需选中）"
+	hero_title.add_theme_font_size_override("font_size", 14)
+	v.add_child(hero_title)
+
+	var hero_row := HBoxContainer.new()
+	hero_row.add_theme_constant_override("separation", 6)
+	v.add_child(hero_row)
+	_add_btn(hero_row, "升级+1", _on_hero_level_up)
+	_add_btn(hero_row, "升到10", _on_hero_max_level)
+
+	var skill_row := HBoxContainer.new()
+	skill_row.add_theme_constant_override("separation", 6)
+	v.add_child(skill_row)
+	_add_btn(skill_row, "学一点", _on_hero_learn_one)
+	_add_btn(skill_row, "解锁全技能", _on_hero_unlock_all)
+
 	_hint = Label.new()
-	_hint.text = "日志：game/config/debug_log.json"
+	_hint.text = "日志：game/config/debug_log.json · 英雄 GM 作用于主选"
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8))
 	v.add_child(_hint)
+
+
+func _add_btn(parent: Control, text: String, cb: Callable) -> void:
+	var b := Button.new()
+	b.text = text
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.pressed.connect(cb)
+	parent.add_child(b)
+
+
+func _call_director_gm(method: String) -> void:
+	_resolve_refs()
+	if _director == null or not _director.has_method(method):
+		AppLog.warn(AppLog.Layer.GM, "GM", "missing %s" % method)
+		return
+	_director.call(method)
+
+
+func _on_hero_level_up() -> void:
+	_call_director_gm("gm_hero_level_up")
+
+
+func _on_hero_max_level() -> void:
+	_call_director_gm("gm_hero_max_level")
+
+
+func _on_hero_learn_one() -> void:
+	_call_director_gm("gm_hero_learn_one_point")
+
+
+func _on_hero_unlock_all() -> void:
+	_call_director_gm("gm_hero_unlock_all_skills")
 
 
 func _sync_from_world() -> void:

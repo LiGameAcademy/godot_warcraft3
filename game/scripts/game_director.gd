@@ -75,6 +75,11 @@ var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
+## 技能编排（Phase E）：ctx / HUD / 瞄准 / 单位 runtime
+var _ability_ctx_factory: AbilityCastContextFactory = null
+var _ability_hud: AbilityHudFeedback = null
+var _ability_runtime: AbilityRuntimeRegistry = null
+var _ability_targeting_svc: AbilityTargetingService = null
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
 ## 攻击瞄准：左键单位=Attack，地面=Attack-Move
@@ -85,7 +90,7 @@ var _patrol_targeting: bool = false
 var _harvest_targeting: bool = false
 ## 点了「集结点」后，等待左键指定地点/矿/树
 var _rally_targeting: bool = false
-## 英雄技能瞄准：左键点地/点目标
+## 英雄技能瞄准镜像（由 AbilityTargetingService 同步）
 var _ability_targeting: bool = false
 var _pending_ability_id: String = ""
 ## 选中可训建筑时显示的集结旗（长驻，复用）
@@ -424,20 +429,20 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	# 技能瞄准：左键点地/点单位施法
-	if _ability_targeting and event is InputEventMouseButton:
+	if _ability_targeting and event is InputEventMouseButton and _ability_targeting_svc != null:
 		var mb_ab := event as InputEventMouseButton
 		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
-			var abil_id := _pending_ability_id.strip_edges()
+			var abil_id := _ability_targeting_svc.pending_abil_id()
 			var tk := AbilityCatalog.target_kind(abil_id)
 			if tk == AbilityCatalog.TARGET_UNIT or tk == AbilityCatalog.TARGET_ALLY:
-				_issue_ability_at_unit_screen(mb_ab.position, UnitOrder.Source.TARGETING)
+				_ability_targeting_svc.issue_at_unit_screen(mb_ab.position, UnitOrder.Source.TARGETING)
 			else:
-				_issue_ability_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
-			_set_ability_targeting(false)
+				_ability_targeting_svc.issue_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
+			_ability_targeting_svc.cancel()
 			get_viewport().set_input_as_handled()
 			return
 		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_RIGHT:
-			_set_ability_targeting(false)
+			_ability_targeting_svc.cancel()
 			get_viewport().set_input_as_handled()
 			return
 	# F2-4：建造瞄准 → 左键 commit / 右键 cancel / mousemove 跟手 ghost
@@ -551,6 +556,7 @@ func _setup_pathing() -> void:
 	_projectile_service.pipeline = _damage_pipeline
 	_projectile_service.projectile_launched.connect(_on_combat_projectile_launched)
 	_projectile_service.projectile_resolved.connect(_on_combat_projectile_resolved)
+	_setup_ability_services()
 	_ensure_build_sites_host()
 	_command_router.configure(
 		_path_query,
@@ -685,9 +691,8 @@ func _ensure_path_debug() -> void:
 func _process(delta: float) -> void:
 	if _projectile_service != null:
 		_projectile_service.tick(delta)
-	_tick_ability_cooldowns_on_map(delta)
-	_tick_status_effects(delta)
-	_tick_autocast(delta)
+	if _ability_runtime != null:
+		_ability_runtime.tick_all_units(delta)
 	_refresh_move_executing_ui()
 	_refresh_portrait_timed_life_bar()
 	_refresh_buff_strip()
@@ -1760,239 +1765,131 @@ func _begin_rally_targeting(source: int) -> void:
 		game_hud.set_status("集结瞄准（%s）· 左键点地面/金矿/树 · Esc 取消" % src)
 
 
-func _begin_ability_targeting(abil_id: String, source: int) -> void:
-	var id := abil_id.strip_edges()
-	if id.is_empty() or not AbilityCatalog.is_supported(id):
-		if game_hud:
-			game_hud.set_status("技能未实现：%s" % id)
-		return
+func _setup_ability_services() -> void:
+	_ability_ctx_factory = AbilityCastContextFactory.new()
+	_ability_ctx_factory.configure({
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"damage_pipeline": _damage_pipeline,
+		"projectile_service": _projectile_service,
+		"path_query": _path_query,
+		"crowd_query": _crowd_query,
+		"alloc_creation_number": Callable(self, "_alloc_runtime_cn"),
+		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
+		"unit_host": Callable(self, "_unit_host"),
+		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
+		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
+		"kill_unit": Callable(self, "_kill_unit"),
+	})
+	_ability_hud = AbilityHudFeedback.new()
+	_ability_hud.configure(Callable(self, "_ability_set_status"))
+	_ability_runtime = AbilityRuntimeRegistry.new()
+	_ability_runtime.configure({
+		"unit_host": Callable(self, "_unit_host"),
+		"ctx_factory": _ability_ctx_factory,
+		"map_root": map_root,
+	})
+	_ability_targeting_svc = AbilityTargetingService.new()
+	_ability_targeting_svc.configure({
+		"get_primary": Callable(self, "_ability_get_primary"),
+		"pick_at": Callable(self, "_ability_pick_at"),
+		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"ensure_runtime": Callable(self, "_ensure_caster_runtime"),
+		"build_ctx": Callable(self, "_ability_cast_context"),
+		"on_cast_resolved": Callable(self, "_on_ability_cast_resolved"),
+		"clear_rival_targeting": Callable(self, "_clear_rival_targeting_for_ability"),
+		"on_targeting_changed": Callable(self, "_on_ability_targeting_changed"),
+		"hud": _ability_hud,
+		"refresh_command_card": Callable(self, "_refresh_command_card"),
+		"on_blizzard_preview": Callable(self, "_ability_blizzard_preview_refresh"),
+	})
+
+
+func _ability_set_status(text: String) -> void:
+	if game_hud:
+		game_hud.set_status(text)
+
+
+func _ability_get_primary() -> Node3D:
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
-		if game_hud:
-			game_hud.set_status("施法：无选中单位")
-		return
-	_ensure_caster_runtime(primary)
-	var lv := AbilityCatalog.level_for(primary, id)
-	if lv <= 0:
-		if game_hud:
-			game_hud.set_status("技能等级不足")
-		return
-	if not AbilityCooldowns.is_ready(primary, id):
-		if game_hud:
-			game_hud.set_status("冷却中")
-		return
-	var ab := AbilityCatalog.data(id)
-	if ab != null and UnitMana.has_mana(primary):
-		if not UnitMana.can_spend(primary, ab.cost_at(lv)):
-			if game_hud:
-				game_hud.set_status("魔法不足")
-			return
+		return null
+	return unit_selector.call("get_primary") as Node3D
+
+
+func _ability_pick_at(screen_pos: Vector2) -> Node3D:
+	if unit_selector == null or not unit_selector.has_method("pick_at"):
+		return null
+	return unit_selector.call("pick_at", screen_pos) as Node3D
+
+
+func _clear_rival_targeting_for_ability() -> void:
 	_set_move_targeting(false)
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
 	_set_harvest_targeting(false)
 	_set_rally_targeting(false)
-	_set_ability_targeting(true, id)
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
-		var row := CommandButtonCatalog.get_shared().get_ability(id)
-		var tip := str(row.get("name", id)).strip_edges()
-		if tip.is_empty():
-			tip = id
-		var aim_hint := "左键点地"
-		var tk := AbilityCatalog.target_kind(id)
-		if tk == AbilityCatalog.TARGET_UNIT:
-			aim_hint = "左键点敌军"
-		elif tk == AbilityCatalog.TARGET_ALLY:
-			aim_hint = "左键点友军"
-		game_hud.set_status("技能瞄准（%s）· %s · %s · Esc 取消" % [src, tip, aim_hint])
-	if id == "AHbz":
-		_update_ability_preview(_last_screen_pos)
+
+
+func _ability_blizzard_preview_refresh() -> void:
+	_update_ability_preview(_last_screen_pos)
+
+
+func _on_ability_targeting_changed(active: bool, abil_id: String) -> void:
+	_ability_targeting = active
+	_pending_ability_id = abil_id.strip_edges() if active else ""
+	if not active:
+		_clear_ability_preview()
+	_sync_selector_enabled_for_targeting()
+	if game_cursor != null and game_cursor.has_method("set_attack_targeting"):
+		game_cursor.call("set_attack_targeting", active)
+	elif game_cursor != null and game_cursor.has_method("set_mode"):
+		game_cursor.call(
+			"set_mode",
+			Wc3GameCursor.Mode.TARGET if active else Wc3GameCursor.Mode.IDLE
+		)
+
+
+func _begin_ability_targeting(abil_id: String, source: int) -> void:
+	if _ability_targeting_svc != null:
+		_ability_targeting_svc.begin_targeting(abil_id, source)
 
 
 ## 自身技能（雷霆一击 / 天神下凡）：点按钮即施法。
 func _issue_self_ability(abil_id: String, source: int) -> bool:
-	var id := abil_id.strip_edges()
-	if id.is_empty() or not AbilityCatalog.is_supported(id):
-		if game_hud:
-			game_hud.set_status("技能未实现：%s" % id)
+	if _ability_targeting_svc == null:
 		return false
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return false
-	var caster: Node3D = unit_selector.call("get_primary") as Node3D
-	if caster == null:
-		if game_hud:
-			game_hud.set_status("施法：无选中单位")
-		return false
-	_ensure_caster_runtime(caster)
-	var lv := AbilityCatalog.level_for(caster, id)
-	var check := AbilityCastRules.can_cast_self(caster, id, lv)
-	if not bool(check.get("ok", false)):
-		if game_hud:
-			game_hud.set_status(str(check.get("reason", "无法施法")))
-		return false
-	var goal := Wc3Coords.godot_to_wc3_xy(caster.global_position)
-	var acc := AbilityCastController.ensure_on(caster)
-	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
-		acc.cast_resolved.connect(_on_ability_cast_resolved)
-	var ctx := _ability_cast_context()
-	var start := acc.begin_cast(id, goal, ctx)
-	if game_hud:
-		if not bool(start.get("ok", false)):
-			game_hud.set_status(str(start.get("reason", "施法失败")))
-		else:
-			game_hud.set_status("施法中…")
-	_refresh_command_card()
-	return bool(start.get("ok", false))
+	return _ability_targeting_svc.issue_self(abil_id, source)
 
 
-## 单位目标技能（风暴之锤 / 治疗 / 减速等）：瞄准态左键点单位。
-func _issue_ability_at_unit_screen(screen_pos: Vector2, _source: int) -> bool:
-	var abil_id := _pending_ability_id.strip_edges()
-	if abil_id.is_empty():
+## 单位目标技能：瞄准态左键点单位。
+func _issue_ability_at_unit_screen(screen_pos: Vector2, source: int) -> bool:
+	if _ability_targeting_svc == null:
 		return false
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return false
-	var caster: Node3D = unit_selector.call("get_primary") as Node3D
-	if caster == null:
-		return false
-	_ensure_caster_runtime(caster)
-	var target: Node3D = null
-	if unit_selector.has_method("pick_at"):
-		target = unit_selector.call("pick_at", screen_pos) as Node3D
-	if target == null or not is_instance_valid(target):
-		if game_hud:
-			game_hud.set_status("施法：未点到目标")
-		return false
-	var tk := AbilityCatalog.target_kind(abil_id)
-	if tk == AbilityCatalog.TARGET_ALLY or tk == AbilityCatalog.TARGET_UNIT:
-		if not CombatQuery.is_valid_ability_unit_target(caster, target, abil_id):
-			if game_hud:
-				var msg := "施法：无效友军目标" if tk == AbilityCatalog.TARGET_ALLY else "施法：无效敌军目标"
-				game_hud.set_status(msg)
-			return false
-	else:
-		if game_hud:
-			game_hud.set_status("施法：无效技能目标类型")
-		return false
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal := Wc3Coords.godot_to_wc3_xy(target.global_position)
-	var acc := AbilityCastController.ensure_on(caster)
-	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
-		acc.cast_resolved.connect(_on_ability_cast_resolved)
-	var ctx := _ability_cast_context()
-	ctx["target"] = target
-	var start := acc.begin_cast(abil_id, goal, ctx)
-	if game_hud:
-		if not bool(start.get("ok", false)):
-			game_hud.set_status(str(start.get("reason", "施法失败")))
-		else:
-			game_hud.set_status("施法中…")
-	_refresh_command_card()
-	return bool(start.get("ok", false))
+	return _ability_targeting_svc.issue_at_unit_screen(screen_pos, source)
 
 
 ## 技能瞄准落点：点地召唤 / 区域 DOT 等。
-func _issue_ability_at_screen(screen_pos: Vector2, _source: int) -> bool:
-	var abil_id := _pending_ability_id.strip_edges()
-	if abil_id.is_empty():
+func _issue_ability_at_screen(screen_pos: Vector2, source: int) -> bool:
+	if _ability_targeting_svc == null:
 		return false
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return false
-	var caster: Node3D = unit_selector.call("get_primary") as Node3D
-	if caster == null:
-		return false
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		if game_hud:
-			game_hud.set_status("施法：未点到地面")
-		return true
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal := Vector2(hit.x * inv, -hit.z * inv)
-	var acc := AbilityCastController.ensure_on(caster)
-	if not acc.cast_resolved.is_connected(_on_ability_cast_resolved):
-		acc.cast_resolved.connect(_on_ability_cast_resolved)
-	var start := acc.begin_cast(abil_id, goal, _ability_cast_context())
-	if game_hud:
-		if not bool(start.get("ok", false)):
-			game_hud.set_status(str(start.get("reason", "施法失败")))
-		else:
-			var ab := AbilityCatalog.data(abil_id)
-			if AbilityCastCatalog.is_channel_ability(abil_id):
-				var lv := AbilityCatalog.level_for(caster, abil_id)
-				var dur := AbilityCastCatalog.channel_duration_sec(abil_id, lv)
-				game_hud.set_status("引导暴风雪 · %.1fs（移动/停止可打断）" % dur)
-			elif ab != null:
-				var cast_sec := ab.cast_time_at(AbilityCatalog.level_for(caster, abil_id))
-				if cast_sec > 0.05:
-					game_hud.set_status("施法中 · %.1fs…" % cast_sec)
-				else:
-					game_hud.set_status("施法中…")
-			else:
-				game_hud.set_status("施法中…")
-	_refresh_command_card()
-	return bool(start.get("ok", false))
+	return _ability_targeting_svc.issue_at_screen(screen_pos, source)
 
 
 func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
-	if game_hud:
-		if bool(result.get("ok", false)):
-			var spawned := result.get("unit") as Node3D
-			var tp_count := int(result.get("teleported_count", 0))
-			var hit_count := int(result.get("hit_count", 0))
-			var heal_amt := float(result.get("heal_amount", 0.0))
-			if tp_count > 0:
-				game_hud.set_status("群体传送 · %d 单位" % tp_count)
-			elif heal_amt > 0.0:
-				game_hud.set_status("治疗 · +%.0f" % heal_amt)
-			elif hit_count > 0:
-				var row_h := CommandButtonCatalog.get_shared().get_ability(abil_id)
-				var name_h := str(row_h.get("name", abil_id)).strip_edges()
-				game_hud.set_status("%s · %d 目标" % [name_h, hit_count])
-			elif spawned != null:
-				var name_s := TechPresence.display_name(
-					str(spawned.get_meta("unit_data", {}).get("typeId", abil_id))
-				)
-				game_hud.set_status("召唤 · %s" % name_s)
-			else:
-				var row := CommandButtonCatalog.get_shared().get_ability(abil_id)
-				var name_s := str(row.get("name", abil_id)).strip_edges()
-				game_hud.set_status("施法 · %s" % name_s)
-		else:
-			game_hud.set_status(str(result.get("reason", "施法失败")))
-	if bool(result.get("ok", false)):
-		if (
-			result.get("unit") is Node3D
-			or int(result.get("teleported_count", 0)) > 0
-			or int(result.get("hit_count", 0)) > 0
-			or float(result.get("heal_amount", 0.0)) > 0.0
-			or result.get("buff_target") is Node3D
-		):
-			_refresh_dynamic_pathing()
-			if health_bar_manager:
-				health_bar_manager.resync()
+	if _ability_hud != null:
+		_ability_hud.on_cast_resolved(result, abil_id)
+	if AbilityHudFeedback.should_refresh_world(result):
+		_refresh_dynamic_pathing()
+		if health_bar_manager:
+			health_bar_manager.resync()
 		_sync_selection_info_panel()
 	_refresh_command_card()
 
 
 func _ability_cast_context() -> Dictionary:
-	return {
-		"map_root": map_root,
-		"heightfield": _heightfield,
-		"creation_number": _alloc_runtime_cn(),
-		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
-		"damage_pipeline": _damage_pipeline,
-		"projectile_service": _projectile_service,
-		"unit_host": Callable(self, "_unit_host"),
-		"model_cache": map_root.get_model_cache() if map_root != null and map_root.has_method("get_model_cache") else null,
-		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
-		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
-		"path_query": _path_query,
-		"crowd_query": _crowd_query,
-		"kill_unit": Callable(self, "_kill_unit"),
-	}
+	if _ability_ctx_factory != null:
+		return _ability_ctx_factory.build()
+	return {}
 
 
 func _kill_unit(unit: Node3D) -> void:
@@ -2029,140 +1926,30 @@ func _ability_channel_interrupt_check(caster: Node3D) -> bool:
 
 
 func _ability_ui_state_for(primary: Node3D) -> Dictionary:
-	var out := {
-		"ability_cd": {},
-		"ability_mana_ok": true,
-		"ability_mana_ok_map": {},
-		"hero_level": 1,
-	}
-	if primary == null or not is_instance_valid(primary):
-		return out
-	var tid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	if tid.is_empty():
-		return out
-	_ensure_caster_runtime(primary)
-	var hl := AbilityCatalog.hero_level_of(primary)
-	out["hero_level"] = hl
-	out["ability_levels"] = HeroSkill.ability_levels(primary)
-	var ab_levels: Dictionary = out["ability_levels"]
-	out["hero_skill_points"] = HeroSkill.points_available(primary)
-	for abil in CommandButtonCatalog.get_shared().get_all_abil_list(tid):
-		var abil_id := str(abil).strip_edges()
-		if abil_id.is_empty() or not AbilityCatalog.is_supported(abil_id):
-			continue
-		var cd := AbilityCooldowns.remaining(primary, abil_id)
-		if cd > 0.0:
-			out["ability_cd"][abil_id] = cd
-		var lv := AbilityCatalog.level_for_unit_type(tid, abil_id, hl, ab_levels)
-		var mana_ok := true
-		if lv > 0:
-			var ab := AbilityCatalog.data(abil_id)
-			if ab != null and UnitMana.has_mana(primary):
-				mana_ok = UnitMana.can_spend(primary, ab.cost_at(lv))
-		out["ability_mana_ok_map"][abil_id] = mana_ok
-		if not mana_ok:
-			out["ability_mana_ok"] = false
-	var av := AvatarController.of(primary)
-	if av != null and av.is_active():
-		out["avatar_active"] = true
-	var auto_out: Dictionary = {}
-	for abil_id in AbilityAutoCast.map_of(primary).keys():
-		auto_out[str(abil_id)] = AbilityAutoCast.is_enabled(primary, str(abil_id))
-	if not auto_out.is_empty():
-		out["ability_autocast"] = auto_out
-	return out
-
-
-func _tick_autocast(delta: float) -> void:
-	if delta <= 0.0:
-		return
-	var host := _unit_host()
-	if host == null:
-		return
-	var ctx := _ability_cast_context()
-	for c in host.get_children():
-		if c is Node3D and is_instance_valid(c):
-			AbilityAutoCastRunner.tick_unit(c as Node3D, ctx, delta)
-
-
-func _tick_status_effects(delta: float) -> void:
-	if delta <= 0.0:
-		return
-	var host := _unit_host()
-	if host == null:
-		return
-	for c in host.get_children():
-		if c is Node3D and is_instance_valid(c):
-			UnitStatusEffects.tick(c as Node3D, delta)
-
-
-func _tick_ability_cooldowns_on_map(delta: float) -> void:
-	if delta <= 0.0:
-		return
-	var host := _unit_host()
-	if host == null:
-		return
-	for c in host.get_children():
-		if c is Node3D and is_instance_valid(c):
-			AbilityCooldowns.tick_all(c as Node3D, delta)
+	if _ability_hud == null:
+		return {}
+	return _ability_hud.build_command_card_state(primary, Callable(self, "_ensure_caster_runtime"))
 
 
 func _ensure_caster_runtime(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	UnitMana.ensure(unit)
-	AbilityAutoCast.ensure_defaults(unit)
-	var tid := str(unit.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	if TechPresence.is_hero_id(tid):
-		_ensure_hero_runtime(unit)
+	if _ability_runtime != null:
+		_ability_runtime.ensure_unit(unit)
 
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	var tid := str(unit.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	if not TechPresence.is_hero_id(tid):
-		return
-	if not unit.has_meta(AbilityCatalog.META_HERO_LEVEL):
-		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
-	HeroProgression.ensure(unit)
-	HeroSkill.ensure_levels_meta(unit)
-	UnitMana.ensure(unit)
-	UnitMana.sync_hero_max(unit)
-	_ensure_brilliance_aura(unit)
-	_ensure_bash_controller(unit)
-	_ensure_avatar_controller(unit)
+	if _ability_runtime != null:
+		_ability_runtime.ensure_hero_passives(unit)
 
 
-func _ensure_bash_controller(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
+func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
+	if _ability_targeting_svc == null:
+		_on_ability_targeting_changed(active, abil_id)
 		return
-	if not BashController.unit_can_have(unit):
-		return
-	BashController.ensure_on(unit)
-
-
-func _ensure_avatar_controller(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	if not AvatarController.unit_can_have(unit):
-		return
-	AvatarController.ensure_on(unit)
-
-
-func _ensure_brilliance_aura(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	var existing := BrillianceAuraController.of(unit)
-	if not BrillianceAuraController.unit_can_have(unit):
-		if existing != null:
-			existing.queue_free()
-		return
-	var c := BrillianceAuraController.ensure_on(unit)
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	c.configure(Callable(self, "_unit_host"), cache)
+	if active:
+		# 瞄准入口走 begin_targeting；此处仅兼容旧调用
+		_ability_targeting_svc.begin_targeting(abil_id, UnitOrder.Source.PANEL)
+	else:
+		_ability_targeting_svc.cancel()
 
 
 func _set_move_targeting(active: bool) -> void:
@@ -2212,21 +1999,6 @@ func _set_rally_targeting(active: bool) -> void:
 		game_cursor.call("set_move_targeting", false)
 	elif game_cursor != null and game_cursor.has_method("set_mode"):
 		game_cursor.call("set_mode", Wc3GameCursor.Mode.IDLE)
-
-
-func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
-	_ability_targeting = active
-	_pending_ability_id = abil_id.strip_edges() if active else ""
-	if not active:
-		_clear_ability_preview()
-	_sync_selector_enabled_for_targeting()
-	if game_cursor != null and game_cursor.has_method("set_attack_targeting"):
-		game_cursor.call("set_attack_targeting", active)
-	elif game_cursor != null and game_cursor.has_method("set_mode"):
-		game_cursor.call(
-			"set_mode",
-			Wc3GameCursor.Mode.TARGET if active else Wc3GameCursor.Mode.IDLE
-		)
 
 
 func _sync_selector_enabled_for_targeting() -> void:
@@ -3007,6 +2779,113 @@ func _try_learn_hero_skill(abil_id: String) -> void:
 		_set_hero_skill_menu_open(false)
 	else:
 		_refresh_command_card()
+
+
+## —— GM：英雄等级 / 技能 ——
+
+
+func _gm_primary_hero() -> Node3D:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return null
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		return null
+	var tid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	if not TechPresence.is_hero_id(tid):
+		if game_hud:
+			game_hud.set_status("GM：请先选中英雄")
+		return null
+	_ensure_caster_runtime(primary)
+	return primary
+
+
+func gm_hero_level_up() -> void:
+	var hero := _gm_primary_hero()
+	if hero == null:
+		return
+	var lv := AbilityCatalog.hero_level_of(hero)
+	if lv >= HeroProgression.MAX_HERO_LEVEL:
+		if game_hud:
+			game_hud.set_status("GM：已满级 %d" % lv)
+		return
+	HeroProgression.set_level(hero, lv + 1)
+	UnitMana.sync_hero_max(hero)
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	if game_hud:
+		game_hud.set_status("GM：英雄等级 → %d（技能点 %d）" % [
+			AbilityCatalog.hero_level_of(hero),
+			HeroSkill.points_available(hero),
+		])
+
+
+func gm_hero_max_level() -> void:
+	var hero := _gm_primary_hero()
+	if hero == null:
+		return
+	HeroProgression.set_level(hero, HeroProgression.MAX_HERO_LEVEL)
+	UnitMana.sync_hero_max(hero)
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	if game_hud:
+		game_hud.set_status("GM：英雄等级 → %d（技能点 %d）" % [
+			HeroProgression.MAX_HERO_LEVEL,
+			HeroSkill.points_available(hero),
+		])
+
+
+## 用 1 点自动学第一个可学技能（或升级已有）。
+func gm_hero_learn_one_point() -> void:
+	var hero := _gm_primary_hero()
+	if hero == null:
+		return
+	if HeroSkill.points_available(hero) <= 0:
+		if game_hud:
+			game_hud.set_status("GM：无技能点（先升级）")
+		return
+	var tid := str(hero.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	for aid_v in AbilityCatalog.hero_ability_ids_for_unit(tid):
+		var aid := str(aid_v).strip_edges()
+		var check := HeroSkill.can_learn(hero, aid)
+		if bool(check.get("ok", false)):
+			var result := HeroSkill.learn(hero, aid)
+			_ensure_caster_runtime(hero)
+			_refresh_command_card()
+			_sync_selection_info_panel()
+			if game_hud:
+				var row := CommandButtonCatalog.get_shared().get_ability(aid)
+				var name_s := str(row.get("name", aid)).strip_edges()
+				game_hud.set_status("GM：学习 · %s Lv%d" % [name_s, int(result.get("level", 1))])
+			return
+	if game_hud:
+		game_hud.set_status("GM：没有可学技能（等级门槛？）")
+
+
+## 满级 + 该英雄全部技能升到最高。
+func gm_hero_unlock_all_skills() -> void:
+	var hero := _gm_primary_hero()
+	if hero == null:
+		return
+	HeroProgression.set_level(hero, HeroProgression.MAX_HERO_LEVEL)
+	UnitMana.sync_hero_max(hero)
+	var tid := str(hero.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+	HeroSkill.ensure_levels_meta(hero)
+	var levels: Dictionary = {}
+	for aid_v in AbilityCatalog.hero_ability_ids_for_unit(tid):
+		var aid := str(aid_v).strip_edges()
+		if aid.is_empty():
+			continue
+		var ab := AbilityCatalog.data(aid)
+		var max_lv := 3
+		if ab != null:
+			max_lv = ab.clamp_level(ab.levels)
+		levels[aid] = max_lv
+	hero.set_meta(AbilityCatalog.META_ABILITY_LEVELS, levels)
+	_ensure_caster_runtime(hero)
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	if game_hud:
+		game_hud.set_status("GM：满级 + 全技能解锁（%d 个）" % levels.size())
 
 
 func _clear_ability_preview() -> void:
@@ -4406,10 +4285,12 @@ func _on_command_action(
 		_:
 			if action_id.begins_with(CommandCard.ACTION_ABILITY_PREFIX):
 				var aid := action_id.substr(CommandCard.ACTION_ABILITY_PREFIX.length())
+				if _ability_targeting_svc == null:
+					return
 				if AbilityCatalog.target_kind(aid) == AbilityCatalog.TARGET_SELF:
-					_issue_self_ability(aid, source)
+					_ability_targeting_svc.issue_self(aid, source)
 				else:
-					_begin_ability_targeting(aid, source)
+					_ability_targeting_svc.begin_targeting(aid, source)
 				return
 			if action_id.begins_with(CommandCard.ACTION_BUILD_PREFIX):
 				var bid := action_id.substr(CommandCard.ACTION_BUILD_PREFIX.length())

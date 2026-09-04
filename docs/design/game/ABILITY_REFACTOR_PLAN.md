@@ -1,9 +1,9 @@
 # 技能系统重构计划（Ability Refactor Plan）
 
 > **层别**：Game · data / logic / present / orchestration  
-> **状态**：Phase A–C 完成；Phase D（Effect 原子）待做  
+> **状态**：Phase A–E 完成（Effect 原子 + Director 技能外提）  
 > **原则**：数据驱动、模块化、**组合优于继承**、Effect 可复用、Buff 独立统一体系  
-> **最后更新**：2026-08-23
+> **最后更新**：2026-09-04
 
 ## 0. 为何重构
 
@@ -17,7 +17,8 @@ AbilityExecutor.match order
 ability_cast_catalog.gd 硬编码路径
 ```
 
-Buff 状态分散在 `UnitStatusEffects` meta、`InnerFireController`、`AvatarController`、`BrillianceAuraController`；`game_director.gd` 承担瞄准、autocast、runtime 挂载、cast context 注入。
+Buff 状态分散在 `UnitStatusEffects` meta、`InnerFireController`、`AvatarController`、`BrillianceAuraController`（Phase C 门面已立，Controller 迁移后置）。  
+Orchestration 已抽出：`AbilityTargetingService` · `AbilityRuntimeRegistry` · `AbilityHudFeedback` · `AbilityCastContextFactory`。
 
 **核心目标**：
 
@@ -65,9 +66,10 @@ Buff 状态分散在 `UnitStatusEffects` meta、`InnerFireController`、`AvatarC
 | **A** | Behavior 注册表 | `AbilityBehaviorCatalog` | ✅ 现有 selftest 全绿 |
 | **B** | FX 数据化 | `AbilityFxCatalog` + `AbilityAttachFxPresenter` | ✅ fallback + 附着迁移 |
 | **C** | Buff 统一体系 | `BuffHost` + `BuffCatalog` + `BuffQuery` + HUD strip | ✅ 门面 + dispel + Avatar；见 [BUFF_SYSTEM.md](BUFF_SYSTEM.md) |
-| **D** | Director 瘦身 | `AbilityTargetingService` 等 | 见 §5 完整设计；Director 技能相关 <200 行 |
+| **D** | Effect 组合 | `logic/effect/*`；Heal/Clap/… 变薄 | ✅ 原子可复用；*Ability 调 Effect |
+| **E** | Director 瘦身 | Targeting / Runtime / Hud / CtxFactory | ✅ Director 转发；见 §7 |
 
-**不做（现阶段）**：引入 godot_ability_system；纯数据驱动 channel/proc 全部逻辑；动地图 Ground 主线。
+**不做（现阶段）**：引入 godot_ability_system；纯数据驱动 channel/proc 全部逻辑；动地图 Ground 主线；`effects: []` 全表驱动（仍 dedicated class + Effect）。
 
 ---
 

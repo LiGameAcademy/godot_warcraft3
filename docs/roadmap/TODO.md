@@ -261,8 +261,8 @@
 - [ ] **肖像全单位**：缺 `*_Portrait.gltf` 的单位仍只有队色底 → 批量 convert + bake；主城以外建筑肖像抽验
 - [ ] **Unicode NUL 清零**：已改 convert，**须批量重转**常用 Units（至少 Human 竖切包）后 Godot 启动才不刷 ERROR
 - [ ] **水元素流体**：PE2 速率 / Birth 序列 / alpha 与原作对拍；必要时专用 shader
-- [ ] **技能重构 Phase D**：`game/scripts/logic/effect/` 原子 Effect（见下节）
-- [ ] **技能重构 Phase E**：`game_director.gd` 拆分（见下节）
+- [x] **技能重构 Phase D**：`game/scripts/logic/effect/` 原子 Effect（2026-09-04）
+- [x] **技能重构 Phase E**：`game_director` 技能逻辑外提（2026-09-04）
 
 ### 待做 — P1
 
@@ -275,25 +275,21 @@
 
 ## 技能系统重构进度
 
-> 权威计划：[ABILITY_REFACTOR_PLAN.md](../design/game/ABILITY_REFACTOR_PLAN.md)（最后更新 2026-08-23）
+> 权威计划：[ABILITY_REFACTOR_PLAN.md](../design/game/ABILITY_REFACTOR_PLAN.md)（最后更新 2026-09-04）
 
 | Phase | 内容 | 状态 | 说明 |
 |-------|------|------|------|
 | **A** | `AbilityBehaviorCatalog` | ✅ | order → behavior / target / passive |
 | **B** | `AbilityFxCatalog` + 附着 Presenter | ✅ | Casterart / Targetart / fallback |
 | **C** | `BuffHost` + `BuffCatalog` + `BuffQuery` | ✅ 门面 | 部分技能仍用 `InnerFireController` 等独立 Controller |
-| **D** | Effect 原子 + `*Ability` 变薄 | ❌ 未做 | 无 `game/scripts/logic/effect/` 目录 |
-| **E** | `game_director.gd` 瘦身 | ❌ 未做 | 仍 ~4300 行；瞄准 / autocast / runtime 挂载均在 Director 内 |
+| **D** | Effect 原子 + `*Ability` 变薄 | ✅ | `logic/effect/`；Heal/InnerFire/Clap/Slow/Summon/Avatar/StormBolt |
+| **E** | `game_director` 技能外提 | ✅ | Targeting / Runtime / HudFeedback / CastContextFactory |
 
-**Phase D 待建目录（计划）**：`effect_context.gd`、`effect_heal.gd`、`effect_damage_aoe.gd`、`effect_apply_buff.gd`、`effect_spawn_summon.gd`、`effect_play_present.gd` 等。
+**Phase D 已建**：`effect_context`、`effect_heal`、`effect_damage_aoe`、`effect_apply_buff`、`effect_spawn_summon`、`effect_play_present`。
 
-**Phase E 待建服务（计划）**：`AbilityTargetingService`、`AbilityRuntimeRegistry`、`AbilityCastContextFactory`、`AbilityHudFeedback` — 仓库内**尚无**对应脚本。
+**Phase E 已建**：`AbilityTargetingService`、`AbilityRuntimeRegistry`、`AbilityCastContextFactory`、`AbilityHudFeedback`；Director `_setup_ability_services` 注入后转发。
 
-**粗估剩余量**：A–C 约 **60%**；含 D + E 整体约 **40%**（D/E 各为一轮中等 refactor，且 E 依赖 D 稳定）。
-
-**Director 拆分**：**未完成**。技能相关仍含 `_begin_ability_targeting`、`_ability_ui_state_for`、`_ensure_caster_runtime`、`_tick_autocast` 等；未抽出 `AbilityTargetingService` / `AbilityRuntimeRegistry`。
-
-**Effect 抽象**：**未实现**。施法仍走 `AbilityExecutor` → 各 `*Ability` 静态类（如 `HealAbility`、`BlizzardAbility`），无统一 `EffectRunner` / `EffectContext` 管道。
+**后续可选**：Blizzard / MassTeleport 再抽 Effect；`effects: []` Catalog 全表驱动；BuffHost 吃掉 InnerFire/Avatar Controller。
 
 ---
 
