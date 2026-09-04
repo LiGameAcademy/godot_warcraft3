@@ -72,11 +72,10 @@ static func _inject_tracks(root: Node, pe2_root: Node, glb_path: String = "") ->
 			if str(rel).is_empty() or str(rel) == ".":
 				continue
 			var keys := _emitting_keys(p, str(anim_name), interval, anim.length)
-			# Death-only 等：本 Sequence 永不开闸 → 勿写 Stand 轨（节点缺失时还会刷 AnimationMixer 警告）
-			if not _keys_ever_on(keys):
-				var emit_path_off := NodePath("%s:emitting" % str(rel))
-				_remove_tracks_with_path(anim, emit_path_off, Animation.TYPE_VALUE)
-				continue
+			# 必须写入「全关」轨：否则切到 Death 时 Stand 粒子仍粘在上一剪辑的 emitting=true。
+			# （旧逻辑用 _keys_ever_on 跳过全关 → 火球 Death 看不到爆开、尾烟不停。）
+			if keys.is_empty():
+				keys = [{"t": 0.0, "on": false}]
 			var emit_path := NodePath("%s:emitting" % str(rel))
 			_remove_tracks_with_path(anim, emit_path, Animation.TYPE_VALUE)
 			var ti := anim.add_track(Animation.TYPE_VALUE)
@@ -98,15 +97,6 @@ static func _inject_tracks(root: Node, pe2_root: Node, glb_path: String = "") ->
 			anim.track_insert_key(pi, 0.0, Wc3Pe2Particles.pivot_for_sequence(p, str(anim_name)))
 			n += 1
 	return n
-
-
-static func _keys_ever_on(keys: Array) -> bool:
-	for kv in keys:
-		if typeof(kv) != TYPE_DICTIONARY:
-			continue
-		if bool((kv as Dictionary).get("on", false)):
-			return true
-	return false
 
 
 static func _seq_interval(seqs: Array, anim_name: String) -> Vector2:

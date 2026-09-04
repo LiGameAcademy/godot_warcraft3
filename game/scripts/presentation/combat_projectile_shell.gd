@@ -2,11 +2,11 @@ extends Node3D
 
 ## Present 弹道壳：与 Logic 同速制导追目标；不改生命。
 
-const TRACER_RADIUS := 0.06
+const TRACER_RADIUS := 0.14
 const TRACER_COLOR := Color(1.0, 0.85, 0.35, 1.0)
 const IMPACT_LIFETIME := 1.1
-const IMPACT_SCALE_BOOST := 2.75
-const MISSILE_SCALE := 1.35
+const IMPACT_SCALE_BOOST := 1.35
+const MISSILE_SCALE := 1.0
 ## 与 ProjectileService.HIT_RADIUS_WC3 对齐（经 WORLD_SCALE）
 const HIT_RADIUS_GODOT := 32.0 * Wc3Coords.WORLD_SCALE
 
@@ -22,7 +22,7 @@ var _arc: float = 0.0
 var _path_u: float = 0.0 ## 0→1 近似进度，用于弧高
 var _cache: MapModelCache = null
 var _target: Node3D = null
-var _impact_z_wc3: float = 60.0
+var _impact_z_offset_wc3: float = 60.0
 var _mi: MeshInstance3D = null
 var _missile_root: Node3D = null
 var _impact_done: bool = false
@@ -54,7 +54,11 @@ func play(
 	_arc = clampf(arc, 0.0, 1.0)
 	_cache = cache
 	_target = target
-	_impact_z_wc3 = to_wc3.z
+	if target != null and is_instance_valid(target):
+		var tgt := Wc3Coords.godot_to_wc3(target.global_position)
+		_impact_z_offset_wc3 = to_wc3.z - tgt.z
+	else:
+		_impact_z_offset_wc3 = maxf(to_wc3.z, 40.0)
 	_impact_done = false
 	_finished = false
 	global_position = _apply_arc(_pos, 0.0)
@@ -107,9 +111,16 @@ func _ensure_missile_model() -> void:
 		return
 	_missile_root = Node3D.new()
 	_missile_root.name = "MissileModel"
-	_missile_root.scale = Vector3.ONE * MISSILE_SCALE
 	add_child(_missile_root)
 	_missile_root.add_child(inst)
+	if _cache != null:
+		# bake 过的 .scn 已含 Additive + 0.01 根缩放；prepare 只补材质/防双重缩放
+		_cache.prepare_fx_model(inst)
+	else:
+		_fit_missile_model_scale(inst)
+	_missile_root.scale = Vector3.ONE * MISSILE_SCALE
+	# WC3 飞弹模型轴多为 +Y，Godot look_at 对齐 -Z
+	_missile_root.rotation.x = -PI * 0.5
 	Wc3Pe2Particles.attach_to(inst, art_path)
 	Wc3Pe2Particles.apply_sequence(inst, "Stand")
 	_restart_particles(inst)
@@ -156,8 +167,10 @@ func _apply_arc(flat: Vector3, u: float) -> Vector3:
 func _refresh_aim() -> void:
 	if _target == null or not is_instance_valid(_target):
 		return
-	var xy := Wc3Coords.godot_to_wc3_xy(_target.global_position)
-	_to = Wc3Coords.wc3_to_godot(Vector3(xy.x, xy.y, _impact_z_wc3))
+	var tgt := Wc3Coords.godot_to_wc3(_target.global_position)
+	_to = Wc3Coords.wc3_to_godot(
+		Vector3(tgt.x, tgt.y, tgt.z + _impact_z_offset_wc3)
+	)
 
 
 func _finish() -> void:
@@ -198,19 +211,38 @@ func _spawn_impact() -> void:
 	fx.name = "CombatImpactFx"
 	host.add_child(fx)
 	fx.global_position = _to
+	if _cache != null:
+		_cache.prepare_fx_model(inst)
+	else:
+		_fit_missile_model_scale(inst)
 	fx.scale = Vector3.ONE * IMPACT_SCALE_BOOST
 	fx.add_child(inst)
 	Wc3Pe2Particles.attach_to(inst, art_path)
-	Wc3Pe2Particles.apply_sequence(inst, "Birth")
+	# 火球等：爆开在 Death；Birth 极短且无 burst。优先 Death → Birth → Stand。
+	var impact_seq := _resolve_impact_sequence(inst)
+	Wc3Pe2Particles.apply_sequence(inst, impact_seq)
 	_restart_particles(inst)
 	var ap := AnimPlayback.find_animation_player(inst)
 	if ap != null:
-		var birth := AnimPlayback.resolve(inst, "Birth", ap)
-		if not birth.is_empty():
-			AnimPlayback.play(inst, birth, 0.0, _cache, 0, ap)
+		var anim := AnimPlayback.resolve(inst, impact_seq, ap)
+		if not anim.is_empty():
+			AnimPlayback.play(inst, anim, 0.0, _cache, 0, ap)
 	var tree := host.get_tree()
 	if tree != null:
 		tree.create_timer(IMPACT_LIFETIME).timeout.connect(fx.queue_free)
+
+
+## 命中序列：有 Death 用 Death（壳隐 + burst PE2）；否则 Birth / Stand。
+func _resolve_impact_sequence(inst: Node) -> String:
+	if inst == null:
+		return "Birth"
+	var ap := AnimPlayback.find_animation_player(inst)
+	if ap == null:
+		return "Birth"
+	for want in ["Death", "Birth", "Stand"]:
+		if not AnimPlayback.resolve(inst, want, ap).is_empty():
+			return want
+	return "Birth"
 
 
 func _spawn_fallback_flash(host: Node, at: Vector3) -> void:
@@ -244,6 +276,31 @@ func _restart_particles(root: Node) -> void:
 		p.emitting = true
 	for c in root.get_children():
 		_restart_particles(c)
+
+
+func _fit_missile_model_scale(inst: Node3D) -> void:
+	if inst == null:
+		return
+	var aabb := AABB()
+	var first := true
+	for c in inst.find_children("*", "VisualInstance3D", true, false):
+		var vi := c as VisualInstance3D
+		if vi == null:
+			continue
+		var la := vi.get_aabb()
+		var xf := vi.global_transform
+		for i in range(8):
+			var local := la.position + la.size * Vector3(
+				float(i & 1), float((i >> 1) & 1), float((i >> 2) & 1)
+			)
+			var p := inst.to_local(xf * local)
+			if first:
+				aabb = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				aabb = aabb.expand(p)
+	if aabb.size.length() > 2.0:
+		inst.scale = Vector3.ONE * Wc3Coords.WORLD_SCALE
 
 
 func _face_dir(dir: Vector3) -> void:
