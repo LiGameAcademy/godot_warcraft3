@@ -12,6 +12,7 @@ extends RefCounted
 const META_PRESENTED := "wc3_fx_presented"
 const META_MESH_KIND := "wc3_fx_mesh_kind"
 const META_REPLACED := "wc3_fx_replaced_source"
+const META_PLAN_B := "wc3_fx_plan_b"
 
 enum MeshKind {
 	KEEP = 0,
@@ -90,6 +91,88 @@ static func present(root: Node3D) -> Dictionary:
 	root.set_meta("wc3_fx_soft_sphere_count", stats["soft_sphere"])
 	root.set_meta("wc3_fx_flat_billboard_count", stats["flat_billboard"])
 	return stats
+
+
+## Plan B: 把 FxBillboard 提升到 SkinMeshes 同级，删除空 Geoset_* MI。
+## 仅对「presenter 已替换的子树」做，其他原 MI 不动。
+## 默认只在 FireBallMissile 上自动触发；其他武器留作显式 opt-in。
+static func maybe_apply_plan_b(root: Node3D, source_path: String) -> bool:
+	if root == null:
+		return false
+	if bool(root.get_meta(META_PLAN_B, false)):
+		return false
+	var p := source_path.replace("\\", "/").to_lower()
+	if not p.contains("abilities/weapons/fireballmissile"):
+		return false
+	return apply_plan_b(root)
+
+
+## Plan B: 提升 FxBillboard。返回被删除的空 MI 数 + 被提升的 BB 数。
+static func apply_plan_b(root: Node3D) -> bool:
+	if root == null:
+		return false
+	var empty_parents: Array[MeshInstance3D] = []
+	var billboards: Array[MeshInstance3D] = []
+	_find_plan_b_targets(root, empty_parents, billboards)
+	if billboards.is_empty():
+		root.set_meta(META_PLAN_B, true)
+		return false
+	for bb in billboards:
+		var parent: Node = bb.get_parent()
+		if parent == null:
+			continue
+		var grandparent: Node = parent.get_parent()
+		if grandparent == null:
+			continue
+		# proto 可能没在 SceneTree（如 bake 期）：退回 local 累加
+		var local_xf: Transform3D
+		if bb.is_inside_tree() and grandparent.is_inside_tree():
+			var world_xf: Transform3D = bb.global_transform
+			local_xf = grandparent.global_transform.affine_inverse() * world_xf
+		else:
+			local_xf = parent.transform * bb.transform
+		var idx: int = parent.get_index()
+		var target_name: String = parent.name
+		# 1) 摘除 bb
+		parent.remove_child(bb)
+		bb.owner = null
+		# 2) 摘除 parent（geoset 空壳），释放同名空间
+		grandparent.remove_child(parent)
+		parent.free()
+		# 3) 改名 + add 到 grandparent（此时无同名兄弟）
+		bb.name = target_name
+		grandparent.add_child(bb)
+		bb.transform = local_xf
+		bb.owner = root
+		var new_idx := grandparent.get_child_count() - 1
+		grandparent.move_child(bb, min(idx, new_idx))
+		bb.set_meta(META_MESH_KIND, int(bb.get_meta(META_MESH_KIND, MeshKind.KEEP)))
+	root.set_meta(META_PLAN_B, true)
+	root.set_meta("wc3_fx_plan_b_promoted", billboards.size())
+	return true
+
+
+static func _find_plan_b_targets(
+	n: Node,
+	empty_parents: Array,
+	billboards: Array
+) -> void:
+	for c in n.get_children():
+		if c is MeshInstance3D:
+			var mi := c as MeshInstance3D
+			var has_child_bb: bool = false
+			var child_count := 0
+			for gc in mi.get_children():
+				child_count += 1
+				if gc is MeshInstance3D and String(gc.name) == "FxBillboard":
+					has_child_bb = true
+			# 已被 presenter 替换（mesh == null 且 meta REPLACED=true）且带 FxBillboard 子节点
+			if mi.mesh == null and bool(mi.get_meta(META_REPLACED, false)) and has_child_bb and child_count == 1:
+				empty_parents.append(mi)
+				for gc in mi.get_children():
+					if gc is MeshInstance3D and String(gc.name) == "FxBillboard":
+						billboards.append(gc)
+		_find_plan_b_targets(c, empty_parents, billboards)
 
 
 static func classify_mesh(mi: MeshInstance3D) -> int:

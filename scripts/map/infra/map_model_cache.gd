@@ -830,6 +830,7 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 	# 飞弹/技能特效：语义 present（软球 / 广告牌）；PE2 已由 pe2 bake 写入
 	if Wc3FxPresenter.path_wants_fx_present(logical):
 		Wc3FxPresenter.present(proto)
+		Wc3FxPresenter.maybe_apply_plan_b(proto, logical)
 		proto.set_meta("wc3_fx_scaled", true)
 	apply_bone_rest_sidecar(proto, glb_path)
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
