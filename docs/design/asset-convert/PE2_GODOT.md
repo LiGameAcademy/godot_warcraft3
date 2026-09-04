@@ -1,22 +1,42 @@
-# MDX 特效 → Godot（PE2 / TeamGlow / 光）
+# MDX 特效 → Godot（PE2 / TeamGlow / 光 / 飞弹面片）
 
-> **层**：资源映射（`tools/asset-convert` sidecar）+ 表现烘焙（`export_model_scenes` / `MapModelCache`）。  
-> **对照模型**：`Units/Human/HeroArchMage`（杖尖火花、施法焰、马蹄尘、脚底/杖尖 TeamGlow）。  
-> **最后更新**：2026-08-19  
+> **层**：资源映射（`tools/asset-convert` sidecar）+ 表现烘焙（`export_model_scenes` / `MapModelCache` / **`Wc3FxPresenter`**）。  
+> **对照模型**：`Units/Human/HeroArchMage`（杖尖火花、施法焰、马蹄尘、脚底/杖尖 TeamGlow）；飞弹见 `Abilities/Weapons/*`。  
+> **最后更新**：2026-09-03  
 > **不是最终还原**：GPUParticles3D 只能近似 ParticleEmitter2；下文「未做」是下一轮优先项。
 
 蒙皮与挂点插座见 [MDX_SKINNING_GODOT.md](MDX_SKINNING_GODOT.md)。小件 geoset / BoneAttachment 清单见 [ATTACHMENTS_BAKE.md](ATTACHMENTS_BAKE.md)（那份偏旗子/时钟，粒子细节以本文为准）。
 
 ---
 
-## 1. 特效分三类，不要混进一个 JSON
+## 1. 特效分四类，不要混进一个 JSON
 
 | 原作 | Sidecar / 来源 | Godot | 映射脚本 |
 |------|----------------|-------|----------|
 | **ParticleEmitter2** | `*.pe2.json` | `GPUParticles3D` | **`Wc3Pe2Particles._make_emitter`**（唯一实现） |
 | **TeamGlow**（ReplaceableId=2 geoset） | 材质名 `_rep2` / TeamGlow PNG，**不在 pe2.json** | 脚底 `ShaderMaterial` + 杖尖 `TeamGlowBillboard` | `MapModelCache._present_team_glow_mesh` |
+| **飞弹 Additive/广告牌面片** | glTF geoset（十字球、光晕四边形） | **Billboard 软圆 / 贴图广告牌**（藏原 mesh） | **`Wc3FxPresenter`**（bake + `prepare_fx_model`） |
 | **Light** | `attachments.json` / glTF 灯 | `OmniLight3D` 等 | bake 时 `_reparent_lights_into_pe2` |
 | **RibbonEmitter** | 基本未做 | — | 见 §5 |
+
+**语义选型（飞弹网格）**：不按单位名特判。
+
+| 判定 | Godot |
+|------|-------|
+| Additive 少面 + 近似正方 AABB | 软圆 Billboard（`wc3_team_glow` + `use_billboard`） |
+| ≤4 三角扁广告牌（含 Transparent 箭矢贴图） | Additive→软圆；否则 StandardMaterial `BILLBOARD_ENABLED` |
+| 细长尾迹 / 实体武器网格（斧、石头） | **KEEP** mesh（仅 FilterMode 材质修正） |
+| PE2 | 仍走 pe2 管线，Presenter 不改粒子 |
+
+触发路径：`Abilities/Weapons/`、`Abilities/Spells/`、`Objects/Spawnmodels/`、路径含 `missile`。
+
+**金样 `FireBallMissile`**：
+
+| 序列 | 期望 |
+|------|------|
+| Stand | G0/G1→子节点 `FxBillboard` 软圆（跟 geosetvis）；PE2 烟+焰 |
+| Death | Geoset 隐藏→软圆跟着隐；`BlizParticle02burst` 爆开 |
+| 玩法命中 | `combat_projectile_shell` 优先播 **Death**（不是 Birth） |
 
 `export_pe2_scenes.gd` 已弃用（单独 `pe2.tscn`）。粒子贴图 bake 进 `.scn`，不入库 tscn。
 

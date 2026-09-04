@@ -1,13 +1,16 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_disabled;
+// 单位披风/肩饰 _fm2_rep1 常是单面壳（Priest Geoset_1）。
+// 勿写 ALPHA（即便 1.0）：Godot 会整进透明队列 → 与袍体 MASK 深度/排序打架，
+// 表现为「侧面能见队色披挂、正面胸口镂空」。复合色已是不透明，走 opaque 管线。
+// cull_disabled：MDX 常不标 TwoSided，单面壳正面需可见。
+render_mode blend_mix, depth_draw_opaque, cull_disabled, unshaded, fog_disabled;
 
 // WC3 team color + team glow 整合：
-// - Layer0=TeamColor（不透明）：被 player color 替换（diffuse_tex alpha 处透出 team_color）
-// - Layer2=TeamGlow（加色 emissive）：player color 叠加发光（glow_mask 控权重）
-// 整体按不透明写深度（避免建筑透视）。
+// - Layer0=TeamColor（不透明 Unshaded）：player color 垫底
+// - Layer1=漫反射 Blend：alpha 处透出队色 → mix(team, diff, a)
+// - Layer2=TeamGlow（可选 emissive）
 //
 // D-2 扩展：加 team_glow uniform + use_glow 开关 + glow_mask sampler。
-//   D-3 export_model_scenes 在 kind=teamcolor/glow 的 mesh 上调 set_shader_parameter。
 
 uniform sampler2D diffuse_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D team_color_tex : source_color, filter_linear_mipmap, repeat_enable;
@@ -23,9 +26,8 @@ void fragment() {
 		? texture(team_color_tex, UV).rgb
 		: team_color_fallback.rgb;
 	ALBEDO = mix(team, diff.rgb, diff.a);
-	ALPHA = 1.0;
+	// 故意不写 ALPHA → 留在 opaque 管线，深度与 G0 MASK 正确交互。
 
-	// Team glow：emissive 加色（不走 diffuse，alpha 用 glow_mask R 通道）
 	EMISSION = vec3(0.0);
 	if (use_glow > 0.5 && team_glow.a > 0.0) {
 		float glow_mask = texture(glow_mask_tex, UV).r;

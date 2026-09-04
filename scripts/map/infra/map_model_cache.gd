@@ -51,6 +51,7 @@ func _instance_glb_internal(path: String, sanitize: bool, unit_soft_blend: bool 
 		var inst := packed.instantiate()
 		if inst is Node3D:
 			if sanitize:
+				_stamp_glb_model_meta(inst as Node3D, path, unit_soft_blend)
 				_mark_waterish_if_needed(inst as Node3D, path, unit_soft_blend)
 				_fix_wc3_blend_materials(inst as Node3D, unit_soft_blend)
 				_sanitize_triangle_meshes(inst as Node3D)
@@ -62,10 +63,20 @@ func _instance_glb_internal(path: String, sanitize: bool, unit_soft_blend: bool 
 		return null
 	var dup := proto.duplicate() as Node3D
 	if dup != null and sanitize:
+		_stamp_glb_model_meta(dup, path, unit_soft_blend)
 		_mark_waterish_if_needed(dup, path, unit_soft_blend)
 		_fix_wc3_blend_materials(dup, unit_soft_blend)
 		_sanitize_triangle_meshes(dup)
 	return dup
+
+
+func _stamp_glb_model_meta(root: Node3D, path: String, unit_soft_blend: bool) -> void:
+	if root == null or path.is_empty():
+		return
+	var logical := path.replace("\\", "/").trim_prefix("res://assets/asset-converted/")
+	root.set_meta("wc3_glb_logical", logical)
+	if unit_soft_blend and glb_path_uses_unit_soft_blend(logical):
+		root.set_meta("wc3_unit_model", true)
 
 
 func _mark_waterish_if_needed(root: Node, path: String, unit_soft_blend: bool) -> void:
@@ -454,15 +465,16 @@ func _ensure_scene(path: String, prefer_visuals: bool = true) -> Node3D:
 		return null
 	if prefer_visuals and _scene_cache.has(path):
 		return _scene_cache[path] as Node3D
-	# 优先旁路 .scn（免 GLTFDocument）；导出基座时 prefer_visuals=false 跳过 visuals
-	var from_scn := _try_load_scn_packed(path, prefer_visuals)
-	if from_scn != null:
-		var inst := from_scn.instantiate()
-		if inst is Node3D:
-			# 即使 prefer_visuals=false 也写入缓存，供随后 bake_model_scene 打包
-			return _register_loaded_scene(path, inst as Node3D, false)
-		if inst != null:
-			inst.free()
+	# prefer_visuals=false：export/bake 基座必须从 glTF 重读。
+	# 若吃旧 .scn，表面 override 可能丢 _fm1 名，单位 soft 修复会失效并写回错误材质。
+	if prefer_visuals:
+		var from_scn := _try_load_scn_packed(path, true)
+		if from_scn != null:
+			var inst := from_scn.instantiate()
+			if inst is Node3D:
+				return _register_loaded_scene(path, inst as Node3D, false)
+			if inst != null:
+				inst.free()
 	var loaded := RuntimeAssets.load_gltf_scene(path)
 	if loaded == null:
 		return null
@@ -530,7 +542,45 @@ func _register_loaded_scene(path: String, loaded: Node3D, from_gltf: bool = true
 
 
 ## 按指定动画 at_time 的 :visible 轨立刻设 Geoset 显隐（不依赖正在播放）。
-func _snap_geoset_visibility_pose(root: Node, anim_name: String, at_time: float = 0.0) -> void:
+func _node_visual_aabb(root: Node3D) -> AABB:
+	if root == null:
+		return AABB()
+	var aabb := AABB()
+	var first := true
+	for c in root.find_children("*", "VisualInstance3D", true, false):
+		var vi := c as VisualInstance3D
+		if vi == null or not vi.visible:
+			continue
+		var la := vi.get_aabb()
+		# 离树时没有 global_transform；用相对 root 的局部累积。
+		var xf := _xform_to_ancestor(vi, root)
+		for i in range(8):
+			var corner := la.position + la.size * Vector3(
+				float(i & 1), float((i >> 1) & 1), float((i >> 2) & 1)
+			)
+			var p := xf * corner
+			if first:
+				aabb = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				aabb = aabb.expand(p)
+	return aabb
+
+
+## node 相对 ancestor 的 Transform（含中间父链；ancestor 不含自身）。
+func _xform_to_ancestor(node: Node3D, ancestor: Node3D) -> Transform3D:
+	var xf := Transform3D.IDENTITY
+	var cur: Node = node
+	while cur != null and cur != ancestor:
+		if cur is Node3D:
+			xf = (cur as Node3D).transform * xf
+		cur = cur.get_parent()
+	return xf
+
+
+func _snap_geoset_visibility_pose(
+	root: Node, anim_name: String, at_time: float = 0.0, hide_zero_scale: bool = true
+) -> void:
 	var ap := _find_animation_player(root)
 	if ap == null:
 		return
@@ -549,17 +599,23 @@ func _snap_geoset_visibility_pose(root: Node, anim_name: String, at_time: float 
 	for i in anim.get_track_count():
 		var tpath := anim.track_get_path(i)
 		var ps := str(tpath)
-		if not ps.contains("Geoset_") or not ps.ends_with(":visible"):
+		if not ps.contains("Geoset_"):
 			continue
 		if anim.track_get_key_count(i) <= 0:
 			continue
-		any_vis_track = true
-		var vis := _track_bool_at(anim, i, at_time)
-		var target := _geoset_node_from_track(anim_root, tpath)
-		if target != null:
-			target.visible = vis
-	# 无 :visible 轨时仍尝试按 rest scale=0 藏（旧 GLB）；失败则保持原样
-	if not any_vis_track:
+		var target: Node3D = null
+		if ps.ends_with(":visible"):
+			any_vis_track = true
+			var vis := _track_bool_at(anim, i, at_time)
+			target = _geoset_node_from_track(anim_root, tpath)
+			if target != null:
+				target.visible = vis
+		elif ps.ends_with(":modulate"):
+			target = _geoset_node_from_track(anim_root, tpath)
+			if target != null:
+				target.modulate = _track_color_at(anim, i, at_time)
+	# 无 :visible 轨时仍尝试按 rest scale=0 藏（旧 GLB）；肖像用 scale 轨显隐，须跳过
+	if not any_vis_track and hide_zero_scale:
 		_hide_zero_scale_geosets(root)
 
 
@@ -567,8 +623,10 @@ func _geoset_node_from_track(anim_root: Node, tpath: NodePath) -> Node3D:
 	if anim_root == null:
 		return null
 	var ps := str(tpath)
-	if ps.ends_with(":visible"):
-		ps = ps.substr(0, ps.length() - ":visible".length())
+	for suffix in [":visible", ":modulate"]:
+		if ps.ends_with(suffix):
+			ps = ps.substr(0, ps.length() - suffix.length())
+			break
 	var n := anim_root.get_node_or_null(NodePath(ps))
 	if n is Node3D:
 		return n as Node3D
@@ -594,6 +652,19 @@ func _track_bool_at(anim: Animation, track_i: int, time_sec: float) -> bool:
 		else:
 			break
 	return vis
+
+
+func _track_color_at(anim: Animation, track_i: int, time_sec: float) -> Color:
+	var n := anim.track_get_key_count(track_i)
+	if n <= 0:
+		return Color.WHITE
+	var col: Color = anim.track_get_key_value(track_i, 0)
+	for k in range(n):
+		if anim.track_get_key_time(track_i, k) <= time_sec + 0.0001:
+			col = anim.track_get_key_value(track_i, k)
+		else:
+			break
+	return col
 
 
 ## AnimationPlayer 动画名解析：精确 → 叶名大小写不敏感 → 驼峰/去空格 → 库前缀。
@@ -754,7 +825,12 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 	var unit_soft := glb_path_uses_unit_soft_blend(logical)
 	if unit_soft and logical.to_lower().contains("water"):
 		proto.set_meta("wc3_waterish_model", true)
+	_stamp_glb_model_meta(proto, glb_path, unit_soft)
 	_fix_wc3_blend_materials(proto, unit_soft)
+	# 飞弹/技能特效：语义 present（软球 / 广告牌）；PE2 已由 pe2 bake 写入
+	if Wc3FxPresenter.path_wants_fx_present(logical):
+		Wc3FxPresenter.present(proto)
+		proto.set_meta("wc3_fx_scaled", true)
 	apply_bone_rest_sidecar(proto, glb_path)
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
 	# 门面脚本必须在 pack 直前挂上（export 里 set_script 曾未写入 .scn）
@@ -833,7 +909,7 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 		var anim := ap.get_animation(resolved)
 		if anim == null:
 			continue
-		_remove_geoset_visible_tracks(anim)
+		_remove_geoset_presentation_tracks(anim)
 		var geosets: Variant = seq.get("geosets", {})
 		if typeof(geosets) != TYPE_DICTIONARY:
 			continue
@@ -864,13 +940,27 @@ func _inject_geoset_vis_tracks(glb_path: String, root: Node) -> bool:
 				anim.track_set_path(ti, track_path)
 				anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
 				anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
+				var mod_path := NodePath("%s:modulate" % str(rel))
+				var ti_mod := anim.add_track(Animation.TYPE_VALUE)
+				anim.track_set_path(ti_mod, mod_path)
+				anim.value_track_set_update_mode(ti_mod, Animation.UPDATE_CONTINUOUS)
+				anim.track_set_interpolation_type(ti_mod, Animation.INTERPOLATION_LINEAR)
+				var need_modulate := false
 				for key_v in keys_v as Array:
 					if typeof(key_v) != TYPE_DICTIONARY:
 						continue
 					var kd: Dictionary = key_v
 					var t := float(kd.get("t", 0.0))
-					var vis := int(kd.get("v", 1)) != 0
+					var alpha := float(kd.get("alpha", -1.0))
+					if alpha < 0.0:
+						alpha = 1.0 if int(kd.get("v", 1)) != 0 else 0.0
+					var vis := alpha > 0.004
 					anim.track_insert_key(ti, t, vis)
+					anim.track_insert_key(ti_mod, t, Color(1.0, 1.0, 1.0, alpha))
+					if alpha > 0.004 and alpha < 0.996:
+						need_modulate = true
+				if not need_modulate:
+					anim.remove_track(ti_mod)
 				injected = true
 	return injected
 
@@ -951,12 +1041,17 @@ func _strip_ba_geoset_prefix(nm: String) -> String:
 	return nm
 
 
-func _remove_geoset_visible_tracks(anim: Animation) -> void:
+func _remove_geoset_presentation_tracks(anim: Animation) -> void:
 	for i in range(anim.get_track_count() - 1, -1, -1):
 		var p := str(anim.track_get_path(i))
-		# 含 Geoset_12 与 Geoset_12_Group_0
-		if p.contains("Geoset_") and p.ends_with(":visible"):
+		if not p.contains("Geoset_"):
+			continue
+		if p.ends_with(":visible") or p.ends_with(":modulate"):
 			anim.remove_track(i)
+
+
+func _remove_geoset_visible_tracks(anim: Animation) -> void:
+	_remove_geoset_presentation_tracks(anim)
 
 
 ## 把 replaceable 队伍色占位贴图换成 TeamColorXX（对齐 WE / HiveWE 预览染色）。
@@ -1024,6 +1119,9 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = f
 							"team_color", Color(fallback.r, fallback.g, fallback.b, 1.0)
 						)
 						mi.set_surface_override_material(si, glow_out)
+						# 已挂杖尖 billboard 的源十字面片应保持隐藏
+						if _root_has_team_glow_billboard(root):
+							mi.visible = false
 				continue
 			if not (mat is StandardMaterial3D):
 				continue
@@ -1035,7 +1133,9 @@ func apply_team_color(root: Node, color_index: int = 0, hide_team_glow: bool = f
 			if not _is_team_color_material(sm):
 				continue
 			if _is_team_color_underlay_material(sm):
-				mi.set_surface_override_material(si, _make_team_color_underlay(sm, tex, fallback))
+				mi.set_surface_override_material(
+					si, _make_team_color_underlay(sm, tex, fallback)
+				)
 			elif tex != null:
 				var out := sm.duplicate() as StandardMaterial3D
 				out.albedo_texture = tex
@@ -1066,12 +1166,20 @@ func _is_placeholder_team_color_texture(tex: Texture2D) -> bool:
 	)
 
 
+func _material_resource_key(mat: Material) -> String:
+	if mat == null:
+		return ""
+	return (str(mat.resource_name) + " " + str(mat.get_name())).to_lower()
+
+
 func _make_team_color_underlay(
 	src: StandardMaterial3D, team_tex: Texture2D, fallback: Color
 ) -> ShaderMaterial:
 	var sh: Shader = load("res://assets/shaders/wc3_team_color_underlay.gdshader") as Shader
 	var out := ShaderMaterial.new()
 	out.shader = sh
+	# 与袍体同优先级即可；shader 已不进透明队列，勿靠提高 priority 治深度。
+	out.render_priority = 0
 	out.set_shader_parameter("diffuse_tex", src.albedo_texture)
 	if team_tex != null:
 		out.set_shader_parameter("team_color_tex", team_tex)
@@ -1080,6 +1188,33 @@ func _make_team_color_underlay(
 		out.set_shader_parameter("use_team_texture", false)
 	out.set_shader_parameter("team_color_fallback", fallback)
 	return out
+
+
+## 飞弹 / 命中 FX：材质修正 + 语义 present（软球/广告牌）+ 必要时 WORLD_SCALE。
+## 已 bake 的 .scn（子节点 scale=0.01）不要二次缩放。
+func prepare_fx_model(root: Node3D) -> void:
+	if root == null:
+		return
+	_fix_wc3_blend_materials(root, false)
+	Wc3FxPresenter.present(root)
+	if bool(root.get_meta("wc3_fx_scaled", false)):
+		return
+	# 已有 MODEL_SCALE 子根（convert 写入）→ 世界 AABB 应 < ~2m
+	var worldish := _node_visual_aabb(root)
+	if worldish.size.length() <= 2.5:
+		root.set_meta("wc3_fx_scaled", true)
+		return
+	root.scale = root.scale * Wc3Coords.WORLD_SCALE
+	root.set_meta("wc3_fx_scaled", true)
+
+
+## 兼容旧调用：转交 Wc3FxPresenter。
+func _present_fx_sphere_billboards(root: Node) -> void:
+	if root is Node3D:
+		Wc3FxPresenter.present(root as Node3D)
+
+
+const META_FX_SPHERE_PRESENTED := "wc3_fx_presented"
 
 
 func _is_team_color_underlay_shader(mat: ShaderMaterial) -> bool:
@@ -1231,8 +1366,7 @@ func _should_hide_preview_mesh(mi: MeshInstance3D) -> bool:
 			or blob.contains("portraitbackground")
 			or blob.contains("portrait_background")
 			or blob.contains("portrait bg")
-			or blob.contains("background")
-			or blob.contains("back_ground")
+			or blob.contains("portraitback")
 		):
 			return true
 		# 模型内嵌 Textures\Shadow.blp（地精商店脚底实心黑盘等）；真正建筑阴影走 unitUI.buildingShadow
@@ -1289,6 +1423,16 @@ const META_GLOW_BILLBOARD := "wc3_team_glow_billboard"
 const TEAM_GLOW_FOOT_NY := 0.65
 
 
+func _root_has_team_glow_billboard(root: Node) -> bool:
+	if root == null:
+		return false
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi != null and bool(mi.get_meta(META_GLOW_BILLBOARD, false)):
+			return true
+	return false
+
+
 ## 把 Team Glow geoset 拆成：脚底贴地网格 + 杖尖 billboard。
 ## MDX 杖尖是多张平行四边形，斜看必露卡片；billboard 软圆才像球形光晕。
 func _present_team_glow_mesh(
@@ -1304,41 +1448,45 @@ func _present_team_glow_mesh(
 	var foot_mesh: ArrayMesh = split.get("foot", null) as ArrayMesh
 	var tip_aabb: AABB = split.get("tip_aabb", AABB()) as AABB
 	var has_tip: bool = bool(split.get("has_tip", false))
-	if foot_mesh != null and foot_mesh.get_surface_count() > 0:
+	var has_foot := foot_mesh != null and foot_mesh.get_surface_count() > 0
+	mi.set_meta(META_GLOW_PRESENTED, true)
+	var host: Node3D = null
+	if has_tip and tip_aabb.size.length() >= 1e-4:
+		host = _resolve_team_glow_tip_host(root, mi)
+	# 有武器挂点 + 杖尖：整片十字面片改 billboard，不再保留「误判脚底」残留
+	if host != null and has_tip:
+		mi.visible = false
+		var side := maxf(12.0, tip_aabb.size.length() * 0.55)
+		var quad := QuadMesh.new()
+		quad.size = Vector2(side, side)
+		var tip_bb := MeshInstance3D.new()
+		tip_bb.name = "TeamGlowBillboard"
+		tip_bb.mesh = quad
+		tip_bb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tip_bb.set_meta(META_GLOW_BILLBOARD, true)
+		tip_bb.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
+		var tip := host.get_node_or_null("Tip") as Node3D
+		if tip != null:
+			tip.add_child(tip_bb)
+			tip_bb.owner = root
+			tip_bb.transform = Transform3D.IDENTITY
+		else:
+			host.add_child(tip_bb)
+			tip_bb.owner = root
+			tip_bb.position = _team_glow_tip_local_offset(host, tip_aabb, root)
+		return
+	if has_foot:
 		mi.mesh = foot_mesh
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
-	else:
-		# 无脚底：可能是肖像背景板（主城 Geoset_1 仅 Portrait* 可见）。
-		# 保留原 mesh + glow shader，显隐交给 geosetvis；不要整片关掉。
+		mi.visible = true
+	elif has_tip:
+		# 无武器挂点的 tip-only（少见）：保留 mesh，避免光晕直接消失
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
-	mi.set_meta(META_GLOW_PRESENTED, true)
-	if not has_tip or tip_aabb.size.length() < 1e-4:
-		return
-	var host := _resolve_team_glow_tip_host(root, mi)
-	if host == null:
-		# 无 Weapon/Staff：不是英雄杖尖。禁止再造 Geoset_*_GlowBillboard
-		# （那条常显、没有 Portrait 显隐轨，主城 Stand 会多一块光板）。
-		return
-	# 杖尖：单张软圆，尺寸取 tip AABB 对角线的一部分
-	var side := maxf(12.0, tip_aabb.size.length() * 0.55)
-	var quad := QuadMesh.new()
-	quad.size = Vector2(side, side)
-	var tip_bb := MeshInstance3D.new()
-	tip_bb.name = "TeamGlowBillboard"
-	tip_bb.mesh = quad
-	tip_bb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	tip_bb.set_meta(META_GLOW_BILLBOARD, true)
-	tip_bb.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
-	var tip := host.get_node_or_null("Tip") as Node3D
-	if tip != null:
-		# 与 Tip 同一世界位：挂到 Tip 下，局部 Transform 单位阵
-		tip.add_child(tip_bb)
-		tip_bb.owner = root
-		tip_bb.transform = Transform3D.IDENTITY
+		mi.visible = true
 	else:
-		host.add_child(tip_bb)
-		tip_bb.owner = root
-		tip_bb.position = _team_glow_tip_local_offset(host, tip_aabb, root)
+		# 肖像背景板等
+		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
+		mi.visible = true
 
 
 ## BoneAttachment 跟骨原点；杖尖在 pivot_delta / tip AABB。
@@ -1761,7 +1909,8 @@ func mesh_parts_from_glb(path: String) -> Array:
 ## - FilterMode Additive/AddAlpha：glTF 只能标 BLEND，需改成 ADD（否则黑底 Glow 变实心牌）
 ## - FilterMode Blend（建筑）：改 ALPHA_SCISSOR，避免酒馆/市场透视
 ## - FilterMode Blend（单位 _fm2）：DEPTH_PRE_PASS + 双面（水元素体、火枪披风等软 alpha）
-## - FilterMode Transparent（_fm1）：袍/披风常是单面壳，强制双面
+## - FilterMode Transparent（单位 _fm1）：保持 MASK≈0.75 + 双面（贴近 WC3 Transparent；
+##   勿 DEPTH_PRE_PASS——Priest 等与队色层共用图集，软 alpha 会把胸前镂空）
 ## - 默认双面（旧 convert）→ 非 TwoSided/非 Additive/非 fm1/fm2 强制 cull_back
 func _fix_wc3_blend_materials(root: Node, unit_soft_blend: bool = false) -> void:
 	if root == null:
@@ -1818,9 +1967,69 @@ func _as_wc3_material_fix(
 			).to_lower()
 			if key.contains("_fm2"):
 				return mat
+		# 单位袍体 _fm1：WC3 Transparent ≈ MASK@0.75 + 双面（可从旧 DEPTH_PRE_PASS 拉回）。
+		var fm1 := _as_wc3_unit_fm1_mask_fix(mat)
+		if fm1 != mat:
+			return fm1
+		# 已是 MASK 目标态：勿再落入建筑 scissor（阈值 0.08 会误伤）。
+		if mat is StandardMaterial3D:
+			var sm_done := mat as StandardMaterial3D
+			var k_done := (
+				str(sm_done.resource_name) + " " + str(sm_done.get_name())
+			).to_lower()
+			if k_done.contains("_fm1"):
+				return mat
+			# 仅保留 _fm2 soft 目标态短路（DEPTH_PRE_PASS + 双面）；_fm1 不再走 soft。
+			if (
+				sm_done.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+				and sm_done.cull_mode == BaseMaterial3D.CULL_DISABLED
+				and sm_done.blend_mode != BaseMaterial3D.BLEND_MODE_ADD
+			):
+				return mat
 	var scissor := _as_wc3_blend_scissor_fix(mat)
 	var cull := _as_wc3_cull_back_fix(scissor)
 	return _as_wc3_transparent_two_sided_fix(cull)
+
+
+## 单位 FilterMode=1 Transparent（_fm1）：贴近 war3-model / convert 的 MASK@0.75。
+## 袍体与队色层常共用一张 BLP：软混合会把「队色窗」alpha 当成胸口镂空。
+## 单面壳仍强制双面（MDX 常不标 TwoSided）。
+const WC3_TRANSPARENT_MASK_THRESHOLD := 0.75
+
+
+func _as_wc3_unit_fm1_mask_fix(mat: Material) -> Material:
+	if not (mat is StandardMaterial3D):
+		return mat
+	var sm := mat as StandardMaterial3D
+	if sm.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
+		return mat
+	var key := (str(sm.resource_name) + " " + str(sm.get_name())).to_lower()
+	var looks_fm1 := key.contains("_fm1")
+	# bake 吃旧 scn 时 override 可能丢名；高阈值 MASK 也可识别为 Transparent
+	if (
+		not looks_fm1
+		and sm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		and sm.alpha_scissor_threshold >= 0.5
+	):
+		looks_fm1 = true
+	if not looks_fm1:
+		return mat
+	var want_transp := BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	if (
+		sm.transparency == want_transp
+		and sm.cull_mode == BaseMaterial3D.CULL_DISABLED
+		and absf(sm.alpha_scissor_threshold - WC3_TRANSPARENT_MASK_THRESHOLD) < 0.001
+	):
+		return mat
+	var out := sm.duplicate() as StandardMaterial3D
+	if out.resource_name.is_empty() and not key.strip_edges().is_empty():
+		out.resource_name = sm.resource_name if not sm.resource_name.is_empty() else sm.get_name()
+	out.transparency = want_transp
+	out.alpha_scissor_threshold = WC3_TRANSPARENT_MASK_THRESHOLD
+	out.cull_mode = BaseMaterial3D.CULL_DISABLED
+	out.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	out.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	return out
 
 
 ## 单位 FilterMode=2 Blend（_fm2）：保留软 alpha，对齐 WC3 水元素/披风。
@@ -1865,7 +2074,7 @@ func _as_wc3_unit_fm2_soft_fix(mat: Material, waterish_model: bool = false) -> M
 	var want_a := sm.albedo_color.a
 	if waterish:
 		# WC3 Blend 中段 alpha 偏「实」；略压整体 alpha 更像流体体积
-		want_a = clampf(sm.albedo_color.a * 0.72, 0.35, 0.85)
+		want_a = clampf(sm.albedo_color.a * 0.48, 0.22, 0.62)
 	if (
 		sm.transparency == want_transp
 		and sm.cull_mode == BaseMaterial3D.CULL_DISABLED
@@ -1882,8 +2091,15 @@ func _as_wc3_unit_fm2_soft_fix(mat: Material, waterish_model: bool = false) -> M
 		var c := out.albedo_color
 		c.a = want_a
 		out.albedo_color = c
-		out.roughness = minf(out.roughness, 0.35)
-		out.metallic = 0.0
+		out.roughness = minf(out.roughness, 0.22)
+		out.metallic = 0.05
+		# 略抬高 albedo 亮度，半透明下更像水体折射
+		out.albedo_color = Color(
+			minf(c.r * 1.08, 1.0),
+			minf(c.g * 1.12, 1.0),
+			minf(c.b * 1.15, 1.0),
+			want_a
+		)
 	return out
 
 
@@ -2137,10 +2353,12 @@ func snap_stand_geoset_visibility(root: Node) -> void:
 
 
 ## 按任意 Sequence（如 Stand_Work / Decay_Flesh）指定时刻的 :visible 定格 geoset。
-func snap_geoset_visibility_for(root: Node, anim_name: String, at_time: float = 0.0) -> void:
+func snap_geoset_visibility_for(
+	root: Node, anim_name: String, at_time: float = 0.0, hide_zero_scale: bool = true
+) -> void:
 	if root == null or anim_name.is_empty():
 		return
-	_snap_geoset_visibility_pose(root, anim_name, at_time)
+	_snap_geoset_visibility_pose(root, anim_name, at_time, hide_zero_scale)
 
 
 func _collect_mesh_parts(n: Node, out: Array) -> void:
