@@ -206,6 +206,89 @@ func converted_glb_path(type_id: String, variation: int = 0) -> String:
 			var p := RuntimeAssets.converted_path(stem + ext)
 			if RuntimeAssets.file_exists(p):
 				return p
+	return _scan_converted_model_file(base, variation)
+
+
+## 目录扫描：SLK 路径大小写 / AltarofKings vs AltarOfKings 与磁盘不一致时兜底。
+func _scan_converted_model_file(base: String, variation: int = 0) -> String:
+	var dir_logical := base.get_base_dir()
+	var stem_want := base.get_file().to_lower()
+	var disk_dir := _resolve_converted_dir(dir_logical)
+	if disk_dir.is_empty():
+		return ""
+	var da := DirAccess.open(disk_dir)
+	if da == null:
+		return ""
+	var want_var := str(variation) if variation > 0 else ""
+	var found_plain := ""
+	da.list_dir_begin()
+	var fname := da.get_next()
+	while fname != "":
+		if fname.begins_with("."):
+			fname = da.get_next()
+			continue
+		var lower := fname.to_lower()
+		if not (lower.ends_with(".gltf") or lower.ends_with(".glb")):
+			fname = da.get_next()
+			continue
+		var file_stem := lower.get_basename()
+		if file_stem == stem_want or file_stem == stem_want + "0":
+			da.list_dir_end()
+			return RuntimeAssets.converted_path("%s/%s" % [dir_logical, fname])
+		if want_var.is_empty() and file_stem.begins_with(stem_want):
+			found_plain = fname
+		elif not want_var.is_empty() and file_stem == stem_want + want_var:
+			da.list_dir_end()
+			return RuntimeAssets.converted_path("%s/%s" % [dir_logical, fname])
+		fname = da.get_next()
+	da.list_dir_end()
+	if not found_plain.is_empty():
+		return RuntimeAssets.converted_path("%s/%s" % [dir_logical, found_plain])
+	return ""
+
+
+func _resolve_converted_dir(dir_logical: String) -> String:
+	var direct := RuntimeAssets.project_abs(RuntimeAssets.converted_path(dir_logical))
+	if not direct.is_empty() and DirAccess.dir_exists_absolute(direct):
+		return direct
+	# 在 Buildings/* / Units/* 下按末级目录名大小写无关匹配
+	var leaf := dir_logical.get_file().to_lower()
+	if leaf.is_empty():
+		return ""
+	for root in ["Buildings", "Units", "buildings", "units"]:
+		var root_abs := RuntimeAssets.project_abs(RuntimeAssets.converted_path(root))
+		if root_abs.is_empty() or not DirAccess.dir_exists_absolute(root_abs):
+			continue
+		var root_da := DirAccess.open(root_abs)
+		if root_da == null:
+			continue
+		root_da.list_dir_begin()
+		var race := root_da.get_next()
+		while race != "":
+			if race.begins_with("."):
+				race = root_da.get_next()
+				continue
+			var race_path := "%s/%s" % [root, race]
+			var race_abs := RuntimeAssets.project_abs(RuntimeAssets.converted_path(race_path))
+			if DirAccess.dir_exists_absolute(race_abs):
+				var race_da := DirAccess.open(race_abs)
+				if race_da != null:
+					race_da.list_dir_begin()
+					var folder := race_da.get_next()
+					while folder != "":
+						if folder.begins_with("."):
+							folder = race_da.get_next()
+							continue
+						if folder.to_lower() == leaf:
+							race_da.list_dir_end()
+							root_da.list_dir_end()
+							return RuntimeAssets.project_abs(
+								RuntimeAssets.converted_path("%s/%s" % [race_path, folder])
+							)
+						folder = race_da.get_next()
+					race_da.list_dir_end()
+			race = root_da.get_next()
+		root_da.list_dir_end()
 	return ""
 
 
@@ -230,8 +313,8 @@ func portrait_glb_path(type_id: String) -> String:
 			if RuntimeAssets.file_exists(p):
 				return p
 	# 目录扫描兜底（大小写不一致时）
-	var disk_dir := RuntimeAssets.project_abs(RuntimeAssets.converted_path(dir))
-	if disk_dir.is_empty() or not DirAccess.dir_exists_absolute(disk_dir):
+	var disk_dir := _resolve_converted_dir(dir)
+	if disk_dir.is_empty():
 		return ""
 	var da := DirAccess.open(disk_dir)
 	if da == null:

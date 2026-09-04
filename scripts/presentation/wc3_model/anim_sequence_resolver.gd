@@ -52,6 +52,16 @@ static func stance_suffix(stance: int) -> String:
 		_:
 			return ""								## 默认姿态后缀。
 
+
+## 普攻动画回退（牧师/女巫等无 Attack，只有 SpellAttack）。
+static func attack_animation_fallbacks() -> Array:
+	return ["Attack", "SpellAttack", "Spell Attack", "Spell Throw", "Spell"]
+
+
+## 英雄升天 / 消散死亡回退。
+static func hero_dissipate_fallbacks() -> Array:
+	return ["Dissipate", "Death", "Dissipate Alternate"]
+
 ## 活动基础。
 static func activity_base(activity: int) -> String:
 	match activity:

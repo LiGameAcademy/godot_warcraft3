@@ -71,7 +71,7 @@ func _test_water_elemental_fm2() -> void:
 						"水体 _fm2 期望 TRANSPARENCY_ALPHA，实际 transparency=%d"
 						% sm.transparency
 					)
-				if sm.albedo_color.a > 0.9:
+				if sm.albedo_color.a > 0.7:
 					_fail("水体 _fm2 albedo.a 应被压低，实际 %.2f" % sm.albedo_color.a)
 			elif sm.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS:
 				_fail(

@@ -15,6 +15,11 @@ signal training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: i
 ## 当前槽进度（约 10Hz）；HUD 订阅，勿让 Director 每帧轮询。
 signal progress_changed(progress: float, remaining_sec: float)
 
+## 最近一次完工条目（含 is_revive / revive_level）；Director 读后即清。
+var _last_completed: Dictionary = {}
+## 最近一次取消条目（复活失败时写回 DeathRegistry）。
+var _last_cancelled: Dictionary = {}
+
 
 const STATE_IDLE := 0
 const STATE_TRAINING := 1
@@ -87,6 +92,8 @@ func snapshot() -> Array[Dictionary]:
 			"gold": int(e.get("gold", 0)),
 			"lumber": int(e.get("lumber", 0)),
 			"food": int(e.get("food", 0)),
+			"revive_level": int(e.get("revive_level", 0)),
+			"is_revive": bool(e.get("is_revive", false)),
 		})
 	return out
 
@@ -99,7 +106,8 @@ func enqueue(
 	lumber: int,
 	food: int,
 	site_wc3: Vector2,
-	player_owner: int
+	player_owner: int,
+	extra: Dictionary = {}
 ) -> bool:
 	if is_full():
 		return false
@@ -115,6 +123,8 @@ func enqueue(
 		"owner": player_owner,
 		"elapsed": 0.0,
 	}
+	for k in extra.keys():
+		entry[k] = extra[k]
 	var was_empty := _entries.is_empty()
 	_entries.append(entry)
 	if was_empty:
@@ -154,6 +164,7 @@ func cancel_at(index: int) -> bool:
 	var food := int(e.get("food", 0))
 	var refund_g: int = int(round(float(gold) * CANCEL_REFUND_RATIO))
 	var refund_l: int = int(round(float(lumber) * CANCEL_REFUND_RATIO))
+	_last_cancelled = e.duplicate(true)
 	_entries.remove_at(index)
 	if _entries.is_empty():
 		_state = STATE_IDLE
@@ -165,6 +176,18 @@ func cancel_at(index: int) -> bool:
 	queue_changed.emit()
 	training_cancelled.emit(uid, refund_g, refund_l, food)
 	return true
+
+
+func take_last_cancelled() -> Dictionary:
+	var out := _last_cancelled
+	_last_cancelled = {}
+	return out
+
+
+func take_last_completed() -> Dictionary:
+	var out := _last_completed
+	_last_completed = {}
+	return out
 
 
 func _begin_active() -> void:
@@ -210,6 +233,7 @@ func _process(delta: float) -> void:
 	var uid := str(e.get("unit_id", ""))
 	var site: Vector2 = e.get("site_wc3", Vector2.INF) as Vector2
 	var o := int(e.get("owner", 0))
+	_last_completed = e.duplicate(true)
 	_entries.remove_at(0)
 	training_completed.emit(uid, site, o)
 	if _entries.is_empty():

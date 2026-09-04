@@ -88,6 +88,8 @@ func resync() -> void:
 		alive[id] = true
 		if not _entries.has(id):
 			_entries[id] = _make_bar(n)
+		else:
+			_refresh_attach_entry(_entries[id], n)
 	var stale: Array = []
 	for id in _entries.keys():
 		if not alive.has(id):
@@ -103,9 +105,11 @@ func _process(_delta: float) -> void:
 		resync()
 	for id in _entries.keys():
 		var e: Dictionary = _entries[id]
-		var node: Node3D = e.get("node") as Node3D
-		var bar: Control = e.get("bar") as Control
-		if node == null or not is_instance_valid(node) or bar == null:
+		var node := _safe_node3d(e.get("node"))
+		var bar := e.get("bar") as Control
+		if bar != null and not is_instance_valid(bar):
+			bar = null
+		if node == null or bar == null:
 			_free_entry(int(id))
 			continue
 		if not node.is_visible_in_tree() or not node.visible:
@@ -167,23 +171,39 @@ func _should_show(node: Node3D, id: int) -> bool:
 	return false
 
 
+func _safe_node3d(v: Variant) -> Node3D:
+	if v is Object and is_instance_valid(v) and v is Node3D:
+		return v as Node3D
+	return null
+
+
+func _safe_skeleton(v: Variant) -> Skeleton3D:
+	if v is Object and is_instance_valid(v) and v is Skeleton3D:
+		return v as Skeleton3D
+	return null
+
+
+func _refresh_attach_entry(e: Dictionary, node: Node3D) -> void:
+	var resolved := _resolve_attach(node)
+	e["attach"] = resolved.get("attach")
+	e["skeleton"] = resolved.get("skeleton")
+	e["bone_idx"] = int(resolved.get("bone_idx", -1))
+
+
 func _bar_world_pos(e: Dictionary, node: Node3D) -> Vector3:
-	var sk: Skeleton3D = e.get("skeleton") as Skeleton3D
+	var sk := _safe_skeleton(e.get("skeleton"))
 	var bone_idx: int = int(e.get("bone_idx", -1))
-	var attach: Node3D = e.get("attach") as Node3D
+	var attach := _safe_node3d(e.get("attach"))
 	# 建条时模型可能未就绪；缺挂点则懒解析一次
-	if (attach == null or not is_instance_valid(attach)) and (sk == null or not is_instance_valid(sk) or bone_idx < 0):
-		var resolved := _resolve_attach(node)
-		e["attach"] = resolved.get("attach")
-		e["skeleton"] = resolved.get("skeleton")
-		e["bone_idx"] = int(resolved.get("bone_idx", -1))
-		attach = e.get("attach") as Node3D
-		sk = e.get("skeleton") as Skeleton3D
+	if attach == null and sk == null:
+		_refresh_attach_entry(e, node)
+		attach = _safe_node3d(e.get("attach"))
+		sk = _safe_skeleton(e.get("skeleton"))
 		bone_idx = int(e.get("bone_idx", -1))
 	# OverHead Ref 优先于骨骼
-	if attach != null and is_instance_valid(attach):
+	if attach != null:
 		return attach.global_position + Vector3(0.0, Y_BIAS, 0.0)
-	if sk != null and is_instance_valid(sk) and bone_idx >= 0:
+	if sk != null and bone_idx >= 0:
 		return sk.to_global(sk.get_bone_global_pose(bone_idx).origin) + Vector3(0.0, Y_BIAS, 0.0)
 	var h := _estimate_height(node)
 	return node.global_position + Vector3(0.0, h + Y_BIAS, 0.0)
@@ -287,11 +307,14 @@ func _make_bar(node: Node3D) -> Dictionary:
 
 func _apply_fill(e: Dictionary, r: float) -> void:
 	var fill := e.get("fill") as ColorRect
-	if fill == null:
+	if fill == null or not is_instance_valid(fill):
 		return
 	r = clampf(r, 0.0, 1.0)
 	fill.size.x = maxf((BAR_W - 2.0) * r, 0.0)
-	if UnitLife.is_under_construction(e.get("node") as Node3D):
+	var node := _safe_node3d(e.get("node"))
+	if node == null:
+		return
+	if UnitLife.is_under_construction(node):
 		fill.color = Color(0.35, 0.75, 1.0, 0.95)
 	elif r > 0.55:
 		fill.color = Color(0.25, 0.85, 0.35, 0.95)
@@ -305,7 +328,7 @@ func _free_entry(id: int) -> void:
 	if not _entries.has(id):
 		return
 	var e: Dictionary = _entries[id]
-	var bar: Control = e.get("bar") as Control
+	var bar := e.get("bar") as Control
 	if bar != null and is_instance_valid(bar):
 		bar.queue_free()
 	_entries.erase(id)

@@ -107,3 +107,10 @@ func _spawn_target_fx(host: Node3D) -> void:
 func _exit_tree() -> void:
 	if is_active():
 		_deactivate()
+
+
+## 单位死亡时清 Buff + 头顶 FX（DeathService 入口调用）。
+static func cleanup_on_death(unit: Node3D) -> void:
+	var c := of(unit)
+	if c != null:
+		c._deactivate()

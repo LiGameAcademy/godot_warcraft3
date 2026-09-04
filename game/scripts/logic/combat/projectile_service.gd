@@ -24,12 +24,15 @@ func fire(attacker: Node3D, target: Node3D, visual_only: bool = false) -> int:
 		return -1
 	if not is_instance_valid(attacker) or not is_instance_valid(target):
 		return -1
-	var from_xy := Wc3Coords.godot_to_wc3_xy(attacker.global_position)
-	var to_xy := Wc3Coords.godot_to_wc3_xy(target.global_position)
+	var from_full := Wc3Coords.godot_to_wc3(attacker.global_position)
+	var to_full := Wc3Coords.godot_to_wc3(target.global_position)
 	var launch := CombatQuery.launch_offset_wc3(attacker)
 	var impact_z := CombatQuery.impact_z_wc3(attacker)
-	var from_wc3 := Vector3(from_xy.x + launch.x, from_xy.y + launch.y, launch.z)
-	var to_wc3 := Vector3(to_xy.x, to_xy.y, impact_z)
+	# launch/impact Z 相对单位原点；须叠在地形高度上（勿写死 66）。
+	var from_wc3 := Vector3(
+		from_full.x + launch.x, from_full.y + launch.y, from_full.z + launch.z
+	)
+	var to_wc3 := Vector3(to_full.x, to_full.y, to_full.z + impact_z)
 	var dist := _horiz_dist(from_wc3, to_wc3)
 	var speed := CombatQuery.missile_speed_wc3(attacker)
 	var duration := CombatQuery.travel_time_sec(dist, speed)
@@ -71,12 +74,14 @@ func fire_spell(
 		return -1
 	if not is_instance_valid(caster) or not is_instance_valid(target):
 		return -1
-	var from_xy := Wc3Coords.godot_to_wc3_xy(caster.global_position)
-	var to_xy := Wc3Coords.godot_to_wc3_xy(target.global_position)
+	var from_full := Wc3Coords.godot_to_wc3(caster.global_position)
+	var to_full := Wc3Coords.godot_to_wc3(target.global_position)
 	var launch := CombatQuery.launch_offset_wc3(caster)
 	var impact_z := CombatQuery.impact_z_wc3(caster)
-	var from_wc3 := Vector3(from_xy.x + launch.x, from_xy.y + launch.y, launch.z)
-	var to_wc3 := Vector3(to_xy.x, to_xy.y, impact_z)
+	var from_wc3 := Vector3(
+		from_full.x + launch.x, from_full.y + launch.y, from_full.z + launch.z
+	)
+	var to_wc3 := Vector3(to_full.x, to_full.y, to_full.z + impact_z)
 	var dist := _horiz_dist(from_wc3, to_wc3)
 	var speed := maxf(speed_wc3, 1.0)
 	var duration := CombatQuery.travel_time_sec(dist, speed)
@@ -132,8 +137,8 @@ func tick(delta: float) -> void:
 			_flights.remove_at(i)
 			continue
 		var impact_z := float(f.get("impact_z", CombatQuery.impact_z_wc3(f.get("attacker") as Node)))
-		var to_xy := Wc3Coords.godot_to_wc3_xy(target.global_position)
-		var to_wc3 := Vector3(to_xy.x, to_xy.y, impact_z)
+		var to_full := Wc3Coords.godot_to_wc3(target.global_position)
+		var to_wc3 := Vector3(to_full.x, to_full.y, to_full.z + impact_z)
 		f["to_wc3"] = to_wc3
 		var pos: Vector3 = f.get("pos_wc3", f.get("from_wc3", Vector3.ZERO))
 		var speed := maxf(float(f.get("speed_wc3", 900.0)), 1.0)

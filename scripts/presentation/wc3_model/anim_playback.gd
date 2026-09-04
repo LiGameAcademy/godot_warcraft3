@@ -26,7 +26,7 @@ static func find_animation_player(n: Node) -> AnimationPlayer:
 		return n as AnimationPlayer
 	if n.has_meta(META_ANIM_PLAYER):
 		var cached: Variant = n.get_meta(META_ANIM_PLAYER)
-		if cached is AnimationPlayer and is_instance_valid(cached):
+		if cached is Object and is_instance_valid(cached) and cached is AnimationPlayer:
 			return cached as AnimationPlayer
 		n.remove_meta(META_ANIM_PLAYER)
 	var found: Array[Node] = n.find_children("*", "AnimationPlayer", true, false)
@@ -280,6 +280,19 @@ static func play_logical(
 	var played_as := logical.replace(" ", "_")
 	if resolved.is_empty():
 		for fb in fallbacks:
+			resolved = resolve(root, str(fb), ap)
+			if not resolved.is_empty():
+				played_as = str(fb).replace(" ", "_")
+				AppLog.debug(
+					AppLog.Layer.PRESENT,
+					_TAG,
+					"play_logical 回退 logical=%s → %s" % [logical, played_as]
+				)
+				break
+	if resolved.is_empty() and activity_hint == AnimSequenceResolver.Activity.ATTACK:
+		for fb in AnimSequenceResolver.attack_animation_fallbacks():
+			if fb in fallbacks:
+				continue
 			resolved = resolve(root, str(fb), ap)
 			if not resolved.is_empty():
 				played_as = str(fb).replace(" ", "_")

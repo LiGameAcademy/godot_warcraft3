@@ -916,6 +916,15 @@ func _find_local_town_hall() -> Node3D:
 	return null
 
 
+func _order_militia_move_to_hall(unit: Node3D, hall: Node3D) -> void:
+	if unit == null or hall == null or _command_router == null:
+		return
+	if not is_instance_valid(unit) or not is_instance_valid(hall):
+		return
+	var goal := Wc3Coords.godot_to_wc3_xy(hall.global_position)
+	_command_router.issue_move_to_wc3([unit], goal, UnitOrder.Source.PANEL)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
 	if (
@@ -2453,11 +2462,19 @@ func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
 		return null
 	var existing := MilitiaController.of(unit)
 	if existing != null:
-		existing.configure(Callable(self, "_apply_unit_form"))
+		existing.configure(
+			Callable(self, "_apply_unit_form"),
+			Callable(self, "_find_local_town_hall"),
+			Callable(self, "_order_militia_move_to_hall")
+		)
 		return existing
 	var mc := MilitiaController.new()
 	mc.name = MilitiaController.NODE_NAME
-	mc.configure(Callable(self, "_apply_unit_form"))
+	mc.configure(
+		Callable(self, "_apply_unit_form"),
+		Callable(self, "_find_local_town_hall"),
+		Callable(self, "_order_militia_move_to_hall")
+	)
 	unit.add_child(mc)
 	return mc
 
@@ -2522,7 +2539,8 @@ func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: i
 	var glb: String = catalog.converted_glb_path(type_id, variation)
 	if glb.is_empty():
 		return false
-	var inst: Node3D = cache.instance_glb(glb) as Node3D
+	var unit_soft := not BuildingVisual.is_building(type_id)
+	var inst: Node3D = cache.instance_glb(glb, unit_soft) as Node3D
 	if inst == null:
 		return false
 	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
@@ -2537,14 +2555,22 @@ func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: i
 	if old != null:
 		old.name = "Model_Old"
 		old.queue_free()
+	unit.remove_meta(AnimPlayback.META_ANIM_PLAYER)
 	unit.add_child(inst)
 	# 新 Model 置顶（旧节点可能延后释放）
 	unit.move_child(inst, 0)
 	var vis := _ensure_unit_visual(unit)
+	var ap := AnimPlayback.find_animation_player(inst)
+	if ap == null:
+		ap = AnimPlayback.find_animation_player(unit)
 	if vis != null:
 		vis.bind_cache(cache)
-		var ap := AnimPlayback.find_animation_player(unit)
 		vis.bind_animation_player(ap)
+	var u2 := Unit.of(unit)
+	if u2 != null and ap != null:
+		u2.bind_animation_player(ap)
+	if ap != null:
+		AnimPlayback.bind_animation_player(unit, ap)
 	cache.autoplay_stand(unit)
 	if cache.has_method("snap_stand_geoset_visibility"):
 		cache.call("snap_stand_geoset_visibility", unit)
@@ -2558,13 +2584,21 @@ func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
 	if unit_selector == null or not unit_selector.has_method("get_selected"):
 		return 0
 	var selected: Array = unit_selector.call("get_selected")
-	var n_ok := 0
+	var bells: Array[Node3D] = []
+	var direct: Array[Node3D] = []
 	for n in selected:
 		if not (n is Node3D):
 			continue
 		var unit := n as Node3D
-		if not MilitiaController.unit_has_abil(unit):
-			continue
+		var tid := CombatQuery.type_id_of(unit)
+		if BuildingVisual.is_building(tid) and _building_has_town_bell(tid):
+			bells.append(unit)
+		elif MilitiaController.unit_has_abil(unit):
+			direct.append(unit)
+	var n_ok := 0
+	if not bells.is_empty():
+		n_ok += _issue_town_bell_near_peasants(bells, source)
+	for unit in direct:
 		if _command_router != null:
 			_command_router.issue_stop([unit], source)
 		var mc := _ensure_militia_controller(unit)
@@ -2575,6 +2609,54 @@ func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
 	elif game_hud != null:
 		game_hud.set_status("战斗号召：无可用农民/民兵")
 	_refresh_command_card()
+	return n_ok
+
+
+const TOWN_BELL_RADIUS_WC3 := 2800.0
+
+
+func _building_has_town_bell(type_id: String) -> bool:
+	var cat := CommandButtonCatalog.get_shared()
+	for abil_id in cat.get_all_abil_list(type_id):
+		if cat.get_ability_order(str(abil_id)) == "townbellon":
+			return true
+	return false
+
+
+func _issue_town_bell_near_peasants(bells: Array[Node3D], source: int) -> int:
+	var host := _unit_host()
+	if host == null:
+		return 0
+	var n_ok := 0
+	var touched: Dictionary = {}
+	for bell in bells:
+		if bell == null or not is_instance_valid(bell):
+			continue
+		var owner := int(bell.get_meta("unit_data", {}).get("owner", 0))
+		var bell_xy := Wc3Coords.godot_to_wc3_xy(bell.global_position)
+		for c in host.get_children():
+			if not (c is Node3D):
+				continue
+			var unit := c as Node3D
+			if not is_instance_valid(unit):
+				continue
+			if int(unit.get_meta("unit_data", {}).get("owner", -1)) != owner:
+				continue
+			var tid := CombatQuery.type_id_of(unit)
+			if tid != "hpea" and tid != "hmil":
+				continue
+			var uid := unit.get_instance_id()
+			if touched.has(uid):
+				continue
+			var uxy := Wc3Coords.godot_to_wc3_xy(unit.global_position)
+			if uxy.distance_to(bell_xy) > TOWN_BELL_RADIUS_WC3:
+				continue
+			touched[uid] = true
+			if _command_router != null:
+				_command_router.issue_stop([unit], source)
+			var mc := _ensure_militia_controller(unit)
+			if mc != null and mc.toggle_call_to_arms():
+				n_ok += 1
 	return n_ok
 
 
@@ -2612,7 +2694,15 @@ func _on_combat_projectile_launched(info: Dictionary) -> void:
 	if shell == null:
 		return
 	shell.name = "CombatProjectileShell_%s" % str(info.get("id", 0))
-	add_child(shell)
+	# 必须挂在 3D 场景树；优先 unit_layer（与单位同层）。
+	var fx_parent: Node = map_root
+	if map_root != null and map_root.has_method("get_unit_layer"):
+		var layer := map_root.get_unit_layer()
+		if layer != null:
+			fx_parent = layer
+	elif map_root == null:
+		fx_parent = self
+	fx_parent.add_child(shell)
 	if shell.has_method("play"):
 		shell.call(
 			"play",
@@ -2663,6 +2753,11 @@ func _on_damage_applied_present(result: Dictionary) -> void:
 func _on_unit_dying(unit: Node3D) -> void:
 	if unit == null:
 		return
+	InnerFireController.cleanup_on_death(unit)
+	var bh := BuffHost.of(unit)
+	if bh != null:
+		bh.clear_all()
+	HeroDeathRegistry.register_death(unit)
 	_release_unit_food(unit)
 	if unit_selector != null and unit_selector.has_method("deselect_unit"):
 		unit_selector.call("deselect_unit", unit)
@@ -3443,6 +3538,7 @@ func _apply_building_train_card(building: Node3D, tid: String) -> void:
 			>= TechPresence.MAX_HEROES_PER_PLAYER
 		),
 		"hide_trains": under,
+		"dead_heroes": HeroDeathRegistry.dead_heroes(owner_id),
 	}
 	if building != null and not under:
 		var q := building.get_node_or_null("TrainQueue") as TrainQueue
@@ -3544,6 +3640,89 @@ func _try_issue_train(unit_id: String) -> void:
 	if game_hud:
 		var n := queue.queue_count() if queue != null else 1
 		game_hud.set_status("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
+
+
+## 祭坛复活阵亡英雄：费用/时间随等级；入 TrainQueue，完工刷回同等级。
+func _try_issue_revive(unit_id: String) -> void:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		if game_hud:
+			game_hud.set_status("请先选中祭坛")
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	if building_id != "halt":
+		if game_hud:
+			game_hud.set_status("仅祭坛可复活英雄")
+		return
+	if UnitLife.is_under_construction(primary):
+		if game_hud:
+			game_hud.set_status("建造中，无法复活")
+		return
+	var uid := unit_id.strip_edges()
+	if not TechPresence.is_hero_id(uid):
+		return
+	var owner_id := int(d.get("owner", 0))
+	var entry := HeroDeathRegistry.take_for_revive(owner_id, uid)
+	if entry.is_empty():
+		if game_hud:
+			game_hud.set_status("无待复活的 %s" % uid)
+		return
+	var lv := maxi(int(entry.get("level", 1)), 1)
+	var gold := HeroDeathRegistry.revive_cost(lv)
+	var time_sec := HeroDeathRegistry.revive_time_sec(lv)
+	var stock := _local_stock()
+	if stock != null and stock.gold < gold:
+		HeroDeathRegistry.restore_dead(entry)
+		if game_hud:
+			game_hud.set_status("金币不足（需要 %d）" % gold)
+		return
+	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if queue == null:
+		queue = TrainQueue.new()
+		queue.name = "TrainQueue"
+		primary.add_child(queue)
+	if queue.is_full():
+		HeroDeathRegistry.restore_dead(entry)
+		if game_hud:
+			game_hud.set_status("训练队列已满（%d/%d）" % [queue.queue_count(), TrainQueue.MAX_QUEUE])
+		return
+	if stock != null and not stock.try_spend(gold, 0):
+		HeroDeathRegistry.restore_dead(entry)
+		if game_hud:
+			game_hud.set_status("金币不足（需要 %d）" % gold)
+		return
+	var site := Wc3Coords.godot_to_wc3_xy(primary.global_position)
+	var ok := queue.enqueue(
+		uid,
+		time_sec,
+		gold,
+		0,
+		0,
+		site,
+		owner_id,
+		{
+			"is_revive": true,
+			"revive_level": lv,
+			"revive_ability_levels": entry.get("ability_levels", {}),
+			"revive_xp": int(entry.get("hero_xp", 0)),
+			"revive_entry": entry,
+		}
+	)
+	if not ok:
+		if stock != null:
+			stock.add_gold(gold)
+		HeroDeathRegistry.restore_dead(entry)
+		if game_hud:
+			game_hud.set_status("无法复活 %s" % uid)
+		return
+	_wire_train_queue(queue)
+	if game_hud:
+		game_hud.set_status("复活中：%s · Lv%d（%d金 · %.0fs）" % [uid, lv, gold, time_sec])
+	_apply_building_train_card(primary, building_id)
+	_sync_build_hud_for_selection()
 
 
 func _try_issue_research(upgrade_id: String) -> void:
@@ -3686,6 +3865,11 @@ func _on_train_queue_cancel(slot_index: int) -> void:
 	_wire_train_queue(tq)
 	if not tq.cancel_at(slot_index):
 		return
+	var cancelled := tq.take_last_cancelled()
+	if bool(cancelled.get("is_revive", false)):
+		var rev: Variant = cancelled.get("revive_entry", {})
+		if typeof(rev) == TYPE_DICTIONARY and not (rev as Dictionary).is_empty():
+			HeroDeathRegistry.restore_dead(rev as Dictionary)
 	_sync_building_train_visual(primary)
 	var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
 	if not tid.is_empty():
@@ -3707,8 +3891,10 @@ func _on_train_queue_changed(queue: TrainQueue = null) -> void:
 
 func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queue: TrainQueue) -> void:
 	var building: Node3D = null
+	var completed: Dictionary = {}
 	if queue != null and is_instance_valid(queue):
 		building = queue.get_parent() as Node3D
+		completed = queue.take_last_completed()
 	_sync_building_train_visual(building)
 	if TechPresence.is_upgrade_id(unit_id):
 		_on_research_completed(unit_id, building)
@@ -3716,7 +3902,11 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
 	if node == null:
 		push_warning("GameDirector: 训练完成但刷单位失败 %s" % unit_id)
-		# 刷失败：释回人口（开训时已预占）
+		# 刷失败：释回人口（开训时已预占）；复活则写回阵亡登记
+		if bool(completed.get("is_revive", false)):
+			var rev: Variant = completed.get("revive_entry", {})
+			if typeof(rev) == TYPE_DICTIONARY and not (rev as Dictionary).is_empty():
+				HeroDeathRegistry.restore_dead(rev as Dictionary)
 		var stock := _local_stock()
 		if stock != null:
 			var food := BuildingCatalog.get_food_used(unit_id)
@@ -3725,6 +3915,8 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 		if game_hud:
 			game_hud.set_status("训练完成但刷出失败：%s" % unit_id)
 		return
+	if bool(completed.get("is_revive", false)):
+		_apply_revived_hero_state(node, completed)
 	if unit_selector != null and unit_selector.has_method("get_primary"):
 		var primary: Node3D = unit_selector.call("get_primary") as Node3D
 		if primary != null and building != null and primary == building:
@@ -3733,7 +3925,24 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 				_apply_building_train_card(building, tid)
 			_sync_build_hud_for_selection()
 	if game_hud:
-		game_hud.set_status("训练完成：%s" % unit_id)
+		if bool(completed.get("is_revive", false)):
+			game_hud.set_status(
+				"复活完成：%s · Lv%d" % [unit_id, int(completed.get("revive_level", 1))]
+			)
+		else:
+			game_hud.set_status("训练完成：%s" % unit_id)
+
+
+func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
+	if unit == null or completed.is_empty():
+		return
+	var lv := maxi(int(completed.get("revive_level", 1)), 1)
+	var xp := int(completed.get("revive_xp", -1))
+	HeroProgression.set_level(unit, lv, xp)
+	var levels: Variant = completed.get("revive_ability_levels", {})
+	if typeof(levels) == TYPE_DICTIONARY:
+		unit.set_meta(AbilityCatalog.META_ABILITY_LEVELS, (levels as Dictionary).duplicate(true))
+	_ensure_hero_runtime(unit)
 
 
 func _on_research_completed(upgrade_id: String, building: Node3D) -> void:
@@ -4210,9 +4419,13 @@ func _on_command_action(
 				var uid := action_id.substr(CommandCard.ACTION_TRAIN_PREFIX.length())
 				_try_issue_train(uid)
 				return
+			if action_id.begins_with(CommandCard.ACTION_REVIVE_PREFIX):
+				var rid := action_id.substr(CommandCard.ACTION_REVIVE_PREFIX.length())
+				_try_issue_revive(rid)
+				return
 			if action_id.begins_with(CommandCard.ACTION_RESEARCH_PREFIX):
-				var rid := action_id.substr(CommandCard.ACTION_RESEARCH_PREFIX.length())
-				_try_issue_research(rid)
+				var rid2 := action_id.substr(CommandCard.ACTION_RESEARCH_PREFIX.length())
+				_try_issue_research(rid2)
 				return
 			if action_id.begins_with(CommandCard.ACTION_LEARN_PREFIX):
 				var lid := action_id.substr(CommandCard.ACTION_LEARN_PREFIX.length())
@@ -4624,6 +4837,7 @@ func _refresh_command_card() -> void:
 				"researched": _researched_for_local(),
 				"defend_active": _primary_defend_active(),
 				"hero_skill_menu_open": _hero_skill_menu_open,
+				"militia_active": tid == "hmil",
 			}
 			if primary != null:
 				state.merge(_ability_ui_state_for(primary), true)
@@ -4655,6 +4869,7 @@ func _apply_peasant_command_card(
 				"building_executing": _build_executing_flags(build_ids),
 				"build_menu_open": _build_menu_open,
 				"worker_race": "human",
+				"militia_active": worker_tid == "hmil",
 			}
 		)
 	)

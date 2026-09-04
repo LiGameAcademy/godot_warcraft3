@@ -184,9 +184,8 @@ static func _unit_func_missile_art_raw(type_id: String) -> String:
 
 
 ## 真 missile 飞行模型（Hamg→FireBall）。instant 远程为空（飞的是空，命中用 impact）。
+## 真 missile 飞行模型（Hamg→FireBall）。instant 远程也可能带 Missileart 作飞弹壳。
 static func weapon_missile_art(node: Node) -> String:
-	if not uses_projectile_travel(node):
-		return ""
 	return missile_art_for_type(type_id_of(node))
 
 
@@ -200,11 +199,12 @@ static func missile_art_for_type(type_id: String) -> String:
 	return ""
 
 
-## 命中特效：instant 远程用 UnitFunc.Missileart（hrif→RifleImpact）；真 missile 可空（飞弹本体到点即终）。
+## 命中特效：instant 远程用 Missileart 作 Impact；真 missile 到点也播同款 Birth/命中。
 static func weapon_impact_art(node: Node) -> String:
+	var tid := type_id_of(node)
 	if uses_projectile_travel(node):
-		return ""
-	return impact_art_for_type(type_id_of(node))
+		return missile_art_for_type(tid)
+	return impact_art_for_type(tid)
 
 
 static func impact_art_for_type(type_id: String) -> String:
@@ -216,9 +216,13 @@ static func impact_art_for_type(type_id: String) -> String:
 	return ""
 
 
-## 是否用可见曳光/飞弹体（真 missile）；instant 远程只播命中特效。
+## 是否用可见曳光/飞弹体（真 missile 或带 Missileart 的 instant 远程）。
 static func wants_tracer_visual(node: Node) -> bool:
-	return uses_projectile_travel(node)
+	if uses_projectile_travel(node):
+		return true
+	if not weapon_missile_art(node).is_empty():
+		return true
+	return wants_projectile_visual(node)
 
 
 ## 弹道速度（WC3 单位/秒）：UnitFunc.Missilespeed → 兜底表 → 默认。

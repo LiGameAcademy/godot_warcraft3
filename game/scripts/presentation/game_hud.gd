@@ -866,6 +866,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		btn.modulate = Color(1, 1, 1, 0.55)
 		btn.focus_mode = Control.FOCUS_NONE
 		_set_button_auto_cast(btn, false, false)
+		_set_button_level_badge(btn, 0)
 		return
 	btn.disabled = not enabled
 	btn.focus_mode = Control.FOCUS_ALL
@@ -891,6 +892,35 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		btn.text = text
 	_set_button_executing(btn, executing)
 	_set_button_auto_cast(btn, auto_cast, autocast_capable)
+	_set_button_level_badge(btn, int(entry.get("badge_level", 0)))
+
+
+func _set_button_level_badge(btn: Button, level: int) -> void:
+	if btn == null:
+		return
+	var badge := btn.get_node_or_null("LevelBadge") as Label
+	if level <= 0:
+		if badge != null:
+			badge.visible = false
+		return
+	if badge == null:
+		badge = Label.new()
+		badge.name = "LevelBadge"
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		badge.add_theme_font_size_override("font_size", 12)
+		badge.add_theme_color_override("font_color", Color(1, 0.95, 0.55))
+		badge.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		badge.add_theme_constant_override("outline_size", 3)
+		badge.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		badge.offset_left = -18.0
+		badge.offset_top = -16.0
+		badge.offset_right = -2.0
+		badge.offset_bottom = -2.0
+		btn.add_child(badge)
+	badge.text = str(level)
+	badge.visible = true
 
 
 func _set_button_auto_cast(btn: Button, active: bool, capable: bool = false) -> void:

@@ -7,6 +7,7 @@ import {
   collectSampleFrames,
   evaluateNodeWorldMatrices,
   LINE_TYPE_NAMES,
+  normalizeGeosetAlpha,
   sampleGeosetAlphaInSequence,
   sequenceBakeDurationMs,
   wc3SequenceToAnimName,
@@ -38,6 +39,12 @@ import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
 import { getLog } from "../../pipeline-log.mjs";
 
 const MODEL_SCALE = 0.01;
+
+/** MDX 定长名字常带 \\0 填充；写入 glTF/JSON 前必须剥掉，否则 Godot 报 Unexpected NUL。 */
+function sanitizeMdxText(s) {
+	if (s == null) return "";
+	return String(s).replace(/\0/g, "").trim();
+}
 
 /** MDX CollisionShapes.Shape：0=box，1=plane，2=sphere（部分资源还有 3=cylinder）。 */
 const COLLISION_SHAPE_NAMES = ["box", "plane", "sphere", "cylinder"];
@@ -525,25 +532,30 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
       33,
       model.GeosetAnims || [],
     );
-    /** @type {Record<string, Array<{ t: number, v: number }>>} */
+    /** @type {Record<string, Array<{ t: number, alpha: number, v: number }>>} */
     const geosets = {};
     for (const gi of ids) {
-      /** @type {Array<{ t: number, v: number }>} */
+      /** @type {Array<{ t: number, alpha: number, v: number }>} */
       const keys = [];
-      let last = /** @type {number | null} */ (null);
+      let lastAlpha = /** @type {number | null} */ (null);
       for (const frame of frames) {
         const timeSec = (frame - start) / 1000;
-        const alpha = sampleGeosetAlphaInSequence(
+        const alphaRaw = sampleGeosetAlphaInSequence(
           model.GeosetAnims,
           gi,
           frame,
           start,
           end,
         );
+        const alpha = normalizeGeosetAlpha(alphaRaw);
         const v = alpha >= 0.5 ? 1 : 0;
-        if (last === null || last !== v) {
-          keys.push({ t: Math.round(timeSec * 1000) / 1000, v });
-          last = v;
+        if (lastAlpha === null || Math.abs(lastAlpha - alpha) > 0.0005) {
+          keys.push({
+            t: Math.round(timeSec * 1000) / 1000,
+            alpha,
+            v,
+          });
+          lastAlpha = alpha;
         }
       }
       geosets[String(gi)] = keys;
@@ -558,7 +570,7 @@ function writeGeosetVisSidecar(model, logicalPath, outDir, geosetIds) {
   const visLogical = mdxLogicalToGeosetVis(logicalPath);
   const dest = path.join(outDir, ...visLogical.split("/"));
   const payload = {
-    version: 1,
+    version: 2,
     source: normalizeLogicalPath(logicalPath),
     sequences: sequencesOut,
   };
@@ -804,7 +816,8 @@ export function extractAttachments(model, logicalPath) {
 
 	function boneNameById(id) {
 		if (id == null) return null;
-		return _boneIdToName.get(id) ?? null;
+		const n = _boneIdToName.get(id) ?? null;
+		return n == null ? null : sanitizeMdxText(n);
 	}
 
 	const out = {
@@ -828,7 +841,7 @@ export function extractAttachments(model, logicalPath) {
 	for (const a of model.Attachments ?? []) {
 		const parentNode = nodeByObjectId(a.Parent);
 		const entry = {
-			name: a.Name,
+			name: sanitizeMdxText(a.Name),
 			type: "attachment",
 			bone: boneNameById(a.Parent),
 			source: `attachment_${a.AttachmentID ?? 0}`,
@@ -853,10 +866,10 @@ export function extractAttachments(model, logicalPath) {
 	}
 	for (const p of model.ParticleEmitters2 ?? []) {
 		out.attachments.push({
-			name: p.Name,
+			name: sanitizeMdxText(p.Name),
 			type: "particle",
 			bone: boneNameById(p.Parent),
-			source: `pe2:${p.Name}`,
+			source: `pe2:${sanitizeMdxText(p.Name)}`,
 		});
 	}
 	for (const l of model.Lights ?? []) {
@@ -874,7 +887,7 @@ export function extractAttachments(model, logicalPath) {
 			visibilityDefault = Number(vis0) >= 0.5;
 		}
 		const entry = {
-			name: l.Name,
+			name: sanitizeMdxText(l.Name),
 			type: "light",
 			bone: boneNameById(l.Parent),
 			source: Number(l.LightType) === 0 ? "OmniLight" : "DirectionalLight",
@@ -892,7 +905,7 @@ export function extractAttachments(model, logicalPath) {
 	}
 	for (const r of model.RibbonEmitters ?? []) {
 		out.attachments.push({
-			name: r.Name,
+			name: sanitizeMdxText(r.Name),
 			type: "ribbon",
 			bone: boneNameById(r.Parent),
 			source: "ribbon_emitter",
@@ -1047,7 +1060,8 @@ function extraHelperNodes(model, boneNodes) {
 }
 
 function uniqueJointName(src, used) {
-  const base = String(src?.Name || `Bone_${src?.ObjectId}`).trim() || `Bone_${src?.ObjectId}`;
+  const base =
+    sanitizeMdxText(src?.Name || `Bone_${src?.ObjectId}`) || `Bone_${src?.ObjectId}`;
   if (!used.has(base)) {
     used.add(base);
     return base;
@@ -1699,17 +1713,17 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
         }
 
         for (const gi of geosetMeshNodes.keys()) {
-          const alpha = sampleGeosetAlphaInSequence(
+          const alphaRaw = sampleGeosetAlphaInSequence(
             model.GeosetAnims,
             gi,
             seqFrame,
             start,
             end,
           );
-          const visible = alpha >= 0.5 ? 1 : 0;
+          const alphaNorm = normalizeGeosetAlpha(alphaRaw);
           const gTrack = geosetScaleTracks.get(gi);
           gTrack.times.push(timeSec);
-          gTrack.s.push(visible, visible, visible);
+          gTrack.s.push(alphaNorm, alphaNorm, alphaNorm);
         }
       }
 

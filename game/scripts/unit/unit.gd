@@ -1,4 +1,4 @@
-﻿class_name Unit
+class_name Unit
 extends Node3D
 
 ## 单位实体根：玩法入口 + Stance×Activity → 模型门面播放。
@@ -37,6 +37,7 @@ const _CORPSE_DEATH := 1
 const _CORPSE_FLESH := 2
 const _CORPSE_BONE := 3
 const _CORPSE_DONE := 4
+const _CORPSE_DISSIPATE := 5 ## 英雄升天（单次 Dissipate，无尸体链）
 
 ## 尸体停留结束，应由 Director 走 MapLoader.remove_unit_instance；无订阅则 queue_free。
 signal corpse_expired(unit: Node3D)
@@ -64,6 +65,8 @@ var _dying: bool = false ## 是否死亡表现（Death → Decay）。
 var _corpse_phase: int = _CORPSE_NONE ## 尸体链阶段。
 var _corpse_watch_id: int = 0 ## 阶段切换时作废旧 timeout。
 var _played_any_decay: bool = false ## 是否已播过 Flesh/Bone。
+var _hero_ascend: bool = false ## 英雄 Dissipate 升天（无尸体链）。
+var _hero_death_before_dissipate: bool = false ## 英雄先播 Death 再 Dissipate。
 var _building_work: bool = false ## 是否施工。
 var _spell_casting: bool = false ## 技能施法动画中。
 var _logical: String = "" ## 逻辑名。
@@ -270,13 +273,15 @@ func set_chopping(active: bool) -> void:
 		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
 
 
-## 死亡表现：Death → 完整播 Decay Flesh → Decay Bone（片长=尸体停留），然后移除。
+## 死亡表现：英雄 Dissipate 升天；普通单位 Death → Decay Flesh → Decay Bone。
 func play_death() -> void:
 	if _dying:
 		return
 	_dying = true
 	_corpse_phase = _CORPSE_DEATH
 	_played_any_decay = false
+	_hero_ascend = false
+	_hero_death_before_dissipate = false
 	_combat_attack = false
 	_chopping = false
 	_building_work = false
@@ -294,6 +299,12 @@ func play_death() -> void:
 		var nav := body.get_node_or_null("UnitNavigator") as UnitNavigator
 		if nav != null:
 			nav.stop()
+	if TechPresence.is_hero_id(_type_id()):
+		_hero_ascend = true
+		if _try_play_hero_death():
+			return
+		_play_hero_dissipate()
+		return
 	_play_current(0.0)
 	if _activity != AnimSequenceResolver.Activity.DEATH:
 		enter_corpse_state()
@@ -301,6 +312,140 @@ func play_death() -> void:
 	_connect_corpse_finished()
 	set_process(true)
 	_arm_corpse_watch(DEATH_ANIM_FALLBACK_SEC)
+
+
+func _type_id() -> String:
+	var body := _host()
+	if body == null:
+		return ""
+	return str(body.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+
+
+func _try_play_hero_death() -> bool:
+	var body := _host()
+	if body == null:
+		return false
+	var model := _model_scene()
+	var ap := _animation_player()
+	var played: Dictionary
+	if model != null:
+		played = model.play_logical(
+			"Death", 0.0, _cache, AnimSequenceResolver.Activity.DEATH, ["Death"]
+		)
+	else:
+		played = AnimPlayback.play_logical(
+			body,
+			"Death",
+			0.0,
+			_cache,
+			AnimSequenceResolver.Activity.DEATH,
+			["Death"],
+			ap
+		)
+	if not bool(played.get("ok", false)):
+		return false
+	_activity = AnimSequenceResolver.Activity.DEATH
+	_logical = str(played.get("played_as", "Death"))
+	_hero_death_before_dissipate = true
+	_connect_corpse_finished()
+	set_process(true)
+	_arm_corpse_watch(DEATH_ANIM_FALLBACK_SEC)
+	return true
+
+
+func _play_hero_dissipate() -> void:
+	var body := _host()
+	if body == null:
+		_finish_corpse()
+		return
+	_corpse_phase = _CORPSE_DISSIPATE
+	var fallbacks := AnimSequenceResolver.hero_dissipate_fallbacks()
+	var model := _model_scene()
+	var ap := _animation_player()
+	var played: Dictionary
+	if model != null:
+		played = model.play_logical(
+			"Dissipate", 0.0, _cache, AnimSequenceResolver.Activity.DEATH, fallbacks
+		)
+	else:
+		played = AnimPlayback.play_logical(
+			body,
+			"Dissipate",
+			0.0,
+			_cache,
+			AnimSequenceResolver.Activity.DEATH,
+			fallbacks,
+			ap
+		)
+	var resolved := str(played.get("resolved", ""))
+	if not bool(played.get("ok", false)):
+		_hero_ascend = false
+		_play_current(0.0)
+		if _activity != AnimSequenceResolver.Activity.DEATH:
+			enter_corpse_state()
+			return
+	else:
+		_activity = AnimSequenceResolver.Activity.DEATH
+		_logical = str(played.get("played_as", "Dissipate"))
+		_force_single_play(ap, resolved)
+		_begin_hero_dissipate_presentation(body)
+	_connect_corpse_finished()
+	set_process(true)
+	var wait_sec := 2.5
+	if ap != null and _ap_has_current_anim(ap):
+		wait_sec = ap.current_animation_length + 0.12
+	_arm_corpse_watch(wait_sec)
+
+
+func _begin_hero_dissipate_presentation(body: Node3D) -> void:
+	if body == null:
+		return
+	Wc3Pe2Particles.apply_sequence(body, "Dissipate")
+	_apply_dissipate_ghost_materials(body, true)
+
+
+func _apply_dissipate_ghost_materials(body: Node3D, on: bool) -> void:
+	if body == null:
+		return
+	for c in body.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		var nm := str(mi.name).to_lower()
+		if nm.contains("glow") or nm.contains("uber") or nm.contains("splat"):
+			continue
+		for si in range(mi.mesh.get_surface_count()):
+			var mat: Material = mi.get_active_material(si)
+			if mat == null:
+				continue
+			if on:
+				if mat is StandardMaterial3D:
+					var sm := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
+					sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					sm.albedo_color.a = 0.42
+					sm.cull_mode = BaseMaterial3D.CULL_DISABLED
+					mi.set_surface_override_material(si, sm)
+				elif mat is ShaderMaterial:
+					var shm := (mat as ShaderMaterial).duplicate() as ShaderMaterial
+					mi.set_surface_override_material(si, shm)
+			else:
+				mi.set_surface_override_material(si, null)
+
+
+func _force_single_play(ap: AnimationPlayer, anim_name: String) -> void:
+	if ap == null or anim_name.is_empty():
+		return
+	var lib: AnimationLibrary = ap.get_animation_library("")
+	if lib == null:
+		for lib_name in ap.get_animation_library_list():
+			lib = ap.get_animation_library(lib_name)
+			if lib != null:
+				break
+	if lib != null and lib.has_animation(anim_name):
+		var anim: Animation = lib.get_animation(anim_name)
+		if anim != null:
+			anim.loop_mode = Animation.LOOP_NONE
+	ap.play(anim_name)
 
 
 func _connect_corpse_finished() -> void:
@@ -329,7 +474,7 @@ func _is_death_clip(anim: StringName) -> bool:
 	var leaf := _anim_leaf_key(anim)
 	if leaf.begins_with("decay"):
 		return false
-	return leaf.begins_with("death") or leaf.begins_with("dissipate")
+	return leaf.begins_with("death")
 
 
 func _is_decay_flesh_clip(anim: StringName) -> bool:
@@ -406,6 +551,8 @@ func _clip_matches_phase(anim: StringName) -> bool:
 	match _corpse_phase:
 		_CORPSE_DEATH:
 			return _is_death_clip(anim)
+		_CORPSE_DISSIPATE:
+			return _is_dissipate_clip(anim)
 		_CORPSE_FLESH:
 			return _is_decay_flesh_clip(anim)
 		_CORPSE_BONE:
@@ -414,9 +561,32 @@ func _clip_matches_phase(anim: StringName) -> bool:
 			return false
 
 
+func _is_death_only_clip(anim: StringName) -> bool:
+	if str(anim).is_empty():
+		return false
+	var leaf := _anim_leaf_key(anim)
+	if leaf.begins_with("decay") or leaf.begins_with("dissipate"):
+		return false
+	return leaf.begins_with("death")
+
+
+func _is_dissipate_clip(anim: StringName) -> bool:
+	if str(anim).is_empty():
+		return false
+	return _anim_leaf_key(anim).begins_with("dissipate")
+
+
 func _on_corpse_anim_finished(anim: StringName) -> void:
 	if not _dying or _corpse_phase == _CORPSE_DONE:
 		return
+	if _hero_ascend:
+		if _hero_death_before_dissipate and _is_death_only_clip(anim):
+			_hero_death_before_dissipate = false
+			_play_hero_dissipate()
+			return
+		if _is_dissipate_clip(anim):
+			_finish_corpse()
+			return
 	if not _clip_matches_phase(anim):
 		return
 	_advance_corpse_phase()
@@ -426,6 +596,8 @@ func _advance_corpse_phase() -> void:
 	match _corpse_phase:
 		_CORPSE_DEATH:
 			enter_corpse_state()
+		_CORPSE_DISSIPATE:
+			_finish_corpse()
 		_CORPSE_FLESH:
 			enter_decay_bone()
 		_CORPSE_BONE:
@@ -438,6 +610,12 @@ func _advance_corpse_phase() -> void:
 func enter_corpse_state() -> void:
 	if not _dying:
 		_dying = true
+	if _hero_ascend:
+		if _hero_death_before_dissipate:
+			_play_hero_dissipate()
+		else:
+			_finish_corpse()
+		return
 	if _corpse_phase >= _CORPSE_FLESH:
 		return
 	_corpse_phase = _CORPSE_FLESH
@@ -493,7 +671,7 @@ func _finish_corpse() -> void:
 	_corpse_watch_id += 1
 	set_process(false)
 	_disconnect_corpse_finished()
-	if _played_any_decay:
+	if _played_any_decay or _hero_ascend:
 		_remove_corpse()
 		return
 	_schedule_corpse_remove()
@@ -614,8 +792,8 @@ func _play_current(blend: float) -> void:
 	if activity == AnimSequenceResolver.Activity.DEATH:
 		fallbacks.append("Death")
 		fallbacks.append("Dissipate")
-	elif activity == AnimSequenceResolver.Activity.ATTACK and stance != AnimSequenceResolver.Stance.DEFAULT:
-		fallbacks.append("Attack")
+	elif activity == AnimSequenceResolver.Activity.ATTACK:
+		fallbacks.append_array(AnimSequenceResolver.attack_animation_fallbacks())
 	elif stance != AnimSequenceResolver.Stance.DEFAULT:
 		fallbacks.append(AnimSequenceResolver.activity_base(activity))
 	if activity == AnimSequenceResolver.Activity.WORK and stance != AnimSequenceResolver.Stance.DEFAULT:

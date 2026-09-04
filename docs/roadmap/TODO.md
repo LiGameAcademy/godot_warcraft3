@@ -1,7 +1,7 @@
 # 待办
 
 > 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-08-04
+> 最后更新：2026-08-24
 
 ## 当前焦点：单位面板（对齐装饰物）+ 装饰物缺口补齐
 
@@ -223,7 +223,78 @@
   旧转换物无 geosetvis 时需 `node src/cli.js --models-only --force --include "Units/**"` 后 bake。  
   验收 Peasant：`Stand` 仅身体；`Stand_Gold`/`Stand_Lumber` 出袋/木；`Death` 出尸体。
 
-<<<<<<< HEAD
+- [x] **树桩 Stand 藏 / Death 显**（2026-08-08）  
+  `MapDoodadLayer.ensure_promoted` → `snap_stand_geoset_visibility`；禁止 reveal_all。  
+  `MapModelCache`：有 Stand 即定格（勿因「非骨骼 Stand」跳过）；注入名大小写不敏感。
+
+- [x] **野怪 / 小动物尸体 Geoset**（2026-08-09）  
+  Present：`MapUnitLayer` 放置后 `snap_stand_geoset_visibility`。  
+  资产：`Units/Critters/**` + Echo Isles 常用 Creeps 已补 `geosetvis`；其余 Creeps 按需 `--include`。  
+  验收：开局羊/猪/豺狼人等脚下无尸体叠影；Death 后尸体片可见。  
+  详见 [GAMEPLAY_VERTICAL.md §5.1](../design/game/GAMEPLAY_VERTICAL.md)。
+
+---
+
+## 游戏竖切 · 战斗 / 表现（2026-08-24 起）
+
+> 对照 [GAMEPLAY_VERTICAL.md](../design/game/GAMEPLAY_VERTICAL.md)、[ABILITY_REFACTOR_PLAN.md](../design/game/ABILITY_REFACTOR_PLAN.md)。  
+> 本节只记**尚未完成**或**仅局部落地**项，避免与上文编辑器/地图主线混淆。
+
+### 已局部落地（待手测 / 待提交）
+
+- [x] 仇恨助攻：同 owner + 警戒半径 `_alert_nearby_allies`（非完整营地表）
+- [x] 心灵之火：单位死亡 `InnerFireController.cleanup_on_death`
+- [x] 大法师 / 远程：火球 tracer + `weapon_missile_art`
+- [x] 牧师 / 女巫：无 `Attack` 时回退 `SpellAttack`
+- [x] 野怪脱战：`find_acquire_target` 转火
+- [x] 农民 / 民兵：`Amil`（Order=`militia`）+ 主城敲钟半径武装
+- [x] 英雄死亡：Dissipate 升天、无尸体、`HeroDeathRegistry` 登记
+- [x] 祭坛复活（初版）：`revive:` 按钮 + 等级角标 + TrainQueue + 费用/时间随等级
+- [x] 肖像框：Portrait geoset snap + 全隐兜底 reveal
+- [x] 水元素：`_fm2` 软 alpha 初调（0.48 系数）
+- [x] convert：`sanitizeMdxText` 剥 MDX 名字 NUL
+
+### 待做 — P0（玩法 / 表现）
+
+- [ ] **营地 / 队伍仇恨**：`CampRegistry` 或 map 单位组表；中立营地整组助攻、玩家编组联动（现仅同 owner 半径）
+- [ ] **祭坛复活补全**：原作 `ARev` 技能 id / Func 对齐；多英雄阵亡队列 UI；复活后技能点 / 未学技能 / 装备态手测；取消队列与 `HeroDeathRegistry` 一致性回归
+- [ ] **肖像全单位**：缺 `*_Portrait.gltf` 的单位仍只有队色底 → 批量 convert + bake；主城以外建筑肖像抽验
+- [ ] **Unicode NUL 清零**：已改 convert，**须批量重转**常用 Units（至少 Human 竖切包）后 Godot 启动才不刷 ERROR
+- [ ] **水元素流体**：PE2 速率 / Birth 序列 / alpha 与原作对拍；必要时专用 shader
+- [ ] **技能重构 Phase D**：`game/scripts/logic/effect/` 原子 Effect（见下节）
+- [ ] **技能重构 Phase E**：`game_director.gd` 拆分（见下节）
+
+### 待做 — P1
+
+- [ ] 民兵：`Amic`（主城 `townbellon`）与 `Amil` 行为完全对齐原作（音效 `TownHallCallToArms`、Buff `Bmil`）
+- [ ] 英雄复活：人口 / 英雄上限与「训练中 + 待复活 + 场上」统一计数规则文档化 + selftest
+- [ ] `InnerFire` / `Avatar` / 光环等 Buff **迁入 BuffHost spec**（仍部分走独立 Controller）
+- [ ] 投射物：更多 order 的 missile art / 命中 FX 数据化（`AbilityFxCatalog` 补表）
+
+---
+
+## 技能系统重构进度
+
+> 权威计划：[ABILITY_REFACTOR_PLAN.md](../design/game/ABILITY_REFACTOR_PLAN.md)（最后更新 2026-08-23）
+
+| Phase | 内容 | 状态 | 说明 |
+|-------|------|------|------|
+| **A** | `AbilityBehaviorCatalog` | ✅ | order → behavior / target / passive |
+| **B** | `AbilityFxCatalog` + 附着 Presenter | ✅ | Casterart / Targetart / fallback |
+| **C** | `BuffHost` + `BuffCatalog` + `BuffQuery` | ✅ 门面 | 部分技能仍用 `InnerFireController` 等独立 Controller |
+| **D** | Effect 原子 + `*Ability` 变薄 | ❌ 未做 | 无 `game/scripts/logic/effect/` 目录 |
+| **E** | `game_director.gd` 瘦身 | ❌ 未做 | 仍 ~4300 行；瞄准 / autocast / runtime 挂载均在 Director 内 |
+
+**Phase D 待建目录（计划）**：`effect_context.gd`、`effect_heal.gd`、`effect_damage_aoe.gd`、`effect_apply_buff.gd`、`effect_spawn_summon.gd`、`effect_play_present.gd` 等。
+
+**Phase E 待建服务（计划）**：`AbilityTargetingService`、`AbilityRuntimeRegistry`、`AbilityCastContextFactory`、`AbilityHudFeedback` — 仓库内**尚无**对应脚本。
+
+**粗估剩余量**：A–C 约 **60%**；含 D + E 整体约 **40%**（D/E 各为一轮中等 refactor，且 E 依赖 D 稳定）。
+
+**Director 拆分**：**未完成**。技能相关仍含 `_begin_ability_targeting`、`_ability_ui_state_for`、`_ensure_caster_runtime`、`_tick_autocast` 等；未抽出 `AbilityTargetingService` / `AbilityRuntimeRegistry`。
+
+**Effect 抽象**：**未实现**。施法仍走 `AbilityExecutor` → 各 `*Ability` 静态类（如 `HealAbility`、`BlizzardAbility`），无统一 `EffectRunner` / `EffectContext` 管道。
+
 ---
 
 ## 死链清单（docs/ 拍平后，2026-08-10）
@@ -294,14 +365,3 @@ docs/ 拍平到 `design/<topic>/` 后，verify 扫出 9 个 dead link（文件�
 历史坏 link（错深度，已修）：
 - `docs/architecture/SCRIPTS_LAYOUT.md` `../LAYERED_ARCHITECTURE.md` → `LAYERED_ARCHITECTURE.md`（同目录）
 - `docs/architecture/SCRIPTS_LAYOUT.md` `../../ramp/RAMP_WE.md` → `../design/ramp/RAMP_WE.md`（ramp 已挪移）
-=======
-- [x] **树桩 Stand 藏 / Death 显**（2026-08-08）  
-  `MapDoodadLayer.ensure_promoted` → `snap_stand_geoset_visibility`；禁止 reveal_all。  
-  `MapModelCache`：有 Stand 即定格（勿因「非骨骼 Stand」跳过）；注入名大小写不敏感。
-
-- [x] **野怪 / 小动物尸体 Geoset**（2026-08-09）  
-  Present：`MapUnitLayer` 放置后 `snap_stand_geoset_visibility`。  
-  资产：`Units/Critters/**` + Echo Isles 常用 Creeps 已补 `geosetvis`；其余 Creeps 按需 `--include`。  
-  验收：开局羊/猪/豺狼人等脚下无尸体叠影；Death 后尸体片可见。  
-  详见 [GAMEPLAY_VERTICAL.md §5.1](../game/GAMEPLAY_VERTICAL.md)。
->>>>>>> master

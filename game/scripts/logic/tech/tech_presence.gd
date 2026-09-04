@@ -78,9 +78,10 @@ static func count_heroes(unit_host: Node, owner_id: int) -> int:
 	return n
 
 
-## 场上英雄 + 训练队列中的英雄（开训即占名额）。
+## 场上英雄 + 训练队列中的英雄 + 阵亡待复活（占英雄名额，对齐 WC3）。
 static func count_heroes_with_queues(unit_host: Node, owner_id: int) -> int:
 	var n := count_heroes(unit_host, owner_id)
+	n += HeroDeathRegistry.dead_count(owner_id)
 	if unit_host == null:
 		return n
 	for c in unit_host.get_children():
@@ -94,6 +95,7 @@ static func count_heroes_with_queues(unit_host: Node, owner_id: int) -> int:
 			continue
 		for e in q.snapshot():
 			var uid := str((e as Dictionary).get("unit_id", ""))
+			# 复活队列已从 DeathRegistry 取出，不再计入 dead_count，需在此补回
 			if _HERO_IDS.has(uid):
 				n += 1
 	return n

@@ -21,6 +21,16 @@ static func ensure(unit: Node3D) -> void:
 		unit.set_meta(AbilityCatalog.META_HERO_LEVEL, 1)
 
 
+## 复活/调试：设等级并同步经验到该级门槛。
+static func set_level(unit: Node3D, level: int, xp_total: int = -1) -> void:
+	if unit == null:
+		return
+	var lv := clampi(level, 1, MAX_HERO_LEVEL)
+	unit.set_meta(AbilityCatalog.META_HERO_LEVEL, lv)
+	var xp := xp_total if xp_total >= 0 else xp_threshold(lv)
+	unit.set_meta(META_HERO_XP, maxi(xp, 0))
+
+
 static func xp_of(unit: Node3D) -> int:
 	if unit == null:
 		return 0

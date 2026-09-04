@@ -227,9 +227,45 @@ func try_wake() -> bool:
 	return true
 
 
-## 同营友方接敌（助攻入口，后置）。P0 no-op。
-func notify_camp_ally_engaged(_target: Node3D) -> void:
-	pass
+## 同营/同队友方接敌：附近单位一起转入战斗。
+const ALLY_ALERT_RADIUS_WC3 := 900.0
+
+
+func notify_camp_ally_engaged(attacker: Node3D) -> void:
+	if attacker == null or not is_instance_valid(attacker):
+		return
+	try_engage(attacker)
+
+
+func _alert_nearby_allies(attacker: Node3D) -> void:
+	if attacker == null or not is_instance_valid(attacker):
+		return
+	var body := _body()
+	if body == null:
+		return
+	var ud: Dictionary = body.get_meta("unit_data", {})
+	var owner_id := int(ud.get("owner", -1))
+	if owner_id < 0:
+		return
+	var host := body.get_parent()
+	if host == null:
+		return
+	var self_xy := Wc3Coords.godot_to_wc3_xy(body.global_position)
+	for c in host.get_children():
+		if not (c is Node3D) or c == body:
+			continue
+		var other := c as Node3D
+		if not is_instance_valid(other):
+			continue
+		var od: Dictionary = other.get_meta("unit_data", {})
+		if int(od.get("owner", -2)) != owner_id:
+			continue
+		if self_xy.distance_to(Wc3Coords.godot_to_wc3_xy(other.global_position)) > ALLY_ALERT_RADIUS_WC3:
+			continue
+		var ai := UnitAI.of(other)
+		if ai == null or ai == self:
+			continue
+		ai.notify_camp_ally_engaged(attacker)
 
 
 ## 当前攻击目标死亡/离场（DeathService 广播）。脱战并归巢（leash）。
@@ -287,6 +323,7 @@ func notify_damaged(result: Dictionary) -> void:
 	if not CombatQuery.is_auto_acquire_target(body, attacker):
 		return
 	try_engage(attacker)
+	_alert_nearby_allies(attacker)
 
 
 func _ready() -> void:
@@ -351,6 +388,12 @@ func _on_combat_ended() -> void:
 	var nav := _navigator()
 	if nav != null:
 		_nav_stop(nav)
+	var body := _body()
+	if body != null and (wants_idle_acquire() or _profile_retaliates()):
+		var host := body.get_parent()
+		var acq := CombatQuery.find_acquire_target(body, host)
+		if acq != null and try_engage(acq):
+			return
 	if uses_leash() and not _is_at_home():
 		_begin_return()
 		return

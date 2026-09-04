@@ -313,7 +313,8 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	if autocast_capable:
 		art = AbilityFxCatalog.strip_autocast_art_suffix(art)
 	var icon := icon_path(art)
-	return {
+	var badge_level := int(opts.get("badge_level", 0))
+	var out := {
 		"id": action_id,
 		"text": "执行中" if executing else "",
 		"tooltip": tooltip,
@@ -329,6 +330,9 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		"auto_cast": auto_cast,
 		"autocast_capable": autocast_capable,
 	}
+	if badge_level > 0:
+		out["badge_level"] = badge_level
+	return out
 
 
 func command_hud_entry(cmd_id: String, action_id: String, opts: Dictionary = {}) -> Dictionary:

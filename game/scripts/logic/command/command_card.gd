@@ -20,6 +20,7 @@ const ACTION_BUILD_PREFIX := "build:" ## 建造按钮 action_id 前缀
 const ACTION_OPEN_BUILD := "open_build" ## 进入建造二级面板
 const ACTION_CLOSE_BUILD := "close_build" ## 退出建造二级面板
 const ACTION_TRAIN_PREFIX := "train:" ## 训练单位：train:hpea
+const ACTION_REVIVE_PREFIX := "revive:" ## 祭坛复活：revive:Hamg
 const ACTION_RESEARCH_PREFIX := "research:" ## 研究科技：research:Rhde
 const ACTION_DEFEND := "defend"
 const ACTION_CALL_TO_ARMS := "call_to_arms"
@@ -52,6 +53,8 @@ const _RACE_BUILD_ABIL := {
 const _ORDER_SPEC := {
 	"harvest": {"action": ACTION_HARVEST_GOLD, "un_action": ACTION_RETURN_GOODS},
 	"townbellon": {"action": ACTION_CALL_TO_ARMS},
+	## 农民/民兵 Amil：Order=militia / Unorder=militiaoff
+	"militia": {"action": ACTION_CALL_TO_ARMS},
 	"defend": {"action": ACTION_DEFEND},
 }
 
@@ -132,8 +135,44 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	var hero_slots_full := bool(state.get("hero_slots_full", false))
 	var hide_trains := bool(state.get("hide_trains", false))
 	var trains := TechPresence.filter_vertical_trains(uid, cat.get_trains(uid))
+	var dead_heroes: Array = state.get("dead_heroes", []) as Array
+	if dead_heroes == null:
+		dead_heroes = []
+	var dead_type_ids: Dictionary = {}
+	if not hide_trains and BuildingCatalog.is_building(uid):
+		var revive_slot := 0
+		for dead in dead_heroes:
+			if typeof(dead) != TYPE_DICTIONARY:
+				continue
+			var d: Dictionary = dead
+			var hid := str(d.get("type_id", "")).strip_edges()
+			if hid.is_empty() or not TechPresence.is_hero_id(hid):
+				continue
+			# 同 type 只放一格（最早阵亡的那只）
+			if dead_type_ids.has(hid):
+				continue
+			dead_type_ids[hid] = true
+			var lv := maxi(int(d.get("level", 1)), 1)
+			var gold := HeroDeathRegistry.revive_cost(lv)
+			var sec := HeroDeathRegistry.revive_time_sec(lv)
+			var exec := training_unit == hid or queued.has(hid)
+			var opts_r := {
+				"enabled": true,
+				"executing": exec,
+				"badge_level": lv,
+				"cost_line": "复活 · %d金 · %.0fs" % [gold, sec],
+				"slot_override": clampi(revive_slot, 0, 3),
+			}
+			revive_slot += 1
+			var entry_r := cat.unit_hud_entry(hid, ACTION_REVIVE_PREFIX + hid, opts_r)
+			if not entry_r.is_empty():
+				entry_r["badge_level"] = lv
+			_place(card, entry_r)
 	if not hide_trains:
 		for tid in trains:
+			# 已有同 type 阵亡登记时只显示复活，不重复「训新英雄」
+			if TechPresence.is_hero_id(tid) and dead_type_ids.has(tid):
+				continue
 			var exec := training_unit == tid or queued.has(tid)
 			var missing := TechPresence.missing_requires(
 				owned, UnitRequiresCatalog.get_shared().get_requires(tid), researched
@@ -167,6 +206,11 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	for abil_id in cat.get_all_abil_list(uid):
 		_place_supported_ability(
 			card, cat, str(abil_id), uid, state, carrying, owned, researched, hl, ab_levels
+		)
+	# 农民/民兵：Amil 战斗号召（SLK 常不在 abilList，需显式落卡）
+	if uid == "hpea" or uid == "hmil":
+		_place_supported_ability(
+			card, cat, "Amil", uid, state, carrying, owned, researched, hl, ab_levels
 		)
 
 	if TechPresence.is_hero_id(uid):
@@ -404,6 +448,16 @@ static func _place_supported_ability(
 			abil_id, str(spec_t.get("action", ACTION_CALL_TO_ARMS)), {"enabled": true}
 		)
 		_place(card, entry_t)
+		return
+	# 农民 Amil / 民兵收回：同一 action，民兵态切 Unart（BTNBacktoWork）
+	if order == "militia":
+		var is_mil := unit_id == "hmil" or bool(state.get("militia_active", false))
+		var entry_m := cat.ability_hud_entry(
+			abil_id,
+			ACTION_CALL_TO_ARMS,
+			{"enabled": true, "use_un": is_mil, "executing": is_mil}
+		)
+		_place(card, entry_m)
 		return
 	if not AbilityCatalog.is_supported(abil_id):
 		return

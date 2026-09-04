@@ -27,6 +27,7 @@ const ORDER_ENTRIES := {
 	"harvest": {"behavior": "", "target_kind": TARGET_POINT, "supported": true},
 	"defend": {"behavior": "", "target_kind": TARGET_SELF, "supported": true},
 	"townbellon": {"behavior": "", "target_kind": TARGET_SELF, "supported": true},
+	"militia": {"behavior": "", "target_kind": TARGET_SELF, "supported": true},
 	"waterelemental": {
 		"behavior": BEHAVIOR_SUMMON_INSTANT,
 		"target_kind": TARGET_SELF,

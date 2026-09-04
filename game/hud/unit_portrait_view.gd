@@ -160,15 +160,89 @@ func _finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) 
 		return
 	if _model_root == null or not is_instance_valid(_model_root):
 		return
+	_normalize_portrait_model_scale(_model_root)
+	_model_root.position = Vector3.ZERO
+	_model_root.rotation = Vector3.ZERO
 	_apply_team_color_if_needed(_model_root, tid, owner_id)
 	_apply_team_bg(tid, owner_id)
-	_fit_camera(_model_root, path)
 	_start_portrait_anims(_model_root, tid)
+	_snap_portrait_geoset()
+	_ensure_portrait_meshes_visible()
+	_fit_camera(_model_root, path)
 	_set_viewport_active(true)
+
+
+func _normalize_portrait_model_scale(root: Node3D) -> void:
+	if root == null:
+		return
+	var local := _visual_aabb(root)
+	# peasant_Portrait 等未烘焙 WC3 尺度（顶点 0~200）；战场 GLB 已乘 model_scale。
+	if local.size.length() <= 12.0:
+		return
+	root.scale = Vector3.ONE * Wc3Coords.WORLD_SCALE
+
+
+func _snap_portrait_geoset() -> void:
+	if _cache == null or _model_root == null:
+		return
+	var anim := ""
+	if _ap != null and is_instance_valid(_ap):
+		anim = str(_ap.current_animation)
+	if anim.is_empty() and _ap != null:
+		# 尚未起播时：优先 Portrait*，再 Stand
+		for logical in ["Portrait", "Portrait - 1", "Stand"]:
+			var resolved := AnimPlayback.resolve(_model_root, logical, _ap)
+			if not resolved.is_empty():
+				anim = resolved
+				break
+	if not anim.is_empty():
+		# 肖像靠 Geoset_* scale 轨显隐；勿走 rest scale=0 兜底（会把身体藏掉）
+		_cache.snap_geoset_visibility_for(_model_root, anim, 0.0, false)
+
+
+## 肖像身体网格：Geoset_* / Mesh*（Militia 肖像未 split 时全叫 Mesh）。
+func _is_portrait_body_mesh(mi: MeshInstance3D) -> bool:
+	var nm := str(mi.name).to_lower()
+	if nm.contains("glow") or nm.contains("uber") or nm.contains("splat"):
+		return false
+	if nm.contains("billboard"):
+		return false
+	return nm.begins_with("geoset_") or nm.begins_with("mesh")
+
+
+## 肖像模型常无 Stand：若 snap 后仍全隐，强制亮出 Geoset（避免只剩队色底）。
+func _ensure_portrait_meshes_visible() -> void:
+	if _model_root == null or not is_instance_valid(_model_root):
+		return
+	var body_vis := false
+	for c in _model_root.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi == null or mi.mesh == null or not _is_portrait_body_mesh(mi):
+			continue
+		if mi.visible and mi.scale.length_squared() > 1e-8:
+			body_vis = true
+			break
+	if body_vis:
+		return
+	if _cache != null and _cache.has_method("reveal_hidden_geosets_public"):
+		_cache.call("reveal_hidden_geosets_public", _model_root)
+	for c2 in _model_root.find_children("*", "MeshInstance3D", true, false):
+		var mi2 := c2 as MeshInstance3D
+		if mi2 == null or not _is_portrait_body_mesh(mi2):
+			continue
+		mi2.visible = true
+		if mi2.scale.length_squared() < 1e-8:
+			mi2.scale = Vector3.ONE
 
 
 func _apply_team_color_if_needed(root: Node3D, type_id: String, owner_id: int) -> void:
 	if _cache == null or root == null:
+		return
+	# 肖像 GLB 无 _rep1 队色层；染色会误伤 Team Glow 且与底板糊在一起
+	if (
+		_model_path.findn("_Portrait") >= 0
+		or _model_path.findn("_portrait") >= 0
+	):
 		return
 	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
 	var prev := int(root.get_meta(_META_TEAM, -999))
@@ -200,7 +274,7 @@ func _acquire_model(path: String) -> Node3D:
 			return pooled as Node3D
 	if _cache == null:
 		return null
-	if _cache.has_method("instance_glb_hud"):
+	if path.findn("_Portrait") >= 0 or path.findn("_portrait") >= 0:
 		return _cache.instance_glb_hud(path) as Node3D
 	return _cache.instance_glb(path) as Node3D
 
@@ -306,18 +380,31 @@ func _fit_camera(root: Node3D, model_path: String) -> void:
 	if root == null or _world == null:
 		return
 	_set_model_cameras_current(root, false)
+	# 烘焙 Camera01 的局部坐标常已是世界尺度（sidecar ×0.01），
+	# 而网格仍是 WC3 厘米；若根节点再乘 WORLD_SCALE，相机会缩到模型里（民兵肖像）。
+	# 仅当根未缩放时才直接用烘焙相机（网格与相机同一空间）。
 	var baked := _find_baked_camera(root)
-	if baked != null:
-		# Camera01 已挂 proto（scale=1）；Portrait 位移轨由 AnimationPlayer 驱动。
+	var root_scaled := not root.scale.is_equal_approx(Vector3.ONE)
+	if baked != null and not root_scaled:
 		baked.current = true
 		if _fallback_cam != null and is_instance_valid(_fallback_cam):
 			_fallback_cam.current = false
 		return
 	var cam := _ensure_fallback_camera()
 	cam.current = true
-	if _apply_mdx_camera_sidecar(cam, model_path):
+	var global_aabb := _visual_aabb_global(root)
+	# 已归一化 WC3 尺度（peasant_Portrait / Militia_Portrait 等）：sidecar 机位 ~1.6。
+	if global_aabb.size.length() <= 3.0:
+		if _apply_mdx_camera_sidecar(cam, model_path):
+			return
+	var local_aabb := _visual_aabb(root)
+	if local_aabb.size.length() <= 12.0:
+		if _apply_mdx_camera_sidecar(cam, model_path):
+			return
+	# 根已缩放但 sidecar 失败：仍优先 sidecar 语义（世界尺度），避免错误 AABB 取景
+	if root_scaled and _apply_mdx_camera_sidecar(cam, model_path):
 		return
-	var aabb := _visual_aabb_global(root)
+	var aabb := global_aabb
 	if aabb.size.length() < 1e-4:
 		aabb = AABB(root.global_position + Vector3(-0.4, 0.0, -0.4), Vector3(0.8, 1.2, 0.8))
 	var center := aabb.get_center()
@@ -390,6 +477,8 @@ func _apply_mdx_camera_sidecar(cam: Camera3D, model_path: String) -> bool:
 		cam.near = near_v
 	if far_v > near_v:
 		cam.far = far_v
+	# 建筑 MDX 相机 far 常为 10，本体 AABB 更大时会被裁切。
+	cam.far = maxf(cam.far, 48.0)
 	# 向注视点拉近约 10%，主体略放大（看满原画面 ~90%）
 	var eye := pos.lerp(tgt, 1.0 - _FRAMING_FILL)
 	cam.global_position = eye
@@ -469,8 +558,17 @@ func _start_portrait_anims(root: Node3D, type_id: String) -> void:
 			if not locked.is_empty():
 				_locked_portrait_anim = locked
 				_ap.play(locked)
+				_snap_portrait_geoset()
 			return
 		_portrait_anims = _collect_portrait_anims(root, player)
+		if _portrait_anims.is_empty() and BuildingCatalog.is_building(type_id):
+			# 建筑无 Portrait*：定格 Stand geoset 后亮 mesh，避免只剩队色底。
+			var stand_b := AnimPlayback.resolve(root, "Stand", player)
+			if not stand_b.is_empty():
+				player.play(stand_b)
+				_snap_portrait_geoset()
+				_ensure_portrait_meshes_visible()
+			return
 		_play_random_portrait_anim()
 		return
 
@@ -526,8 +624,10 @@ func _play_random_portrait_anim() -> void:
 		var stand := AnimPlayback.resolve(_model_root, "Stand", _ap) if _model_root else ""
 		if not stand.is_empty():
 			_ap.play(stand)
+			_snap_portrait_geoset()
 		elif _ap.get_animation_list().size() > 0:
 			_ap.play(_ap.get_animation_list()[0])
+			_snap_portrait_geoset()
 		return
 	var idx := _rng.randi_range(0, _portrait_anims.size() - 1)
 	var pick := _portrait_anims[idx]
@@ -540,6 +640,7 @@ func _play_random_portrait_anim() -> void:
 			pick = _portrait_anims[idx]
 			tries += 1
 	_ap.play(pick)
+	_snap_portrait_geoset()
 
 
 func _on_portrait_anim_finished(_anim_name: StringName) -> void:

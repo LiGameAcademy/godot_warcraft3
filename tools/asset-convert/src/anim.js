@@ -387,6 +387,14 @@ export function sampleGeosetAlpha(geosetAnims, geosetId, frame) {
   return value;
 }
 
+/** WC3 GeosetAnim Alpha 原始值（0–255 或 0–1）→ 0–1。 */
+export function normalizeGeosetAlpha(raw) {
+  let a = Number(raw);
+  if (!Number.isFinite(a)) a = 0;
+  if (a > 1.0) a = a / 255.0;
+  return Math.max(0, Math.min(1, Math.round(a * 1000) / 1000));
+}
+
 /**
  * Sequence-scoped GeosetAnim alpha (WC3 runtime semantics).
  * Only Keys with Frame in [seqStart, seqEnd] drive the curve.
