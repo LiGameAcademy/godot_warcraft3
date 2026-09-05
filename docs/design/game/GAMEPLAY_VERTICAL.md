@@ -3,8 +3,9 @@
 > 目标：按**真实开局游玩顺序**，在 Echo Isles 上跑通「采矿伐木 → 基建 → 英雄 → 兵营产兵 → 科技分支 → 大法师技能」闭环。  
 > 范围：**仅人族 Melee 最小集**；不做完整科技树、不做多族、不做联机。  
 > 配套：[ROADMAP.md](ROADMAP.md)（阶段 A–E）· [ARCHITECTURE.md](ARCHITECTURE.md) · [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [HUD.md](HUD.md)  
-> 最后更新：2026-08-17  
-> **当前进度：F0–F6、C0–C3、F8–F9 已接线。下一步 F10 技能。Keep 与铁匠武器升级后置。**
+> 最后更新：2026-09-05  
+> **当前进度：F0–F10、C0–C3、F8–F9 已接线；技能重构 Phase A–E ✅。**  
+> **下一步不在本文扩技能** → [../../roadmap/NEXT.md](../../roadmap/NEXT.md) **N1**（U3 手测 · 英雄复活 · Keep · 铁匠升级 · 生产队列 HUD）。
 
 ---
 
@@ -24,7 +25,7 @@
 | 命令格 | `CommandCard` | 建造二级面板 / 训练格 |
 | 数值权威 | `UnitBalanceDef` / `UnitWeaponsDef` / … | 造价、人口、武器表（战斗待接） |
 
-**下一步缺口：** 大法师技能 F10。  
+**下一步缺口：** 见 [NEXT.md N1](../../roadmap/NEXT.md)（可玩闭环，非新技能）。  
 **Present 并行：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `snap_stand_geoset_visibility`，见 §5）。
 
 ---
@@ -47,10 +48,12 @@ C3  攻防类型 + 伤害公式（读 UnitWeapons / UnitBalance）  ✅
 F7  主城升级                 后置 htow → hkee
 F8  研究顶盾科技             Barracks 研究 Rhde           ✅
 F9  步兵切换顶盾             Adef 开/关                   ✅
-F10 大法师技能               先原生子集（依赖 C3 伤害管线）  ← 下一步
+F10 大法师技能               ✅ 原生子集 + 山丘 + P0 支援；重构 A–E
+─── 可玩闭环（NEXT N1）───
+     U3 / 英雄复活 / Keep / 铁匠升级 / 生产队列 HUD  ← 当前主线
 ```
 
-编号即推荐实现顺序；**主线进入 F10**。铁匠铺武器/护甲升级不挡竖切，后置。
+编号即推荐实现顺序；**F10 已完成**。铁匠铺武器/护甲升级与 Keep 收入 [NEXT N1](../../roadmap/NEXT.md)。
 
 游玩验收剧本（人工点一遍）：
 
@@ -466,7 +469,12 @@ game/scripts/
 
 **魔法值**
 
-- 英雄 `mana` 从 `UnitBalanceDef` 读；施放扣蓝；P0 可用简单回复（每秒固定或光环）
+- 英雄 / 单位 `mana` 上限与出生量来自 `UnitBalanceDef`（英雄：INT×12，见 `UnitMana`）
+- 施放扣蓝：`UnitMana.spend`
+- **自然回复**：`UnitRegen`（`AbilityRuntimeRegistry.tick_all_units` 顺带 tick）
+  - 蓝：`regenMana` + 英雄 INT×0.05（与 `regenType` 无关；光环等额外回复仍走 `UnitMana.regenerate`）
+  - 血：`regenHP` + 英雄 STR×0.05；仅 `regenType=always`（`none` 不回；`blight` / `night` 待荒芜地与昼夜系统）
+- 辉煌光环等技能回蓝叠加在自然回复之上
 
 #### AbilitySystem 插件策略
 

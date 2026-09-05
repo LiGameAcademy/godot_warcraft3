@@ -379,7 +379,7 @@ WC3 语义对照：引擎核心是 **Order（即时/队列）→ 单位执行器
 
 `UnitBalanceDef`：`hp`、`def` / `realdef`、`def_type`（small/medium/large/fort/hero/divine/none…）。
 
-运行时生命：`UnitLife` meta（已有）。
+运行时生命：`UnitLife` meta（已有）。自然回血 / 回蓝：`UnitRegen`（`regenType=always`；英雄叠加 STR/INT×0.05）。
 
 ### 3.3 攻防倍率表
 

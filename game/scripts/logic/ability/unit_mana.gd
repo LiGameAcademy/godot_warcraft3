@@ -3,6 +3,7 @@ extends RefCounted
 
 ## 单位运行时魔法（Logic）。
 ## 英雄：上限 = 智力 × 12（WC3）；非英雄：mana_n / mana0。
+## 自然回蓝见 `UnitRegen`（本类 `regenerate` 供自然回复与光环共用）。
 
 const META_MANA := "mana"
 const META_MAX_MANA := "max_mana"
@@ -16,12 +17,22 @@ static func intelligence_at_level(bal: UnitBalanceDef, hero_level: int) -> float
 	return float(bal.int_base) + float(lv - 1) * bal.in_tplus
 
 
+static func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
+
+
 static func max_for_hero_type(type_id: String, hero_level: int = 1) -> int:
 	var tid := type_id.strip_edges()
 	if tid.is_empty():
 		return 0
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	var store := _def_store()
+	if store == null:
+		return 0
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	var bal := store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal == null:
 		return 0
 	var intel := intelligence_at_level(bal, hero_level)
@@ -34,8 +45,11 @@ static func max_for_type(type_id: String, hero_level: int = 1) -> int:
 		return 0
 	if TechPresence.is_hero_id(tid):
 		return max_for_hero_type(tid, hero_level)
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	var store := _def_store()
+	if store == null:
+		return 0
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	var bal := store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal == null:
 		return 0
 	if bal.mana_n > 0:
@@ -78,8 +92,11 @@ static func ensure(node: Node3D) -> void:
 	if mx <= 0:
 		return
 	var start := mx
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	var store := _def_store()
+	var bal: UnitBalanceDef = null
+	if store != null:
+		store.ensure_table(UnitBalanceDef.TABLE_NAME)
+		bal = store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal != null and bal.mana0 > 0 and not TechPresence.is_hero_id(tid):
 		start = mini(bal.mana0, mx)
 	node.set_meta(META_MAX_MANA, mx)

@@ -13,13 +13,23 @@ static func max_hp_for_type(type_id: String) -> float:
 	var tid := type_id.strip_edges()
 	if tid.is_empty():
 		return 1.0
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
+	var store := _def_store()
+	if store == null:
+		return 1.0
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	var bal := store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal != null and bal.hp > 0:
 		return float(bal.hp)
 	if bal != null and bal.real_hp > 0:
 		return float(bal.real_hp)
 	return 1.0
+
+
+static func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null("Wc3DefStore")
 
 
 ## 确保节点有 life/max_life；已有则不动。
@@ -66,6 +76,20 @@ static func set_life(node: Node3D, life: float) -> void:
 		return
 	var mx := get_max_life(node)
 	node.set_meta(META_LIFE, clampf(life, 0.0, mx))
+
+
+## 回血（不超过上限；死亡/满血时无效果）。
+static func regenerate(node: Node3D, amount: float) -> void:
+	if node == null or amount <= 0.0:
+		return
+	ensure(node)
+	var cur := get_life(node)
+	if cur <= 0.0:
+		return
+	var mx := get_max_life(node)
+	if cur >= mx:
+		return
+	set_life(node, cur + amount)
 
 
 static func set_ratio(node: Node3D, r: float) -> void:

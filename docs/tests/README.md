@@ -8,6 +8,7 @@
 tests/
 ├── README.md                              (headless 跑法精简版)
 ├── unit/                                  单元测试
+│   ├── selftest_unit_regen.gd
 │   ├── selftest_terrain_logic.gd
 │   ├── selftest_ground_mesh.gd
 │   ├── selftest_map_data.gd

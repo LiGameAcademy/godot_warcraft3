@@ -2,7 +2,7 @@
 
 > **层别**：Game · data / logic / present  
 > **状态**：F10 大法师 + 山丘 + P0 支援单位（Ahea/Ainf/Aslo + autocast）已完成；**重构计划**见 [ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md)。  
-> **最后更新**：2026-08-22
+> **最后更新**：2026-09-05（单位自然回血/回蓝 `UnitRegen`；AHbz 玩法收口）
 
 ## 1. 设计原则（已定）
 
@@ -45,7 +45,8 @@ game/scripts/data/
         │    unit_status_effects.gd       门面 → BuffHost
         │    logic/buff/                  BuffHost · BuffCatalog · BuffQuery
         │    brilliance_aura_controller.gd  AHab（被动光环 tick）
-        │    unit_mana.gd / ability_cooldowns.gd
+        │    unit_mana.gd / unit_life.gd / unit_regen.gd  蓝/血权威 + 自然回复
+        │    ability_cooldowns.gd
         │
         └─ Present
              ability_cast_presenter.gd   朝向 + Spell Sequence + 地面 FX
@@ -96,8 +97,8 @@ game/scripts/game_director.gd
 | 技能 | Present 来源 |
 |------|----------------|
 | AHwe | `AbilityCastPresenter` + order→Sequence |
-| AHbz | Catalog 硬编码 ground/hit + `BlizzardAreaDecal` / `SpellHitFx` |
-| AHmt | Catalog 硬编码 `MassTeleportTo` 落点 |
+| AHbz | Catalog 硬编码 ground/hit + `BlizzardAreaDecal` / `SpellHitFx`；波次伤害 → `EffectDamageAoe.run_all_victims` |
+| AHmt | `MassTeleportPresenter`：Caster / Target 脚印 / To 落点 + Decal 落点圈 |
 | AHab | **`BrillianceAuraPresenter` 硬编码路径**（应读 Func） |
 
 ### 4.3 重构目标（未做）
@@ -145,7 +146,7 @@ game/scripts/game_director.gd
 | AHwe | waterelemental | 0 | 点地召唤 hwat | `SummonUnitAbility` + `SummonLifetime`→`DeathService.kill` |
 | AHbz | blizzard | 引导 DataA×DataD | 区域多段伤害 | `BlizzardAbility` |
 | AHab | （无） | — | 被动 Area 回蓝 | `BrillianceAuraController` |
-| AHmt | massteleport | 0 | 自身 Area 友军→点地 | `MassTeleportAbility` |
+| AHmt | massteleport | DataB≈3s 读条（Cast=0） | 自身 Area 友军→点地 | `MassTeleportAbility` + `MassTeleportPresenter` |
 
 ## 7. 山丘之王四技能速查（Hmkg）
 
@@ -177,9 +178,11 @@ Director 按 `AbilityCatalog.target_kind()` 分流：点地 / 点敌军 / 点友
 | Area | 700（**以施法者**为圆心选人） |
 | Rng | 99999（落点全图） |
 | DataA | 24（最多单位） |
-| Cast1 | 0（即时） |
+| Cast1 | 0（SLK；玩法读条用 DataB） |
+| DataB | 3（读条秒；`AbilityCastCatalog.cast_time_sec`） |
 
 P0 简化：不传送建筑；传送前 `halt` 移动/采集/攻击；落点用 `TrainSpawn.resolve_with_displace` 挤位。
+读条期：`MassTeleportPresenter` 挂 Caster 光环 + 落点 Decal；打断不扣蓝；结算时旧坐标脚印（Target）→ 瞬移 → 落点 To。
 
 ## 8. 测试
 
@@ -218,6 +221,7 @@ godot --headless --path . -s res://tests/unit/selftest_militia.gd
 ## 10. 相关文档
 
 - [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) §F10 — 竖切范围与验收  
+- [BLIZZARD.md](BLIZZARD.md) — **暴风雪专项**：引导/多波/落冰资产与缺口  
 - [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) — 伤害管线（暴风雪）  
 - [HUD.md](HUD.md) — 命令卡组装  
 - [docs/data/WC3_ASSET_PATHS.md](../../data/WC3_ASSET_PATHS.md) — SLK 路径

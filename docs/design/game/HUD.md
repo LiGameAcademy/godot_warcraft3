@@ -107,6 +107,8 @@ UnitSelector
 
 换选、清空选中时：关闭建造二级菜单、取消瞄准态（Director 已有同类逻辑）。
 
+**可选 ≠ 可控**：点选敌方/中立仍可看肖像与属性；`primary.owner != local_player`（或中立）时命令卡为空，热键与右键指令不下达。框选仍仅己方（`marquee_owner`）。
+
 命令卡补充（已落地）：
 
 - 工人主卡：**一个**建造入口（`AHbu` → `open_build`），不摊平建筑。
@@ -216,8 +218,8 @@ hud.set_selection_info(info: Dictionary)
 
 | 字段 | 来源 |
 |------|------|
-| HP | `UnitLife` |
-| 魔法上限 | `UnitBalance.mana_n`（当前魔法运行时 meta，可后补） |
+| HP | `UnitLife`（自然回血见 `UnitRegen`） |
+| 魔法 | `UnitMana`（上限 / 当前；自然回蓝见 `UnitRegen`；光环叠加） |
 | 攻击 | `UnitWeaponsDef` × `BuffQuery.damage_mul` |
 | 护甲 | `UnitBalanceDef.def` + `BuffQuery.bonus_armor` |
 | 英雄属性 | `UnitBalanceDef` STR/AGI/INT / Primary |

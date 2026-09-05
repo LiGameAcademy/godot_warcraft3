@@ -2,6 +2,7 @@ class_name AbilityRuntimeRegistry
 extends RefCounted
 
 ## 单位技能运行时（Logic）：Mana / Autocast / 英雄被动挂载 / tick。
+## 另：集中遍历单位时顺带 `UnitRegen.tick_unit`（自然回血回蓝）。
 
 var _unit_host: Callable = Callable()
 var _ctx_factory: AbilityCastContextFactory = null
@@ -89,6 +90,7 @@ func tick_all_units(delta: float) -> void:
 		if not (c is Node3D) or not is_instance_valid(c):
 			continue
 		var u := c as Node3D
+		UnitRegen.tick_unit(u, delta)
 		AbilityAutoCastRunner.tick_unit(u, ctx, delta)
 		UnitStatusEffects.tick(u, delta)
 		AbilityCooldowns.tick_all(u, delta)
