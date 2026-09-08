@@ -14,6 +14,7 @@ func _run() -> void:
 	_check_fireball()
 	_check_arrow()
 	_check_axe()
+	_check_brilliance_ground_ring()
 	if failed == 0:
 		print("selftest_wc3_fx_presenter: PASS")
 		quit(0)
@@ -55,11 +56,19 @@ func _check_fireball() -> void:
 	var root := _load_fx("Abilities/Weapons/FireBallMissile/FireBallMissile.gltf")
 	if root == null:
 		return
-	var bbs := _count_fx_billboards(root)
-	if bbs < 1:
-		_fail("FireBallMissile: expected ≥1 FxBillboard, got %d" % bbs)
+	if bool(root.get_meta(FireballMissileModern.META_APPLIED, false)):
+		var core := root.find_child("Core", true, false)
+		var trail := root.find_child("FlameTrail", true, false)
+		if core == null or trail == null:
+			_fail("FireBallMissile modern: missing Core/FlameTrail")
+		else:
+			print("FireBallMissile: modern Core+FlameTrail OK")
 	else:
-		print("FireBallMissile: billboards=%d OK" % bbs)
+		var bbs := _count_fx_billboards(root)
+		if bbs < 1:
+			_fail("FireBallMissile: expected ≥1 FxBillboard or modern, got %d" % bbs)
+		else:
+			print("FireBallMissile: billboards=%d OK" % bbs)
 	root.free()
 
 
@@ -86,3 +95,25 @@ func _check_axe() -> void:
 	else:
 		print("AxeMissile: keep solid mesh OK")
 	root.free()
+
+
+func _check_brilliance_ground_ring() -> void:
+	# 脚底水平环：勿被当成飞弹广告牌竖在身前
+	var root := _load_fx("Abilities/Spells/Human/Brilliance/Brilliance.gltf")
+	if root == null:
+		return
+	var bbs := _count_fx_billboards(root)
+	if bbs > 0:
+		_fail("Brilliance: expected KEEP ground ring (0 billboard), got %d" % bbs)
+	else:
+		print("Brilliance: keep horizontal ground ring OK")
+	root.free()
+	var aura := _load_fx("Abilities/Spells/Other/GeneralAuraTarget/GeneralAuraTarget.gltf")
+	if aura == null:
+		return
+	bbs = _count_fx_billboards(aura)
+	if bbs > 0:
+		_fail("GeneralAuraTarget: expected KEEP ground disk, got %d" % bbs)
+	else:
+		print("GeneralAuraTarget: keep ground disk OK")
+	aura.free()

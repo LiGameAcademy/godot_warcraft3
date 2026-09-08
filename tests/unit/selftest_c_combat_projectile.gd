@@ -85,6 +85,25 @@ func _test_unit_func_missile() -> bool:
 	else:
 		print("  hrif missilespeed OK")
 
+	var hwat_art := CombatQuery.missile_art_for_type("hwat")
+	if hwat_art.findn("WaterElementalMissile") < 0:
+		push_error("hwat missile art 应为 WaterElementalMissile，得 %s" % hwat_art)
+		ok = false
+	else:
+		print("  hwat missile_art OK (%s)" % hwat_art)
+	var hwat_spd := CombatQuery.missile_speed_for_type("hwat")
+	if absf(hwat_spd - 1300.0) > 0.1:
+		push_error("hwat Missilespeed 应为 1300，得 %s" % hwat_spd)
+		ok = false
+	else:
+		print("  hwat missilespeed OK")
+	var hwat_path := RuntimeAssets.converted_path(hwat_art)
+	if not FileAccess.file_exists(hwat_path) and not FileAccess.file_exists(hwat_path.get_basename() + ".scn"):
+		push_error("hwat 飞弹资产缺失：%s" % hwat_path)
+		ok = false
+	else:
+		print("  hwat missile asset OK")
+
 	var norm := CombatQuery.normalize_model_art(
 		"Abilities\\Weapons\\FireBallMissile\\FireBallMissile.mdl"
 	)

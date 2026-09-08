@@ -13,6 +13,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_test_fallback_paths()
 	_test_buff_row()
+	_test_ahab_brilliance_arts()
 	if failed == 0:
 		print("selftest_ability_fx_catalog: PASS")
 		quit(0)
@@ -57,3 +58,30 @@ func _test_buff_row() -> void:
 		_fail("AHab 受益特效")
 		return
 	print("  buff_row OK")
+
+
+func _test_ahab_brilliance_arts() -> void:
+	# 施法者环：AHab Targetart=Brilliance.mdl（无独立 Casterart）
+	var caster := AbilityFxCatalog.target_art("AHab")
+	if not caster.contains("Brilliance"):
+		_fail("AHab target_art 应为 Brilliance，实际 %s" % caster)
+		return
+	var attach := AbilityFxCatalog.target_attach("AHab")
+	if attach != "origin":
+		_fail("AHab/BHab Targetattach 应为 origin，实际 %s" % attach)
+		return
+	var path := RuntimeAssets.converted_path(caster)
+	var scn := path.get_basename() + ".scn"
+	if not FileAccess.file_exists(path) and not FileAccess.file_exists(scn):
+		_fail("Brilliance 转换资产缺失：%s" % path)
+		return
+	var tex := path.get_base_dir().path_join("TjShockwave2.png")
+	if not FileAccess.file_exists(tex):
+		_fail("Brilliance 同目录贴图缺失：%s（否则脚底白面片）" % tex)
+		return
+	var benef := AbilityFxCatalog.buff_beneficiary_art("AHab")
+	var benef_path := RuntimeAssets.converted_path(benef)
+	if not FileAccess.file_exists(benef_path) and not FileAccess.file_exists(benef_path.get_basename() + ".scn"):
+		_fail("GeneralAuraTarget 转换资产缺失：%s" % benef_path)
+		return
+	print("  ahab_brilliance_arts OK")

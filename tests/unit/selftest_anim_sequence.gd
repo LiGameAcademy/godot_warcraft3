@@ -59,6 +59,20 @@ func _init() -> void:
 		),
 		"Stand_Work_Lumber"
 	)
+	_expect(
+		"avatar alternate stand",
+		AnimSequenceResolver.sequence_name(
+			AnimSequenceResolver.Activity.IDLE, AnimSequenceResolver.Stance.ALTERNATE
+		),
+		"Alternate Stand"
+	)
+	_expect(
+		"avatar alternate walk",
+		AnimSequenceResolver.sequence_name(
+			AnimSequenceResolver.Activity.MOVE, AnimSequenceResolver.Stance.ALTERNATE
+		),
+		"Alternate Walk"
+	)
 	_expect_bool("ping stand gold", AnimSequenceResolver.needs_ping_pong("Stand_Gold"), true)
 	_expect_bool("ping stand gold camel", AnimSequenceResolver.needs_ping_pong("StandGold"), true)
 	_expect_bool("ping walk gold", AnimSequenceResolver.needs_ping_pong("Walk_Gold"), false)

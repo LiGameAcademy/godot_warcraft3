@@ -47,7 +47,17 @@ func _test_ahmt_slk() -> void:
 		_fail("AHmt Cool1 应为 15，实际 %s" % ab.cool1)
 		return
 	if not is_equal_approx(ab.cast_time_at(1), 0.0):
-		_fail("AHmt Cast1 应为 0（即时），实际 %s" % ab.cast_time_at(1))
+		_fail("AHmt Cast1 应为 0（SLK），实际 %s" % ab.cast_time_at(1))
+		return
+	if not is_equal_approx(ab.data_b1, 3.0):
+		_fail("AHmt DataB1 应为 3（玩法读条秒），实际 %s" % ab.data_b1)
+		return
+	# 与 AbilityCastCatalog.cast_time_sec 规则一致：Cast=0 时用 DataB
+	var gameplay_cast := ab.cast_time_at(1)
+	if gameplay_cast <= 0.01:
+		gameplay_cast = ab.data_b_at(1)
+	if not is_equal_approx(gameplay_cast, 3.0):
+		_fail("AHmt 玩法读条应为 3s，实际 %s" % gameplay_cast)
 		return
 	if ab.req_level != 6:
 		_fail("AHmt reqLevel 应为 6（大招），实际 %d" % ab.req_level)
@@ -80,6 +90,14 @@ func _test_catalog() -> void:
 	var art := AbilityCastCatalog.ground_effect_art("AHmt")
 	if art.is_empty() or not art.contains("MassTeleport"):
 		_fail("AHmt 落点特效应含 MassTeleport，实际 %s" % art)
+		return
+	var special := AbilityFxCatalog.special_art("AHmt")
+	if special.is_empty() or not special.contains("MassTeleportTarget"):
+		_fail("AHmt specialart 应含 MassTeleportTarget，实际 %s" % special)
+		return
+	var caster_art := AbilityFxCatalog.caster_art("AHmt")
+	if caster_art.is_empty() or not caster_art.contains("MassTeleportCaster"):
+		_fail("AHmt casterart 应含 MassTeleportCaster，实际 %s" % caster_art)
 		return
 	print("  catalog OK")
 
