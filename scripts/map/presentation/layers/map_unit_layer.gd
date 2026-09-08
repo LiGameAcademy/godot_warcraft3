@@ -577,6 +577,9 @@ func _play_unit_birth_then_stand(unit_root: Node3D, type_id: String, glb: String
 			snap_root,
 			str(played.get("played_as", "Birth"))
 		)
+	# 先按 Birth 关闸/开闸，再 restart 让 Birth 爆发粒子立刻可见
+	if not glb.is_empty():
+		Wc3Pe2Particles.apply_sequence(unit_root, "Birth")
 	_restart_pe2_emitters(unit_root)
 	var ap := AnimPlayback.find_animation_player(body)
 	if ap == null:
@@ -614,15 +617,17 @@ func _finish_unit_birth_to_stand(unit_root: Node3D, glb: String, blend: float) -
 		Wc3Pe2Particles.apply_sequence(unit_root, "Stand")
 
 
-func _restart_pe2_emitters(root: Node) -> void:
+func _restart_pe2_emitters(root: Node, sequence_name: String = "Birth") -> void:
 	if root == null:
 		return
-	if root is GPUParticles3D:
-		var p := root as GPUParticles3D
+	for n in root.find_children("*", "GPUParticles3D", true, false):
+		if not (n is GPUParticles3D):
+			continue
+		var p := n as GPUParticles3D
+		if not Wc3Pe2Particles.emitting_for_sequence(p, sequence_name):
+			continue
 		p.restart()
 		p.emitting = true
-	for c in root.get_children():
-		_restart_pe2_emitters(c)
 
 
 ## 地图 scale 乘在 Model 上，避免把选框等逻辑子节点一并缩放。

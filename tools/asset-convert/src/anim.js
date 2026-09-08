@@ -86,22 +86,78 @@ export function sampleAnimVector(anim, frame, fallback) {
 }
 
 /**
+ * 取 seqStart 之前最后一帧关键值（无则 fallback）。
+ * 用于 Morph/Alternate：作者常只在部分 Alternate 段写 Scaling，其余段靠引擎保持上一形态。
+ * @param {import('war3-model').AnimVector | undefined} anim
+ * @param {number} seqStart
+ * @param {Float32Array} fallback
+ * @returns {Float32Array}
+ */
+export function sampleAnimVectorCarryIn(anim, seqStart, fallback) {
+  if (!anim?.Keys?.length) return fallback;
+  let carry = null;
+  for (const key of anim.Keys) {
+    if (key.Frame < seqStart) carry = key.Vector;
+    else break;
+  }
+  return carry != null ? carry : fallback;
+}
+
+/**
+ * Sequence 名是否为变身族（Alternate / Morph）。
+ * 例：`Alternate Stand - 1`、`Morph Alternate`、`Attack Slam Alternate`。
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+export function isAlternateOrMorphSequenceName(raw) {
+  const n = String(raw ?? "").trim();
+  if (!n) return false;
+  return /^(alternate|morph)\b/i.test(n) || /\balternate\b/i.test(n);
+}
+
+/**
  * Sequence-scoped bone TRS (WC3 runtime semantics).
  * Only Keys with Frame in [seqStart, seqEnd] apply; if none → fallback (bind/default).
  * Before the first in-sequence key → fallback.
+ * `opts.carryIn`：无 in-seq key 时用 seqStart 前最后一帧（Morph/Alternate 骨骼缩放保持）。
  * Global Sequence tracks must NOT use this — see {@link sampleAnimVectorOnClock}.
  * @param {import('war3-model').AnimVector | undefined} anim
  * @param {number} frame
  * @param {number} seqStart
  * @param {number} seqEnd
  * @param {Float32Array} fallback
+ * @param {{ carryIn?: boolean }} [opts]
  * @returns {Float32Array}
  */
-export function sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback) {
+export function sampleAnimVectorInSequence(
+  anim,
+  frame,
+  seqStart,
+  seqEnd,
+  fallback,
+  opts = {},
+) {
   if (!anim?.Keys?.length) return fallback;
   const keys = anim.Keys.filter((k) => k.Frame >= seqStart && k.Frame <= seqEnd);
-  if (!keys.length) return fallback;
+  if (!keys.length) {
+    if (opts.carryIn) return sampleAnimVectorCarryIn(anim, seqStart, fallback);
+    return fallback;
+  }
+  if (frame < keys[0].Frame && opts.carryIn) {
+    return sampleAnimVectorCarryIn(anim, seqStart, keys[0].Vector);
+  }
   return sampleAnimVector({ ...anim, Keys: keys }, frame, fallback);
+}
+
+/** @param {Float32Array} a @param {Float32Array} b @param {number} t */
+function lerpAnimVector(a, b, t) {
+  const n = Math.min(a.length, b.length);
+  const out = new Float32Array(n);
+  const u = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < n; i += 1) {
+    out[i] = a[i] + (b[i] - a[i]) * u;
+  }
+  return out;
 }
 
 /**
@@ -192,6 +248,11 @@ export function sampleAnimVectorOnClock(anim, globalTimeMs, durationMs, fallback
  * @param {number} [seqEnd]
  * @param {ArrayLike<number>} [globalSequences]
  * @param {number} [globalTimeMs]
+ * @param {{
+ *   carryInScaling?: boolean,
+ *   morphScaleLerp?: number | null,
+ * }} [opts] carryInScaling：Alternate/Morph 无 Scaling key 时保持上一形态；
+ *   morphScaleLerp∈[0,1]：Morph 段从 bind 插到变身后目标缩放（天神下凡变身过渡）。
  * @returns {Float32Array[]} world matrices indexed by ObjectId
  */
 export function evaluateNodeWorldMatrices(
@@ -201,6 +262,7 @@ export function evaluateNodeWorldMatrices(
   seqEnd,
   globalSequences,
   globalTimeMs,
+  opts = {},
 ) {
   /** @type {Map<number, import('war3-model').Node>} */
   const byId = new Map();
@@ -221,18 +283,31 @@ export function evaluateNodeWorldMatrices(
         ? frame - seqStart
         : frame;
 
+  const carryInScaling = Boolean(opts.carryInScaling);
+  const morphLerp =
+    typeof opts.morphScaleLerp === "number" && Number.isFinite(opts.morphScaleLerp)
+      ? Math.max(0, Math.min(1, opts.morphScaleLerp))
+      : null;
+
   /** @type {Float32Array[]} */
   const worlds = [];
   const visiting = new Set();
 
-  function sampleTrs(anim, fallback) {
+  function sampleTrs(anim, fallback, asScaling = false) {
     const gid = animGlobalSeqId(anim);
     const dur = gid >= 0 ? Number(globalSequences?.[gid]) || 0 : 0;
     if (gid >= 0 && dur > 0) {
       return sampleAnimVectorOnClock(anim, gTime, dur, fallback);
     }
+    if (asScaling && morphLerp != null && scoped) {
+      // Morph：MDX 段内常无 Scaling key；从 bind 过渡到时间轴上的变身目标。
+      const target = sampleAnimVector(anim, seqEnd, fallback);
+      return lerpAnimVector(fallback, target, morphLerp);
+    }
     if (scoped) {
-      return sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback);
+      return sampleAnimVectorInSequence(anim, frame, seqStart, seqEnd, fallback, {
+        carryIn: asScaling && carryInScaling,
+      });
     }
     return sampleAnimVector(anim, frame, fallback);
   }
@@ -250,9 +325,9 @@ export function evaluateNodeWorldMatrices(
       return worlds[id];
     }
 
-    const t = sampleTrs(node.Translation, DEFAULT_T);
-    const r = sampleTrs(node.Rotation, DEFAULT_R);
-    const s = sampleTrs(node.Scaling, DEFAULT_S);
+    const t = sampleTrs(node.Translation, DEFAULT_T, false);
+    const r = sampleTrs(node.Rotation, DEFAULT_R, false);
+    const s = sampleTrs(node.Scaling, DEFAULT_S, true);
     const pivot = node.PivotPoint || DEFAULT_T;
 
     const local = mat4FromRotationTranslationScaleOrigin(

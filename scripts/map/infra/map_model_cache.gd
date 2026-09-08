@@ -828,10 +828,14 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 	_stamp_glb_model_meta(proto, glb_path, unit_soft)
 	_fix_wc3_blend_materials(proto, unit_soft)
 	# 飞弹/技能特效：语义 present（软球 / 广告牌）；PE2 已由 pe2 bake 写入
-	if Wc3FxPresenter.path_wants_fx_present(logical):
+	if FireballMissileModern.wants(logical, proto):
+		FireballMissileModern.apply(proto)
+		proto.set_meta("wc3_fx_scaled", true)
+	elif Wc3FxPresenter.path_wants_fx_present(logical):
 		Wc3FxPresenter.present(proto)
 		Wc3FxPresenter.maybe_apply_plan_b(proto, logical)
 		proto.set_meta("wc3_fx_scaled", true)
+	Wc3MdxOmni.snap_all(proto)
 	apply_bone_rest_sidecar(proto, glb_path)
 	apply_team_color(proto, DEFAULT_BAKE_TEAM_COLOR, false)
 	# 门面脚本必须在 pack 直前挂上（export 里 set_script 曾未写入 .scn）
@@ -1193,11 +1197,18 @@ func _make_team_color_underlay(
 
 ## 飞弹 / 命中 FX：材质修正 + 语义 present（软球/广告牌）+ 必要时 WORLD_SCALE。
 ## 已 bake 的 .scn（子节点 scale=0.01）不要二次缩放。
-func prepare_fx_model(root: Node3D) -> void:
+## source_path：逻辑路径（如 Abilities/Weapons/FireBallMissile/...），用于选型 modern present。
+func prepare_fx_model(root: Node3D, source_path: String = "") -> void:
 	if root == null:
 		return
 	_fix_wc3_blend_materials(root, false)
-	Wc3FxPresenter.present(root)
+	var path := source_path.strip_edges()
+	if path.is_empty():
+		path = str(root.get_meta("wc3_source_path", ""))
+	if FireballMissileModern.wants(path, root):
+		FireballMissileModern.apply(root)
+	else:
+		Wc3FxPresenter.present(root)
 	if bool(root.get_meta("wc3_fx_scaled", false)):
 		return
 	# 已有 MODEL_SCALE 子根（convert 写入）→ 世界 AABB 应 < ~2m

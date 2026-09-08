@@ -259,7 +259,8 @@ static func _collect_gpu_particles(n: Node, out: Array[GPUParticles3D]) -> void:
 
 ## 按当前 WC3 Sequence 名开关发射器（建筑 Birth / Stand Work / Death 等）。
 ## sequence_name 可用空格或下划线；叶子名匹配即可。
-## 有 vis/rate 脉冲的发射器：只负责关闸 / 跟骨，开闸交给 AnimationPlayer :emitting 轨。
+## 有 vis/rate 脉冲：Stand/Walk/Birth 直接开；Attack 等先关，交给 Animation :emitting 轨。
+## 顺带闸 Ribbon（同一 Sequence 语义）。preload 避免 class_name 缓存未就绪时的编译序问题。
 static func apply_sequence(root: Node, sequence_name: String) -> void:
 	if root == null:
 		return
@@ -272,6 +273,8 @@ static func apply_sequence(root: Node, sequence_name: String) -> void:
 		if not p.has_meta(META_ACTIVE_SEQS) and not p.has_meta(META_ALWAYS_ON):
 			continue
 		_apply_sequence_to_particle(p, want)
+	const _Ribbon := preload("res://scripts/presentation/wc3_model/wc3_ribbon_presenter.gd")
+	_Ribbon.apply_sequence(root, sequence_name)
 
 
 static func emitting_for_sequence(p: GPUParticles3D, sequence_name: String) -> bool:
@@ -307,14 +310,38 @@ static func _apply_sequence_to_particle(p: GPUParticles3D, want_key: String) -> 
 		# 切出本 Sequence：立刻关
 		p.emitting = false
 	elif pulse:
-		# 脉冲：切进来先关，等 Animation 轨按 vis/rate 开（避免 Attack 一上来就喷）
-		p.emitting = false
+		# Stand/Walk 等常驻：直接开。否则 autoplay 后再 apply_sequence 会盖掉
+		# Animation :emitting 轨在 t=0 的开闸，粒子一直灭（水元素脚底水花）。
+		# Birth 召唤爆发：运行时同样常被后置 apply 盖灭，直接开。
+		# Attack 等仍先关，交给 Animation 轨按 vis/rate 开。
+		if _is_ambient_loop_key(want_key) or want_key.begins_with("birth"):
+			p.emitting = true
+		else:
+			p.emitting = false
 	else:
 		p.emitting = true
 	# 绑骨发射器跟 BoneAttachment，勿写世界空间 pivot
 	if bool(p.get_meta(META_BONE_BOUND, false)):
 		return
 	p.position = pivot_for_sequence(p, want_key)
+
+
+## Stand / Walk（含 Stand 2/3、Walk …）视为常驻循环序列。
+static func _is_ambient_loop_key(want_key: String) -> bool:
+	if want_key.is_empty():
+		return false
+	if want_key.begins_with("stand"):
+		# Stand Work / Stand Upgrade / Stand Ready 等建造态仍走脉冲轨
+		if (
+			want_key.contains("work")
+			or want_key.contains("upgrade")
+			or want_key.contains("ready")
+		):
+			return false
+		return true
+	if want_key.begins_with("walk"):
+		return true
+	return false
 
 
 ## 兼容旧调用（仅 Pe2Root 子树）。
@@ -412,14 +439,22 @@ static func _is_model_scale(s: Vector3) -> bool:
 static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> GPUParticles3D:
 	var life: float = maxf(0.05, float(em.get("life_span", 0.5)))
 	var rate: float = maxf(0.0, float(em.get("emission_rate", 1.0)))
+	var frame_flags_early: int = int(em.get("frame_flags", 0))
+	var has_tail := (
+		frame_flags_early == 2 or frame_flags_early == 3 or (frame_flags_early & 2) != 0
+	)
 	# Godot 连续发射：同时存活数 ≈ rate × life。勿再 ×1.35（施工烟会叠成一团火）。
 	# rate=0 的死亡爆发仍可能有 animated keys；amount 至少给一点，靠 emitting 开关。
 	var amount: int = clampi(ceili((rate if rate > 0.01 else 8.0) * life), 1, 256)
+	var flight_trail := has_tail and _em_is_flight_trail(em)
+	# 飞行曳迹（Stand 青尾 / Birth-only 水滴）原作 rate 偏低 → 略增存活数
+	if flight_trail and rate < 100.0:
+		amount = clampi(maxi(amount * 3 + 8, amount + 14), 1, 72)
 	var p := GPUParticles3D.new()
 	p.name = str(em.get("name", "PE2_%d" % index))
 	p.amount = amount
 	p.lifetime = life
-	p.preprocess = 0.0
+	p.preprocess = 0.12 if flight_trail else 0.0
 	p.visibility_aabb = AABB(Vector3(-80, -20, -80), Vector3(160, 200, 160))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.local_coords = true
@@ -465,8 +500,7 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 	var rows: int = maxi(1, int(em.get("rows", 1)))
 	var cols: int = maxi(1, int(em.get("columns", 1)))
 	var flags: int = int(em.get("flags", 0))
-	var frame_flags: int = int(em.get("frame_flags", 0))
-	var has_tail := frame_flags == 2 or frame_flags == 3 or (frame_flags & 2) != 0
+	var frame_flags: int = frame_flags_early
 	var xy_quad := (flags & FLAG_XY_QUAD) != 0
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -544,6 +578,8 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 	# 三段缩放：scale_min=s0，曲线乘 s1/s0、s2/s0
 	# Additive 短火花略放大，避免 Clouds 贴图在 Godot 里发灰发淡
 	var scale_boost := 1.35 if filter_mode == 1 and life < 0.6 else 1.0
+	if flight_trail:
+		scale_boost *= 1.65
 	proc.scale_min = s0 * scale_boost
 	proc.scale_max = s0 * scale_boost
 	proc.scale_curve = _scale_curve(s0, s1, s2, float(em.get("time_middle", 0.5)))
@@ -591,6 +627,29 @@ static func _mark_local(res: Resource) -> void:
 		res.resource_path = ""
 
 
+## 飞行曳迹（非 Death 脉冲）：Stand，或无 Stand 时的 Birth（水元素弹）。
+static func _em_is_flight_trail(em: Dictionary) -> bool:
+	var raw: Variant = em.get("active_sequences", null)
+	if raw == null:
+		return false
+	if not (raw is Array):
+		return false
+	var has_stand := false
+	var has_birth := false
+	var has_death := false
+	for s in raw as Array:
+		var t := str(s).strip_edges().to_lower()
+		if t.contains("stand"):
+			has_stand = true
+		if t.contains("birth"):
+			has_birth = true
+		if t.contains("death"):
+			has_death = true
+	if has_death:
+		return false
+	return has_stand or has_birth
+
+
 ## active_sequences=null → 全程；数组 → 仅这些 Sequence。
 ## 空数组 + visibility 脉冲：按 pe2.sequences 重推断（火枪 Flame 旧旁路常漏）。
 static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
@@ -625,6 +684,8 @@ static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
 
 
 ## 若 active_sequences 为空数组，用 visibility 脉冲帧重推断。
+## Blizzard 等只有 Birth 的 PE2：convert 偶尔把 active 留成空数组（vis 全程=1），
+## 应当**默认 = 全 Sequence** 而非关闸；否则「暴风雪只看见一闪，粒子全灭」。
 static func _ensure_active_sequences(em: Dictionary, sequences: Array) -> void:
 	var raw: Variant = em.get("active_sequences", null)
 	if raw == null:
@@ -634,6 +695,17 @@ static func _ensure_active_sequences(em: Dictionary, sequences: Array) -> void:
 	var inferred := _infer_active_sequences(em, sequences)
 	if not inferred.is_empty():
 		em["active_sequences"] = inferred
+		return
+	# 推断不到（如 vis 默认=1 的老转包）→ 兜底走全程
+	var all: Array = []
+	for s in sequences:
+		if typeof(s) != TYPE_DICTIONARY:
+			continue
+		var nm := str((s as Dictionary).get("name", "")).strip_edges()
+		if not nm.is_empty():
+			all.append(nm)
+	if not all.is_empty():
+		em["active_sequences"] = all
 
 
 static func _sync_active_seqs_from_payload(pe2_root: Node, data: Dictionary) -> void:

@@ -13,6 +13,7 @@ extends SceneTree
 const Wc3ScnRebucketScript := preload("res://scripts/tool/wc3_scn_rebucket.gd")
 const Wc3ScnAnimkeysScript := preload("res://scripts/tool/wc3_scn_animkeys.gd")
 const Wc3ScnPe2Script := preload("res://scripts/tool/wc3_scn_pe2.gd")
+const Wc3ScnRibbonScript := preload("res://scripts/tool/wc3_scn_ribbon.gd")
 const Wc3ModelSceneScript := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
 const Wc3AnimPlayerScript := preload("res://scripts/presentation/wc3_model/wc3_anim_player.gd")
 
@@ -177,6 +178,14 @@ func _run() -> void:
 				)
 				print("  %s" % pe2_msg)
 				_plog("INFO", pe2_msg)
+			var ribbon: Dictionary = Wc3ScnRibbonScript.apply(proto, glb_res)
+			if bool(ribbon.get("ok", false)) and int(ribbon.get("ribbons", 0)) > 0:
+				var rib_msg := (
+					"inject_ribbon ribbons=%s tracks=%s (%s)"
+					% [ribbon.get("ribbons", 0), ribbon.get("tracks", 0), logical_glb]
+				)
+				print("  %s" % rib_msg)
+				_plog("INFO", rib_msg)
 			var light_n := _reparent_lights_into_pe2(proto)
 			if light_n > 0:
 				_plog("INFO", "reparent_lights_into_pe2: %d (%s)" % [light_n, logical_glb])
@@ -194,6 +203,9 @@ func _run() -> void:
 			_apply_bone_rest_from_sidecar(proto, logical_glb)
 			_ensure_wc3_anim_player(proto)
 			proto.set_script(Wc3ModelSceneScript)
+			var snap_n := Wc3MdxOmni.snap_all(proto as Node3D)
+			if snap_n > 0:
+				_plog("INFO", "snap_mdx_omni: %d (%s)" % [snap_n, logical_glb])
 		root.free()
 		if not cache.bake_model_scene(glb_res, force):
 			_plog("WARN", "export_model_scenes: bake failed %s" % logical_glb)
@@ -691,32 +703,15 @@ func _make_mdx_omni(item: Dictionary) -> OmniLight3D:
 	return light
 
 
-## WC3 网格 unshaded，OmniLight 照不亮模型。Death 闪光靠加性球，跟 :visible 轨一起开关。
+## WC3 网格 unshaded，OmniLight 照不亮模型。
+## Flash = 朝相机 soft-orb 光晕（替代硬边 Sphere），跟 Light :visible 轨一起开关。
 func _attach_omni_flash(light: OmniLight3D, item: Dictionary, owner: Node) -> void:
 	if light == null:
 		return
 	var att_end := maxf(0.25, float(item.get("attenuation_end", 2.0)))
 	var intensity := maxf(0.0, float(item.get("intensity", 1.0)))
 	var col := light.light_color
-	var gain := clampf(intensity / 12.0, 0.45, 1.8)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.albedo_color = Color(col.r * gain, col.g * gain, col.b * gain)
-	var sphere := SphereMesh.new()
-	sphere.radius = att_end * 0.35
-	sphere.height = sphere.radius * 2.0
-	sphere.radial_segments = 16
-	sphere.rings = 8
-	sphere.material = mat
-	var flash := MeshInstance3D.new()
-	flash.name = "Flash"
-	flash.mesh = sphere
-	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flash.set_meta("wc3_omni_flash", true)
+	var flash := Wc3MdxOmni.make_soft_flash(col, intensity, att_end)
 	light.add_child(flash)
 	if owner != null:
 		flash.owner = owner
@@ -1159,6 +1154,8 @@ func _assemble_attachments(proto: Node, att_data: Dictionary) -> void:
 			light.owner = proto
 			_apply_attachment_pivot(light, d)
 			_attach_omni_flash(light, d, proto)
+			if proto is Node3D:
+				Wc3MdxOmni.snap_if_outlier(proto as Node3D, light)
 			placed += 1
 			continue
 		var bone_idx := skeleton.find_bone(bone) if not bone.is_empty() else -1

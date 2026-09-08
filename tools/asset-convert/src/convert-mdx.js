@@ -6,6 +6,7 @@ import {
   collectBakeFrames,
   collectSampleFrames,
   evaluateNodeWorldMatrices,
+  isAlternateOrMorphSequenceName,
   LINE_TYPE_NAMES,
   normalizeGeosetAlpha,
   sampleGeosetAlphaInSequence,
@@ -1688,9 +1689,17 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
         geosetScaleTracks.set(gi, { times: [], s: [] });
       }
 
+      const seqNameRaw = String(seq.Name || "");
+      const morphFamily = isAlternateOrMorphSequenceName(seqNameRaw);
+      const isMorphSeq = /^\s*morph\b/i.test(seqNameRaw.trim());
+
       for (const tMs of frames) {
         const seqFrame =
           looping && seqDur > 0 ? start + (tMs % seqDur) : start + tMs;
+        const morphLerp =
+          isMorphSeq && seqDur > 0
+            ? Math.min(1, Math.max(0, (seqFrame - start) / seqDur))
+            : null;
         const worlds = evaluateNodeWorldMatrices(
           allNodes,
           seqFrame,
@@ -1698,6 +1707,10 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
           end,
           globalSequences,
           tMs,
+          {
+            carryInScaling: morphFamily && !isMorphSeq,
+            morphScaleLerp: morphLerp,
+          },
         );
         const timeSec = tMs / 1000;
         for (const bone of skinAnimNodes) {

@@ -152,6 +152,7 @@ PE2 打进 `.scn`；`pe2.json` / 贴图仍在 `asset-converted`（不入库）�
 - **队伍色**：优先选用带真实路径的材质层；双层（Rep1+漫反射 Blend）标 `_rep1`，Godot 用 `wc3_team_color_underlay` 垫底混合。
 - **GeosetAnim**：按 **Sequence 作用域** 采样 alpha（区间内无 key → 默认可见）。全局 hold 会错误隐藏 TownHall 的 `Stand` 等建筑档。
 - **Geoset 显隐（Godot）**：`GLTFDocument` 会丢掉蒙皮 `Geoset_*` 的 scale 轨；convert 写旁路 `*.geosetvis.json`，`MapModelCache` 加载/bake 时注入 `Skeleton3D/Geoset_*:visible`。
+- **Morph / Alternate（天神下凡等）**：变身外观多靠 Helper **Scaling**（非另套 Geoset）。`Alternate*` 烘焙对 Scaling 做 carry-in；`Morph*` 从 bind 插到变身目标。普通 Stand 仍无 carry-in（避免兵营门被打开）。见 `anim_morph_alternate.test.mjs`。
 - **Transparent**：FilterMode=1 使用 MASK + cutoff 0.75，避免半透明碎片。
 - **Additive / AddAlpha（FilterMode 3/4）**：glTF 无加法混合；材质名带 `_fm3`/`_fm4`，Godot `MapModelCache` 加载时改成 `BLEND_MODE_ADD`（否则 `Yellow_Glow*` 黑底会变成实心黑牌）。
 - **动画**：每个 Sequence → 一条 glTF Animation。名称用驼峰、变体序号用 `-`（`Stand - 2` → `Stand-2`，不要 `Stand_-_2`）。原始 Keys 另写旁路 `*.animkeys.json`（毫秒时间轴 + LineType / InTan / OutTan）。`bake:scn` 再写入 loop / rarity / move_speed / Event 轨。扁平 Armature + 等权蒙皮。

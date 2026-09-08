@@ -17,6 +17,7 @@ enum Stance {
 	DEFEND = 3,									## 防御。
 	UPGRADE_FIRST = 4,							## 升级第一。
 	UPGRADE_SECOND = 5,							## 升级第二。
+	ALTERNATE = 6,								## 变身（天神下凡 → Alternate*）。
 }
 
 ## 活动。
@@ -79,9 +80,12 @@ static func activity_base(activity: int) -> String:
 			return "Stand"							## 闲置活动基础。
 
 
-## 逻辑名（空格版），如 Stand Gold / Stand Work Lumber / Birth Upgrade First。
+## 逻辑名（空格版）。Alternate 为前缀：`Alternate Stand` / `Alternate Walk`。
 static func sequence_name(activity: int, stance: int = 0) -> String:
-	return activity_base(activity) + stance_suffix(stance)
+	var base := activity_base(activity)
+	if stance == Stance.ALTERNATE:
+		return "Alternate " + base
+	return base + stance_suffix(stance)
 
 ## 逻辑名（下划线版），如 Stand_Gold / Stand_Work_Lumber / Birth_Upgrade_First。
 static func sequence_name_underscored(activity: int, stance: int = 0) -> String:
