@@ -24,11 +24,24 @@ const ACQUIRE_INTERVAL_SEC := 0.15
 const DEFAULT_LEASH_WC3 := 1000.0
 ## 回到锚点附近视为归巢完成。
 const HOME_ARRIVE_WC3 := 64.0
+## 仇恨表：受击加仇恨值；候选目标基础值（idle acquire 写入）。
+const THREAT_PER_DAMAGE := 1.0
+const THREAT_BASE_ACQUIRE := 0.1
+## 仇恨每秒衰减（WC3 经典值 0.3）；≥0 时启用衰减。
+const THREAT_DECAY_PER_SEC := 0.3
+## 仇恨表 / 当前目标的"保留窗口"（秒）：上次 acquire 失败 / 脱离范围后多久允许重选同一目标。
+## 防「刚脱离 1 帧又立刻选回来」的反复横跳。
+const TARGET_HOLD_SEC := 1.5
+## 切目标最小冷却（秒）：新目标锁定后短时间内不切。
+const TARGET_SWAP_COOLDOWN_SEC := 0.25
 
 enum Profile {
 	PASSIVE = 0, ## 不主动索敌、默认不反击（小动物等）
-	CAMP_CREEP = 1, ## 中立野怪：受击反击 + idle acquire + leash
-	PLAYER_MILITARY = 2, ## 闲置士兵同构警戒（无营地 leash）
+	CAMP_CREEP = 1, ## 中立野怪：受击反击 + idle acquire + leash + 营地助攻
+	TEAM_PLAYER = 2, ## 玩家军事单位：受击反击 + idle acquire + 盟友挨打参战（同 team_id）。
+		## 与原 PLAYER_MILITARY 等价；保留别名 [member PLAYER_MILITARY]。
+	REACTIVE = 3, ## 反应型（玩家辅助单位）：受击反击 + 盟友广播可拉；不主动 idle acquire。
+	PLAYER_MILITARY = 2, ## 向后别名；新代码请用 TEAM_PLAYER
 }
 
 enum State {
@@ -63,6 +76,18 @@ var _asleep: bool = false
 ## 为 true 时 `notify_time_of_day` 才会改睡眠态（未接昼夜系统前保持 false）。
 var sleep_rules_enabled: bool = false
 var _acquire_cd: float = 0.0
+## 仇恨表：attacker instance_id → 仇恨值。仅记录对此单位有威胁的敌对 Node3D。
+## 写入：受击 (`add_threat`) + idle acquire 候选（基础值 0.1）。
+## 衰减：每帧按 THREAT_DECAY_PER_SEC 衰减；≤0 移除。
+var _threat: Dictionary = {}
+## 切目标冷却：上次 _pick_target / try_engage 成功后到现在的秒数。
+## 防 acquire 抖动——刚换目标 0.25s 内不让再切（除非受击反击强制）。
+var _swap_cd: float = 0.0
+## 当前锁定目标（最近一次 `_pick_target` 选定）。用于「sticky」语义：
+## 只要这个目标还存活且仍敌对，就不重新 acquire。
+var _locked_target: Node3D = null
+## 锁定时刻（msec 时间戳）；超 TARGET_HOLD_SEC 后允许被新候选覆盖。
+var _locked_at_msec: int = 0
 
 
 func configure(
@@ -88,12 +113,16 @@ static func of(body: Node) -> UnitAI:
 
 
 ## 按 owner / 武器选默认 Profile（入场 ensure 用；U0-2 接线）。
+## - 中立可战斗 → CAMP_CREEP（营地 leash / 营友助攻）。
+## - 玩家可战斗 → REACTIVE（受击反击 + 盟友广播可拉；不 idle acquire 避免抢玩家命令）。
+## - 其它 → PASSIVE。
+## 注：TEAMPlayer 待补「玩家显式命令时压制 idle acquire」边界后再切默认；见 UNIT_AI.md §4.4 / §4.2c。
 static func default_profile_for(body: Node) -> int:
 	if body == null or not CombatQuery.has_weapon(body):
 		return Profile.PASSIVE
 	if CombatQuery.is_neutral_owner(CombatQuery.owner_of(body)):
 		return Profile.CAMP_CREEP
-	return Profile.PASSIVE
+	return Profile.REACTIVE
 
 
 func get_profile() -> int:
@@ -126,6 +155,24 @@ func wants_idle_acquire() -> bool:
 	return _profile_idle_acquires() and not is_asleep() and _state != State.RETURNING
 
 
+## 是否允许「盟友挨打」广播拉自己参战（CAMP_CREEP / TEAM_PLAYER / REACTIVE）。
+## 仅在 IDLE 时被广播；玩家显式占用或正在 RETURNING 时不拉。
+func allows_ally_engage() -> bool:
+	if is_asleep():
+		return false
+	if _state == State.RETURNING:
+		return false
+	if _player_occupied():
+		return false
+	if _state == State.SLEEPING:
+		return false
+	return (
+		_profile == Profile.CAMP_CREEP
+		or _profile == Profile.TEAM_PLAYER
+		or _profile == Profile.REACTIVE
+	)
+
+
 ## 是否启用营地 leash（仅 CAMP_CREEP + 有效锚点 + leash>0）。
 func uses_leash() -> bool:
 	return (
@@ -140,10 +187,25 @@ func is_beyond_leash() -> bool:
 	return uses_leash() and _dist_from_home_wc3() > leash_wc3
 
 
+## 自身 home 兜底：若已注册到营地（camp_id）则取 TeamRegistry.home_of；
+## 否则退化为出生点（保留旧 UnitAI 行为）。
+## 同时把 camp_id 写回 UnitAI.camp_id，便于后续 ThreatTable / 调试引用。
+## 幂等：可由 _ensure_unit_ai（首挂时）和 _wire_all_unit_ai（cluster_and_bind 后）多次调用。
 func captures_home_from_body() -> void:
 	var body := _body()
 	if body == null:
 		return
+	var reg := TeamRegistry.get_for(self)
+	if reg != null:
+		var gid := reg.group_of(body)
+		if not gid.is_empty() and reg.is_camp(gid):
+			var home := reg.home_of(gid)
+			if home != Vector2.INF:
+				home_wc3 = home
+				camp_id = StringName(gid)
+				if leash_wc3 <= 0.0 or leash_wc3 == DEFAULT_LEASH_WC3:
+					leash_wc3 = TeamRegistry.CAMP_LEASH_WC3
+				return
 	home_wc3 = Wc3Coords.godot_to_wc3_xy(body.global_position)
 
 
@@ -227,45 +289,29 @@ func try_wake() -> bool:
 	return true
 
 
-## 同营/同队友方接敌：附近单位一起转入战斗。
-const ALLY_ALERT_RADIUS_WC3 := 900.0
+## 同营/同团队友接敌：走 TeamRegistry.notify_ally_engaged 做统一广播。
+## - 营地：全成员均可拉（营地即整队）。
+## - 玩家 team：仅触发源已 ENGAGED / 受击时才拉，避免闲站自动接战。
+## 不再按 owner 全图遍历——TeamRegistry 已按 group_id 索引。
+const ALLY_ALERT_RADIUS_WC3 := TeamRegistry.ALLY_ALERT_RADIUS_WC3
 
 
 func notify_camp_ally_engaged(attacker: Node3D) -> void:
 	if attacker == null or not is_instance_valid(attacker):
 		return
-	try_engage(attacker)
-
-
-func _alert_nearby_allies(attacker: Node3D) -> void:
-	if attacker == null or not is_instance_valid(attacker):
-		return
 	var body := _body()
 	if body == null:
 		return
-	var ud: Dictionary = body.get_meta("unit_data", {})
-	var owner_id := int(ud.get("owner", -1))
-	if owner_id < 0:
+	var reg := TeamRegistry.get_for(self)
+	if reg == null:
+		try_engage(attacker)
 		return
-	var host := body.get_parent()
-	if host == null:
-		return
-	var self_xy := Wc3Coords.godot_to_wc3_xy(body.global_position)
-	for c in host.get_children():
-		if not (c is Node3D) or c == body:
-			continue
-		var other := c as Node3D
-		if not is_instance_valid(other):
-			continue
-		var od: Dictionary = other.get_meta("unit_data", {})
-		if int(od.get("owner", -2)) != owner_id:
-			continue
-		if self_xy.distance_to(Wc3Coords.godot_to_wc3_xy(other.global_position)) > ALLY_ALERT_RADIUS_WC3:
-			continue
-		var ai := UnitAI.of(other)
-		if ai == null or ai == self:
-			continue
-		ai.notify_camp_ally_engaged(attacker)
+	reg.notify_ally_engaged(body, attacker, ALLY_ALERT_RADIUS_WC3)
+
+
+func _alert_nearby_allies(attacker: Node3D) -> void:
+	# 旧 owner 全图遍历实现已被 TeamRegistry 取代；保留 stub 防外部旧调用。
+	notify_camp_ally_engaged(attacker)
 
 
 ## 当前攻击目标死亡/离场（DeathService 广播）。脱战并归巢（leash）。
@@ -297,7 +343,22 @@ func try_engage(target: Node3D) -> bool:
 		return false
 	if _player_occupied():
 		return false
-	return _issue_ai_attack(target)
+	# 切目标冷却未到：仅当「当前锁定目标已死/失效」或「目标就是攻击者」才允许。
+	# 受击反击已在外层清 swap_cd。
+	if _swap_cd > 0.0 and target != _locked_target:
+		var cur := _locked_target
+		if cur != null and is_instance_valid(cur) and CombatQuery.is_auto_acquire_target(_body(), cur):
+			return false
+	var ok := _issue_ai_attack(target)
+	if ok:
+		# 锁定目标 + 切目标冷却：减少「acquire 来回横跳」
+		_locked_target = target
+		_locked_at_msec = Time.get_ticks_msec()
+		_swap_cd = TARGET_SWAP_COOLDOWN_SEC
+		# 基础仇恨写入（避免未被攻击的目标仇恨=0、下一拍 decay 后被踢出表）
+		if not _threat.has(target.get_instance_id()):
+			_threat[target.get_instance_id()] = THREAT_BASE_ACQUIRE
+	return ok
 
 
 ## 受击反击（U1）：合法敌对来源 → Attack Order（source=UNIT_AI）。
@@ -322,6 +383,12 @@ func notify_damaged(result: Dictionary) -> void:
 		return
 	if not CombatQuery.is_auto_acquire_target(body, attacker):
 		return
+	# 受击 → 加仇恨（受击伤害是仇恨的主要来源）
+	var dmg := float(result.get("amount", 0.0))
+	if dmg > 0.0:
+		add_threat(attacker, dmg * THREAT_PER_DAMAGE)
+	# 受击强制让仇恨表「拿主意」：清切目标冷却，立即可切回攻击者
+	_swap_cd = 0.0
 	try_engage(attacker)
 	_alert_nearby_allies(attacker)
 
@@ -331,6 +398,10 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _swap_cd > 0.0:
+		_swap_cd -= delta
+	if THREAT_DECAY_PER_SEC > 0.0:
+		_decay_threat(delta)
 	if _state == State.RETURNING:
 		_tick_returning()
 		return
@@ -359,7 +430,10 @@ func _tick_idle_acquire() -> void:
 	var host: Node = _unit_host.call() as Node
 	if host == null:
 		return
-	var target := CombatQuery.find_acquire_target(body, host, effective_acquire_range_wc3())
+	# 切目标冷却未到 → 跳过（防 acquire 抖动）
+	if _swap_cd > 0.0:
+		return
+	var target := _pick_target(host)
 	if target == null:
 		return
 	_issue_ai_attack(target)
@@ -391,7 +465,7 @@ func _on_combat_ended() -> void:
 	var body := _body()
 	if body != null and (wants_idle_acquire() or _profile_retaliates()):
 		var host := body.get_parent()
-		var acq := CombatQuery.find_acquire_target(body, host)
+		var acq := _pick_target(host)
 		if acq != null and try_engage(acq):
 			return
 	if uses_leash() and not _is_at_home():
@@ -459,6 +533,102 @@ func _dist_from_home_wc3() -> float:
 	if body == null or home_wc3 == Vector2.INF:
 		return 0.0
 	return Wc3Coords.godot_to_wc3_xy(body.global_position).distance_to(home_wc3)
+
+
+# ---------------------------------------------------------------------------
+# 仇恨表（ThreatTable，U5）。
+# 设计：
+# - key = attacker Node3D instance_id；value = float 仇恨值。
+# - 写入：受击伤害 (`add_threat`) + idle acquire 候选（THREAT_BASE_ACQUIRE）。
+# - 衰减：每帧 -THREAT_DECAY_PER_SEC；≤0 移除（避免内存泄漏）。
+# - 读取 (`top_threat`)：按仇恨排序，过滤掉已死 / 已脱敌对 / 已脱离 acquire 半径的。
+# - 选目标 (`_pick_target`)：1) 当前锁定目标存活+敌对+半径内 → sticky 保留；
+#   2) 否则取仇恨表 top；3) 仇恨表空 → 退到 `find_acquire_target`（最近）兜底。
+# ---------------------------------------------------------------------------
+
+func add_threat(attacker: Node3D, amount: float) -> void:
+	if attacker == null or not is_instance_valid(attacker):
+		return
+	if amount <= 0.0:
+		return
+	var id := attacker.get_instance_id()
+	_threat[id] = float(_threat.get(id, 0.0)) + amount
+
+
+func clear_threat_for(target: Node3D) -> void:
+	if target == null:
+		return
+	_threat.erase(target.get_instance_id())
+
+
+## 取仇恨表里仇恨最高的「存活 + 敌对 + 在 acquire 半径内」的目标。无则 null。
+## `host` 可为 null（仅做敌对 / 存活过滤，不做距离）。
+func top_threat(host: Node = null) -> Node3D:
+	var body := _body()
+	if body == null or _threat.is_empty():
+		return null
+	var best: Node3D = null
+	var best_v := -INF
+	for id in _threat.keys():
+		var n := instance_from_id(int(id)) as Node3D
+		if n == null or not is_instance_valid(n):
+			_threat.erase(id)
+			continue
+		if not CombatQuery.is_valid_attack_target(body, n):
+			_threat.erase(id)
+			continue
+		var v := float(_threat[id])
+		if v > best_v:
+			best_v = v
+			best = n
+	return best
+
+
+func _decay_threat(delta: float) -> void:
+	if _threat.is_empty():
+		return
+	var step := THREAT_DECAY_PER_SEC * delta
+	for id in _threat.keys():
+		var v := float(_threat[id]) - step
+		if v <= 0.0:
+			_threat.erase(id)
+		else:
+			_threat[id] = v
+
+
+## 选目标：sticky 锁定 → 仇恨表 top → find_acquire_target 最近（兜底）。
+## `host` 用于 acquire 半径判断；为 null 时取 body.get_parent()。
+func _pick_target(host: Node = null) -> Node3D:
+	var body := _body()
+	if body == null:
+		return null
+	if host == null:
+		host = body.get_parent()
+	if host == null:
+		return null
+	var now_msec := Time.get_ticks_msec()
+	# 1) Sticky 锁定：当前 _locked_target 还活着 + 仍敌对 + 在 acquire 半径内 → 保留
+	var cur := _locked_target
+	if cur != null and is_instance_valid(cur):
+		var stuck_ms := now_msec - _locked_at_msec
+		if stuck_ms < int(TARGET_HOLD_SEC * 1000.0):
+			if (
+				CombatQuery.is_valid_attack_target(body, cur)
+				and CombatQuery.distance_wc3(body, cur) <= effective_acquire_range_wc3()
+			):
+				return cur
+			# 死亡 / 失效 / 跑出 → 清锁定
+			_locked_target = null
+			_threat.erase(cur.get_instance_id())
+		else:
+			# 锁定超时 → 清掉，让仇恨表重新选
+			_locked_target = null
+	# 2) 仇恨表 top
+	var top := top_threat(host)
+	if top != null:
+		return top
+	# 3) 兜底：按距离最近
+	return CombatQuery.find_acquire_target(body, host, effective_acquire_range_wc3())
 
 
 ## 对目标发 AI Attack；成功则 ENGAGED。
@@ -615,11 +785,15 @@ func _refresh_process() -> void:
 
 
 func _profile_retaliates() -> bool:
-	return _profile == Profile.CAMP_CREEP or _profile == Profile.PLAYER_MILITARY
+	return (
+		_profile == Profile.CAMP_CREEP
+		or _profile == Profile.TEAM_PLAYER
+		or _profile == Profile.REACTIVE
+	)
 
 
 func _profile_idle_acquires() -> bool:
-	return _profile == Profile.CAMP_CREEP or _profile == Profile.PLAYER_MILITARY
+	return _profile == Profile.CAMP_CREEP or _profile == Profile.TEAM_PLAYER
 
 
 func _player_occupied() -> bool:

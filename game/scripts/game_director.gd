@@ -80,6 +80,8 @@ var _ability_ctx_factory: AbilityCastContextFactory = null
 var _ability_hud: AbilityHudFeedback = null
 var _ability_runtime: AbilityRuntimeRegistry = null
 var _ability_targeting_svc: AbilityTargetingService = null
+## 命令卡 CD 扇形刷新节流
+var _cd_hud_acc: float = 0.0
 ## 点了行动面板「移动」或热键 M 后，等待左键指定落点
 var _move_targeting: bool = false
 ## 攻击瞄准：左键单位=Attack，地面=Attack-Move
@@ -107,6 +109,10 @@ var _build_menu_open: bool = false
 ## 英雄技能学习二级面板。
 var _hero_skill_menu_open: bool = false
 var _ability_preview_decal: BlizzardAreaDecal = null
+## 瞄准期内被霜蓝染色的单位/建筑（Present）。
+var _ability_preview_tinted: Array = []
+var _ability_preview_tint_goal := Vector2.INF
+var _ability_preview_tint_radius: float = 0.0
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 var _build_placement: BuildPlacementController = null
@@ -142,6 +148,7 @@ func _ready() -> void:
 		return
 	_configure_map_root()
 	_ensure_gm_panel()
+	_ensure_perf_overlay()
 	_wire_hud()
 	_load_camera_bounds()
 	_configure_camera()
@@ -152,6 +159,7 @@ func _ready() -> void:
 
 
 var _gm_panel: CanvasLayer = null
+var _perf_overlay: PerfOverlay = null
 
 
 func _ensure_gm_panel() -> void:
@@ -169,6 +177,19 @@ func _ensure_gm_panel() -> void:
 	_gm_panel = gm
 	# _ready 期间父节点 blocked，必须延迟挂接
 	parent_n.add_child.call_deferred(gm)
+
+
+func _ensure_perf_overlay() -> void:
+	var parent_n := get_parent()
+	if parent_n == null:
+		return
+	if _perf_overlay != null and is_instance_valid(_perf_overlay):
+		return
+	var existing := parent_n.get_node_or_null(PerfOverlay.NODE_NAME) as PerfOverlay
+	if existing != null:
+		_perf_overlay = existing
+		return
+	_perf_overlay = PerfOverlay.ensure_on(parent_n)
 
 
 func _toggle_gm_panel() -> void:
@@ -346,7 +367,7 @@ func _setup_selector() -> void:
 	if cam == null or layer == null:
 		push_warning("GameDirector: UnitSelector.setup 跳过（camera=%s layer=%s）" % [cam, layer])
 		return
-	# 点选：中立金矿等仍可选；框选：仅己方（不可多选敌对/中立）
+	# 点选：中立/敌方可点选观察；框选仅己方。下达指令另见「可控」过滤。
 	unit_selector.set("owner_filter", -1)
 	unit_selector.set("marquee_owner", local_player)
 	if unit_selector.has_method("setup"):
@@ -694,9 +715,34 @@ func _process(delta: float) -> void:
 	if _ability_runtime != null:
 		_ability_runtime.tick_all_units(delta)
 	_refresh_move_executing_ui()
+	_refresh_portrait_vitals()
 	_refresh_portrait_timed_life_bar()
 	_refresh_buff_strip()
 	_refresh_path_debug()
+	_tick_command_card_cooldown_hud(delta)
+
+
+## 技能 CD 进行中时低频刷命令卡，驱动扇形遮罩进度（否则只在施法瞬间刷一次会「卡住」）。
+func _tick_command_card_cooldown_hud(delta: float) -> void:
+	_cd_hud_acc += delta
+	if _cd_hud_acc < 0.1:
+		return
+	_cd_hud_acc = 0.0
+	if not _primary_has_ability_cd():
+		return
+	_refresh_command_card()
+
+
+func _primary_has_ability_cd() -> bool:
+	if unit_selector == null or not unit_selector.has_method("get_primary"):
+		return false
+	var primary := unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		return false
+	if not primary.has_meta(AbilityCooldowns.META_CD):
+		return false
+	var raw: Variant = primary.get_meta(AbilityCooldowns.META_CD)
+	return raw is Dictionary and not (raw as Dictionary).is_empty()
 
 
 func _refresh_path_debug() -> void:
@@ -1025,6 +1071,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
 			get_viewport().set_input_as_handled()
 			return
+		if key == KEY_F3 or phys == KEY_F3:
+			_ensure_perf_overlay()
+			if _perf_overlay != null and is_instance_valid(_perf_overlay):
+				_perf_overlay.toggle()
+				if game_hud:
+					game_hud.set_status(
+						"性能叠层：%s（F3）"
+						% ("开" if _perf_overlay.is_overlay_enabled() else "关")
+					)
+			get_viewport().set_input_as_handled()
+			return
 		if not debug_building_fx_hotkeys:
 			return
 		var phase := -1
@@ -1051,9 +1108,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	_interrupt_channels_for_units(selected)
 	var n_stop := _command_router.issue_stop(selected, source)
 	if n_stop > 0 and game_hud:
@@ -1065,9 +1120,7 @@ func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 func _issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	_interrupt_channels_for_units(selected)
 	var n := _command_router.issue_hold(selected, source)
 	if n > 0 and game_hud:
@@ -1108,9 +1161,7 @@ func _try_toggle_defend(_source: int = UnitOrder.Source.UNKNOWN) -> void:
 func _issue_attack_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if selected.is_empty():
 		return false
 	var picked: Node3D = null
@@ -1150,9 +1201,7 @@ func _issue_attack_at_screen(screen_pos: Vector2, source: int) -> bool:
 func _issue_patrol_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null or _path_query == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if selected.is_empty():
 		return false
 	var hit := _ground_at_screen(screen_pos)
@@ -1182,9 +1231,7 @@ func _issue_patrol_at_screen(screen_pos: Vector2, source: int) -> bool:
 func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if unit_selector == null or _command_router == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if selected.is_empty():
 		return false
 	var target := _resolve_smart_target(screen_pos, selected)
@@ -1217,9 +1264,9 @@ func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
 
 ## 对当前选中的可训建筑写入集结点。
 func _issue_set_rally_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
+	if unit_selector == null:
 		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	var buildings: Array[Node3D] = []
 	for n in selected:
 		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
@@ -1495,9 +1542,7 @@ func _format_smart_status(result: Dictionary) -> String:
 func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null or _path_query == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if selected.is_empty():
 		return false
 	var hit := _ground_at_screen(screen_pos)
@@ -1536,12 +1581,14 @@ func _issue_group_move_command(
 ) -> bool:
 	if unit_selector == null or _path_query == null:
 		return false
-	if not unit_selector.has_method("get_primary") or not unit_selector.has_method("get_selected"):
+	if not unit_selector.has_method("get_primary"):
 		return false
-	var primary: Node3D = unit_selector.call("get_primary")
-	var selected: Array = unit_selector.call("get_selected")
-	if primary == null or selected.is_empty():
+	var selected: Array = _get_selected_safe()
+	if selected.is_empty():
 		return false
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not _is_controllable(primary) or not selected.has(primary):
+		primary = selected[0] as Node3D
 	var hit := _ground_at_screen(screen_pos)
 	if hit == Vector3.INF:
 		if game_hud:
@@ -1608,9 +1655,7 @@ func _issue_group_move_command(
 func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	var peasants := _command_router.filter_peasants(selected)
 	if peasants.is_empty():
 		if game_hud:
@@ -1650,9 +1695,7 @@ func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
 func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 	if _command_router == null or unit_selector == null:
 		return false
-	if not unit_selector.has_method("get_selected"):
-		return false
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	var n := _command_router.issue_return_goods(selected, source)
 	if n > 0 and game_hud:
 		game_hud.set_status("送回资源 · %d 农民" % n)
@@ -1663,9 +1706,7 @@ func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 
 
 func _begin_move_targeting(source: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if _command_router == null or _command_router.filter_movers(selected).is_empty():
 		if game_hud:
 			game_hud.set_status("移动：无可用单位")
@@ -1684,9 +1725,7 @@ func _begin_move_targeting(source: int) -> void:
 
 
 func _begin_attack_targeting(source: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if _command_router == null or _command_router.filter_movers(selected).is_empty():
 		if game_hud:
 			game_hud.set_status("攻击：无可用单位")
@@ -1703,9 +1742,7 @@ func _begin_attack_targeting(source: int) -> void:
 
 
 func _begin_patrol_targeting(source: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if _command_router == null or _command_router.filter_movers(selected).is_empty():
 		if game_hud:
 			game_hud.set_status("巡逻：无可用单位")
@@ -1722,9 +1759,7 @@ func _begin_patrol_targeting(source: int) -> void:
 
 
 func _begin_harvest_targeting(source: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if _command_router == null or _command_router.filter_peasants(selected).is_empty():
 		if game_hud:
 			game_hud.set_status("采集：无农民")
@@ -1742,9 +1777,7 @@ func _begin_harvest_targeting(source: int) -> void:
 
 
 func _begin_rally_targeting(source: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	var any := false
 	for n in selected:
 		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
@@ -1780,6 +1813,8 @@ func _setup_ability_services() -> void:
 		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
 		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
 		"kill_unit": Callable(self, "_kill_unit"),
+		# 引导技开场必须清队列，否则残留 MOVE/ABILITY 首帧即打断（暴风雪「放不出」）
+		"clear_caster_orders": Callable(self, "_clear_caster_orders"),
 	})
 	_ability_hud = AbilityHudFeedback.new()
 	_ability_hud.configure(Callable(self, "_ability_set_status"))
@@ -1813,7 +1848,39 @@ func _ability_set_status(text: String) -> void:
 func _ability_get_primary() -> Node3D:
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
 		return null
-	return unit_selector.call("get_primary") as Node3D
+	var primary := unit_selector.call("get_primary") as Node3D
+	if not _is_controllable(primary):
+		return null
+	return primary
+
+
+func _local_owner_id() -> int:
+	if _session != null:
+		return int(_session.local_player)
+	return local_player
+
+
+## 本地玩家是否可对该单位下达指令（点选仍可观察非己方）。
+## 尸体 / 离场单位视为不可控（与野怪一样清空命令卡）。
+func _is_controllable(node: Node) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	if not CombatQuery.is_alive_in_world(node):
+		return false
+	return CombatQuery.is_controllable(node, _local_owner_id())
+
+
+func _get_selected_safe() -> Array:
+	if unit_selector == null or not unit_selector.has_method("get_selected"):
+		return []
+	var raw: Array = unit_selector.call("get_selected")
+	if _command_router != null:
+		return _command_router.filter_controllable(raw)
+	var out: Array = []
+	for n in raw:
+		if n is Node3D and _is_controllable(n as Node3D):
+			out.append(n)
+	return out
 
 
 func _ability_pick_at(screen_pos: Vector2) -> Node3D:
@@ -1901,7 +1968,16 @@ func _kill_unit(unit: Node3D) -> void:
 		unit.queue_free()
 
 
-## 引导中：玩家新指令（非 AI）→ 打断暴风雪等。
+## 引导开场清空命令队列（见 AbilityCastController._stop_caster_for_cast）。
+func _clear_caster_orders(caster: Node3D) -> void:
+	if caster == null or not is_instance_valid(caster) or _command_router == null:
+		return
+	var q := _command_router.queue_for(caster)
+	if q != null:
+		q.clear()
+
+
+## 引导中 / 接近施法点：玩家新指令（非 AI）→ 打断暴风雪等。
 func _ability_channel_interrupt_check(caster: Node3D) -> bool:
 	if caster == null or not is_instance_valid(caster) or _command_router == null:
 		return false
@@ -1920,7 +1996,17 @@ func _ability_channel_interrupt_check(caster: Node3D) -> bool:
 			return true
 		UnitOrder.Kind.HARVEST_GOLD, UnitOrder.Kind.HARVEST_LUMBER:
 			return true
-		UnitOrder.Kind.RETURN_GOODS, UnitOrder.Kind.ABILITY, UnitOrder.Kind.BUILD:
+		UnitOrder.Kind.RETURN_GOODS, UnitOrder.Kind.BUILD:
+			return true
+		UnitOrder.Kind.ABILITY:
+			# 施法开场残留的「本技能」单不打断；另点其它技能才打断
+			var ctrl := AbilityCastController.of(caster)
+			if ctrl != null and (
+				ctrl.is_channeling() or ctrl.is_approaching() or ctrl.is_cast_delaying()
+			):
+				var pending := str(o.ability_id).strip_edges()
+				if not pending.is_empty() and pending == ctrl.channeling_abil_id():
+					return false
 			return true
 	return false
 
@@ -2079,13 +2165,12 @@ func _rally_flag_source_building() -> Node3D:
 		primary = unit_selector.call("get_primary") as Node3D
 	if (
 		primary != null
+		and _is_controllable(primary)
 		and BuildingRally.can_set_rally(primary)
 		and BuildingRally.has_rally(primary)
 	):
 		return primary
-	if not unit_selector.has_method("get_selected"):
-		return null
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	for n in selected:
 		if not (n is Node3D):
 			continue
@@ -2181,14 +2266,30 @@ func _ensure_unit_ai(unit: Node3D) -> UnitAI:
 	var existing := UnitAI.of(unit)
 	if existing != null:
 		_configure_unit_ai(existing, unit)
+		# Bug #2 修复：已挂 AI 的野怪再次入场（重复调用、或者重训）也要入营。
+		_attach_to_camp_if_neutral(unit, existing)
 		return existing
 	var ai := UnitAI.new()
 	ai.name = UnitAI.NODE_NAME
 	unit.add_child(ai)
 	_configure_unit_ai(ai, unit)
 	ai.set_profile(UnitAI.default_profile_for(unit))
+	_attach_to_camp_if_neutral(unit, ai)
 	ai.captures_home_from_body()
 	return ai
+
+
+## 中立野怪入营：cluster_and_bind 之后训练/召唤出的新野怪会落到最近营地，
+## 并把 UnitAI.home_wc3 / camp_id 重新校准为 camp 中心。玩家/建筑不入营。
+func _attach_to_camp_if_neutral(unit: Node3D, ai: UnitAI) -> void:
+	if unit == null or ai == null:
+		return
+	var reg := TeamRegistry.get_for(self)
+	if reg == null:
+		return
+	if reg.attach_to_nearest_camp(unit):
+		# 入营后 home / camp_id 应以 camp 中心为准，重读一次。
+		ai.captures_home_from_body()
 
 
 func _configure_unit_ai(ai: UnitAI, unit: Node3D) -> void:
@@ -2225,6 +2326,23 @@ func _wire_all_unit_ai() -> void:
 		if c is Node3D:
 			_ensure_unit_ai(c as Node3D)
 			_ensure_hero_runtime(c as Node3D)
+	# 玩家 / 中立队伍与营地注册：聚类 + 设 camp_id / team_id。
+	# 注：需在 UnitAI 全部 ensure 之后跑，因为营地 leash 锚点从 camp 中心读。
+	var reg := TeamRegistry.attach(self)
+	if reg != null:
+		var summary := reg.cluster_and_bind(host)
+		print(
+			"[TeamRegistry] players=%d camps=%d units=%d"
+			% [summary.players, summary.camps, summary.units]
+		)
+		# Bug #1 修复：cluster_and_bind 时 UnitAI 还没挂上 reg，captures_home_from_body
+		# 退化成"出生点"home；这里再调一次，让 home_wc3 / camp_id 用 camp 中心。
+		# 幂等：已对齐 camp 中心的不变；玩家单位走 fallback 路径无副作用。
+		for c in host.get_children():
+			if c is Node3D:
+				var ai := UnitAI.of(c as Node3D)
+				if ai != null:
+					ai.captures_home_from_body()
 
 
 func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
@@ -2353,9 +2471,9 @@ func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: i
 
 
 func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
+	if unit_selector == null:
 		return 0
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	var bells: Array[Node3D] = []
 	var direct: Array[Node3D] = []
 	for n in selected:
@@ -2531,8 +2649,16 @@ func _on_unit_dying(unit: Node3D) -> void:
 		bh.clear_all()
 	HeroDeathRegistry.register_death(unit)
 	_release_unit_food(unit)
+	# 立刻移出选中；命令卡随 selection_changed 清空（与野怪观察一致）。
 	if unit_selector != null and unit_selector.has_method("deselect_unit"):
 		unit_selector.call("deselect_unit", unit)
+	elif unit_selector != null and unit_selector.has_method("clear_selection"):
+		# 兜底：无 deselect 时至少清掉单选尸体
+		var pri: Node3D = null
+		if unit_selector.has_method("get_primary"):
+			pri = unit_selector.call("get_primary") as Node3D
+		if pri == unit:
+			unit_selector.call("clear_selection")
 	var vis := _ensure_unit_visual(unit)
 	if vis != null:
 		if not vis.corpse_expired.is_connected(_on_corpse_expired):
@@ -2567,6 +2693,9 @@ func _on_unit_dying(unit: Node3D) -> void:
 	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
 	if nav != null:
 		nav.stop()
+	var cast := AbilityCastController.of(unit)
+	if cast != null:
+		cast.cancel_cast()
 
 
 func _on_corpse_expired(unit: Node3D) -> void:
@@ -2760,7 +2889,7 @@ func _try_learn_hero_skill(abil_id: String) -> void:
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
+	if primary == null or not _is_controllable(primary):
 		return
 	var check := HeroSkill.can_learn(primary, abil_id)
 	if not bool(check.get("ok", false)):
@@ -2892,10 +3021,22 @@ func _clear_ability_preview() -> void:
 	if _ability_preview_decal != null and is_instance_valid(_ability_preview_decal):
 		_ability_preview_decal.queue_free()
 	_ability_preview_decal = null
+	_clear_ability_preview_tints()
+	_ability_preview_tint_goal = Vector2.INF
+	_ability_preview_tint_radius = 0.0
+
+
+func _clear_ability_preview_tints() -> void:
+	UnitSpellTint.clear_many(_ability_preview_tinted)
+	_ability_preview_tinted.clear()
 
 
 func _update_ability_preview(screen_pos: Vector2) -> void:
-	if not _ability_targeting or _pending_ability_id != "AHbz" or map_root == null:
+	var abil_id := _pending_ability_id.strip_edges()
+	if not _ability_targeting or map_root == null:
+		_clear_ability_preview()
+		return
+	if abil_id != "AHbz" and abil_id != "AHmt":
 		_clear_ability_preview()
 		return
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
@@ -2908,15 +3049,62 @@ func _update_ability_preview(screen_pos: Vector2) -> void:
 		return
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal := Vector2(hit.x * inv, -hit.z * inv)
-	var lv := AbilityCatalog.level_for(primary, "AHbz")
-	var ab := AbilityCatalog.data("AHbz")
-	var radius := ab.area_at(lv) if ab != null else 200.0
+	var radius: float
+	var tint_goal := goal
+	var do_tint := false
+	var preview_color := BlizzardAreaDecal.DEFAULT_COLOR
+	if abil_id == "AHbz":
+		var lv := AbilityCatalog.level_for(primary, "AHbz")
+		var ab := AbilityCatalog.data("AHbz")
+		radius = ab.area_at(lv) if ab != null else 200.0
+		do_tint = true
+	else:
+		# AHmt：落点标记圈；选人半径在施法者周围，瞄准阶段只标目的地。
+		radius = MassTeleportPresenter.DEST_PREVIEW_RADIUS_WC3
+		preview_color = MassTeleportPresenter.DEST_COLOR
 	if _ability_preview_decal == null or not is_instance_valid(_ability_preview_decal):
 		_ability_preview_decal = BlizzardAreaDecal.spawn_preview(
-			map_root, goal, radius, _heightfield
+			map_root, goal, radius, _heightfield, preview_color
 		)
 	else:
+		_ability_preview_decal.set_tint(preview_color)
 		_ability_preview_decal.reposition(goal, radius, _heightfield)
+	if do_tint:
+		_refresh_ability_preview_tints(primary, tint_goal, radius)
+	else:
+		_clear_ability_preview_tints()
+
+
+func _refresh_ability_preview_tints(caster: Node3D, goal: Vector2, radius: float) -> void:
+	var host := _unit_host()
+	if host == null or caster == null:
+		_clear_ability_preview_tints()
+		return
+	_ability_preview_tint_goal = goal
+	_ability_preview_tint_radius = radius
+	var next: Array = CombatQuery.units_blizzard_victims_in_radius(
+		host, caster, goal, radius
+	)
+	var next_ids: Dictionary = {}
+	for n in next:
+		if n is Node3D and is_instance_valid(n):
+			next_ids[(n as Node3D).get_instance_id()] = n
+	# 移出范围的清染色
+	for old in _ability_preview_tinted:
+		if not (old is Node3D) or not is_instance_valid(old):
+			continue
+		var oid := (old as Node3D).get_instance_id()
+		if not next_ids.has(oid):
+			UnitSpellTint.clear(old as Node3D)
+	# 新入范围的染色
+	var tint := Color(0.38, 0.78, 1.0, 0.42)
+	_ability_preview_tinted.clear()
+	for id in next_ids.keys():
+		var node: Node3D = next_ids[id] as Node3D
+		# 已染色则保留 overlay，避免每帧重建材质
+		if not node.has_meta(UnitSpellTint.META_SAVED):
+			UnitSpellTint.apply(node, tint)
+		_ability_preview_tinted.append(node)
 
 
 func _interrupt_channels_for_units(units: Array) -> void:
@@ -2924,7 +3112,7 @@ func _interrupt_channels_for_units(units: Array) -> void:
 		if not (u is Node3D) or not is_instance_valid(u):
 			continue
 		var acc := AbilityCastController.of(u as Node3D)
-		if acc != null and acc.is_channeling():
+		if acc != null and (acc.is_channeling() or acc.is_cast_delaying()):
 			acc.cancel_cast()
 
 
@@ -3105,12 +3293,6 @@ func _notify_cannot_afford_build(building_id: String) -> void:
 		game_hud.show_command_tip(msg)
 	else:
 		game_hud.set_status(msg)
-
-
-func _get_selected_safe() -> Array:
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return []
-	return unit_selector.call("get_selected")
 
 
 ## F2-4：每个 peasant 挂一个 BuildController；首次创建时连 build_completed 信号。
@@ -3456,6 +3638,10 @@ func _try_issue_train(unit_id: String) -> void:
 		if game_hud:
 			game_hud.set_status("请先选中可训练建筑")
 		return
+	if not _is_controllable(primary):
+		if game_hud:
+			game_hud.set_status("无法控制该建筑")
+		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
 	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
@@ -3529,6 +3715,10 @@ func _try_issue_revive(unit_id: String) -> void:
 	if primary == null or not is_instance_valid(primary):
 		if game_hud:
 			game_hud.set_status("请先选中祭坛")
+		return
+	if not _is_controllable(primary):
+		if game_hud:
+			game_hud.set_status("无法控制该建筑")
 		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
@@ -3611,6 +3801,10 @@ func _try_issue_research(upgrade_id: String) -> void:
 	if primary == null or not is_instance_valid(primary):
 		if game_hud:
 			game_hud.set_status("请先选中可研究建筑")
+		return
+	if not _is_controllable(primary):
+		if game_hud:
+			game_hud.set_status("无法控制该建筑")
 		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
@@ -4217,9 +4411,9 @@ func _on_command_action_rclick(action_id: String) -> void:
 		if game_hud:
 			game_hud.set_status("该技能不支持自动施法切换")
 		return
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
+	if unit_selector == null:
 		return
-	var selected: Array = unit_selector.call("get_selected")
+	var selected: Array = _get_selected_safe()
 	if selected.is_empty():
 		return
 	var n_toggled := 0
@@ -4236,7 +4430,7 @@ func _on_command_action_rclick(action_id: String) -> void:
 		var on := false
 		if unit_selector.has_method("get_primary"):
 			var pri: Node3D = unit_selector.call("get_primary") as Node3D
-			if pri != null:
+			if pri != null and _is_controllable(pri):
 				on = AbilityAutoCast.is_enabled(pri, abil_id)
 		var row := CommandButtonCatalog.get_shared().get_ability(abil_id)
 		var name_s := str(row.get("name", abil_id)).strip_edges()
@@ -4385,6 +4579,26 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		elif gold_left < 0:
 			gold_left = 12500
 		game_hud.set_status("金矿 · 剩余 %d 金" % gold_left)
+		_sync_rally_flag_for_selection()
+		return
+	# 可选 ≠ 可控：敌方/野怪/尸体仅观察，命令卡空、不下指令
+	if not _is_controllable(primary):
+		_card_supports_move = false
+		_card_is_peasant = false
+		_clear_command_card_hotkeys()
+		_unbind_hud_build_site()
+		game_hud.clear_build_progress()
+		if game_hud.has_method("clear_train_queue"):
+			game_hud.clear_train_queue()
+		game_hud.clear_command_labels()
+		if not CombatQuery.is_alive_in_world(primary):
+			game_hud.set_status("已选 %s · 已阵亡（不可控制）" % tid)
+		else:
+			var oid := CombatQuery.owner_of(primary)
+			if CombatQuery.is_neutral_owner(oid):
+				game_hud.set_status("已选 %s · 中立（不可控制）" % tid)
+			else:
+				game_hud.set_status("已选 %s · 敌方（不可控制）" % tid)
 		_sync_rally_flag_for_selection()
 		return
 	# 可训建筑（主城/兵营/祭坛等）：训练命令卡
@@ -4555,15 +4769,25 @@ func _on_hud_build_site_progress(elapsed: float, total: float, ratio: float) -> 
 
 
 func _sync_selection_info_panel_hp_only() -> void:
-	if unit_selector == null or game_hud == null or not unit_selector.has_method("get_primary"):
+	## 建造进度等场景：只刷肖像生命/魔法，避免整栏重建。
+	_refresh_portrait_vitals()
+
+
+func _refresh_portrait_vitals() -> void:
+	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	if not game_hud.has_method("update_portrait_vitals"):
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
+	if primary == null or not is_instance_valid(primary):
 		return
-	var selected: Array = []
-	if unit_selector.has_method("get_selected"):
-		selected = unit_selector.call("get_selected")
-	_apply_selection_info_to_hud(primary, selected)
+	var vit := SelectionInfoBuilder.vitals(primary)
+	game_hud.update_portrait_vitals(
+		int(vit.get("hp", 0)),
+		int(vit.get("hp_max", 0)),
+		int(vit.get("mana", 0)),
+		int(vit.get("mana_max", 0))
+	)
 
 
 func _refresh_portrait_timed_life_bar() -> void:
