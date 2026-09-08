@@ -1,14 +1,19 @@
 class_name BrillianceAuraController
 extends Node
 
-## 辉煌光环 AHab（Logic）：Area 内友军每秒 DataA 回蓝；被动，学会即生效。
+## 辉煌光环 AHab（Logic）：Area 内友军挂 brilliance Buff；回蓝由 UnitRegen 读 Buff。
+## Present：施法者 / 受益者附着仍由 BrillianceAuraPresenter 同步。
 
 const ABIL_ID := "AHab"
 const NODE_NAME := "BrillianceAuraController"
+## 在范围内每帧续期；离场显式 remove（避免短 duration 导致 HUD 闪烁）。
+const AURA_REFRESH_SEC := 1.0
 
 var _unit_host_cb: Callable = Callable()
 var _cache: MapModelCache = null
 var _beneficiary_fx: Dictionary = {}
+## 本施法者上一帧仍挂着 Buff 的单位（instance_id → Node3D），用于离范围 remove。
+var _buffed: Dictionary = {}
 
 
 static func of(unit: Node3D) -> BrillianceAuraController:
@@ -58,6 +63,7 @@ func _process(delta: float) -> void:
 	if lv <= 0 or ab == null or not unit_can_have(host):
 		BrillianceAuraPresenter.sync_caster(host, false, _cache)
 		BrillianceAuraPresenter.clear_beneficiaries(_beneficiary_fx)
+		_clear_all_buffs()
 		set_process(false)
 		return
 	var rate := maxf(ab.data_a_at(lv), 0.0)
@@ -67,15 +73,67 @@ func _process(delta: float) -> void:
 		return
 	var center := Wc3Coords.godot_to_wc3_xy(host.global_position)
 	var allies := CombatQuery.units_friendly_in_radius(unit_host, host, center, radius)
-	BrillianceAuraPresenter.sync_caster(host, true, _cache)
-	BrillianceAuraPresenter.sync_beneficiaries(host, allies, _cache, _beneficiary_fx)
+	# 原作：仅有魔法值的友军享受辉煌（脚兵等无蓝单位不挂 Buff / 受益特效）
+	var mana_allies: Array = []
 	for n in allies:
 		if n is Node3D and UnitMana.has_mana(n as Node3D):
-			UnitMana.regenerate(n as Node3D, rate * delta)
+			mana_allies.append(n)
+	BrillianceAuraPresenter.sync_caster(host, true, _cache)
+	BrillianceAuraPresenter.sync_beneficiaries(host, mana_allies, _cache, _beneficiary_fx)
+	_sync_buffs(host, mana_allies, rate)
+
+
+func _sync_buffs(host: Node3D, allies: Array, mana_regen: float) -> void:
+	var source_id := host.get_instance_id()
+	var in_range: Dictionary = {}
+	for n in allies:
+		if not (n is Node3D):
+			continue
+		var u := n as Node3D
+		if not is_instance_valid(u):
+			continue
+		if not UnitMana.has_mana(u):
+			continue
+		var bh := BuffHost.ensure_on(u)
+		bh.apply(BuffCatalog.ID_BRILLIANCE, AURA_REFRESH_SEC, {
+			"mana_regen": mana_regen,
+			"aura": true,
+			"source_id": source_id,
+		})
+		in_range[u.get_instance_id()] = u
+	# 离范围：仅移除本施法者施加的辉煌
+	for iid in _buffed.keys():
+		if in_range.has(iid):
+			continue
+		var prev: Node3D = _buffed[iid] as Node3D
+		if prev != null and is_instance_valid(prev):
+			_remove_if_sourced(prev, source_id)
+	_buffed = in_range
+
+
+func _remove_if_sourced(unit: Node3D, source_id: int) -> void:
+	var bh := BuffHost.of(unit)
+	if bh == null or not bh.has_buff(BuffCatalog.ID_BRILLIANCE):
+		return
+	var p := bh.get_params(BuffCatalog.ID_BRILLIANCE)
+	if int(p.get("source_id", 0)) != source_id:
+		return
+	bh.remove(BuffCatalog.ID_BRILLIANCE)
+
+
+func _clear_all_buffs() -> void:
+	var host := get_parent() as Node3D
+	var source_id := host.get_instance_id() if host != null else 0
+	for iid in _buffed.keys():
+		var u: Node3D = _buffed[iid] as Node3D
+		if u != null and is_instance_valid(u):
+			_remove_if_sourced(u, source_id)
+	_buffed.clear()
 
 
 func _exit_tree() -> void:
 	BrillianceAuraPresenter.clear_beneficiaries(_beneficiary_fx)
+	_clear_all_buffs()
 	var host := get_parent() as Node3D
 	if host != null and is_instance_valid(host):
 		BrillianceAuraPresenter.sync_caster(host, false, _cache)

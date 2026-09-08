@@ -13,6 +13,11 @@ const _FALLBACK_TARGET := {
 	"Aslo": "Abilities/Spells/Human/Slow/SlowTarget.mdl",
 }
 
+## AHab 无 Casterart；施法者环权威是 Targetart=Brilliance（Func 空时兜底）
+const _FALLBACK_AURA_CASTER := {
+	"AHab": "Abilities/Spells/Human/Brilliance/Brilliance.mdl",
+}
+
 const _FALLBACK_GROUND := {
 	"AHbz": "Abilities/Spells/Human/Blizzard/BlizzardTarget.mdl",
 	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportTo.mdl",
@@ -26,6 +31,12 @@ const _FALLBACK_CASTER := {
 	"AHtc": "Abilities/Spells/Human/Thunderclap/ThunderClapCaster.mdl",
 	"AHav": "Abilities/Spells/Human/Avatar/AvatarCaster.mdl",
 	"Aslo": "Abilities/Spells/Human/Slow/SlowCaster.mdl",
+	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportCaster.mdl",
+}
+
+## 出发脚印 / 单位闪现（Func specialart 空时）
+const _FALLBACK_SPECIAL := {
+	"AHmt": "Abilities/Spells/Human/MassTeleport/MassTeleportTarget.mdl",
 }
 
 ## AHxx → BHxx 例外（非 B+suffix）
@@ -50,7 +61,12 @@ static func target_art(abil_id: String) -> String:
 	var id := abil_id.strip_edges()
 	if _FALLBACK_TARGET.has(id):
 		return _normalize(str(_FALLBACK_TARGET[id]))
-	return _first_art(_row(id), ["targetart"])
+	var art := _first_art(_row(id), ["targetart"])
+	if not art.is_empty():
+		return art
+	if _FALLBACK_AURA_CASTER.has(id):
+		return _normalize(str(_FALLBACK_AURA_CASTER[id]))
+	return ""
 
 
 static func hit_effect_art(abil_id: String) -> String:
@@ -88,10 +104,13 @@ static func buff_row_id(abil_id: String) -> String:
 
 static func buff_beneficiary_art(abil_id: String) -> String:
 	var id := abil_id.strip_edges()
+	var buff_id := buff_row_id(id)
+	var art := _first_art(_row(buff_id), ["targetart"])
+	if not art.is_empty():
+		return art
 	if _FALLBACK_BUFF_TARGET.has(id):
 		return _normalize(str(_FALLBACK_BUFF_TARGET[id]))
-	var buff_id := buff_row_id(id)
-	return _first_art(_row(buff_id), ["targetart"])
+	return ""
 
 
 ## Buff 面板图标（Buffart）；无则回退技能 Art 并去掉 On/Off 后缀。
@@ -137,6 +156,13 @@ static func strip_autocast_art_suffix(art: String) -> String:
 	if dir.is_empty() or dir == ".":
 		return stem + ext
 	return dir.path_join(stem + ext)
+
+
+static func special_art(abil_id: String) -> String:
+	var id := abil_id.strip_edges()
+	if _FALLBACK_SPECIAL.has(id):
+		return _normalize(str(_FALLBACK_SPECIAL[id]))
+	return _first_art(_row(id), ["specialart"])
 
 
 static func _row(abil_id: String) -> Dictionary:

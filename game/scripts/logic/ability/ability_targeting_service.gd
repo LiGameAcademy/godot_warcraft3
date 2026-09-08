@@ -153,6 +153,8 @@ func _begin_cast(caster: Node3D, abil_id: String, goal: Vector2, extra_ctx: Dict
 	var acc := AbilityCastController.ensure_on(caster)
 	if _on_cast_resolved.is_valid() and not acc.cast_resolved.is_connected(_on_cast_resolved):
 		acc.cast_resolved.connect(_on_cast_resolved)
+	if not acc.cast_feedback.is_connected(_on_cast_feedback):
+		acc.cast_feedback.connect(_on_cast_feedback)
 	var ctx: Dictionary = {}
 	if _build_ctx.is_valid():
 		ctx = _build_ctx.call() as Dictionary
@@ -164,6 +166,11 @@ func _begin_cast(caster: Node3D, abil_id: String, goal: Vector2, extra_ctx: Dict
 	if _refresh_command_card.is_valid():
 		_refresh_command_card.call()
 	return bool(start.get("ok", false))
+
+
+func _on_cast_feedback(text: String) -> void:
+	if _hud != null:
+		_hud.set_status(text)
 
 
 func _primary() -> Node3D:

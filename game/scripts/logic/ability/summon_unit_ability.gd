@@ -23,6 +23,7 @@ static func try_cast_instant(caster: Node3D, abil_id: String, ctx: Dictionary) -
 		return check
 	var goal := EffectSpawnSummon.goal_in_front(caster, id, ec.level)
 	ec.goal_wc3 = goal
+	EffectPlayPresent.cast_gesture(ec, goal)
 	var node := EffectSpawnSummon.run(ec, goal)
 	if node == null:
 		return ec.fail("召唤失败")

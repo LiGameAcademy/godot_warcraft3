@@ -2,6 +2,7 @@ class_name MassTeleportAbility
 extends RefCounted
 
 ## 群体传送（Logic · AHmt）：施法者周围 Area 内友军（含自身）传送到点目标。
+## 读条时长见 AbilityCastCatalog.cast_time_sec（DataB；CastN 在 SLK 为 0）。
 
 const ABIL_MASS_TELEPORT := "AHmt"
 
@@ -50,22 +51,30 @@ static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Di
 		out["reason"] = "范围内无可传送单位"
 		return out
 	var take := mini(candidates.size(), max_units)
-	var moved := 0
+	var batch: Array = []
 	for i in range(take):
 		var unit: Node3D = candidates[i]
 		if unit == null or not is_instance_valid(unit):
 			continue
 		_halt_unit(unit)
-		var tid := str(unit.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-		var dest := TrainSpawn.resolve_with_displace(goal_wc3, goal_wc3, unit, tid, path_query, crowd)
-		teleport_cb.call(unit, dest)
+		batch.append(unit)
+	if batch.is_empty():
+		out["reason"] = "传送失败"
+		return out
+	MassTeleportPresenter.play_departures(batch, ctx)
+	var moved := 0
+	for unit in batch:
+		var u := unit as Node3D
+		if u == null or not is_instance_valid(u):
+			continue
+		var tid := str(u.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
+		var dest := TrainSpawn.resolve_with_displace(goal_wc3, goal_wc3, u, tid, path_query, crowd)
+		teleport_cb.call(u, dest)
 		moved += 1
 	if moved <= 0:
 		out["reason"] = "传送失败"
 		return out
-	AbilityCastPresenter.spawn_ground_effect(
-		ABIL_MASS_TELEPORT, goal_wc3, 2.5, ctx
-	)
+	MassTeleportPresenter.play_arrival(caster, goal_wc3, ctx)
 	AbilityCastRules.commit_cost(caster, ABIL_MASS_TELEPORT, lv)
 	out["ok"] = true
 	out["teleported_count"] = moved

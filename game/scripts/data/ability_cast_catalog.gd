@@ -11,14 +11,28 @@ const _SPELL_SEQ_BY_ORDER := {
 	"thunderbolt": "Spell Throw",
 	"thunderclap": "Spell Slam",
 	"avatar": "Spell Throw",
-	"heal": "Spell Throw",
-	"innerfire": "Spell Throw",
+	"heal": "SpellAttack",
+	"innerfire": "SpellAttack",
 	"slow": "Spell Throw",
 }
 
 
 static func is_channel_ability(abil_id: String) -> bool:
 	return AbilityBehaviorCatalog.is_channel(abil_id)
+
+
+## 读条时长（秒）。优先 AbilityData.CastN；AHmt 的 Cast=0 但 DataB≈真实吟唱（原作约 3s）。
+static func cast_time_sec(abil_id: String, level: int) -> float:
+	var id := abil_id.strip_edges()
+	var ab := AbilityCatalog.data(id)
+	if ab == null:
+		return 0.0
+	var from_cast := maxf(ab.cast_time_at(level), 0.0)
+	if from_cast > 0.01:
+		return from_cast
+	if id == "AHmt":
+		return maxf(ab.data_b_at(level), 0.0)
+	return 0.0
 
 
 static func channel_duration_sec(abil_id: String, level: int) -> float:

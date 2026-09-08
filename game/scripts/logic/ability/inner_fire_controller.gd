@@ -98,9 +98,19 @@ func _spawn_target_fx(host: Node3D) -> void:
 	var attach := AbilityFxCatalog.target_attach(ABIL_ID)
 	if attach.is_empty():
 		attach = "overhead"
-	# 原作 overhead 粒子相对单位偏小；默认 1.0 在 Godot 转换模型上过大
+	# overhead：挂实体根（on_entity_root），避免进 MODEL_SCALE≈0.01 子树被二次缩小；
+	# scale 0.45 对齐原作相对体型（与辉煌光环 Present 同一挂法）。
 	AbilityAttachFxPresenter.sync_attach(
-		host, ATTACH_NODE, art, true, _cache, Vector3(0.0, 0.1, 0.0), true, attach, 0.45
+		host,
+		ATTACH_NODE,
+		art,
+		true,
+		_cache,
+		Vector3(0.0, 0.1, 0.0),
+		true,
+		attach,
+		0.45,
+		true
 	)
 
 

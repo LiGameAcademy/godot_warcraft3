@@ -72,6 +72,7 @@ func activate(level: int, cache: MapModelCache = null) -> bool:
 		"bonus_hp": _bonus_hp,
 	})
 	AbilityAttachFxPresenter.sync_caster_abil(host, ABIL_ID, true, _cache, ATTACH_NODE)
+	_apply_morph_visual(host, true)
 	set_process(true)
 	return true
 
@@ -107,6 +108,37 @@ func _deactivate() -> void:
 	if bh != null:
 		bh.remove(BuffCatalog.ID_AVATAR)
 	AbilityAttachFxPresenter.sync_attach(host, ATTACH_NODE, "", false, _cache)
+	_apply_morph_visual(host, false)
+
+
+## Present：切 Alternate 姿态（骨骼缩放由 Animation 驱动，等效 Mesh 显隐）；开时先播 Morph。
+func _apply_morph_visual(host: Node3D, active: bool) -> void:
+	var u := Unit.of(host)
+	if u == null:
+		return
+	if active:
+		# 先 adopt，避免 set_stance 抢先播 AlternateStand（会打断 Morph 过渡）。
+		u.adopt_stance(AnimSequenceResolver.Stance.ALTERNATE)
+		var ap := AnimPlayback.find_animation_player(host)
+		AnimPlayback.play_logical(
+			host,
+			"Morph Alternate",
+			0.0,
+			_cache,
+			0,
+			["MorphAlternate", "Morph"],
+			ap
+		)
+		Wc3Pe2Particles.apply_sequence(host, "Morph Alternate")
+		var tree := host.get_tree()
+		if tree != null:
+			tree.create_timer(0.4).timeout.connect(
+				func() -> void:
+					if is_instance_valid(u) and is_active():
+						u.set_stance(AnimSequenceResolver.Stance.ALTERNATE, true)
+			)
+	else:
+		u.set_stance(AnimSequenceResolver.Stance.DEFAULT, true)
 
 
 func _exit_tree() -> void:

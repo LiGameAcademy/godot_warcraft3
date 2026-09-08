@@ -28,6 +28,9 @@ func on_cast_start(abil_id: String, caster: Node3D, start: Dictionary) -> void:
 	if not bool(start.get("ok", false)):
 		set_status(str(start.get("reason", "施法失败")))
 		return
+	if bool(start.get("approaching", false)):
+		set_status("接近施法点…")
+		return
 	if AbilityCastCatalog.is_channel_ability(abil_id) and caster != null:
 		var lv := AbilityCatalog.level_for(caster, abil_id)
 		var dur := AbilityCastCatalog.channel_duration_sec(abil_id, lv)
@@ -35,9 +38,11 @@ func on_cast_start(abil_id: String, caster: Node3D, start: Dictionary) -> void:
 		return
 	var ab := AbilityCatalog.data(abil_id)
 	if ab != null and caster != null:
-		var cast_sec := ab.cast_time_at(AbilityCatalog.level_for(caster, abil_id))
+		var cast_sec := AbilityCastCatalog.cast_time_sec(
+			abil_id, AbilityCatalog.level_for(caster, abil_id)
+		)
 		if cast_sec > 0.05:
-			set_status("施法中 · %.1fs…" % cast_sec)
+			set_status("施法中 · %.1fs（移动/停止可打断）" % cast_sec)
 			return
 	set_status("施法中…")
 
@@ -72,6 +77,7 @@ func on_cast_resolved(result: Dictionary, abil_id: String) -> void:
 func build_command_card_state(primary: Node3D, ensure_runtime: Callable) -> Dictionary:
 	var out := {
 		"ability_cd": {},
+		"ability_cd_total": {},
 		"ability_mana_ok": true,
 		"ability_mana_ok_map": {},
 		"hero_level": 1,
@@ -99,8 +105,10 @@ func build_command_card_state(primary: Node3D, ensure_runtime: Callable) -> Dict
 		var mana_ok := true
 		if lv > 0:
 			var ab := AbilityCatalog.data(abil_id)
-			if ab != null and UnitMana.has_mana(primary):
-				mana_ok = UnitMana.can_spend(primary, ab.cost_at(lv))
+			if ab != null:
+				out["ability_cd_total"][abil_id] = maxf(ab.cool_at(lv), 0.0)
+				if UnitMana.has_mana(primary):
+					mana_ok = UnitMana.can_spend(primary, ab.cost_at(lv))
 		out["ability_mana_ok_map"][abil_id] = mana_ok
 		if not mana_ok:
 			out["ability_mana_ok"] = false

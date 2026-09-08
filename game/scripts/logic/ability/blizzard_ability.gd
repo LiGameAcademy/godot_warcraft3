@@ -44,6 +44,8 @@ static func begin_channel(
 	var dmg := maxf(ab.data_b_at(lv), 0.0)
 	var interval := maxf(ab.data_d_at(lv), 0.05)
 	var radius := maxf(ab.area_at(lv), 1.0)
+	# DataC：本仓库用作每波落冰柱数（原作建筑系数另用 50% 常量）
+	var shards := clampi(int(round(ab.data_c_at(lv))), 2, 6)
 	var zone := BlizzardZone.new()
 	zone.name = "BlizzardZone"
 	map_root.add_child(zone)
@@ -53,11 +55,12 @@ static func begin_channel(
 		goal_wc3,
 		radius,
 		waves,
-			dmg,
+		dmg,
 		interval,
 		pipeline as DamagePipeline,
 		unit_host,
-		ctx
+		ctx,
+		shards
 	)
 	out["ok"] = true
 	out["zone"] = zone

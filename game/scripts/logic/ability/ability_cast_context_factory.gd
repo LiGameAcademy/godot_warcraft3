@@ -15,6 +15,7 @@ var _unit_host: Callable = Callable()
 var _channel_interrupt_check: Callable = Callable()
 var _teleport_unit_wc3: Callable = Callable()
 var _kill_unit: Callable = Callable()
+var _clear_caster_orders: Callable = Callable()
 
 
 func configure(deps: Dictionary) -> void:
@@ -30,6 +31,7 @@ func configure(deps: Dictionary) -> void:
 	_channel_interrupt_check = deps.get("channel_interrupt_check", Callable()) as Callable
 	_teleport_unit_wc3 = deps.get("teleport_unit_wc3", Callable()) as Callable
 	_kill_unit = deps.get("kill_unit", Callable()) as Callable
+	_clear_caster_orders = deps.get("clear_caster_orders", Callable()) as Callable
 
 
 func build() -> Dictionary:
@@ -53,4 +55,5 @@ func build() -> Dictionary:
 		"path_query": _path_query,
 		"crowd_query": _crowd_query,
 		"kill_unit": _kill_unit,
+		"clear_caster_orders": _clear_caster_orders,
 	}
