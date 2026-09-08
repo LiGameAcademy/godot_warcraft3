@@ -191,16 +191,45 @@ func model_base_path(type_id: String) -> String:
 	return file
 
 
-## 解析已转换模型（优先 .gltf 外链贴图，回退旧 .glb）。
-func converted_glb_path(type_id: String, variation: int = 0) -> String:
+## UnitUI.fileVerFlags（0 = 仅基模；非 0 = 有 expansion 变体如 _V1）。
+func model_file_ver_flags(type_id: String) -> int:
+	return int(lookup(type_id).get("file_ver_flags", 0))
+
+
+## 按内容包 Edition 解析模型 stem（可含 _V1）；再交给 converted_glb_path 拼 variation。
+## 见 docs/data/CONTENT_PACKS.md · ContentPackRules。
+func resolve_model_stem(type_id: String) -> String:
 	var base := model_base_path(type_id)
 	if base.is_empty():
 		return ""
-	var stems: PackedStringArray = [
-		"%s%d" % [base, variation],
-		"%s" % base,
-		"%s0" % base,
-	]
+	var flags := model_file_ver_flags(type_id)
+	for stem in ContentPackRules.expansion_model_candidates(base, flags):
+		if _converted_stem_exists(stem):
+			return stem
+	return base
+
+
+func _converted_stem_exists(stem: String) -> bool:
+	if stem.is_empty():
+		return false
+	for ext in [".gltf", ".glb", ".scn"]:
+		var p := RuntimeAssets.converted_path(stem + ext)
+		if RuntimeAssets.file_exists(p):
+			return true
+	return false
+
+
+## 解析已转换模型（优先 .gltf 外链贴图，回退旧 .glb）。
+## 先按 ContentPackRules 选 Edition stem，再拼地图 variation 数字后缀。
+func converted_glb_path(type_id: String, variation: int = 0) -> String:
+	var base := resolve_model_stem(type_id)
+	if base.is_empty():
+		return ""
+	var stems: PackedStringArray = []
+	if variation > 0:
+		stems.append("%s%d" % [base, variation])
+	stems.append(base)
+	stems.append("%s0" % base)
 	for stem in stems:
 		for ext in [".gltf", ".glb"]:
 			var p := RuntimeAssets.converted_path(stem + ext)
@@ -293,8 +322,9 @@ func _resolve_converted_dir(dir_logical: String) -> String:
 
 
 ## 肖像模型路径（*_Portrait / *_portrait）；无则空串。
+## 与 body 共用 resolve_model_stem（TFT 下 Priest → Priest_V1_portrait）。
 func portrait_glb_path(type_id: String) -> String:
-	var base := model_base_path(type_id)
+	var base := resolve_model_stem(type_id)
 	if base.is_empty():
 		return ""
 	var dir := base.get_base_dir()
@@ -326,7 +356,8 @@ func portrait_glb_path(type_id: String) -> String:
 		var lower := fname.to_lower()
 		if lower.ends_with("_portrait.gltf") or lower.ends_with("_portrait.glb"):
 			var name_stem := lower.get_basename().trim_suffix("_portrait")
-			if name_stem == want or name_stem.begins_with(want):
+			# 精确匹配 stem（含 _V1）；勿用 begins_with，避免 Priest 误吃 Priest_V1_portrait
+			if name_stem == want:
 				var rel := "%s/%s" % [dir, fname]
 				var found := RuntimeAssets.converted_path(rel)
 				if RuntimeAssets.file_exists(found):
@@ -735,6 +766,7 @@ func _load_unit_ui() -> void:
 			"id": id,
 			"name": name,
 			"file": d.file,
+			"file_ver_flags": d.file_ver_flags,
 			"kind": "unit",
 			"num_var": 1,
 			"unit_class": d.unit_class,
