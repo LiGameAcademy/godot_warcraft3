@@ -2,15 +2,16 @@
 
 > 与地图编辑器（`editor/`）对称的**运行时**入口：加载已解析地图、跑对战规则、将来接 WE 触发器。  
 > 默认开发地图：**Echo Isles**（`res://assets/map-parsed/echoisles`）  
-> 最后更新：2026-08-21  
-> **当前主线：单位 AI（野怪对抗）**；战斗 C0–C3 已接线，见 [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [UNIT_AI.md](UNIT_AI.md)
+> 最后更新：2026-09-05  
+> **当前主线**：[../../roadmap/NEXT.md](../../roadmap/NEXT.md) **N1 人族可玩闭环**（复活 / Keep / 铁匠 / HUD 队列 / U3）；F10 与技能重构 A–E 已完成
 
 ## 文档
 
 | 文档 | 内容 |
 |------|------|
-| [ROADMAP.md](ROADMAP.md) | **先读**：对战地图阶段 A→F→E；现阶段**不**急着实现完整触发器 VM |
-| [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) | **人族游玩竖切**：F0–F6 ✅ → C0–C3 战斗 ✅ → **单位 AI** → F8–F10 |
+| [../../roadmap/NEXT.md](../../roadmap/NEXT.md) | **先读（冲刺）**：N0–N4 近中期优先级 |
+| [ROADMAP.md](ROADMAP.md) | 对战地图阶段 A→F→E；现阶段**不**急着实现完整触发器 VM |
+| [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) | **人族游玩竖切**：F0–F10 / C0–C3 ✅；缺口见 NEXT N1 |
 | [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) | **战斗系统**：Attack / 攻移 / 伤害管线 / 死亡 · C0–C3 契约 + **as-built** |
 | [UNIT_AI.md](UNIT_AI.md) | **单位 AI**：野怪反击 / 警戒索敌（非 AI 玩家）· U0–U3 可执行切片 |
 | [BUILD_SYSTEM.md](BUILD_SYSTEM.md) | **建造系统设计**：四族非对称 · Profile/Strategy · 数据钩子（F2 契约） |
@@ -21,6 +22,7 @@
 | [ENVIRONMENT.md](ENVIRONMENT.md) | 天空 / 天气 / 光照 / 阴影复刻方案（WC3→Godot） |
 | [HUD.md](HUD.md) | **游戏 HUD**：三分栏、中栏三种形态、肖像、主选/Tab、命令卡二级建造 |
 | [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) | **技能系统**：F10 as-built、Data/Logic/Present 分层 |
+| [BLIZZARD.md](BLIZZARD.md) | **暴风雪 AHbz**：引导逻辑、多波伤害、落冰/命中资产路径与缺口 |
 | [ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md) | **技能重构计划**：BehaviorCatalog → FxCatalog → BuffSystem → Director 瘦身 |
 | [BUFF_SYSTEM.md](BUFF_SYSTEM.md) | **Buff 系统**：BuffHost / BuffQuery / HUD 图标条 as-built |
 

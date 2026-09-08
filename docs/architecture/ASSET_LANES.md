@@ -1,8 +1,8 @@
 # 资产三车道契约
 
 > 目标：游戏 / 编辑器 **只读 `assets/`**；extract 只进临时 `assets/.staging/`，结束后删除。  
-> 相关：[MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) · [PIPELINE.md](../data/PIPELINE.md) · [LEGAL.md](../data/LEGAL.md)  
-> 最后更新：2026-08-11
+> 相关：[MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) · [PIPELINE.md](../data/PIPELINE.md) · [LEGAL.md](../data/LEGAL.md) · [CONTENT_PACKS.md](../data/CONTENT_PACKS.md)  
+> 最后更新：2026-09-05
 
 ---
 
@@ -56,6 +56,8 @@ assets/.staging/wc3-assets/        ← 临时（bootstrap 结束后删）
 2. `assets/asset-converted/`  
 3. `assets/slk-exported/`  
 4. （结束；**无** staging / `.cache`）
+
+模型 **Edition**（`Priest` vs `Priest_V1`）不在此 VFS 层决定，见 [CONTENT_PACKS.md](../data/CONTENT_PACKS.md)。
 
 ---
 

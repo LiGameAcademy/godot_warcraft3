@@ -116,7 +116,7 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 - 游戏场景：[docs/game/README.md](docs/game/README.md) · 寻路选型：[docs/game/PATHFINDING_CHOICE.md](docs/game/PATHFINDING_CHOICE.md)
 - 地图编辑器：[docs/editor/EDITOR.md](docs/editor/EDITOR.md)
 - 水体：[docs/water/WATER.md](docs/water/WATER.md)
-- 路线图：[docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)
+- 路线图：[docs/roadmap/NEXT.md](docs/roadmap/NEXT.md)（近中期）· [docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)（地图 ①–⑫）
 
 ---
 

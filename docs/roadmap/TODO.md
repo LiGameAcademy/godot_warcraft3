@@ -1,11 +1,16 @@
 # 待办
 
-> 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)。  
-> 最后更新：2026-08-24
+> 细粒度缺陷清单。阶段规划见 [ROADMAP.md](ROADMAP.md)·**玩法冲刺见 [NEXT.md](NEXT.md)**。  
+> 最后更新：2026-09-05（文首挂 NEXT；正文编辑器/地图细项仍有效）
 
-## 当前焦点：单位面板（对齐装饰物）+ 装饰物缺口补齐
+## 当前焦点
 
-悬崖 / 斜坡 / 边界 / 装饰物主路径已通。下一步：单位面板筛选 UI → unit_brush；装饰物补 pathing / Z 偏移等。
+- **玩法主线**：[NEXT.md](NEXT.md) N0 收口 → N1 人族可玩闭环（勿与下表编辑器待办抢优先级）
+- **编辑器/地图**：单位面板筛选已通；单位笔刷 / 装饰物 pathing·Z 等仍见下表
+
+## 编辑器 · 单位面板（对齐装饰物）+ 装饰物缺口补齐
+
+悬崖 / 斜坡 / 边界 / 装饰物主路径已通。下一步（编辑器侧）：单位笔刷；装饰物补 pathing / Z 偏移等。
 
 | 里程碑 | 状态 | 要点 |
 |--------|------|------|
@@ -261,7 +266,8 @@
 - [ ] **肖像全单位**：缺 `*_Portrait.gltf` 的单位仍只有队色底 → 批量 convert + bake；主城以外建筑肖像抽验
 - [ ] **Unicode NUL 清零**：已改 convert，**须批量重转**常用 Units（至少 Human 竖切包）后 Godot 启动才不刷 ERROR
 - [ ] **水元素流体**：PE2 速率 / Birth 序列 / alpha 与原作对拍；必要时专用 shader
-- [x] **技能重构 Phase D**：`game/scripts/logic/effect/` 原子 Effect（2026-09-04）
+- [ ] **暴风雪音效**（⏸ 后置）：`AbilitySfx` 已占位；待音频管线 / wav 进 convert 包后再验收（不挡玩法）
+- [x] **技能重构 Phase D**：`game/scripts/logic/effect/` 原子 Effect（2026-09-04）；暴风雪波次伤害已走 `EffectDamageAoe.run_all_victims`（2026-09-05）
 - [x] **技能重构 Phase E**：`game_director` 技能逻辑外提（2026-09-04）
 
 ### 待做 — P1
@@ -289,7 +295,7 @@
 
 **Phase E 已建**：`AbilityTargetingService`、`AbilityRuntimeRegistry`、`AbilityCastContextFactory`、`AbilityHudFeedback`；Director `_setup_ability_services` 注入后转发。
 
-**后续可选**：Blizzard / MassTeleport 再抽 Effect；`effects: []` Catalog 全表驱动；BuffHost 吃掉 InnerFire/Avatar Controller。
+**后续可选**：MassTeleport 再抽 Effect + 真实读条；`effects: []` Catalog 全表驱动；BuffHost 吃掉 InnerFire/Avatar Controller。
 
 ---
 

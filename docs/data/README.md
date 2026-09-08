@@ -6,6 +6,7 @@
 
 | 文件 | 内容 |
 |------|------|
+| [CONTENT_PACKS.md](CONTENT_PACKS.md) | 内容包 / DLC：MPQ 同路径覆盖 + `fileVerFlags`→`*_V1` Edition 规则 |
 | [WC3_ASSET_PATHS.md](WC3_ASSET_PATHS.md) | 经典 MPQ 解包后各目录放什么（按路径查单位/地形/UI/音效等） |
 | [LEGAL.md](LEGAL.md) | 合规说明（不提交暴雪资产；缓存进 `.cache/`，gitignore） |
 | [PIPELINE.md](PIPELINE.md) | 离线工具链（**优先** `node tools/dev-setup.mjs`；或分步 mpq → convert → slk → map-parse） |

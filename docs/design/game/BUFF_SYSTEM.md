@@ -1,7 +1,7 @@
 # Buff 系统（as-built）
 
 > **层别**：Game · Logic（`buff_host` / `buff_query` / `buff_catalog`）+ Present（`UnitBuffStrip`）  
-> **状态**：Phase C 落地（2026-08-23）  
+> **状态**：Phase C 落地（2026-08-23）；辉煌光环 Buff 化（2026-09-05）  
 > **相关**：[ABILITY_REFACTOR_PLAN.md](ABILITY_REFACTOR_PLAN.md) §5 · [COMBAT_SYSTEM.md](COMBAT_SYSTEM.md) · [HUD.md](HUD.md)
 
 ## 1. 目标
@@ -17,6 +17,8 @@
 | `UnitStatusEffects` → `BuffQuery` 委托 | ✅ |
 | Inner Fire → `BuffHost.apply(ID_INNER_FIRE)` | ✅ |
 | Avatar → `BuffHost.apply(ID_AVATAR)` | ✅ |
+| Brilliance → `BuffHost.apply(ID_BRILLIANCE)`（光环续期） | ✅ |
+| Brilliance Present：Caster Brilliance + 受益 GeneralAuraTarget（`on_entity_root`） | ✅ |
 | HUD `UnitBuffStrip` + tooltip | ✅ |
 | Modifier 原子类 / 全 SLK 驱动 BuffSpec | ❌ Phase D 后 |
 
@@ -45,7 +47,7 @@
 └──────────────────────────────────────────────────────────────┘
 
 兼容层：UnitStatusEffects.* → BuffQuery（旧调用方暂不改）
-来源层：InnerFireController / AvatarController 施放时 apply；被驱散时 controller 同步 deactivate
+来源层：InnerFireController / AvatarController / BrillianceAuraController 施放或光环 tick 时 apply；被驱散时 controller 同步 deactivate
 ```
 
 ## 3. Buff id 表（当前）
@@ -57,9 +59,9 @@
 | `inner_fire` | 心灵之火 | 是 | Ainf | `armor`, `dmg_mul` |
 | `bonus_armor` | 护甲加成 | 否 | AHav | `amount` |
 | `avatar` | 天神下凡 | 否 | AHav | `armor`, `bonus_hp` |
+| `brilliance` | 辉煌光环 | 否 | AHab | `mana_regen`, `aura`, `source_id` |
 
-光环（如 Brilliance）**不**占用 Buff 槽，仍由 `BrillianceAuraController` tick。
-
+光环（Brilliance）：`BrillianceAuraController` 在范围内对 **有魔法值** 的友军 `BuffHost.apply` 续期，离范围 `remove`；回蓝由 `UnitRegen` 读 `BuffQuery.mana_regen_bonus`。HUD `left=-1`（不闪烁）。脚兵等无蓝单位不挂 Buff / 受益特效。
 ## 4. 对外 API
 
 ### 4.1 施加与查询（Logic）
@@ -116,6 +118,7 @@ BuffQuery.hud_entries(unit)  # → [{id, icon, tooltip, short, left}]
 - `BuffHost.dispel_magic()` 按 `BuffCatalog.DISPELLABLE` 过滤。
 - `InnerFireController` / `AvatarController` 在 `_process` 中检测 `has_buff`；若 Buff 被驱散则 `_deactivate()`。
 - 心灵之火 Present：`Targetattach=overhead` → `Wc3ModelScene.overhead_anchor()` 挂 OverHead Ref（无则 AABB）；scale≈0.45
+- 辉煌光环 Present：`BrillianceAuraPresenter` ← Catalog（AHab Brilliance / BHab GeneralAuraTarget），`AbilityAttachFxPresenter.on_entity_root` 挂实体根（防 MODEL_SCALE≈0.01 缩没）
 - 详情攻/甲：`SelectionInfoBuilder` 读 `BuffQuery.damage_mul` / `bonus_armor`；`GameDirector` 与 Buff 条同频刷新芯片
 - 血条：同走 `overhead_anchor()`（`HealthBarManager`）
 
@@ -125,7 +128,8 @@ BuffQuery.hud_entries(unit)  # → [{id, icon, tooltip, short, left}]
 godot --headless --path . -s res://tests/unit/selftest_buff_system.gd
 ```
 
-覆盖：stun/slow、inner fire、dispel、`UnitStatusEffects` 门面、`BuffQuery.hud_entries`。
+覆盖：stun/slow、inner fire、dispel、`UnitStatusEffects` 门面、`BuffQuery.hud_entries`。  
+辉煌光环 Buff 化：`selftest_ability_brilliance.gd`（范围内 apply / HUD / 离范围 remove / mana_regen_bonus）。
 
 ## 9. 后续（Phase D+）
 

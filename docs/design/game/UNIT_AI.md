@@ -72,12 +72,12 @@
 
 | 项 | 说明 | 接口落点 |
 |----|------|----------|
-| Leash / 回锚 | ✅ 默认 1000 WC3；`RETURNING` 途中不索敌不反击 | `home_wc3` / `leash_wc3` / `State.RETURNING` |
-| 营地助攻 | 同营友方受击 → 加入打同一目标 | `camp_id` · `bind_camp` · `notify_camp_ally_engaged` |
-| 全图 camp 表 | 会话级注册表：成员、营心、助攻半径 | 另文件 `CreepCampRegistry`（后置）；单位只持 `camp_id` |
+| Leash / 回锚 | ✅ 默认 1000 WC3（营地 1200）；`RETURNING` 途中不索敌不反击 | `home_wc3` / `leash_wc3` / `State.RETURNING` |
+| 营地助攻 | ✅ `TeamRegistry.notify_ally_engaged`；同 camp 全员可拉 | `team_registry.gd` · `TeamRegistry.notify_ally_engaged` |
+| 玩家 team 盟友挨打 | ✅ `TeamRegistry.notify_ally_engaged` 对玩家 team 也走相同广播；仅当触发源 ENGAGED 才拉 | `Profile.TEAM_PLAYER` · `UnitAI.allows_ally_engage` |
+| 全图 camp / team 注册表 | ✅ `TeamRegistry`：玩家按 owner，中立按距离聚类 | `TeamRegistry.cluster_and_bind` · `on_unit_gone` |
 | 睡眠 / 苏醒 | 夜间睡、受击醒；读 `UnitData.canSleep` | `State.SLEEPING` · `set_asleep` · `notify_time_of_day` · `try_wake` |
-| 昼夜 aggro | acquire 乘倍率（夜更警觉等） | `configure(..., aggro_range_mult)` · `effective_acquire_range_wc3` |
-| 玩家军事闲置 acquire | 对齐 WC3 闲置士兵 | `PLAYER_MILITARY` |
+| 昼夜 aggro | acquire 乘倍率（夜更警觉等） | `configure(..., aggro_range_mult)` · `effective_acquire_range_wc3()` |
 | `OrderArbiter` | 从 Router `_abort_*` 抽薄壳 | 命令层 |
 
 ---
@@ -120,7 +120,7 @@ game/scripts/logic/
 | 谁挂 | 规则 |
 |------|------|
 | 可战斗中立野怪 | 挂；Profile=`CAMP_CREEP`（U0-2 ensure） |
-| 可战斗玩家军事单位 | P0 挂 `PASSIVE`（占位）；P1 可改 `PLAYER_MILITARY` |
+| 可战斗玩家军事单位 | P0 挂 `PASSIVE`（占位）；P1 可改 `TEAM_PLAYER`（待补 idle 抢占边界后切） |
 | 无武器 / 小动物 | **不挂**，或挂 `PASSIVE` 空转（优先不挂） |
 | 农民 | **不靠 UnitAI 做采集**；采集见下「与 Harvest 边界」 |
 | **防御塔 / 有武器建筑** | **算单位微观 AI，不是 AI 玩家**。P0 `ensure` 刻意跳过建筑（Echo 竖切先跑野怪）；P1 应对「有武器建筑」单独挂：`AttackController` + `UnitAI`（Profile 近 `CAMP_CREEP`/`GUARD`：acquire 内打、**通常不追出射程/锚点**） |
@@ -196,15 +196,83 @@ DayNightClock / Environment  → UnitAI.notify_time_of_day / aggro_range_mult
 
 U2 索敌必须用 `effective_acquire_range_wc3()`，不要直接裸读 `CombatQuery.acquire_range_wc3`，以免昼夜修正接不上。
 
-### 4.4 Profile（竖切先两种）
+### 4.4 Profile（竖切三种）
 
-| Profile | 谁用 | idle 索敌半径 | 受击反击 | 追击 | leash |
-|---------|------|---------------|----------|------|-------|
-| `PASSIVE` | 小动物等（可选） | 无 | 可选逃跑后置 | 无 | — |
-| `CAMP_CREEP` | Echo 野怪默认 | `CombatQuery.acquire_range_wc3` | ✅ | ✅（经 Attack） | ✅ |
-| `PLAYER_MILITARY` | P1：闲置士兵 | 同 acquire 或更短 | ✅ | ✅ | 无（跟玩家命令） |
+| Profile | 谁用 | idle 索敌 | 受击反击 | 盟友挨打可参战 | leash |
+|---------|------|-----------|----------|----------------|-------|
+| `PASSIVE` | 小动物等（可选） | 无 | 可选逃跑后置 | — | — |
+| `CAMP_CREEP` | Echo 野怪默认 | ✅ | ✅ | ✅（同 camp 全员可拉） | ✅ |
+| `TEAM_PLAYER` | 玩家军事单位（暂未默认） | ✅ | ✅ | ✅（同 team 有人已 ENGAGED 才拉） | —（跟玩家命令） |
+| `REACTIVE` | 玩家辅助单位（默认） | ✘ | ✅ | ✅ | — |
 
-P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；其余不挂或 `PASSIVE`。
+> **当前默认**：中立可战 → `CAMP_CREEP`；玩家可战 → `REACTIVE`（受击反击 + 盟友广播可拉；不主动 idle acquire，避免抢玩家命令）。
+> `TEAM_PLAYER` 代码已就位（盟友挨打广播 / `allows_ally_engage`），但 `wants_idle_acquire` 一开会跟玩家命令争抢 `set_current` 序列，**待 P1 补「玩家显式命令时压制 idle acquire」边界后再切默认**。
+> P1 路线：`default_profile_for` 玩家单位改回 `TEAM_PLAYER`，并加 selftest 兜住「move 后 6Hz 内不被偷打」。
+
+P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；玩家可战 → `REACTIVE`；其余不挂或 `PASSIVE`。
+
+> **别名**：`PLAYER_MILITARY = TEAM_PLAYER`，保留供旧引用；新代码统一用 `TEAM_PLAYER`。
+
+### 4.5 仇恨表（ThreatTable）+ Sticky Target（U5）
+
+**问题**：旧 `_issue_ai_attack` 每次都「按距离最近」选目标，野怪 / 玩家单位会在多个敌人之间来回横跳，仇恨完全不稳定。
+
+**解法**：每个 `UnitAI` 维护一张仇恨表，叠加「sticky 锁定」+「切目标冷却」，让目标选择有记忆。
+
+#### 数据结构
+
+| 字段 | 含义 |
+|------|------|
+| `_threat: Dictionary[id → float]` | 仇恨值表；写入：受击 `add_threat(attacker, dmg × 1.0)` + idle acquire 候选基础值 0.1 |
+| `_swap_cd: float` | 切目标冷却（0.25s）；受击强制清零 |
+| `_locked_target: Node3D` | sticky 锁定目标；hold 窗口 1.5s 内不重新 acquire |
+| `_locked_at_msec: int` | 锁定时间戳 |
+
+#### 衰减
+
+- 每秒 `THREAT_DECAY_PER_SEC = 0.3`（WC3 经典值）；≤0 即从表移除
+- 死亡 / 脱敌对 / 脱离 acquire 半径 → 立即移除并清 sticky 锁
+
+#### 选目标（`_pick_target`）
+
+```text
+1) sticky: _locked_target 存活 + 敌对 + 在 acquire 半径内 + 锁未超 1.5s → 保留
+   ↓ 否则清锁 / 清仇恨
+2) top_threat: 仇恨表按值排序，过滤死亡 / 失效 / 脱敌对 → 取最大
+   ↓ 仍空
+3) 兜底: CombatQuery.find_acquire_target（最近敌对）
+```
+
+#### 触发写入 / 重读
+
+| 时机 | 动作 |
+|------|------|
+| `notify_damaged` | `add_threat(attacker, dmg)` + 清 `_swap_cd`（保证攻击者必中） |
+| `try_engage` 成功 | `_locked_target = target`；`_swap_cd = 0.25`；`_threat[id] = max(_, 0.1)` |
+| `_process` 节流（6Hz） | `_decay_threat(delta)` + `_swap_cd -= delta`；到 0 才让 `_tick_idle_acquire` 重新选 |
+| `_on_combat_ended` | 走 `_pick_target`（不再直接 `find_acquire_target`） |
+
+#### AttackController 切目标防卡刀
+
+```gdscript
+# 切目标时保留原冷却余量 + 最小 0.05s 切换间隔（_MIN_SWAP_COOLDOWN）
+_cooldown_left = maxf(_cooldown_left, _MIN_SWAP_COOLDOWN)
+```
+
+避免「同一帧在 A/B 之间反复切」造成卡刀刷伤 / 攻击动画抽筋。
+
+#### 与原 Profile 矩阵的兼容性
+
+| Profile | idle acquire | 受击反击 | 盟友挨打可拉 | 应用 |
+|---------|-------------|----------|--------------|------|
+| `CAMP_CREEP` | ✅ | ✅ | ✅ | Echo 野怪 |
+| `TEAM_PLAYER` | ✅ | ✅ | ✅ | 玩家军事（P1 切默认） |
+| `REACTIVE` | ✘ | ✅ | ✅ | 玩家辅助（当前默认） |
+| `PASSIVE` | ✘ | ✘ | ✘ | 小动物 |
+
+#### 验证
+
+`tests/unit/selftest_threat_table.gd`（10 用例）：`threat_add_and_top` / `threat_decay_removes_when_zero` / `threat_filters_dead_and_neutral` / `sticky_holds_through_tiny_window` / `sticky_drops_when_target_out_of_range` / `swap_cooldown_blocks_extra_pick` / `swap_cooldown_cleared_by_damage` / `reactive_does_not_idle_acquire` / `reactive_does_ally_engage` / `pick_target_prefers_higher_threat_over_closer`。
 
 ---
 
@@ -227,6 +295,42 @@ P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；其余不挂或 `PASS
 ---
 
 ## 6. 关键算法（可直接照写）
+
+### 6.0 营地 / 队伍注册（TeamRegistry）—— 已落地
+
+会话级单例 `game/scripts/logic/ai/team_registry.gd`：
+
+- **玩家 owner 索引**：owner<12 全部入 `p<owner>` team（player 0/1/...）。
+- **中立野怪聚类**：owner≥12 且可战斗者两两距离 ≤ `CAMP_CLUSTER_RADIUS_WC3 = 900` 视为同营地（`c<n>`）。
+- **营地 home**：成员位置几何中心；成员死亡 / 离场后 `on_unit_gone` 重算（最后一个存活成员的位置兜底）。
+- **营地 leash**：`CAMP_LEASH_WC3 = 1200`；player team **不** leash（玩家命令优先）。
+
+入场 `Director._wire_all_unit_ai` 末尾调 `TeamRegistry.attach(self).cluster_and_bind(host)`；单位死亡走 `DeathService.kill` → `TeamRegistry.on_unit_gone`。
+
+### 6.1 盟友挨打自动参战（与 U1 受击反击并列，已落地）
+
+`TeamRegistry.notify_ally_engaged(source, attacker, radius_wc3)`：
+
+```text
+gid = group_of(source)
+if 是玩家 team（gid = "p<owner>"）：
+  仅当 source.is_engaged() == true 时才拉（玩家闲站不自动接战）
+else（gid = "c<n>" 营地）：
+  全部存活成员都可拉
+for m in members_of(gid):
+  if 距 source ≤ radius_wc3（默认 900）：
+    if m.allows_ally_engage()（未睡 / 未 RETURNING / 未玩家占用 / Profile ∈ {CAMP_CREEP, TEAM_PLAYER}）：
+      if CombatQuery.is_auto_acquire_target(m, attacker)：
+        m.try_engage(attacker)    # 走 AttackController，source = UNIT_AI
+```
+
+触发点：
+- 玩家单位受击：`UnitAI.notify_damaged` → 反击 → `notify_camp_ally_engaged(attacker)` → 同 team 拉人。
+- 营地成员受击：同上，同 camp 全员可拉。
+
+返回成功参战人数；UI / 自测可观察。
+
+### 6.2 入场（U0）
 
 ### 6.1 入场（U0）
 
@@ -418,4 +522,7 @@ tests/unit/selftest_unit_ai_acquire.gd
 - [x] `game/scripts/logic/ai/unit_ai.gd`（U0-1）  
 - [x] 入场 ensure（U0-2：地图扫描 + 训练刷兵）  
 - [x] U1 受击反击 + U2 acquire 警戒  
+- [x] U4 leash / 营地 home 中心点（TeamRegistry 重算）  
+- [x] `TeamRegistry`：玩家 team + 中立营地聚类 + 盟友挨打广播（U0+ 增强）  
+- [x] `tests/unit/selftest_team_registry.gd` PASS（聚类 / home 重算 / 玩家 team 仅 ENGAGED 才拉 / 营地全员拉）  
 - [ ] Echo §10 手测验收  

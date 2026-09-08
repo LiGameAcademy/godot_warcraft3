@@ -1,9 +1,10 @@
-# 开发路线图（架构重构优先）
+# 开发路线图（架构重构优先 · 地图 ①–⑫）
 
 > 总纲：[LAYERED_ARCHITECTURE.md](../architecture/LAYERED_ARCHITECTURE.md)  
 > 原则：**先搭框架与映射，再按「数据 → 逻辑 → 表现 → 编辑」逐模块推进**。  
 > 当前阶段 **不是** 斜坡功能冲刺，而是底层可维护性重构；斜坡排在悬崖之后。  
-> 最后更新：2026-08-10（F2-3/4/5 建造系统最小闭环落地）
+> **玩法近中期冲刺**（人族闭环 / 手感 / 扩展）→ **[NEXT.md](NEXT.md)**（2026-09-05 起以 NEXT 为选 PR 优先入口）  
+> 最后更新：2026-09-05（文首挂 NEXT；正文 ①–⑫ 清单仍有效）
 
 ---
 
@@ -39,7 +40,8 @@
 ⑬ 游戏场景（对战竖切）→ 见 docs/game/
 ```
 
-地图编辑相关 ①–⑫ 告一段落后，玩法进入 **[docs/game/ROADMAP.md](../design/game/ROADMAP.md)**（Echo Isles、Melee Bootstrap；触发器远期）。
+地图编辑相关 ①–⑫ 告一段落后，玩法进入 **[design/game/ROADMAP.md](../design/game/ROADMAP.md)**（Echo Isles、Melee Bootstrap；触发器远期）。  
+**当前冲刺优先级**见 **[NEXT.md](NEXT.md)**（N0 收口 → N1 人族闭环 → N2 手感 → N3 地图补债 → N4 扩展）。
 
 ---
 

@@ -42,7 +42,8 @@ F  人族游玩竖切        采集→基建→英雄→训兵→科技→技能
 E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂接
 ```
 
-编号即推荐顺序；**A→D 已基本落地；F 竖切完成 F0–F6 + C0–C3 + F8–F9**；下一步 **F10 技能**（见 [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md)）；E 仍单独开里程碑。
+编号即推荐顺序；**A→D 已基本落地；F 竖切完成 F0–F6 + C0–C3 + F8–F10**（大法师/山丘/P0 支援）；技能重构 Phase A–E ✅。  
+**当前冲刺**不再以「再堆技能」驱动 → **[../../roadmap/NEXT.md](../../roadmap/NEXT.md)**（N0 收口 → N1 人族可玩闭环 → N2 手感）；E 仍单独开里程碑。
 
 ---
 
@@ -119,9 +120,11 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 | F7 | 主城升 Keep | 后置 |
 | F8 | 顶盾科技 `Rhde` | ✅ 兵营研究；完成后按钮消失；玩家级解锁 |
 | F9 | 顶盾切换 `Adef` | ✅ 减速 / Defend 姿态 / Unart |
-| F10 | 大法师技能（先原生，再评估插件） | ← 下一步 |
+| F10 | 大法师技能（先原生，再评估插件） | ✅ 大法师 + 山丘 + P0 支援；见 [ABILITY_SYSTEM.md](ABILITY_SYSTEM.md) |
 
 **Present 并行（不挡 F2）：** 野怪/小动物 Stand 藏尸体 Geoset（`geosetvis` + `MapUnitLayer` snap；同树桩管线）。
+
+**下一步（跨文档）**：人族可玩闭环收尾（复活 / Keep / 铁匠升级 / 生产队列 HUD / U3 手测）→ [../../roadmap/NEXT.md](../../roadmap/NEXT.md) N1。
 
 ### E. 触发器运行时（远期 · 仅设计，本阶段不开发）
 
@@ -154,9 +157,10 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 | 4 | D：选中 + 移动竖切 |
 | 5 | F0–F1：命令 + 采金伐木（✅） |
 | 6 | **F2–F6：建造扩展 + 训练 + Requires**（✅） |
-| **7** | **C0–C3：战斗框架（Attack / Attack-Move / 伤害）** |
-| 8+ | F8–F10（顶盾 → 技能；Keep/铁匠科技后置） |
-| 并行 | 单位/野怪尸体 Geoset 显隐（Present） |
+| **7** | **C0–C3：战斗框架（Attack / Attack-Move / 伤害）** ✅ |
+| 8 | F8–F10（顶盾 → 技能）✅；Keep/铁匠科技后置 → NEXT N1 |
+| **9+** | **[NEXT.md](../../roadmap/NEXT.md)**：N0 收口 → N1 闭环 → N2 手感 → N4 扩展 |
+| 并行 | 单位/野怪尸体 Geoset 显隐（Present）；地图 N3 补债 |
 | 远期 | E：触发器 VM |
 
 ---

@@ -1,9 +1,9 @@
 # 战斗系统：攻击管线 · 伤害公式 · 开发路线
 
 > 状态：**C0–C3 已接线**（DamagePipeline 骰×表×护甲；Death → Decay Flesh 停留后移除尸体；离场不可选）  
-> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [WORLD_MEMBERSHIP.md](../../architecture/WORLD_MEMBERSHIP.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · **[UNIT_AI.md](UNIT_AI.md)**（单位级 AI，非 AI 玩家）  
+> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [WORLD_MEMBERSHIP.md](../../architecture/WORLD_MEMBERSHIP.md) · [TREE_INTERACT.md](TREE_INTERACT.md) · **[UNIT_AI.md](UNIT_AI.md)**（单位级 AI，非 AI 玩家） · [WEAPON_MISSILE_FX.md](../presentation/WEAPON_MISSILE_FX.md)（飞弹 Present / PE2 / Ribbon）  
 > 竖切进度：F0–F6 ✅ → C0–C3 战斗 ✅ → F8–F9 顶盾 ✅ → **单位 AI（野怪对抗）** → F10 技能  
-> 最后更新：2026-08-21
+> 最后更新：2026-09-06
 
 ---
 
@@ -23,7 +23,7 @@
 | `CombatRng`         | `…/combat_rng.gd`                                | 可注入 RNG                                                                                    |
 | `DeathService`      | `…/death_service.gd`                             | 清选中、`WorldMembership.exit`、通知同宿主其它 `AttackController`                                      |
 | `ProjectileService` | `…/projectile_service.gd`                        | Logic 弹道；真 missile 命中后再 Pipeline；instant 远程可 `visual_only`                                 |
-| Present             | `combat_projectile_shell` / `damage_float_text`  | 真 missile 挂 UnitFunc 飞弹模型（Hamg→FireBall）；instant 仅命中特效；**禁止** `set_life` |
+| Present             | `combat_projectile_shell` / `damage_float_text`  | 真 missile 挂 UnitFunc 飞弹模型（Hamg→FireBall Stand；hwat→WaterElementalMissile **Birth 循环** + 命中 Death）；instant 仅命中特效；**禁止** `set_life` |
 | 命令入口                | `CommandRouter.issue_attack_*` / Hold / Patrol   | 懒挂 `AttackController`；与 Harvest/Build 互斥 abort                                             |
 
 
@@ -687,6 +687,7 @@ F0–F6 ✅ ──► C0–C3（本文件）──► F8–F9 顶盾 ──► F
 | 2026-08-18 | **命中飘字**：Present `DamageFloatText` 订阅 `damage_applied`，挂受击单位                                                                            |
 | 2026-08-21 | **as-built**：补 §0a；野怪反击从「战斗非目标」迁出，由 [UNIT_AI.md](UNIT_AI.md) 交付                                                                         |
 | 2026-08-21 | **Hamg 普攻**：`CombatQuery` 读 `*UnitFunc` Missileart/speed/arc；真 missile 壳挂 FireBall；hrif 仍 instant+RifleImpact                                 |
+| 2026-09-05 | **hwat 飞弹**：`WaterElementalMissile` 无 Stand（仅 Birth/Death PE2）；飞行壳改 Stand→Birth 并强制 LOOP，命中仍 Death                                         |
 | 2026-08-21 | **弹道制导**：Logic/Present 同速追目标，命中半径结算（非物理碰撞）；目标丢失/超时不扣血                                                |
 
 

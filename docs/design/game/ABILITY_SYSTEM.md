@@ -44,8 +44,8 @@ game/scripts/data/
         │    bash_controller.gd           AHbh（被动 proc）
         │    unit_status_effects.gd       门面 → BuffHost
         │    logic/buff/                  BuffHost · BuffCatalog · BuffQuery
-        │    brilliance_aura_controller.gd  AHab（被动光环 tick）
-        │    unit_mana.gd / unit_life.gd / unit_regen.gd  蓝/血权威 + 自然回复
+        │    brilliance_aura_controller.gd  AHab（被动光环 → BuffHost brilliance）
+        │    unit_mana.gd / unit_life.gd / unit_regen.gd  蓝/血权威 + 自然回复（含光环 bonus）
         │    ability_cooldowns.gd
         │
         └─ Present
@@ -99,19 +99,19 @@ game/scripts/game_director.gd
 | AHwe | `AbilityCastPresenter` + order→Sequence |
 | AHbz | Catalog 硬编码 ground/hit + `BlizzardAreaDecal` / `SpellHitFx`；波次伤害 → `EffectDamageAoe.run_all_victims` |
 | AHmt | `MassTeleportPresenter`：Caster / Target 脚印 / To 落点 + Decal 落点圈 |
-| AHab | **`BrillianceAuraPresenter` 硬编码路径**（应读 Func） |
+| AHab | `BrillianceAuraPresenter` ← `AbilityFxCatalog`（AHab Targetart=Brilliance / BHab=GeneralAuraTarget）；`on_entity_root` 防 MODEL_SCALE 缩没 |
 
-### 4.3 重构目标（未做）
+### 4.3 重构目标（部分完成）
 
-1. **`AbilityFxCatalog`（data）**  
+1. **`AbilityFxCatalog`（data）** — ✅ 已有  
    - 优先 `CommandButtonCatalog.get_ability(abil_id)` 读 `casterart/targetart/effectart/areaeffectart`  
-   - Buff 受益：`get_ability("B" + suffix)` 或 AbilityData 里的 buff 链接（AHbz→BHbd 等非规则 id 需小表 fallback）
+   - Buff 受益：`buff_row_id` + `buff_beneficiary_art`（AHab→BHab；例外表 + fallback）
 
-2. **`AbilityAttachFxPresenter`（present，通用）**  
-   - `sync_caster(abil_id)` / `sync_beneficiaries(buff_row)`  
-   - 删除 per-skill Presenter（`BrillianceAuraPresenter` 等）
+2. **`AbilityAttachFxPresenter`（present，通用）** — ✅ 通用挂点已有；per-skill Presenter 仍保留薄封装  
+   - `sync_attach` / `sync_buff_beneficiaries_for_abil` / `on_entity_root`  
+   - `BrillianceAuraPresenter` 等仅做 Catalog→Presenter 接线（可再删薄壳）
 
-3. **`AbilityCastCatalog` 收敛**  
+3. **`AbilityCastCatalog` 收敛** — 未做  
    - 仅保留 order→Sequence、channel 标记、无法从 Func 推断的 fallback
 
 **Logic 仍按行为类型分**（无法纯数据驱动）：
@@ -145,7 +145,7 @@ game/scripts/game_director.gd
 |----|-------|------|------|----------|
 | AHwe | waterelemental | 0 | 点地召唤 hwat | `SummonUnitAbility` + `SummonLifetime`→`DeathService.kill` |
 | AHbz | blizzard | 引导 DataA×DataD | 区域多段伤害 | `BlizzardAbility` |
-| AHab | （无） | — | 被动 Area 回蓝 | `BrillianceAuraController` |
+| AHab | （无） | — | 被动 Area → 有蓝友军 brilliance Buff + 回蓝 | `BrillianceAuraController` → `BuffHost` / `UnitRegen` |
 | AHmt | massteleport | DataB≈3s 读条（Cast=0） | 自身 Area 友军→点地 | `MassTeleportAbility` + `MassTeleportPresenter` |
 
 ## 7. 山丘之王四技能速查（Hmkg）
@@ -182,7 +182,7 @@ Director 按 `AbilityCatalog.target_kind()` 分流：点地 / 点敌军 / 点友
 | DataB | 3（读条秒；`AbilityCastCatalog.cast_time_sec`） |
 
 P0 简化：不传送建筑；传送前 `halt` 移动/采集/攻击；落点用 `TrainSpawn.resolve_with_displace` 挤位。
-读条期：`MassTeleportPresenter` 挂 Caster 光环 + 落点 Decal；打断不扣蓝；结算时旧坐标脚印（Target）→ 瞬移 → 落点 To。
+读条期：`MassTeleportPresenter` 挂 Caster 光环（**实体根**，避免 MODEL_SCALE 二次缩小）+ 落点 Decal；打断不扣蓝；结算时旧坐标脚印（Target）→ 瞬移 → 落点 To + 音效。
 
 ## 8. 测试
 

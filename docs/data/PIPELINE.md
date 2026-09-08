@@ -47,6 +47,7 @@ npm run extract -- --game-dir "C:/Path/To/Warcraft III"
 | 实现 | Node 18+，`koffi` 调 [StormLib](https://github.com/ladislav-zezula/StormLib) DLL |
 | StormLib 拉取 | `npm install` 时通过 `fetch-stormlib` 自动下载 |
 | 输入 | `War3.mpq` / `War3x.mpq` 等经典 MPQ（**不是**仅含 `Data/` 的现代 CASC 客户端） |
+| 覆盖顺序 | 见 `MPQ_PRIORITY`：后者覆盖前者；**同路径**才覆盖。TFT 另增的 `*_V1` 模型见 [CONTENT_PACKS.md](CONTENT_PACKS.md) |
 | 输出 | `.cache/wc3-assets/<logicalPath>` 镜像原始结构 |
 | 清单 | `.cache/manifest.json`：`version` / `gameDir` / `extractedAt` / `files: { logicalPath → sourceMpq, size, sha256 }` |
 | 排除 | 通用 npm ignores；StormLib DLL 不进 git |

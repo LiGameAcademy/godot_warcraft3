@@ -25,6 +25,7 @@
 |------|-------|
 | Additive 少面 + 近似正方 AABB | 软圆 Billboard（`wc3_team_glow` + `use_billboard`） |
 | ≤4 三角扁广告牌（含 Transparent 箭矢贴图） | Additive→软圆；否则 StandardMaterial `BILLBOARD_ENABLED` |
+| **地面环 / 光环**（Y 极薄、XZ 接近） | **KEEP** mesh（勿竖成立体广告牌；如 Brilliance / GeneralAuraTarget） |
 | 细长尾迹 / 实体武器网格（斧、石头） | **KEEP** mesh（仅 FilterMode 材质修正） |
 | PE2 | 仍走 pe2 管线，Presenter 不改粒子 |
 
@@ -164,6 +165,7 @@ HeroArchMage 三个发射器（对照用）：
 | [../architecture/SCRIPTS_LAYOUT.md](../architecture/SCRIPTS_LAYOUT.md) | `scripts/tool` 里 pe2 bake |
 | [../../tools/asset-convert/README.md](../../tools/asset-convert/README.md) | 转换步骤含 pe2.json |
 | [04-wc3-effects-conversion.md](../blog/04-wc3-effects-conversion.md) | 对外说明（全貌，偏教程） |
+| [../presentation/WEAPON_MISSILE_FX.md](../presentation/WEAPON_MISSILE_FX.md) | **武器飞弹金样**（Priest / FireBall / Water）+ GPU/Shader 决策 |
 | [../tools/ASSET_LAYOUT.md](../tools/ASSET_LAYOUT.md) | pe2.json / .scn 不入库 |
 | [../shader/README.md](../shader/README.md) | 岸浪 PE2 是另一套（MultiMesh），不是单位 GPUParticles |
 | [../roadmap/TODO.md](../roadmap/TODO.md) | visuals 封装 + PE2 历史条目 |
