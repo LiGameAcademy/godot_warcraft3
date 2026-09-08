@@ -20,7 +20,7 @@ enum RingKind {
 signal selection_changed(primary: Node3D, selected: Array)
 
 @export var enabled: bool = true
-## ≥0 时只可选该 owner；-1 不限（点选仍可看中立金矿等）
+## ≥0 时只可选该 owner；-1 不限（点选可观察敌方/中立；下达指令看可控过滤）
 @export var owner_filter: int = -1
 ## 框选（多选）仅保留该玩家单位/建筑；-1 不限。对齐原作：敌对/中立不可框选。
 @export var marquee_owner: int = -1
@@ -191,6 +191,19 @@ func set_primary(node: Node3D) -> bool:
 
 func clear_selection() -> void:
 	_set_selection([])
+
+
+## 从选中集合移除单个单位（死亡 / 离场）；若为空则清空 primary。
+func deselect_unit(node: Node3D) -> void:
+	if node == null:
+		return
+	if not _selected.has(node):
+		return
+	var next: Array = []
+	for n in _selected:
+		if n != node and is_instance_valid(n):
+			next.append(n)
+	_set_selection(next)
 
 
 func select_node(node: Node3D) -> void:

@@ -69,6 +69,9 @@ var _hero_ascend: bool = false ## 英雄 Dissipate 升天（无尸体链）。
 var _hero_death_before_dissipate: bool = false ## 英雄先播 Death 再 Dissipate。
 var _building_work: bool = false ## 是否施工。
 var _spell_casting: bool = false ## 技能施法动画中。
+## true=手势施法（Cast≈0），等动画播完再清；false=引导/读条，由 Presenter.end 清。
+var _spell_gesture: bool = false
+var _spell_finish_armed: bool = false
 var _logical: String = "" ## 逻辑名。
 var _activity: int = AnimSequenceResolver.Activity.IDLE ## 活动。
 var _soft_loop = null ## 软循环。
@@ -106,7 +109,12 @@ static func of(node: Node) -> Unit:
 	return null
 
 
-## 表现子节点（`Model`），无则回退 `Wc3ModelScene.find_on`。
+## 是否已进入死亡/尸体表现（不可再接受命令）。
+func is_dying() -> bool:
+	return _dying
+
+
+## 表现子节点（`Model`），用则回退 `Wc3ModelScene.find_on`。
 func model_node() -> Node3D:
 	var named := get_node_or_null(MODEL_NODE_NAME) as Node3D
 	if named != null:
@@ -194,6 +202,12 @@ func set_stance(stance: int, force: bool = false) -> void:
 		"set_stance=%s force=%s blend=%.2f" % [stance, force, blend]
 	)
 	_play_current(blend)
+
+
+## 只改姿态、不立刻播动画（天神 Morph 过渡期间用）。
+func adopt_stance(stance: int) -> void:
+	_stance = stance
+	_logical = ""
 
 
 ## 设置移动。
@@ -708,6 +722,8 @@ func set_combat_attack(active: bool) -> void:
 	if active:
 		_chopping = false
 		_spell_casting = false
+		_spell_gesture = false
+		_spell_finish_armed = false
 		_moving = false
 		_logical = ""
 		# 从 Walk 切入时 blend>0 会「揉」成怪姿；首刀必须硬切 Attack
@@ -717,7 +733,7 @@ func set_combat_attack(active: bool) -> void:
 		_play_current(BLEND_TO_WALK if _moving else BLEND_TO_STAND)
 
 
-## 英雄技能施法动画（Spell Throw / Spell Channel；与 Activity 分离）。
+## 英雄技能施法动画（Spell Throw / Spell Channel / SpellAttack；与 Activity 分离）。
 func play_spell_cast(logical: String, channel: bool = false) -> void:
 	if _dying:
 		return
@@ -728,29 +744,95 @@ func play_spell_cast(logical: String, channel: bool = false) -> void:
 	if nav != null:
 		nav.stop()
 	var ap := _animation_player()
-	var fallbacks := ["Spell Throw", "Spell Channel", "Spell", "Attack"]
+	var seq := logical.strip_edges()
+	# 天神形态：Spell Throw → Alternate Spell Throw（模型内变身动画族）。
+	if (
+		_stance == AnimSequenceResolver.Stance.ALTERNATE
+		and not seq.to_lower().begins_with("alternate")
+	):
+		seq = "Alternate " + seq
+	# 牧师/女巫等无 Spell Throw，只有 SpellAttack（与普攻同片）
+	var fallbacks := [
+		"Spell Throw",
+		"Spell Channel",
+		"Spell",
+		"SpellAttack",
+		"Spell Attack",
+		"Attack",
+	]
+	if _stance == AnimSequenceResolver.Stance.ALTERNATE:
+		fallbacks = [
+			"Alternate Spell Throw",
+			"Alternate Spell Slam",
+			"Spell Throw",
+			"Spell Channel",
+			"Spell",
+			"SpellAttack",
+		]
 	var play_root: Node = _model if _model != null else body
-	AnimPlayback.play_logical(
-		play_root, logical, 0.0, _cache, 0, fallbacks, ap
+	var played := AnimPlayback.play_logical(
+		play_root,
+		seq,
+		0.0,
+		_cache,
+		AnimSequenceResolver.Activity.ATTACK,
+		fallbacks,
+		ap
 	)
-	Wc3Pe2Particles.apply_sequence(play_root, logical)
-	if not channel:
-		# Cast1=0：只播一次手势，不锁 Activity（效果立即结算）
-		return
-	_spell_casting = true
+	var pe2_seq := str(played.get("played_as", seq)).replace("_", " ")
+	Wc3Pe2Particles.apply_sequence(play_root, pe2_seq)
 	_combat_attack = false
 	_chopping = false
 	_building_work = false
 	_moving = false
-	_logical = logical
+	_spell_casting = true
+	_spell_gesture = not channel
+	_logical = pe2_seq if not pe2_seq.is_empty() else seq
+	if channel:
+		return
+	# 瞬时施法：锁住直到动画结束，避免 Navigator/Stand 立刻盖掉 SpellAttack
+	_arm_spell_gesture_finish(ap, str(played.get("resolved", "")), bool(played.get("ok", false)))
 
 
-func end_spell_cast() -> void:
+func end_spell_cast(force: bool = false) -> void:
 	if not _spell_casting:
 		return
+	# 手势施法：Presenter.end / 即时结算会立刻回调；忽略非 force，等动画 finished
+	if _spell_gesture and not force:
+		return
 	_spell_casting = false
+	_spell_gesture = false
+	_spell_finish_armed = false
 	_logical = ""
 	_play_current(BLEND_TO_STAND)
+
+
+func _arm_spell_gesture_finish(ap: AnimationPlayer, resolved: String, played_ok: bool) -> void:
+	if _spell_finish_armed:
+		return
+	_spell_finish_armed = true
+	var finish := func() -> void:
+		if not is_instance_valid(self):
+			return
+		if not _spell_casting or not _spell_gesture:
+			return
+		_spell_finish_armed = false
+		end_spell_cast(true)
+	if ap != null and played_ok and not resolved.is_empty():
+		var on_finished := func(anim_name: StringName) -> void:
+			if str(anim_name) != resolved:
+				var leaf := AnimPlayback.compact_seq_name(str(anim_name)).to_lower()
+				var want := AnimPlayback.compact_seq_name(resolved).to_lower()
+				if leaf != want and not leaf.begins_with("spell"):
+					return
+			finish.call()
+		ap.animation_finished.connect(on_finished, CONNECT_ONE_SHOT)
+		return
+	var tree := get_tree()
+	if tree != null:
+		tree.create_timer(0.55).timeout.connect(finish)
+	else:
+		finish.call()
 
 
 ## 获取当前活动。
@@ -766,12 +848,12 @@ func _current_activity() -> int:
 	return AnimSequenceResolver.Activity.IDLE
 
 
-## 获取播放用姿态（砍伐强制 Lumber；死亡用默认 Death，无 Death Defend）。
+## 获取播放用姿态（砍伐强制 Lumber；死亡默认 Death，天神形态保留 Alternate Death）。
 func _play_stance() -> int:
-	if _dying:
-		return AnimSequenceResolver.Stance.DEFAULT
 	if _chopping:
 		return AnimSequenceResolver.Stance.LUMBER
+	if _dying and _stance != AnimSequenceResolver.Stance.ALTERNATE:
+		return AnimSequenceResolver.Stance.DEFAULT
 	return _stance
 
 
