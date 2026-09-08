@@ -218,8 +218,11 @@ func cluster_and_bind(host: Node) -> Dictionary:
 	return result
 
 
-## 死亡/离场后调用：从 group 移除并重算营地 home。
-## 玩家 team 不重算（玩家 home 无意义）。
+## 死亡/离场后调用：从 group 移除。
+## - 玩家 team 不重算（玩家 home 无意义）。
+## - 营地 home **不**随成员变化重算：WC3 原作营地 home 固定（编辑器预设锚点），
+##   我们 ad-hoc 聚类也在 cluster_and_bind 一次性确定 home 后保持不变。
+##   成员漂走 / 阵亡后 home 仍是首次聚类中心，避免 leash 锚点跟着漂。
 func on_unit_gone(body: Node3D) -> void:
 	if body == null:
 		return
@@ -235,7 +238,7 @@ func on_unit_gone(body: Node3D) -> void:
 			_camps.erase(gid)
 			return
 		data["members"] = members
-		data["home"] = _cluster_home(members)
+		# home 锁定：见函数注释，不重算
 		_camps[gid] = data
 
 

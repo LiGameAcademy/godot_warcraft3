@@ -13,7 +13,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_test_player_team_by_owner()
 	_test_neutral_cluster_and_home()
-	_test_home_recompute_after_death()
+	_test_home_locked_after_death()
 	_test_player_ally_engage_when_source_engaged()
 	_test_player_idle_does_not_ally_engage()
 	_test_camp_full_alert_when_source_attacked()
@@ -21,6 +21,7 @@ func _run() -> void:
 	_test_player_team_uses_ally_radius()
 	_test_home_bound_after_cluster()
 	_test_new_spawn_joins_existing_camp()
+	_test_home_does_not_drift_after_death()
 	print("----")
 	if failed == 0:
 		print("selftest_team_registry: PASS")
@@ -166,7 +167,7 @@ func _test_neutral_cluster_and_home() -> void:
 		u.queue_free()
 
 
-func _test_home_recompute_after_death() -> void:
+func _test_home_locked_after_death() -> void:
 	# 隔离环境：单挂一层 Node3D，避免其它测试残留污染
 	var reg := TeamRegistry.attach(root)
 	reg._reset()
@@ -191,9 +192,10 @@ func _test_home_recompute_after_death() -> void:
 	var home_after := reg.home_of(gid_a)
 	if home_after == Vector2.INF:
 		_fail("b 仍在场，营地 home 不应 INF")
-	if absf(home_after.x - 400.0) > 1.0:
-		_fail("a 离场后 home 应 ≈ (400,0)，实际 %s" % str(home_after))
-	print("  home_recompute_after_death OK")
+	# home 锁定：成员死亡不重算（WC3 原作语义）
+	if absf(home_after.x - 200.0) > 1.0 or absf(home_after.y) > 1.0:
+		_fail("成员死亡后 home 应锁定在初始 (200,0)，不允许漂移到 b 单点 (400,0)，实际 %s" % str(home_after))
+	print("  home_locked_after_death OK")
 	layer.queue_free()
 
 
@@ -425,4 +427,47 @@ func _test_new_spawn_joins_existing_camp() -> void:
 	if reg.attach_to_nearest_camp(player_unit):
 		_fail("玩家单位不应入中立营地")
 	print("  new_spawn_joins_existing_camp OK")
+	layer.queue_free()
+
+
+## 营地 home 在成员死亡后**不**应漂移（WC3 原作语义：营地 home 固定）。
+## 注意与 _test_home_recompute_after_death 的差异：旧测试依赖旧实现
+## （on_unit_gone 重算 home），新实现锁定 home → 测试断言"不变"。
+func _test_home_does_not_drift_after_death() -> void:
+	# 隔离
+	var reg := TeamRegistry.attach(root)
+	reg._reset()
+	var layer := Node3D.new()
+	layer.name = "TestLayer_HomeLock"
+	root.add_child(layer)
+	var a := _make_unit_in_layer(layer, "nvlw", 12, Vector2(0, 0))
+	var b := _make_unit_in_layer(layer, "nvlw", 12, Vector2(400, 0))
+	var c := _make_unit_in_layer(layer, "nvlw", 12, Vector2(800, 0))
+
+	reg.cluster_and_bind(layer)
+	var gid := reg.group_of(a)
+	# 初始 home = 三只中心 (400, 0)
+	var home_before := reg.home_of(gid)
+	if absf(home_before.x - 400.0) > 1.0 or absf(home_before.y > 1.0):
+		_fail("初始 home 应 ≈ (400, 0)，实际 %s" % str(home_before))
+
+	# a 离场（模拟被打死）
+	WorldMembership.exit(a)
+	reg.on_unit_gone(a)
+
+	# 期望：home 保持 (400, 0)，不漂移到只剩 b/c 的中心 (600, 0)
+	var home_after := reg.home_of(gid)
+	if home_after == Vector2.INF:
+		_fail("b/c 仍存活，营地 home 不应 INF")
+	if absf(home_after.x - 400.0) > 1.0 or absf(home_after.y > 1.0):
+		_fail("成员死亡后 home 应锁定在 (400, 0)，实际 %s（不允许漂移）" % str(home_after))
+
+	# 全部离场后营地移除
+	WorldMembership.exit(b)
+	reg.on_unit_gone(b)
+	WorldMembership.exit(c)
+	reg.on_unit_gone(c)
+	if reg.group_of(a) != "" or reg.home_of(gid) == home_after:
+		_fail("全部离场后营地应被移除，home 不应保留")
+	print("  home_does_not_drift_after_death OK")
 	layer.queue_free()
