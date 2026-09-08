@@ -30,6 +30,32 @@ static func spawn(
 	return fx
 
 
+## 瞄准预览：lifetime=0 不自动消失。
+static func spawn_preview(
+	parent: Node,
+	wc3_xy: Vector2,
+	art_rel: String,
+	cache: MapModelCache,
+	heightfield: Wc3Heightfield = null
+) -> AbilityGroundFx:
+	if parent == null or wc3_xy == Vector2.INF:
+		return null
+	var fx := AbilityGroundFx.new()
+	fx.name = "AbilityGroundFxPreview"
+	parent.add_child(fx)
+	fx._play(wc3_xy, art_rel, 0.0, cache, heightfield)
+	return fx
+
+
+func reposition(wc3_xy: Vector2, heightfield: Wc3Heightfield = null) -> void:
+	if wc3_xy == Vector2.INF:
+		return
+	var z := 0.0
+	if heightfield != null and heightfield.is_valid():
+		z = heightfield.interpolated_height(wc3_xy.x, wc3_xy.y)
+	global_position = Wc3Coords.wc3_xy_to_godot(wc3_xy.x, wc3_xy.y, z + 4.0)
+
+
 func _play(
 	wc3_xy: Vector2,
 	art_rel: String,
@@ -39,7 +65,8 @@ func _play(
 ) -> void:
 	_cache = cache
 	_art_rel = art_rel.strip_edges()
-	_lifetime = maxf(lifetime_sec, 0.35)
+	# 0 = 预览常驻
+	_lifetime = lifetime_sec if lifetime_sec <= 0.0 else maxf(lifetime_sec, 0.35)
 	_age = 0.0
 	var z := 0.0
 	if heightfield != null and heightfield.is_valid():
@@ -52,7 +79,18 @@ func _play(
 		queue_free()
 		return
 	add_child(_inst)
+	if _cache != null and not _art_rel.is_empty():
+		_cache.prepare_fx_model(_inst, RuntimeAssets.converted_path(_art_rel))
 	_try_play_anim(_inst)
+	# 预览：Birth 循环，避免播完粒子熄灭
+	if _lifetime <= 0.0:
+		var ap := AnimPlayback.find_animation_player(_inst)
+		if ap != null and not str(ap.current_animation).is_empty():
+			var cur := str(ap.current_animation)
+			if ap.has_animation(cur):
+				var anim := ap.get_animation(cur)
+				if anim != null:
+					anim.loop_mode = Animation.LOOP_LINEAR
 	set_process(true)
 
 
@@ -92,28 +130,43 @@ func _spawn_fallback() -> MeshInstance3D:
 
 func _try_play_anim(root: Node) -> void:
 	var ap := AnimPlayback.find_animation_player(root)
-	if ap == null:
-		return
-	ap.active = true
-	var names := ap.get_animation_list()
-	if names.is_empty():
-		return
-	var pick := str(names[0])
-	for n in names:
-		var leaf := str(n)
-		var slash := leaf.rfind("/")
-		if slash >= 0:
-			leaf = leaf.substr(slash + 1)
-		var low := leaf.to_lower()
-		if low.begins_with("stand") or low.begins_with("birth") or low.contains("loop"):
-			pick = str(n)
-			break
-	ap.play(pick)
+	var pick := "Birth"
+	if ap != null:
+		ap.active = true
+		var names := ap.get_animation_list()
+		if not names.is_empty():
+			pick = str(names[0])
+			var birth_pick := ""
+			var stand_pick := ""
+			for n in names:
+				var leaf := str(n)
+				var slash := leaf.rfind("/")
+				if slash >= 0:
+					leaf = leaf.substr(slash + 1)
+				var low := leaf.to_lower()
+				if low.begins_with("birth") and birth_pick.is_empty():
+					birth_pick = str(n)
+				elif (
+					(low.begins_with("stand") or low.contains("loop"))
+					and stand_pick.is_empty()
+				):
+					stand_pick = str(n)
+			# 技能地面特效优先 Birth（暴风雪等无 Stand）
+			if not birth_pick.is_empty():
+				pick = birth_pick
+			elif not stand_pick.is_empty():
+				pick = stand_pick
+			ap.play(pick)
+	var seq_leaf := pick
+	var slash2 := seq_leaf.rfind("/")
+	if slash2 >= 0:
+		seq_leaf = seq_leaf.substr(slash2 + 1)
 	if not _art_rel.is_empty():
 		var path := RuntimeAssets.converted_path(_art_rel)
 		if Wc3Pe2Particles.has_emitters(path):
 			Wc3Pe2Particles.attach_to(root, path)
-		Wc3Pe2Particles.apply_sequence(root, "Stand")
+		# 暴风雪等只有 Birth：切 Stand 会关掉粒子
+		Wc3Pe2Particles.apply_sequence(root, seq_leaf)
 
 
 func _process(delta: float) -> void:
@@ -122,7 +175,11 @@ func _process(delta: float) -> void:
 		var mi := _inst as MeshInstance3D
 		var mat := mi.material_override as StandardMaterial3D
 		if mat != null:
-			var a := clampf(1.0 - (_age / _lifetime), 0.0, 1.0)
+			var a := 1.0
+			if _lifetime > 0.0:
+				a = clampf(1.0 - (_age / _lifetime), 0.0, 1.0)
 			mat.albedo_color.a = FALLBACK_COLOR.a * a
+	if _lifetime <= 0.0:
+		return
 	if _age >= _lifetime:
 		queue_free()

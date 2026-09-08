@@ -48,6 +48,30 @@ static func spawn_ground_effect(
 	)
 
 
+## 单位附着一次性特效（传送 Caster/Target 等）；lifetime 后自动清。
+static func spawn_unit_timed_fx(
+	host: Node3D,
+	art_rel: String,
+	lifetime_sec: float,
+	ctx: Dictionary,
+	attach_hint: String = "origin",
+	local_offset: Vector3 = Vector3(0.0, 0.05, 0.0),
+	on_entity_root: bool = true
+) -> void:
+	if host == null or not is_instance_valid(host) or art_rel.strip_edges().is_empty():
+		return
+	var cache: MapModelCache = ctx.get("model_cache") as MapModelCache
+	AbilityAttachFxPresenter.spawn_timed(
+		host,
+		art_rel,
+		lifetime_sec,
+		cache,
+		attach_hint,
+		local_offset,
+		on_entity_root
+	)
+
+
 static func _face_goal(caster: Node3D, goal_wc3: Vector2) -> void:
 	if goal_wc3 == Vector2.INF:
 		return

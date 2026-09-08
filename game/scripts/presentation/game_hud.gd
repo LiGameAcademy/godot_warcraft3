@@ -289,6 +289,14 @@ func update_portrait_timed_life(left: float, total: float) -> void:
 	_set_timed_life_bar(left, total)
 
 
+## 肖像生命/魔法条：选中期间由 Director 每帧刷新（不重建整栏）。
+func update_portrait_vitals(hp: int, hp_max: int, mana: int, mana_max: int) -> void:
+	_set_resource_bar(_portrait_hp_row, _portrait_hp, _portrait_hp_label, hp, hp_max, hp_max > 0)
+	_set_resource_bar(
+		_portrait_mana_row, _portrait_mana, _portrait_mana_label, mana, mana_max, mana_max > 0
+	)
+
+
 func update_buff_strip(entries: Array) -> void:
 	if _buff_strip == null:
 		return
@@ -858,6 +866,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 	var action_id := str(entry.get("id", "")).strip_edges()
 	_slot_action_ids[slot] = action_id
 	var enabled := bool(entry.get("enabled", not action_id.is_empty()))
+	var passive := bool(entry.get("passive", false)) or action_id.begins_with("passive:")
 	if action_id.is_empty():
 		btn.text = ""
 		btn.icon = null
@@ -865,19 +874,30 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		btn.tooltip_text = ""
 		btn.modulate = Color(1, 1, 1, 0.55)
 		btn.focus_mode = Control.FOCUS_NONE
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
 		_set_button_auto_cast(btn, false, false)
 		_set_button_level_badge(btn, 0)
+		_set_button_cooldown(btn, 0.0)
+		btn.set_meta("_cmd_blocked", false)
+		btn.set_meta("_passive_cmd", false)
 		return
-	btn.disabled = not enabled
+	# 被动 / 软禁用（法力不足、冷却、科技未满足）：
+	# 不置 Button.disabled —— Godot 灰显按钮悬停时常压掉完整 tooltip。
+	# 视觉靠 DIS 图标；点击在 gui_input 里拦。
+	var soft_blocked := (not enabled) and not passive
+	var cd_ratio := clampf(float(entry.get("cooldown_ratio", 0.0)), 0.0, 1.0)
+	var keep_icon_on_cd := bool(entry.get("keep_icon_on_cd", false)) and cd_ratio > 0.0
+	btn.disabled = false
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _plain_tooltip(str(entry.get("tooltip", "")))
 	var executing := bool(entry.get("executing", false))
 	var auto_cast := bool(entry.get("auto_cast", false))
 	var autocast_capable := bool(entry.get("autocast_capable", false))
-	# 有图标时尽量不盖字；执行中只靠高亮 + tooltip。
 	var text := str(entry.get("text", ""))
 	var icon_rel := str(entry.get("icon", ""))
-	if not enabled:
+	# 冷却：保留彩色 Art + 扇形遮罩；其它软禁用仍走 DIS
+	if soft_blocked and not keep_icon_on_cd:
 		var dis := str(entry.get("icon_disabled", ""))
 		if not dis.is_empty():
 			icon_rel = dis
@@ -887,12 +907,16 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 	if icon != null and (text.is_empty() or text == "执行中"):
 		btn.text = ""
 	else:
-		if executing and text.is_empty():
+		if executing and text.is_empty() and not passive:
 			text = "执行中"
 		btn.text = text
-	_set_button_executing(btn, executing)
+	_set_button_executing(btn, executing and not passive)
 	_set_button_auto_cast(btn, auto_cast, autocast_capable)
 	_set_button_level_badge(btn, int(entry.get("badge_level", 0)))
+	_set_button_cooldown(btn, cd_ratio)
+	btn.modulate = Color.WHITE
+	btn.set_meta("_passive_cmd", passive)
+	btn.set_meta("_cmd_blocked", soft_blocked)
 
 
 func _set_button_level_badge(btn: Button, level: int) -> void:
@@ -921,6 +945,36 @@ func _set_button_level_badge(btn: Button, level: int) -> void:
 		btn.add_child(badge)
 	badge.text = str(level)
 	badge.visible = true
+
+
+func _set_button_cooldown(btn: Button, ratio: float) -> void:
+	if btn == null:
+		return
+	var overlay := btn.get_node_or_null("CooldownOverlay") as Control
+	var r := clampf(ratio, 0.0, 1.0)
+	if r <= 0.001:
+		if overlay != null and overlay.has_method("set_cooldown_ratio"):
+			overlay.call("set_cooldown_ratio", 0.0)
+		return
+	if overlay == null:
+		# 新建 class_name 后首轮编译可能尚未进全局缓存；用脚本实例化
+		var script := load("res://game/hud/cooldown_button_overlay.gd") as GDScript
+		if script == null:
+			return
+		overlay = script.new() as Control
+		if overlay == null:
+			return
+		overlay.name = "CooldownOverlay"
+		overlay.z_index = 12
+		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(overlay)
+		overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		overlay.offset_left = 0.0
+		overlay.offset_top = 0.0
+		overlay.offset_right = 0.0
+		overlay.offset_bottom = 0.0
+	if overlay.has_method("set_cooldown_ratio"):
+		overlay.call("set_cooldown_ratio", r)
 
 
 func _set_button_auto_cast(btn: Button, active: bool, capable: bool = false) -> void:
@@ -1074,8 +1128,14 @@ func _on_command_gui_input(event: InputEvent, slot: int) -> void:
 	var action_id := str(_slot_action_ids[slot]).strip_edges()
 	if action_id.is_empty():
 		return
-	# 灰显（蓝不足/冷却）仍允许右键切换自动施法；左键施法仍拦截。
-	if btn != null and btn.disabled:
+	# 被动光环：只展示，不发命令
+	if action_id.begins_with("passive:") or (btn != null and bool(btn.get_meta("_passive_cmd", false))):
+		return
+	# 软禁用（法力不足 / 冷却 / 科技）：仍允许右键切换自动施法；左键施法拦截。
+	var blocked := btn != null and (
+		btn.disabled or bool(btn.get_meta("_cmd_blocked", false))
+	)
+	if blocked:
 		if mb.button_index != MOUSE_BUTTON_RIGHT:
 			return
 		if int(btn.get_meta("_ac_state", 0)) < 1:
