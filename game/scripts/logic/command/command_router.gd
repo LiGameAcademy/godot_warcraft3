@@ -357,6 +357,7 @@ func issue_attack_target(
 
 
 ## 巡逻：当前位置 ↔ goal。
+## 群体：走 UnitMoveSlots.assign_goals 给每个 mover 散开落点，避免重叠卡死。
 func issue_patrol(
 	selected: Array,
 	goal_center_wc3: Vector2,
@@ -368,20 +369,32 @@ func issue_patrol(
 		return result
 	if not _ensure_navigator.is_valid():
 		return result
+	# 群体落点散开：与 issue_attack_move / issue_move_to_wc3 一致
+	var radii := PackedFloat32Array()
+	for node in movers:
+		var r := 16.0
+		if _crowd_query != null:
+			r = _crowd_query.radius_for_unit(node)
+		radii.append(r)
+	var goals: PackedVector2Array = UnitMoveSlots.assign_goals(
+		movers, radii, goal_center_wc3, _path_query
+	)
 	var moved := 0
 	var failed := 0
-	for node in movers:
+	for i in range(movers.size()):
+		var node: Node3D = movers[i]
+		var slot: Vector2 = goals[i] if i < goals.size() else goal_center_wc3
 		_abort_harvest(node)
 		_abort_build_leave(node)
 		_abort_attack(node)
 		_clear_hold(node)
 		node.set_meta("attack_move", false)
-		var order := UnitOrder.patrol(goal_center_wc3, source)
+		var order := UnitOrder.patrol(slot, source)
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
 		var pc := _ensure_patrol(node)
-		if pc != null and pc.begin(goal_center_wc3):
+		if pc != null and pc.begin(slot):
 			moved += 1
 		else:
 			failed += 1

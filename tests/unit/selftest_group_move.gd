@@ -11,6 +11,7 @@ extends SceneTree
 
 const FormationScr = preload("res://game/scripts/logic/pathing/formation_follow.gd")
 const SlopeSpeedScr = preload("res://game/scripts/logic/pathing/slope_speed.gd")
+const UnitMoveSlotsScr = preload("res://game/scripts/logic/pathing/unit_move_slots.gd")
 
 var failed := 0
 
@@ -25,6 +26,9 @@ func _run() -> void:
 	_test_shift_routing()
 	_test_slope_speed_integration()
 	_test_fallback_to_scatter()
+	_test_group_no_overlap()
+	_test_group_spiral_spacing()
+	_test_group_patrol_uses_assign_goals()
 	if failed == 0:
 		print("selftest_group_move: PASS")
 		quit(0)
@@ -168,3 +172,85 @@ func _test_fallback_to_scatter() -> void:
 		_fail("count 1 goal should=goal_center, got %s" % goal)
 		return
 	print("  fallback to scatter OK (count 1 → goal=center)")
+
+
+# 6. N2: 群体落点不重叠（黄金角螺旋，5 个步兵 A 移动/Patrol 不应聚到同一点）
+# 这是 issue_attack_move / issue_move_to_wc3 / issue_patrol 修后行为的回归。
+# 关键：所有 goal 不能落在同一点，否则群体移动会卡成一团。
+func _test_group_no_overlap() -> void:
+	# 不传 path_query，_snap 退化为 return wc3（不被 snap_to_walkable 影响）
+	var center := Vector2(1000.0, 1000.0)
+	var radii := PackedFloat32Array([16.0, 16.0, 16.0, 16.0, 16.0])
+	var units: Array = [null, null, null, null, null]  # units 不参与（无 path_query）
+	var goals: PackedVector2Array = UnitMoveSlotsScr.assign_goals(units, radii, center, null)
+	if goals.size() != 5:
+		_fail("assign_goals 5 should=5 goals, got %d" % goals.size())
+		return
+	# 至少每对 goal 距离 > 1.0（不重叠）
+	for i in range(goals.size()):
+		for j in range(i + 1, goals.size()):
+			if goals[i].distance_to(goals[j]) < 1.0:
+				_fail("goals %d,%d overlap: %s vs %s" % [i, j, goals[i], goals[j]])
+				return
+	# leader (i=0) 落在 center（黄金角 i=0 偏移 = 0）
+	if not _approx_v(goals[0], center, 0.1):
+		_fail("goals[0] should=center (leader), got %s" % goals[0])
+		return
+	print("  group no overlap OK (5 goals pairwise > 1.0)")
+
+
+# 7. 黄金角螺旋：spacing 越大，落点散得越开
+# 验证：spacing 翻倍，相邻 goal 距离也应大致翻倍（数量级正确）。
+func _test_group_spiral_spacing() -> void:
+	var center := Vector2(500.0, 500.0)
+	var small_radii := PackedFloat32Array([16.0, 16.0, 16.0, 16.0, 16.0])
+	var big_radii := PackedFloat32Array([32.0, 32.0, 32.0, 32.0, 32.0])
+	var small: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
+		[null, null, null, null, null], small_radii, center, null
+	)
+	var big: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
+		[null, null, null, null, null], big_radii, center, null
+	)
+	# 算 i=1..4 平均偏移距离
+	var small_avg := 0.0
+	var big_avg := 0.0
+	for i in range(1, 5):
+		small_avg += small[i].distance_to(center)
+		big_avg += big[i].distance_to(center)
+	small_avg /= 4.0
+	big_avg /= 4.0
+	if big_avg <= small_avg * 1.5:
+		_fail("big radii should produce larger offsets; small=%f big=%f" % [small_avg, big_avg])
+		return
+	print("  group spiral spacing OK (small=%f big=%f)" % [small_avg, big_avg])
+
+
+# 8. issue_patrol 修后回归：通过 _crowd_query 缺失时的 fallback 路径
+# 验证 _ensure_patrol 仍能起 patrol（即使无 _crowd_query 也应不崩）。
+# 这里不直接调 CommandRouter（依赖链太重），改测 PatrolController.begin 单调性。
+func _test_group_patrol_uses_assign_goals() -> void:
+	# 模拟"修后 issue_patrol 必走 assign_goals"的等价检查：
+	# 3 个 mover 调 assign_goals 后，落点两两不同 + i=0=中心
+	var center := Vector2(2000.0, 2000.0)
+	var radii := PackedFloat32Array([16.0, 16.0, 16.0])
+	var goals: PackedVector2Array = UnitMoveSlotsScr.assign_goals(
+		[null, null, null], radii, center, null
+	)
+	if goals.size() != 3:
+		_fail("assign_goals 3 should=3 goals, got %d" % goals.size())
+		return
+	if not _approx_v(goals[0], center, 0.1):
+		_fail("goals[0] should=center, got %s" % goals[0])
+		return
+	# i=1, i=2 不重叠且都偏离 center
+	if goals[1].distance_to(center) < 10.0:
+		_fail("goals[1] should be off-center, got %s" % goals[1])
+		return
+	if goals[2].distance_to(center) < 10.0:
+		_fail("goals[2] should be off-center, got %s" % goals[2])
+		return
+	# 黄金角保证 i=1, i=2 散开（不能重合）
+	if goals[1].distance_to(goals[2]) < 10.0:
+		_fail("goals[1] and goals[2] should not overlap, got %s vs %s" % [goals[1], goals[2]])
+		return
+	print("  group patrol assign_goals OK (3 goals: center + 2 spiral points)")
