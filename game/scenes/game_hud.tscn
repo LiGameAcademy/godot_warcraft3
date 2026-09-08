@@ -77,7 +77,7 @@ unique_name_in_owner = true
 layout_mode = 1
 offset_right = 708.0
 offset_bottom = 23.0
-text = "LMB 点选/框选 · RMB 移动 · WASD/边缘滚 · 中键旋转 · 滚轮缩放"
+text = "LMB 点选/框选 · RMB 移动 · WASD/边缘滚 · 中键旋转 · 滚轮缩放 · F3 性能"
 
 [node name="DebugStatusLabel" type="Label" parent="Root" unique_id=105278050]
 unique_name_in_owner = true

@@ -66,6 +66,7 @@ func _process(delta: float) -> void:
 		if btn == null:
 			continue
 		var left := float(btn.get_meta("buff_left", 0.0))
+		# left < 0：光环等常驻展示，不闪烁
 		if left > 0.0 and left <= BLINK_LEFT_SEC:
 			btn.modulate = Color(1, 1, 1, pulse)
 		else:
