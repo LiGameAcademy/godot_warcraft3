@@ -116,6 +116,21 @@ static func combat_stats(primary: Node3D) -> Dictionary:
 	}
 
 
+## 轻量：生命/魔法，供肖像条每帧刷新。
+static func vitals(primary: Node3D) -> Dictionary:
+	if primary == null or not is_instance_valid(primary):
+		return {"hp": 0, "hp_max": 0, "mana": 0, "mana_max": 0}
+	UnitLife.ensure(primary)
+	var hp := int(round(UnitLife.get_life(primary)))
+	var hp_max := int(round(UnitLife.get_max_life(primary)))
+	var mana := 0
+	var mana_max := 0
+	if UnitMana.has_mana(primary):
+		mana_max = UnitMana.get_max_mana(primary)
+		mana = UnitMana.get_mana(primary)
+	return {"hp": hp, "hp_max": hp_max, "mana": mana, "mana_max": mana_max}
+
+
 ## primary / selected：UnitSelector 当前态。
 static func build(primary: Node3D, selected: Array) -> Dictionary:
 	if primary == null or not is_instance_valid(primary) or selected.is_empty():
@@ -124,18 +139,12 @@ static func build(primary: Node3D, selected: Array) -> Dictionary:
 	var tid := str(d.get("typeId", "")).strip_edges()
 	var owner_id := int(d.get("owner", 0))
 	UnitLife.ensure(primary)
-	var hp := int(round(UnitLife.get_life(primary)))
-	var hp_max := int(round(UnitLife.get_max_life(primary)))
+	var vit := vitals(primary)
+	var hp := int(vit.get("hp", 0))
+	var hp_max := int(vit.get("hp_max", 0))
 	var bal := _balance(tid)
-	var mana_max := 0
-	var mana := 0
-	if bal != null and bal.mana_n > 0:
-		mana_max = bal.mana_n
-		mana = int(primary.get_meta("mana", mana_max if bal.mana0 <= 0 else bal.mana0))
-		mana = clampi(mana, 0, mana_max)
-	elif UnitMana.has_mana(primary):
-		mana_max = UnitMana.get_max_mana(primary)
-		mana = UnitMana.get_mana(primary)
+	var mana := int(vit.get("mana", 0))
+	var mana_max := int(vit.get("mana_max", 0))
 	var mode := "multi" if selected.size() > 1 else "single"
 	var display := _display_name(tid, d)
 	var attack := _attack_stat(tid, primary)

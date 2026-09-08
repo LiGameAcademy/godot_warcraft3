@@ -17,6 +17,11 @@ func kill(unit: Node3D, killer: Node3D = null) -> void:
 		on_before_exit.call(unit)
 	# 清以其为目标的攻击订单（同宿主下其它单位）
 	_clear_attackers_of(unit)
+	# 从队伍 / 营地注册表中剔除并重算 home（营地成员死亡后中心点会变化）
+	var _tree := Engine.get_main_loop() as SceneTree
+	var reg := TeamRegistry.get_for(_tree.root if _tree != null else null)
+	if reg != null and reg.has_member(unit):
+		reg.on_unit_gone(unit)
 	WorldMembership.exit(unit)
 	# 在场性已关（不可选、不占寻路）；尸体仍要看见 Death / Decay geoset
 	if is_instance_valid(unit):

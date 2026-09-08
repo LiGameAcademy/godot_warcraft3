@@ -29,7 +29,12 @@ func apply(req: Dictionary) -> Dictionary:
 		return empty
 	if not WorldMembership.is_in_world(target):
 		return empty
-	if not CombatQuery.is_valid_attack_target(attacker, target):
+	var source_kind := str(req.get("source_kind", "weapon"))
+	# 技能 AOE（暴风雪等）走友伤过滤，不要求敌对/同主。
+	if source_kind == "spell":
+		if not CombatQuery.is_valid_spell_aoe_target(attacker, target):
+			return empty
+	elif not CombatQuery.is_valid_attack_target(attacker, target):
 		return empty
 	if UnitLife.get_life(target) <= 0.0:
 		return empty
@@ -59,7 +64,7 @@ func apply(req: Dictionary) -> Dictionary:
 	var roll := dmgplus
 	for _i in range(dice):
 		roll += float(rng.randi_range(1, maxi(sides, 1)))
-	if str(req.get("source_kind", "weapon")) == "weapon" and attacker is Node3D:
+	if source_kind == "weapon" and attacker is Node3D:
 		roll *= UnitStatusEffects.damage_mul(attacker as Node3D)
 
 	var def_type := "none"
@@ -97,7 +102,7 @@ func apply(req: Dictionary) -> Dictionary:
 		"killed": killed,
 		"attacker": attacker,
 		"target": target,
-		"source_kind": str(req.get("source_kind", "weapon")),
+		"source_kind": source_kind,
 	}
 	damage_applied.emit(result)
 	return result

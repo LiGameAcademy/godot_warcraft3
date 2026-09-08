@@ -12,6 +12,8 @@ const Y_PAD := 0.28
 const META_SEQ := "dmg_float_seq"
 const HIT_COLOR := Color(1.0, 0.92, 0.32, 1.0)
 const KILL_COLOR := Color(1.0, 0.32, 0.22, 1.0)
+const SPELL_COLOR := Color(0.45, 0.82, 1.0, 1.0)
+const SPELL_KILL_COLOR := Color(0.35, 0.55, 1.0, 1.0)
 const SKIP_VISUAL := {
 	"SelectionRing": true,
 	"DeathDropRing": true,
@@ -32,14 +34,23 @@ static func spawn(target: Node3D, result: Dictionary) -> DamageFloatText:
 	target.add_child(node)
 	var seq := int(target.get_meta(META_SEQ, 0))
 	target.set_meta(META_SEQ, seq + 1)
-	node.play(float(result.get("amount", 0.0)), bool(result.get("killed", false)), seq)
+	node.play(
+		float(result.get("amount", 0.0)),
+		bool(result.get("killed", false)),
+		seq,
+		str(result.get("source_kind", "")) == "spell"
+		or str(result.get("atk_type", "")).to_lower() == "magic"
+	)
 	return node
 
 
-func play(amount: float, killed: bool, seq: int = 0) -> void:
+func play(amount: float, killed: bool, seq: int = 0, spell: bool = false) -> void:
 	_ensure_label()
 	_label.text = _format_amount(amount)
-	_label.modulate = KILL_COLOR if killed else HIT_COLOR
+	if spell:
+		_label.modulate = SPELL_KILL_COLOR if killed else SPELL_COLOR
+	else:
+		_label.modulate = KILL_COLOR if killed else HIT_COLOR
 	var side := 1.0 if (seq % 2) == 0 else -1.0
 	_start_y = _estimate_anchor_y(get_parent() as Node3D) + Y_PAD + float(seq % 5) * 0.1
 	position = Vector3(side * (0.06 + float(seq % 3) * 0.05), _start_y, 0.0)

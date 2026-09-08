@@ -129,11 +129,16 @@ func start_attack(target: Node3D) -> bool:
 	_mode = Mode.ATTACK
 	_target = target
 	_goal_wc3 = Vector2.INF
-	_cooldown_left = 0.0
+	# 切目标时保留原 cooldown 余量，避免「卡刀刷伤」（同一帧在 A/B 之间来回切）
+	_cooldown_left = maxf(_cooldown_left, _MIN_SWAP_COOLDOWN)
 	_dmgpt_left = 0.0
 	_set_state(State.CHASE)
 	_chase_or_strike(0.0)
 	return true
+
+
+## 切目标的最小冷却（秒）：被新 target 覆盖时给一拍冷却窗，避免连挥刷伤。
+const _MIN_SWAP_COOLDOWN := 0.05
 
 ## 开始攻击移动
 func start_attack_move(goal_wc3: Vector2) -> bool:

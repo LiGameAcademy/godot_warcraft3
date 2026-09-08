@@ -46,6 +46,14 @@ static func attack_speed_mul(unit: Node3D) -> float:
 	return h.attack_speed_mul()
 
 
+## 光环等额外回蓝（点/秒），与 UnitBalance 自然回蓝叠加。
+static func mana_regen_bonus(unit: Node3D) -> float:
+	var h := BuffHost.of(unit)
+	if h == null or not h.has_buff(BuffCatalog.ID_BRILLIANCE):
+		return 0.0
+	return maxf(float(h.get_params(BuffCatalog.ID_BRILLIANCE).get("mana_regen", 0.0)), 0.0)
+
+
 static func tick(unit: Node3D, delta: float) -> void:
 	var h := BuffHost.of(unit)
 	if h != null:
@@ -68,6 +76,10 @@ static func hud_entries(unit: Node3D) -> Array:
 			continue
 		var left := float(e.get("left", 0.0))
 		var params: Dictionary = e.get("params", {}) as Dictionary
+		# 光环：HUD 用 left=-1，避免续期导致「即将结束」闪烁
+		var is_aura := bool(params.get("aura", false)) or id == BuffCatalog.ID_BRILLIANCE
+		if is_aura:
+			left = -1.0
 		out.append({
 			"id": id,
 			"icon": BuffCatalog.icon_path(id),

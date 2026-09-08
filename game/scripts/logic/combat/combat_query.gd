@@ -23,6 +23,33 @@ static func type_id_of(node: Node) -> String:
 static func is_neutral_owner(owner_id: int) -> bool:
 	return owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0
 
+
+## 本地玩家是否可对该单位下达指令（点选仍可观察非己方）。
+static func is_controllable(node: Node, local_player: int) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var oid := owner_of(node)
+	if is_neutral_owner(oid):
+		return false
+	return oid == local_player
+
+
+## 仍在场且存活（非尸体）：命令 / 移动过滤用。
+static func is_alive_in_world(node: Node) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	if not WorldMembership.is_in_world(node):
+		return false
+	if node is Node3D:
+		var body := node as Node3D
+		if _current_life(body) <= 0.0:
+			return false
+		var vis := Unit.of(body)
+		if vis != null and vis.is_dying():
+			return false
+	return true
+
+
 ## 获取单位平衡定义
 static func balance_of(node: Node) -> UnitBalanceDef:
 	var tid := type_id_of(node)
@@ -439,7 +466,20 @@ static func units_hostile_in_radius(
 	return out
 
 
-## 暴风雪等：半径内所有可受伤目标（不分敌我，含建筑）。
+## 单位碰撞半径（UnitBalance.collision）；建筑占地大，AOE 必须扣半径。
+static func collision_radius_wc3(node: Node) -> float:
+	var bal := balance_of(node)
+	if bal != null and bal.collision > 0.0:
+		return bal.collision
+	return 16.0
+
+
+## 技能 AOE 可受伤目标（不分敌我；对齐暴风雪等友伤）。
+static func is_valid_spell_aoe_target(caster: Node, target: Node) -> bool:
+	return _attack_target_basics(caster, target)
+
+
+## 暴风雪等：半径内所有可受伤目标（不分敌我，含建筑；距离扣碰撞半径）。
 static func units_blizzard_victims_in_radius(
 	unit_host: Node,
 	caster: Node3D,
@@ -454,10 +494,11 @@ static func units_blizzard_victims_in_radius(
 		if not (c is Node3D) or not is_instance_valid(c):
 			continue
 		var node := c as Node3D
-		if not _attack_target_basics(caster, node):
+		if not is_valid_spell_aoe_target(caster, node):
 			continue
 		var pos := Wc3Coords.godot_to_wc3_xy(node.global_position)
-		if pos.distance_to(center_wc3) <= r:
+		var col := collision_radius_wc3(node)
+		if pos.distance_to(center_wc3) - col <= r:
 			out.append(node)
 	return out
 

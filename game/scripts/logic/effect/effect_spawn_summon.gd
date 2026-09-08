@@ -72,8 +72,8 @@ static func goal_in_front(caster: Node3D, abil_id: String, level: int) -> Vector
 	return caster_xy + dir.normalized() * offset
 
 
+## 以当前模型朝向为准（unit_data.angle 多为出生朝向，移动后会过期）。
 static func _caster_facing_wc3(caster: Node3D) -> float:
-	var ud: Dictionary = caster.get_meta("unit_data", {})
-	if ud.has("angle"):
-		return float(ud.get("angle", 0.0))
+	if caster == null:
+		return 0.0
 	return float(caster.rotation.y)

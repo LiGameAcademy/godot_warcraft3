@@ -3,7 +3,7 @@ extends RefCounted
 
 ## 单位自然回复（Logic）。
 ## - HP：`UnitBalance.regenHP` +（英雄）STR×0.05；受 `regenType` 门禁
-## - 蓝：`UnitBalance.regenMana` +（英雄）INT×0.05；与 regenType 无关
+## - 蓝：`UnitBalance.regenMana` +（英雄）INT×0.05 + `BuffQuery.mana_regen_bonus`（辉煌等）
 ## - blight / night 等条件回复：昼夜与荒芜地未接前暂不回复（见 docs）
 
 const HERO_HP_REGEN_PER_STR := 0.05
@@ -61,7 +61,9 @@ static func mana_rate_per_sec(node: Node3D) -> float:
 		return 0.0
 	var bal := CombatQuery.balance_of(node)
 	var tid := CombatQuery.type_id_of(node)
-	return mana_rate_from_balance(bal, TechPresence.is_hero_id(tid), AbilityCatalog.hero_level_of(node))
+	var rate := mana_rate_from_balance(bal, TechPresence.is_hero_id(tid), AbilityCatalog.hero_level_of(node))
+	rate += BuffQuery.mana_regen_bonus(node)
+	return rate
 
 
 static func can_tick(node: Node3D) -> bool:

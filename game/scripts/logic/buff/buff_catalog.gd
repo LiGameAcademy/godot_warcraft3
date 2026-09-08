@@ -8,6 +8,7 @@ const ID_SLOW := "slow"
 const ID_INNER_FIRE := "inner_fire"
 const ID_BONUS_ARMOR := "bonus_armor"
 const ID_AVATAR := "avatar"
+const ID_BRILLIANCE := "brilliance"
 
 const DISPELLABLE := {
 	ID_SLOW: true,
@@ -15,6 +16,7 @@ const DISPELLABLE := {
 	ID_BONUS_ARMOR: false,
 	ID_AVATAR: false,
 	ID_STUN: false,
+	ID_BRILLIANCE: false,
 }
 
 ## buff_id → 展示用技能 id（CommandButtonCatalog Art）
@@ -24,6 +26,7 @@ const DISPLAY_ABIL := {
 	ID_STUN: "AHtb",
 	ID_BONUS_ARMOR: "AHav",
 	ID_AVATAR: "AHav",
+	ID_BRILLIANCE: "AHab",
 }
 
 ## buff_id → 中文名（tooltip 标题）
@@ -33,12 +36,14 @@ const DISPLAY_NAME := {
 	ID_STUN: "眩晕",
 	ID_BONUS_ARMOR: "护甲加成",
 	ID_AVATAR: "天神下凡",
+	ID_BRILLIANCE: "辉煌光环",
 }
 
-## 技能 → buff id（Phase C 竖切；光环 tick 类不在此表）
+## 技能 → buff id（Phase C 竖切）
 const BUFF_BY_ABIL := {
 	"Aslo": ID_SLOW,
 	"Ainf": ID_INNER_FIRE,
+	"AHab": ID_BRILLIANCE,
 }
 
 
@@ -95,6 +100,12 @@ static func tooltip_text(buff_id: String, params: Dictionary, left_sec: float) -
 				var hp := maxf(float(params.get("bonus_hp", 0.0)), 0.0)
 				if hp > 0.0:
 					lines.append("生命 +%.0f" % hp)
-	if left_sec > 0.0 and left_sec < 86400.0:
+		ID_BRILLIANCE:
+			var regen := maxf(float(params.get("mana_regen", 0.0)), 0.0)
+			if regen > 0.0:
+				lines.append("魔法恢复 +%.2f/秒" % regen)
+	# 光环（aura:true）不显示剩余时间；由范围续期/离场移除
+	var is_aura := bool(params.get("aura", false)) or id == ID_BRILLIANCE
+	if not is_aura and left_sec > 0.0 and left_sec < 86400.0:
 		lines.append("剩余 %.1fs" % left_sec)
 	return "\n".join(lines)
