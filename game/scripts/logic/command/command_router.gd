@@ -70,13 +70,44 @@ func queue_for(unit: Node) -> OrderQueue:
 	return nq
 
 
-## 过滤可接受移动/停止的单位（跳过建筑、可训建筑、无效节点）。
+## 本地玩家 owner（无 Session 时 0）。
+func local_owner_id() -> int:
+	if _session != null:
+		return int(_session.local_player)
+	return 0
+
+
+## 过滤本地玩家可控单位（可选 ≠ 可控；系统令勿经此过滤）。
+## 已死亡 / 离场（尸体）一律排除，避免对尸体下移动令。
+func filter_controllable(selected: Array) -> Array[Node3D]:
+	var want := local_owner_id()
+	var out: Array[Node3D] = []
+	for n in selected:
+		if not (n is Node3D) or not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		if not CombatQuery.is_alive_in_world(node):
+			continue
+		if CombatQuery.is_controllable(node, want):
+			out.append(node)
+	return out
+
+
+func is_unit_controllable(node: Node3D) -> bool:
+	if node == null or not CombatQuery.is_alive_in_world(node):
+		return false
+	return CombatQuery.is_controllable(node, local_owner_id())
+
+
+## 过滤可接受移动/停止的单位（跳过建筑、可训建筑、无效/死亡节点）。
 func filter_movers(selected: Array) -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	for n in selected:
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var node := n as Node3D
+		if not CombatQuery.is_alive_in_world(node):
+			continue
 		# 可训建筑 / 建造中训练建筑 一律不进移动池（避免主城右键被当成移动）
 		if BuildingRally.can_set_rally(node):
 			continue
@@ -737,6 +768,8 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		return false
 	if UnitLife.is_under_construction(building):
 		return false
+	if not is_unit_controllable(building):
+		return false
 	var uid := unit_id.strip_edges()
 	if uid.is_empty():
 		return false
@@ -799,6 +832,8 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 	if building == null or not is_instance_valid(building):
 		return false
 	if UnitLife.is_under_construction(building):
+		return false
+	if not is_unit_controllable(building):
 		return false
 	var uid := upgrade_id.strip_edges()
 	if uid.is_empty() or not TechPresence.is_upgrade_id(uid):

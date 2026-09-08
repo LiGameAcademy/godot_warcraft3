@@ -227,6 +227,9 @@ func disabled_icon_path(art: String) -> String:
 	if p.is_empty():
 		return ""
 	var base := p.get_file()
+	# PassiveButtons/PASBTN*：原作无 DIS 灰图；禁用时仍用原图，由 modulate/逻辑表达
+	if base.begins_with("PASBTN") or p.contains("/PassiveButtons/"):
+		return p
 	if base.begins_with("BTN"):
 		return "%s/DIS%s" % [CMD_BTNS_DIS, base]
 	if base.begins_with("DIS"):
@@ -286,11 +289,17 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	var slot := int(opts.get("slot_override", slot_of(pos)))
 	var abil_level := int(opts.get("ability_level", 0))
 	var pick_level := not bool(opts.get("tooltip_all_levels", false))
-	var tooltip := tip
-	if not ubertip.is_empty():
-		tooltip = tip + "\n" + ubertip if not tip.is_empty() else ubertip
+	# Tip / Ubertip 必须分别做多等级截取再拼接。
+	# 若先合并再 format：Ubertip 的 `","` 会把整段误判为 CSV，Tip 被吞掉（辉煌光环等被动表现为「无描述」）。
+	var tip_f := tip
+	var uber_f := ubertip
 	if abil_level > 0 or not pick_level:
-		tooltip = Wc3TooltipText.format(tooltip, maxi(abil_level, 1), pick_level)
+		var lv := maxi(abil_level, 1)
+		tip_f = Wc3TooltipText.format(tip, lv, pick_level) if not tip.is_empty() else ""
+		uber_f = Wc3TooltipText.format(ubertip, lv, pick_level) if not ubertip.is_empty() else ""
+	var tooltip := tip_f
+	if not uber_f.is_empty():
+		tooltip = tip_f + "\n" + uber_f if not tip_f.is_empty() else uber_f
 	var cost_line := str(opts.get("cost_line", ""))
 	if not cost_line.is_empty():
 		tooltip += "\n" + cost_line
@@ -301,22 +310,37 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	elif autocast_capable and use_un:
 		tooltip += "\n自动施法：关\n右键切换"
 	var executing := bool(opts.get("executing", false))
-	if executing:
+	var passive := bool(opts.get("passive", false))
+	# 被动光环常带 executing=true（视觉常亮），tooltip 不要写「执行中」
+	if executing and not passive:
 		tooltip += "\n|cff00ff00当前：执行中|r"
 	var enabled := bool(opts.get("enabled", true))
-	if not enabled:
+	if not enabled and not passive:
 		var reason := str(opts.get("disabled_reason", "")).strip_edges()
 		if reason.is_empty():
 			reason = "资源不足"
-		tooltip += "\n|cffff6060%s|r" % reason
+		# 醒目前置一行（原作红字提示），正文 Tip/Ubertip 仍完整保留。
+		var warn := "|cffff6060%s|r" % reason
+		if tooltip.strip_edges().is_empty():
+			tooltip = warn
+		else:
+			tooltip = warn + "\n" + tooltip
+	elif passive:
+		var reason_p := str(opts.get("disabled_reason", "")).strip_edges()
+		if reason_p.is_empty():
+			reason_p = "被动技能"
+		tooltip += "\n|cffc0c0c0%s|r" % reason_p
 	# 可自动施法：图标用干净底图（BTNHeal），角标/粒子由 AutocastButtonOverlay 叠层
 	if autocast_capable:
 		art = AbilityFxCatalog.strip_autocast_art_suffix(art)
 	var icon := icon_path(art)
+	# 原作：已学技能右下角等级角标；未显式 badge 时回落 ability_level
 	var badge_level := int(opts.get("badge_level", 0))
+	if badge_level <= 0:
+		badge_level = abil_level
 	var out := {
 		"id": action_id,
-		"text": "执行中" if executing else "",
+		"text": "执行中" if executing and not passive else "",
 		"tooltip": tooltip,
 		"hotkey": hotkey_code(hotkey_s),
 		"hotkey_label": hotkey_s.to_upper(),
@@ -324,6 +348,7 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		"icon_disabled": disabled_icon_path(art),
 		"executing": executing,
 		"enabled": enabled,
+		"passive": passive,
 		"slot": slot,
 		"button_pos": pos,
 		"name": str(row.get("name", "")),
@@ -332,6 +357,11 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	}
 	if badge_level > 0:
 		out["badge_level"] = badge_level
+	var cd_ratio := clampf(float(opts.get("cooldown_ratio", 0.0)), 0.0, 1.0)
+	if cd_ratio > 0.0:
+		out["cooldown_ratio"] = cd_ratio
+	if bool(opts.get("keep_icon_on_cd", false)):
+		out["keep_icon_on_cd"] = true
 	return out
 
 
@@ -440,6 +470,9 @@ func _normalize_key(key: String) -> String:
 
 func _strip_quotes(val: String) -> String:
 	var v := val.strip_edges()
+	# 多等级 `"L1","L2","L3"` 整段保留，交给 Wc3TooltipText.pick_level_string
+	if v.contains('","'):
+		return v
 	if v.length() >= 2 and v.begins_with("\"") and v.ends_with("\""):
 		return v.substr(1, v.length() - 2)
 	return v

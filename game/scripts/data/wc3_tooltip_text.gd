@@ -30,18 +30,30 @@ static func format(raw: String, ability_level: int = 1, pick_level: bool = true)
 	return text.replace("|n", "\n")
 
 
-## WC3 多等级字符串：`"L1","L2","L3"` 或单段文本。
+## WC3 多等级字符串：`"L1","L2","L3"` 或未加引号但以 `|r],` 分段的 Tip。
 static func pick_level_string(raw: String, level: int) -> String:
 	var s := raw.strip_edges()
 	if s.is_empty():
 		return ""
-	if not s.contains('","'):
-		return _unquote(s)
-	var parts := _split_quoted_csv(s)
-	if parts.is_empty():
-		return s
-	var idx := clampi(level - 1, 0, parts.size() - 1)
-	return parts[idx]
+	if s.contains('","'):
+		var parts := _split_quoted_csv(s)
+		if parts.is_empty():
+			return s
+		var idx := clampi(level - 1, 0, parts.size() - 1)
+		return parts[idx]
+	# AHab 等 Tip：辉煌光环 - [|cffffcc00等级 1|r],辉煌光环 - [|cffffcc00等级 2|r],…
+	if s.contains("|r],"):
+		var chunks := s.split("|r],")
+		if chunks.size() >= 2:
+			var restored: PackedStringArray = PackedStringArray()
+			for i in chunks.size():
+				var c := str(chunks[i])
+				if i < chunks.size() - 1:
+					c += "|r]"
+				restored.append(c)
+			var idx2 := clampi(level - 1, 0, restored.size() - 1)
+			return restored[idx2]
+	return _unquote(s)
 
 
 static func resolve_placeholders(text: String) -> String:

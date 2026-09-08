@@ -314,6 +314,7 @@ static func for_hero_skill_menu(unit_id: String, state: Dictionary = {}) -> Arra
 			"executing": false,
 			"disabled_reason": reason,
 			"ability_level": maxi(cur, 1),
+			"badge_level": cur + 1 if cur < max_lv else cur,
 			"tooltip_all_levels": true,
 			"learn_menu": true,
 		}
@@ -467,11 +468,14 @@ static func _place_supported_ability(
 	if lv <= 0:
 		return
 	var cd_map: Dictionary = state.get("ability_cd", {}) as Dictionary
+	var cd_total_map: Dictionary = state.get("ability_cd_total", {}) as Dictionary
 	var cd_left := maxf(float(cd_map.get(abil_id, 0.0)), 0.0)
+	var cd_total := maxf(float(cd_total_map.get(abil_id, 0.0)), 0.0)
 	var opts_a := {
 		"enabled": true,
-		"executing": cd_left > 0.0,
+		"executing": false,
 		"ability_level": lv,
+		"badge_level": lv,
 	}
 	# 未满足 Requires 时技能灰显（含 Ainf→Rhpt×2 等）
 	var missing_abil := TechPresence.missing_requires(
@@ -486,10 +490,14 @@ static func _place_supported_ability(
 	if cd_left > 0.0:
 		opts_a["enabled"] = false
 		opts_a["disabled_reason"] = "冷却中"
+		# 扇形进度：保留彩色图标，不走 DIS；ratio=剩余/总时长
+		var tot := cd_total if cd_total > 0.01 else cd_left
+		opts_a["cooldown_ratio"] = clampf(cd_left / tot, 0.0, 1.0)
+		opts_a["keep_icon_on_cd"] = true
 	elif not bool((state.get("ability_mana_ok_map", {}) as Dictionary).get(abil_id, state.get("ability_mana_ok", true))):
 		if bool(opts_a.get("enabled", true)):
 			opts_a["enabled"] = false
-			opts_a["disabled_reason"] = "魔法不足"
+			opts_a["disabled_reason"] = "法力不足"
 	if abil_id == "AHav" and bool(state.get("avatar_active", false)):
 		opts_a["executing"] = true
 		opts_a["use_un"] = true
@@ -519,9 +527,13 @@ static func _place_passive_aura(
 	if lv <= 0:
 		return
 	var opts := {
-		"enabled": false,
+		# 原作被动：彩色 PASBTN，不可点；灰显留给未解锁/条件不足
+		"enabled": true,
+		"passive": true,
 		"executing": true,
 		"disabled_reason": "被动光环",
+		"ability_level": lv,
+		"badge_level": lv,
 	}
 	var entry := cat.ability_hud_entry(
 		abil_id, ACTION_PASSIVE_PREFIX + abil_id, opts
@@ -550,6 +562,8 @@ static func _place_hero_skill_opener(
 		"executing": false,
 		"enabled": true,
 		"slot": 7,
+		# 原作：+ 按钮右下角数字 = 当前可分配技能点
+		"badge_level": points,
 	}
 	_place(card, entry)
 
