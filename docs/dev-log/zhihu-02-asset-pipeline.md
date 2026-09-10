@@ -11,6 +11,10 @@
 >
 > **项目状态**：**正在复刻，未完工**。本文写于 2026-09-05。
 >
+> **仓库**：[`Liweimin0512/godot_warcraft3`](https://github.com/Liweimin0512/godot_warcraft3)（2026-09 已开源，欢迎 Star + Issue + PR）
+>
+> **合规说明**：仓库 `godot_warcraft3` 不含任何暴雪资产，所有 MDX / 贴图 / SLK 都从用户本机正版 War3 客户端解包（[../data/LEGAL.md](../data/LEGAL.md)）。
+>
 > 最后更新：2026-09-05
 
 ---

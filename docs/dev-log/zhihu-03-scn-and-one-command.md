@@ -4,6 +4,10 @@
 
 > **项目状态**：**正在复刻，未完工**。本文写于 2026-09-06。
 >
+> **仓库**：[`Liweimin0512/godot_warcraft3`](https://github.com/Liweimin0512/godot_warcraft3)（2026-09 已开源，欢迎 Star + Issue + PR）
+>
+> **合规说明**：仓库 `godot_warcraft3` 不含任何暴雪资产，所有 MDX / 贴图 / SLK 都从用户本机正版 War3 客户端解包（[../data/LEGAL.md](../data/LEGAL.md)）。
+>
 > 最后更新：2026-09-06
 
 ---
@@ -488,6 +492,6 @@ exported += 1
 
 🌐 更多资源：
 
-[知识星球](https://wx.zsxq.com/group/28885154818841) | [GitHub仓库](https://github.com/LiGameAcademy) | [itch.io页面](https://godot-li.itch.io/)
+[GitHub仓库 (godot_warcraft3)](https://github.com/Liweimin0512/godot_warcraft3) | [知识星球](https://wx.zsxq.com/group/28885154818841) | [itch.io页面](https://godot-li.itch.io/)
 
 [B站频道](https://space.bilibili.com/8618918) | [YouTube频道](https://www.youtube.com/@user-oldLee) | [Discord社群](https://discord.gg/V5nuzC2BcJ)
