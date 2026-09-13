@@ -78,3 +78,6 @@ tmp/
 dev/model_sandbox/**
 
 wc3/
+
+# Local WC3-derived model experiments; keep source assets out of Git.
+assets/model-experiments/
