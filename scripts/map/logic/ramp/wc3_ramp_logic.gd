@@ -43,7 +43,7 @@ func paint_at(
 
 
 func try_paint_at(
-	ix: int, iy: int, horizontal: int = 0, vertical: int = 0, cliff_tex_index: int = -1
+	ix: int, iy: int, horizontal: int = 0, vertical: int = 0, _cliff_tex_index: int = -1
 ) -> Dictionary:
 	if heightfield == null or not heightfield.is_valid():
 		return result_fail("地图为空")
@@ -63,21 +63,17 @@ func try_paint_at(
 	if not plan.get("ok", false):
 		return result_fail(str(plan.get("message", "")))
 
-	# HiveWE：落旗角用原点崖贴图；调用方可覆盖（编辑器 brush）
-	var tex_idx: int = cliff_tex_index
+	# Ramp editing changes flags, not the existing cliff material. In particular,
+	# reopening a grass cliff map must not repaint new ramps with the palette's
+	# default dirt selection. HiveWE apply_ramps likewise preserves these values.
 	var ox: int = int(plan.get("sx", ix))
 	var oy: int = int(plan.get("sy", iy))
-	var origin_i: int = oy * tp_w + ox
-	if tex_idx < 0 and origin_i < cliff_tex.size():
-		tex_idx = int(cliff_tex[origin_i])
-		if tex_idx == 15:
-			tex_idx = 1
 
 	var marked: Array[Vector2i] = []
 	for v in plan.get("marked", []):
 		marked.append(v as Vector2i)
 
-	var did_change := apply_marks(plan, flags, cliff_tex, tp_w, tex_idx)
+	var did_change := apply_marks(plan, flags, cliff_tex, tp_w)
 	var n_mark: int = marked.size()
 	var msg := (
 		"已刷斜坡 %s×%d @(%d,%d)"

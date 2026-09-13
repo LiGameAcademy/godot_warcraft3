@@ -15,12 +15,16 @@ signal smart_issued(summary: Dictionary)
 signal build_issued(count: int) ## F2-3: 建造令下发给 N 个 peasant
 signal train_issued(unit_id: String) ## F2-6: 训练令下给建筑
 signal research_issued(upgrade_id: String) ## F8: 研究令下给建筑
+signal production_queue_ready(queue: TrainQueue) ## 下单前接线，完工不依赖 UI 选中
+signal item_feedback(text: String)
 
 const META_ORDER_QUEUE := "order_queue"
 
 var _path_query: PathQuery = null
 var _crowd_query: UnitCrowdQuery = null
 var _session: GameSession = null
+## 一个命令入口绑定一个玩家。-1 保留本地输入默认；电脑使用独立 Router。
+var _command_owner: int = -1
 ## Callable(unit: Node3D) -> UnitNavigator
 var _ensure_navigator: Callable = Callable()
 ## Callable(unit: Node3D) -> HarvestController
@@ -44,11 +48,13 @@ func configure(
 	session: GameSession = null,
 	find_build_site: Callable = Callable(),
 	find_build_site_by_node: Callable = Callable(),
-	ensure_attack: Callable = Callable()
+	ensure_attack: Callable = Callable(),
+	command_owner: int = -1
 ) -> void:
 	_path_query = path_query
 	_crowd_query = crowd_query
 	_session = session
+	_command_owner = command_owner
 	_ensure_navigator = ensure_navigator
 	_ensure_harvest = ensure_harvest
 	_ensure_build = ensure_build
@@ -70,11 +76,57 @@ func queue_for(unit: Node) -> OrderQueue:
 	return nq
 
 
-## 本地玩家 owner（无 Session 时 0）。
+## 只派一位本地可控英雄，其他单位不抢同一道具。
+func issue_pickup(selected: Array, ground: GroundItem, source: int) -> int:
+	if not is_instance_valid(ground) or ground.claimed:
+		return 0
+	for unit in filter_controllable(selected):
+		var inv := Inventory.ensure_on(unit)
+		if inv == null:
+			continue
+		if inv.is_full():
+			continue
+		_abort_harvest(unit)
+		_abort_build_leave(unit)
+		_abort_patrol(unit)
+		_abort_attack(unit)
+		_clear_hold(unit)
+		var nav := _ensure_navigator.call(unit) as UnitNavigator if _ensure_navigator.is_valid() else null
+		if nav == null:
+			return 0
+		var order := UnitOrder.new()
+		order.kind = UnitOrder.Kind.PICKUP_ITEM
+		order.source = source
+		order.target_id = ground.get_instance_id()
+		order.goal_wc3 = Wc3Coords.godot_to_wc3_xy(ground.global_position)
+		queue_for(unit).set_current(order)
+		var controller := unit.get_node_or_null("ItemPickupController") as ItemPickupController
+		if controller == null:
+			controller = ItemPickupController.new()
+			controller.name = "ItemPickupController"
+			unit.add_child(controller)
+			controller.finished.connect(func(reason: String) -> void: item_feedback.emit(reason))
+		if controller.begin(ground, nav, order):
+			item_feedback.emit("前往拾取 %s" % ItemCatalog.title(ground.item.type_id))
+			return 1
+		queue_for(unit).clear()
+	item_feedback.emit("请选择有空位的己方英雄拾取")
+	return 0
+
+
+## 当前命令入口的玩家 owner（保留旧方法名供调用方兼容）。
 func local_owner_id() -> int:
+	if _command_owner != -1:
+		return _command_owner
 	if _session != null:
 		return int(_session.local_player)
 	return 0
+
+
+func _command_stock() -> PlayerStock:
+	if _session == null:
+		return null
+	return _session.stocks.get(local_owner_id()) as PlayerStock
 
 
 ## 过滤本地玩家可控单位（可选 ≠ 可控；系统令勿经此过滤）。
@@ -244,7 +296,7 @@ func issue_hold(selected: Array, source: int = UnitOrder.Source.UNKNOWN) -> int:
 func issue_defend(selected: Array, active: bool) -> int:
 	var stock: PlayerStock = null
 	if _session != null:
-		stock = _session.local_stock()
+		stock = _command_stock()
 	if stock == null or not stock.has_upgrade(DefendController.UPGRADE_ID):
 		return 0
 	var n := 0
@@ -324,6 +376,8 @@ func issue_attack_move(
 
 
 ## 指定目标攻击：AttackController 追击并出手。
+## 友军强制攻击（同 owner）时广播 `UnitAI.broadcast_friendly_attack_order`：
+## 粘仇野怪把该单位踢出威胁（WC3 职业局甩仇恨）。
 func issue_attack_target(
 	selected: Array,
 	target: Node3D,
@@ -350,9 +404,17 @@ func issue_attack_target(
 		var q := queue_for(node)
 		if q:
 			q.set_current(order)
+		var friendly_force := (
+			not CombatQuery.is_hostile(node, target)
+			and CombatQuery.owner_of(node) >= 0
+			and CombatQuery.owner_of(node) == CombatQuery.owner_of(target)
+		)
 		var ac := _ensure_attack.call(node) as AttackController
 		if ac != null and ac.start_attack(target):
 			n_ok += 1
+		# 下友军攻击令即甩仇恨（对齐原作：不必打出伤害）
+		if friendly_force:
+			UnitAI.broadcast_friendly_attack_order(node)
 	return n_ok
 
 
@@ -815,7 +877,9 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		return false
 	var stock: PlayerStock = null
 	if _session != null:
-		stock = _session.local_stock()
+		stock = _command_stock()
+	if stock == null:
+		return false
 	if stock != null:
 		if food > 0 and not stock.can_afford_food(food):
 			return false
@@ -830,6 +894,7 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 		queue = TrainQueue.new()
 		queue.name = "TrainQueue"
 		building.add_child(queue)
+	production_queue_ready.emit(queue)
 	if queue.is_full():
 		_refund_train_spend(stock, gold, lumber, food)
 		return false
@@ -862,7 +927,9 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 	var unit_host: Node = building.get_parent()
 	var stock: PlayerStock = null
 	if _session != null:
-		stock = _session.local_stock()
+		stock = _command_stock()
+	if stock == null:
+		return false
 	if stock != null and stock.has_upgrade(uid):
 		return false
 	if TechPresence.is_upgrade_queued(unit_host, owner, uid):
@@ -882,6 +949,7 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 		queue = TrainQueue.new()
 		queue.name = "TrainQueue"
 		building.add_child(queue)
+	production_queue_ready.emit(queue)
 	if queue.is_full():
 		_refund_train_spend(stock, gold, lumber, 0)
 		return false

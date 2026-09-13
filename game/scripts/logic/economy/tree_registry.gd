@@ -1,6 +1,8 @@
 class_name TreeRegistry
 extends Node
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## 可交互树木注册表（Logic）：creationNumber → life / 空间索引。
 ## Present 只经 MapLoader.ensure_doodad_promoted / remove_doodad_instance。
 ## 统一入口：apply_damage（伐木 / 未来投石车）。
@@ -345,7 +347,7 @@ func _kill(creation_number: int) -> void:
 	if wait_sec < 0.35:
 		wait_sec = 1.35
 	if is_inside_tree():
-		get_tree().create_timer(wait_sec).timeout.connect(
+		SceneDelay.create_timer(self, wait_sec).timeout.connect(
 			func() -> void: _freeze_as_stump(creation_number, node),
 			CONNECT_ONE_SHOT
 		)
@@ -393,7 +395,7 @@ func _play_hit_then_stand(node: Node3D, creation_number: int) -> void:
 	if not is_inside_tree():
 		return
 	var cn := creation_number
-	get_tree().create_timer(wait_sec).timeout.connect(
+	SceneDelay.create_timer(self, wait_sec).timeout.connect(
 		func() -> void:
 			if bool(_dead.get(cn, false)):
 				return

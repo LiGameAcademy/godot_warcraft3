@@ -14,10 +14,10 @@ const META_ALWAYS_ON := "wc3_ribbon_always_on"
 			# 停发后仍老化淡出，不清空
 			pass
 
-var life_span: float = 0.35
-var emission_rate: float = 40.0
-var half_height: float = 30.0
-var ribbon_color: Color = Color(0.03, 0.46, 1.0, 0.9)
+@export var life_span: float = 0.35
+@export var emission_rate: float = 40.0
+@export var half_height: float = 30.0
+@export var ribbon_color: Color = Color(0.03, 0.46, 1.0, 0.9)
 
 var _sample_left: float = 0.0
 var _points: Array[Dictionary] = [] # {pos: Vector3, age: float}
@@ -57,6 +57,8 @@ func configure(
 
 
 func set_active_for_sequence(seq_key: String) -> void:
+	if bool(get_meta("wc3_ribbon_timeline_baked", false)):
+		return
 	if bool(get_meta(META_ALWAYS_ON, false)):
 		ribbon_emitting = true
 		return

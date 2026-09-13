@@ -8,6 +8,7 @@ signal tile_selected(index: int)
 signal brush_settings_changed(size: int, shape: int)
 signal apply_texture_changed(enabled: bool)
 signal cliff_settings_changed(apply: bool, tool_id: String, type_idx: int)
+signal height_settings_changed(apply: bool, tool: int)
 ## 特殊「纹理」：无 / 荒芜 / 边界 / 去除边界
 signal special_texture_changed(kind: int)
 signal doodad_selected(type_id: String, info: Dictionary)
@@ -203,6 +204,7 @@ const UNIT_SECTION_KEYS := {
 
 
 func _ready() -> void:
+	preload("res://editor/ui/world_edit_icons.gd").apply(self)
 	# Windows + D3D12 下 unfocusable/transparent 会导致子窗口客户区不绘制（透出桌面）
 	# 笔刷已用 DisplayServer 轮询悬停，面板获焦后仍可恢复预览，无需 unfocusable
 	transparent = false
@@ -460,8 +462,8 @@ func _cache_size_textures() -> void:
 	_size_circle_tex.clear()
 	_size_square_tex.clear()
 	for icon_i in BRUSH_SIZE_ICON_IDX:
-		_size_circle_tex.append(load("%sTextureBrush%02d.png" % [WE_UI, icon_i]))
-		_size_square_tex.append(load("%sSquareSizeBrush%02d.png" % [WE_UI, icon_i]))
+		_size_circle_tex.append(RuntimeAssets.load_texture("%sTextureBrush%02d.png" % [WE_UI, icon_i]))
+		_size_square_tex.append(RuntimeAssets.load_texture("%sSquareSizeBrush%02d.png" % [WE_UI, icon_i]))
 
 
 func _wire_static_tool_buttons() -> void:
@@ -1504,6 +1506,8 @@ func _on_height_tool_picked(tool_id: int) -> void:
 	_apply_height = true
 	_highlight_height_tools()
 	_refresh_section_labels()
+	_height_check.set_pressed_no_signal(true)
+	height_settings_changed.emit(_apply_height, _height_tool)
 
 
 func _on_texture_toggled(pressed: bool) -> void:
@@ -1520,6 +1524,16 @@ func _on_cliff_toggled(pressed: bool) -> void:
 func _on_height_toggled(pressed: bool) -> void:
 	_apply_height = pressed
 	_refresh_section_labels()
+	height_settings_changed.emit(_apply_height, _height_tool)
+
+
+func set_height_settings(enabled: bool, tool: int) -> void:
+	_apply_height = enabled
+	_height_tool = clampi(tool, 0, 4)
+	if is_node_ready():
+		_height_check.set_pressed_no_signal(enabled)
+		_highlight_height_tools()
+		_refresh_section_labels()
 
 
 func _on_size_picked(p_size: int) -> void:

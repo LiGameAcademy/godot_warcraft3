@@ -12,6 +12,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_test_profile_gates()
+	_test_hold_blocks_idle_and_ally()
 	_test_sleep_blocks_acquire()
 	_test_try_engage()
 	_test_player_occupied_blocks_engage()
@@ -91,8 +92,43 @@ func _test_profile_gates() -> void:
 		_fail("CAMP_CREEP 应反击+索敌")
 		ai.free()
 		return
+	ai.set_profile(UnitAI.Profile.TEAM_PLAYER)
+	if not ai.wants_retaliate() or not ai.wants_idle_acquire():
+		_fail("TEAM_PLAYER 应反击+idle 索敌")
+		ai.free()
+		return
+	ai.set_profile(UnitAI.Profile.REACTIVE)
+	if not ai.wants_retaliate() or ai.wants_idle_acquire():
+		_fail("REACTIVE 应反击但不 idle 索敌")
+		ai.free()
+		return
 	ai.free()
 	print("  profile_gates OK")
+
+
+func _test_hold_blocks_idle_and_ally() -> void:
+	var body := Node3D.new()
+	body.name = "HoldBody"
+	root.add_child(body)
+	var ai := UnitAI.new()
+	ai.name = UnitAI.NODE_NAME
+	body.add_child(ai)
+	ai.set_profile(UnitAI.Profile.TEAM_PLAYER)
+	if not ai.wants_idle_acquire() or not ai.allows_ally_engage():
+		_fail("hold_blocks: 正常 TEAM_PLAYER 应可索敌/助攻")
+		body.queue_free()
+		return
+	body.set_meta("hold_position", true)
+	if ai.wants_idle_acquire():
+		_fail("hold_blocks: Hold 不应 idle 索敌")
+		body.queue_free()
+		return
+	if ai.allows_ally_engage():
+		_fail("hold_blocks: Hold 不应被盟友拉进追击")
+		body.queue_free()
+		return
+	body.queue_free()
+	print("  hold_blocks_idle_and_ally OK")
 
 
 func _test_sleep_blocks_acquire() -> void:
@@ -240,11 +276,30 @@ func _test_leash_return() -> void:
 
 
 func _test_target_lost_return() -> void:
-	var pair: Array = _make_pair()
-	var body: Node3D = pair[0]
-	var attacker: Node3D = pair[1]
-	var fake: FakeAttack = pair[2]
-	var ai: UnitAI = pair[3]
+	var layer := Node3D.new()
+	layer.name = "TargetLostLayer"
+	root.add_child(layer)
+	var body := Node3D.new()
+	body.name = "Creep"
+	body.set_meta("unit_data", {"typeId": "hfoo", "owner": 12})
+	body.set_meta("life", 100.0)
+	body.set_meta("max_life", 100.0)
+	layer.add_child(body)
+	WorldMembership.enter(body)
+	var attacker := Node3D.new()
+	attacker.name = "Footman"
+	attacker.set_meta("unit_data", {"typeId": "hfoo", "owner": 0})
+	attacker.set_meta("life", 100.0)
+	attacker.set_meta("max_life", 100.0)
+	layer.add_child(attacker)
+	WorldMembership.enter(attacker)
+	var fake := FakeAttack.new()
+	fake.name = "AttackController"
+	body.add_child(fake)
+	var ai := UnitAI.new()
+	ai.name = UnitAI.NODE_NAME
+	body.add_child(ai)
+	ai.set_profile(UnitAI.Profile.CAMP_CREEP)
 	var nav := FakeNav.new()
 	nav.name = "UnitNavigator"
 	body.add_child(nav)
@@ -255,16 +310,17 @@ func _test_target_lost_return() -> void:
 	ai.configure(
 		func() -> bool: return false,
 		func(_u: Node3D) -> Node: return fake,
-		Callable(),
+		func() -> Node: return layer,
 		Callable(),
 		func(_u: Node3D) -> Node: return nav
 	)
 	if not ai.try_engage(attacker):
 		_fail("目标丢失测试：应先接战")
-		body.queue_free()
-		attacker.queue_free()
+		layer.queue_free()
 		return
 	fake.cancel()
+	attacker.set_meta("life", 0.0)
+	WorldMembership.exit(attacker)
 	ai.notify_combat_target_lost(attacker)
 	if ai.get_state() != UnitAI.State.RETURNING:
 		_fail("目标死亡后应归巢 RETURNING，实际 state=%d" % ai.get_state())
@@ -273,8 +329,7 @@ func _test_target_lost_return() -> void:
 	else:
 		print("  target_lost_return OK")
 
-	body.queue_free()
-	attacker.queue_free()
+	layer.queue_free()
 
 
 ## U3 场景 1: 野怪 ENGAGED 后玩家 Stop → 野怪让出进攻意图。

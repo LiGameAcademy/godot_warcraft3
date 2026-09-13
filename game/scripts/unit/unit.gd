@@ -1,6 +1,8 @@
 class_name Unit
 extends Node3D
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## 单位实体根：玩法入口 + Stance×Activity → 模型门面播放。
 ##
 ## ## 树形
@@ -123,11 +125,12 @@ func model_node() -> Node3D:
 	return scene
 
 
-## bake 模型门面；在子树中查找 .scn 根。
+## 仅查单位 Model 分支；命中/技能特效也有 Wc3ModelScene，不能搜索整个单位。
 func _model_scene() -> Wc3ModelScene:
 	if _model != null and is_instance_valid(_model):
 		return _model
-	_model = Wc3ModelScene.find_on(self)
+	var visual := get_node_or_null(MODEL_NODE_NAME)
+	_model = Wc3ModelScene.find_on(visual) if visual != null else null
 	return _model
 
 
@@ -146,10 +149,10 @@ func _animation_player() -> AnimationPlayer:
 		_ap = model.animation_player()
 		if _ap != null:
 			return _ap
-	var body := _host()
-	if body == null:
+	var visual := get_node_or_null(MODEL_NODE_NAME)
+	if visual == null:
 		return null
-	_ap = AnimPlayback.find_animation_player(body)
+	_ap = AnimPlayback.find_animation_player(visual)
 	return _ap
 
 
@@ -521,7 +524,7 @@ func _arm_corpse_watch(min_wait: float) -> void:
 	var tree := _scene_tree()
 	if tree == null:
 		return
-	tree.create_timer(wait).timeout.connect(
+	SceneDelay.create_timer(self, wait).timeout.connect(
 		func() -> void:
 			if id != _corpse_watch_id:
 				return
@@ -696,7 +699,7 @@ func _schedule_corpse_remove() -> void:
 	if tree == null:
 		_remove_corpse()
 		return
-	tree.create_timer(CORPSE_LINGER_SEC).timeout.connect(_remove_corpse)
+	SceneDelay.create_timer(self, CORPSE_LINGER_SEC).timeout.connect(_remove_corpse)
 
 
 func _remove_corpse() -> void:
@@ -830,7 +833,7 @@ func _arm_spell_gesture_finish(ap: AnimationPlayer, resolved: String, played_ok:
 		return
 	var tree := get_tree()
 	if tree != null:
-		tree.create_timer(0.55).timeout.connect(finish)
+		SceneDelay.create_timer(self, 0.55).timeout.connect(finish)
 	else:
 		finish.call()
 

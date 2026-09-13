@@ -1,6 +1,8 @@
 class_name AvatarController
 extends Node
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## 天神下凡 AHav（Logic）：限时加血/加甲；Present 由 Catalog 路径驱动。
 
 const ABIL_ID := "AHav"
@@ -132,7 +134,7 @@ func _apply_morph_visual(host: Node3D, active: bool) -> void:
 		Wc3Pe2Particles.apply_sequence(host, "Morph Alternate")
 		var tree := host.get_tree()
 		if tree != null:
-			tree.create_timer(0.4).timeout.connect(
+			SceneDelay.create_timer(self, 0.4).timeout.connect(
 				func() -> void:
 					if is_instance_valid(u) and is_active():
 						u.set_stance(AnimSequenceResolver.Stance.ALTERNATE, true)

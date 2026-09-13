@@ -1,6 +1,10 @@
 class_name GameSession
 extends RefCounted
 
+signal match_finished(result: Dictionary)
+
+const VictoryRules = preload("res://game/scripts/logic/melee_victory_rules.gd")
+
 ## 对局会话态：地图、本地玩家、各族玩家库存。权威在此，Present/HUD 只读。
 
 var map_dir: String = ""
@@ -8,6 +12,32 @@ var local_player: int = 0
 var local_race: String = "human"
 ## owner_id → PlayerStock 实例
 var stocks: Dictionary = {}
+
+var _match_teams: Dictionary = {}
+var _match_armed := false
+var _match_result: Dictionary = {}
+
+
+## 开局完成后显式启用。队伍配置与结果均复制，调用方不能改写已结算状态。
+func arm_match(player_teams: Dictionary) -> void:
+	if _match_armed:
+		return
+	_match_teams = player_teams.duplicate(true)
+	_match_armed = true
+
+
+func evaluate_match(unit_host: Node) -> Dictionary:
+	if not _match_result.is_empty():
+		return _match_result.duplicate(true)
+	var snapshot: Dictionary = VictoryRules.evaluate(unit_host, _match_teams, _match_armed)
+	if bool(snapshot.finished):
+		_match_result = snapshot.duplicate(true)
+		match_finished.emit(_match_result.duplicate(true))
+	return snapshot
+
+
+func get_match_result() -> Dictionary:
+	return _match_result.duplicate(true)
 
 
 func ensure_stock(owner_id: int) -> PlayerStock:

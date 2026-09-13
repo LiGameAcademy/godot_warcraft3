@@ -11,7 +11,7 @@ signal state_changed(state: int)
 signal queue_changed
 signal training_started(unit_id: String, time_sec: float)
 signal training_completed(unit_id: String, site_wc3: Vector2, owner: int)
-signal training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int)
+signal training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int, owner: int)
 ## 当前槽进度（约 10Hz）；HUD 订阅，勿让 Director 每帧轮询。
 signal progress_changed(progress: float, remaining_sec: float)
 
@@ -34,6 +34,7 @@ const CANCEL_REFUND_RATIO := 1.0
 var _entries: Array[Dictionary] = []
 var _state: int = STATE_IDLE
 var _progress_emit_accum: float = 0.0
+var _terminated: bool = false
 const PROGRESS_EMIT_INTERVAL := 0.1
 
 
@@ -109,7 +110,7 @@ func enqueue(
 	player_owner: int,
 	extra: Dictionary = {}
 ) -> bool:
-	if is_full():
+	if _terminated or is_full():
 		return false
 	if unit_id.is_empty() or time_sec <= 0.0:
 		return false
@@ -174,8 +175,19 @@ func cancel_at(index: int) -> bool:
 		# 取消当前 → 下一槽立刻开工
 		_begin_active()
 	queue_changed.emit()
-	training_cancelled.emit(uid, refund_g, refund_l, food)
+	training_cancelled.emit(uid, refund_g, refund_l, food, int(e.get("owner", -1)))
 	return true
+
+
+## 宿主死亡后永久关闭该队列；从尾部取消，不启动等待中的订单。
+## 暂沿用取消退款规则；经典版本的摧毁退款差异待基准实测。
+func terminate() -> void:
+	if _terminated:
+		return
+	_terminated = true
+	set_process(false)
+	while not _entries.is_empty():
+		cancel_at(_entries.size() - 1)
 
 
 func take_last_cancelled() -> Dictionary:
@@ -218,7 +230,7 @@ func _emit_progress() -> void:
 
 
 func _process(delta: float) -> void:
-	if _entries.is_empty():
+	if _terminated or _entries.is_empty():
 		return
 	var e: Dictionary = _entries[0]
 	e["elapsed"] = float(e.get("elapsed", 0.0)) + delta
@@ -228,6 +240,8 @@ func _process(delta: float) -> void:
 	if _progress_emit_accum >= PROGRESS_EMIT_INTERVAL:
 		_progress_emit_accum = 0.0
 		_emit_progress()
+		if _terminated:
+			return
 	if float(e.get("elapsed", 0.0)) < t:
 		return
 	var uid := str(e.get("unit_id", ""))

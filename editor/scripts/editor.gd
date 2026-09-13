@@ -31,6 +31,12 @@ const _MarqueeOverlayScript := preload("res://scripts/shared/selection/marquee_o
 @export var hover_label: Label
 
 var _doc
+signal discard_decided(accepted: bool)
+var _discard_dialog: ConfirmationDialog
+var _discard_pending := false
+var _preview: Window
+var _map_file_dialog: FileDialog
+var _doodad_props_dialog: ConfirmationDialog
 var _history: EditorCommandHistory = EditorCommandHistory.new()
 var _rebuilding: bool = false
 ## 撤销/重做时若正赶上笔刷重建，延后补一次表现刷新
@@ -45,6 +51,8 @@ var _palettes_visible: bool = true
 var _palette_spawn_index: int = 0
 var _brush_size: int = 1
 var _brush_shape: int = 0
+var _apply_height := false
+var _height_tool := 0
 var _apply_texture: bool = true
 var _apply_cliff: bool = false ## 地面阶段默认关：避免崖 sync 干扰地表笔刷；面板可再打开
 var _cliff_tool_id: String = "2"
@@ -78,6 +86,8 @@ var _units_batch_wired: bool = false
 
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = false
+	get_tree().root.close_requested.connect(_request_exit)
 	_resolve_exports()
 	if map_root == null:
 		push_error("MapEditor: 未绑定 map_root")
@@ -110,6 +120,7 @@ func _ready() -> void:
 		if brush.has_signal("brush_settings_changed"):
 			brush.brush_settings_changed.connect(_on_brush_settings_changed)
 	if doodad_brush != null:
+		doodad_brush.properties_requested.connect(_on_doodad_properties_requested)
 		if doodad_brush.has_signal("rebuild_requested"):
 			doodad_brush.rebuild_requested.connect(_on_doodad_brush_rebuild)
 		if doodad_brush.has_signal("brush_settings_changed"):
@@ -149,6 +160,7 @@ func _ready() -> void:
 			new_map_dialog.confirmed.connect(_on_new_map_confirmed)
 	if open_map_dialog != null:
 		open_map_dialog.setup()
+		open_map_dialog.file_requested.connect(func(): _show_map_file_dialog(false))
 		if not open_map_dialog.confirmed.is_connected(_on_open_map_confirmed):
 			open_map_dialog.confirmed.connect(_on_open_map_confirmed)
 	await _startup_new_map()
@@ -289,16 +301,22 @@ func _process(_delta: float) -> void:
 
 func _on_menu_action(action_id: StringName) -> void:
 	match String(action_id):
+		"view_asset_diagnostics":
+			preload("res://editor/scripts/asset_diagnostics.gd").show_report(self, _doc.file_data(), map_root.get_id_catalog())
 		"file_new":
 			_show_new_map_dialog()
 		"file_open":
 			_show_open_map_dialog()
 		"file_save":
 			_on_save()
+		"file_save_as":
+			_show_map_file_dialog(true)
 		"file_export_minimap":
 			_on_export_minimap()
+		"file_test_map":
+			_show_map_preview()
 		"file_exit":
-			get_tree().quit()
+			_request_exit()
 		"edit_undo":
 			_undo()
 		"edit_redo":
@@ -370,6 +388,7 @@ func _on_menu_action(action_id: StringName) -> void:
 
 
 func _undo() -> void:
+	_finish_active_stroke()
 	var cmd: EditorCommand = _history.undo()
 	if cmd == null:
 		return
@@ -377,6 +396,7 @@ func _undo() -> void:
 
 
 func _redo() -> void:
+	_finish_active_stroke()
 	var cmd: EditorCommand = _history.redo()
 	if cmd == null:
 		return
@@ -403,17 +423,21 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 		]
 	)
 	if cmd != null and cmd.affects_doodads():
+		if is_instance_valid(_inspect_window):
+			_inspect_window.set_minimap_doodads(_doc.doodad_entries())
 		# record() 已落地、should_rebuild=false：勿清选中（旋转/拖动会立刻丢选）
 		if should_rebuild:
-			if doodad_brush != null and doodad_brush.has_method("clear_selection"):
-				doodad_brush.clear_selection()
+			if doodad_brush != null:
+				doodad_brush.refresh_selection_after_history()
 			_rebuild_doodads_present()
 		_refresh_hud_props()
 		return
 	if cmd != null and cmd.affects_units():
+		if is_instance_valid(_inspect_window):
+			_inspect_window.set_minimap_units(_doc.unit_entries())
 		if should_rebuild:
-			if unit_brush != null and unit_brush.has_method("clear_selection"):
-				unit_brush.clear_selection()
+			if unit_brush != null:
+				unit_brush.refresh_selection_after_history()
 			_rebuild_units_present()
 		_refresh_hud_props()
 		return
@@ -424,6 +448,9 @@ func _on_command_applied(cmd: EditorCommand, is_undo: bool, should_rebuild: bool
 		_pending_history_rebuild = true
 		_pending_history_cliff = _pending_history_cliff or cliff
 		AppLog.debug(AppLog.Layer.EDITOR, "History", "rebuild deferred (busy)")
+		return
+	if cmd is PaintStrokeCommand and cmd.changes_only_ground_texture() and map_root.update_ground_textures(_doc.heightfield, cmd.after.keys()):
+		_refresh_inspect_minimap_live(cmd.after.keys())
 		return
 	_run_history_rebuild(cliff)
 
@@ -459,6 +486,8 @@ func _spawn_tool_palette(kind: int) -> void:
 	win.brush_settings_changed.connect(_on_brush_settings_changed)
 	win.apply_texture_changed.connect(_on_apply_texture_changed)
 	win.cliff_settings_changed.connect(_on_cliff_settings_changed)
+	win.height_settings_changed.connect(_on_height_settings_changed)
+	win.set_height_settings(_apply_height, _height_tool)
 	if win.has_signal("special_texture_changed"):
 		win.special_texture_changed.connect(_on_special_texture_changed)
 	if win.has_signal("doodad_selected"):
@@ -579,6 +608,16 @@ func _on_special_texture_changed(kind: int) -> void:
 			win.set_special_texture(_special_texture)
 
 
+func _on_height_settings_changed(enabled: bool, tool: int) -> void:
+	_apply_height = enabled
+	_height_tool = clampi(tool, 0, 4)
+	brush.apply_height = enabled
+	brush.height_tool = _height_tool
+	for window in _tool_palettes:
+		if is_instance_valid(window):
+			window.set_height_settings(enabled, _height_tool)
+
+
 func _on_cliff_settings_changed(p_apply: bool, tool_id: String, type_idx: int) -> void:
 	_apply_cliff = p_apply
 	_cliff_tool_id = tool_id if not tool_id.is_empty() else "2"
@@ -658,6 +697,8 @@ func _show_open_map_dialog() -> void:
 
 
 func _on_new_map_confirmed(options: Dictionary) -> void:
+	if not await _confirm_discard():
+		return
 	_doc.create_from_options(options)
 	_history.clear()
 	await _apply_document(true)
@@ -672,28 +713,70 @@ func _on_new_map_confirmed(options: Dictionary) -> void:
 
 
 func _on_open_map_confirmed(entry: Dictionary) -> void:
+	if not await _confirm_discard():
+		return
 	var map_dir: String = str(entry.get("dir", ""))
 	var display_name: String = str(entry.get("name", map_dir.get_file()))
 	var err: int = _doc.load_from_map_dir(map_dir)
 	if err != OK:
-		_set_status_key("EDITOR_STATUS_OPEN_FAILED", [display_name])
+		_set_status(_doc.last_file_error)
 		return
 	_history.clear()
 	await _apply_document(true)
-	_set_status_key("EDITOR_STATUS_OPENED_MAP", [display_name])
+	if _doc.import_warnings.is_empty():
+		_set_status_key("EDITOR_STATUS_OPENED_MAP", [display_name])
+	else:
+		_set_status("已打开 %s；%s" % [display_name, "；".join(_doc.import_warnings)])
+
+
+func _show_map_file_dialog(saving: bool) -> void:
+	if _map_file_dialog == null:
+		_map_file_dialog = FileDialog.new()
+		_map_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_map_file_dialog.filters = PackedStringArray(["*.wc3map.json ; Warcraft editor map v1"])
+		add_child(_map_file_dialog)
+		_map_file_dialog.file_selected.connect(_on_map_file_selected)
+	_map_file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if saving else FileDialog.FILE_MODE_OPEN_FILE
+	_map_file_dialog.title = "保存地图" if saving else "打开编辑器地图"
+	if not _doc.file_path.is_empty():
+		_map_file_dialog.current_path = ProjectSettings.globalize_path(_doc.file_path)
+	else:
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://editor_maps"))
+		_map_file_dialog.current_dir = ProjectSettings.globalize_path("user://editor_maps")
+		_map_file_dialog.current_file = "Untitled.wc3map.json" if saving else ""
+	_map_file_dialog.popup_centered_ratio(0.7)
+
+
+func _on_map_file_selected(path: String) -> void:
+	# Release the file chooser's modal ownership before a discard confirmation opens.
+	_map_file_dialog.hide()
+	if _map_file_dialog.file_mode == FileDialog.FILE_MODE_SAVE_FILE:
+		_save_map_file(path)
+		return
+	if not await _confirm_discard():
+		return
+	if _doc.load_json(path) != OK:
+		_set_status(_doc.last_file_error)
+		return
+	_history.clear()
+	await _apply_document(true)
+	_set_status("已打开地图：" + path)
+	if not _doc.import_warnings.is_empty():
+		_set_status("已打开地图：%s；%s" % [path, "；".join(_doc.import_warnings)])
 
 
 func _on_save() -> void:
-	var err: int = _doc.save_json()
-	if err != OK:
-		_set_status_key("EDITOR_STATUS_SAVE_FAILED")
+	if _doc.file_path.is_empty():
+		_show_map_file_dialog(true)
+	else:
+		_save_map_file(_doc.file_path)
+
+
+func _save_map_file(path: String) -> void:
+	if _doc.save_json(path) != OK:
+		_set_status(_doc.last_file_error)
 		return
-	# 始终强制实时光栅后再 bake，避免「游戏预览」模式下把旧 PNG 写回盘
-	var bake_err: Error = _bake_war3map_map(true)
-	if bake_err != OK:
-		_set_status("地形已保存，但 war3mapMap.png 导出失败")
-		return
-	_set_status_key("EDITOR_STATUS_SAVED")
+	_set_status("已保存完整地图：" + _doc.file_path)
 
 
 func _on_export_minimap() -> void:
@@ -892,7 +975,7 @@ func _ensure_inspect_window(focus: bool = false, refresh_minimap: bool = false) 
 	_inspect_window.visible = true
 	_inspect_window.show()
 	if focus:
-		_inspect_window.move_to_foreground()
+		_inspect_window.grab_focus()
 
 
 ## 按当前笔刷模式恢复 Inspect 预览（切层 / 开面板用；不在 ensure 里自动 show_doodad）。
@@ -921,11 +1004,13 @@ func _refresh_inspect_minimap() -> void:
 		var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root != null else null
 		var cliffs: Wc3CliffCatalog = map_root.get_cliff_catalog() if map_root != null else null
 		_inspect_window.refresh_minimap(_doc.heightfield, map_dir, tiles, cliffs)
+		_inspect_window.set_minimap_units(_doc.unit_entries())
+		_inspect_window.set_minimap_doodads(_doc.doodad_entries())
 	_update_inspect_viewport_rect()
 
 
 ## 地形 Mesh rebuild 后刷新实时小地图（与 brush/history 同拍）。
-func _refresh_inspect_minimap_live() -> void:
+func _refresh_inspect_minimap_live(texture_vertices: Array = []) -> void:
 	if _inspect_window == null or not is_instance_valid(_inspect_window):
 		return
 	if _doc == null or _doc.heightfield == null:
@@ -935,7 +1020,10 @@ func _refresh_inspect_minimap_live() -> void:
 		return
 	var tiles: Wc3TerrainTileCatalog = map_root.get_tiles() if map_root != null else null
 	var cliffs: Wc3CliffCatalog = map_root.get_cliff_catalog() if map_root != null else null
-	_inspect_window.refresh_minimap_live(_doc.heightfield, tiles, cliffs)
+	if not texture_vertices.is_empty():
+		_inspect_window.refresh_minimap_texture_vertices(_doc.heightfield, texture_vertices, tiles, cliffs)
+	else:
+		_inspect_window.refresh_minimap_live(_doc.heightfield, tiles, cliffs)
 	_update_inspect_viewport_rect()
 
 
@@ -1054,13 +1142,15 @@ func _on_brush_rebuild() -> void:
 		"Brush",
 		"rebuild cliff_path=%s" % cliff
 	)
+	var texture_vertices: Array = brush.consume_texture_vertices() if brush != null else []
+	var texture_updated := not cliff and map_root.update_ground_textures(_doc.heightfield, texture_vertices)
 	if cliff:
 		brush.cliff_dirty = false
 		map_root.rebuild_terrain_cliffs_water(_doc.as_build_dict(), _doc.info)
-	else:
+	elif not texture_updated:
 		map_root.rebuild_terrain_only(_doc.as_build_dict(), _doc.info)
 	_rebuilding = false
-	_refresh_inspect_minimap_live()
+	_refresh_inspect_minimap_live(texture_vertices if texture_updated else [])
 	if _pending_history_rebuild:
 		var again_cliff: bool = _pending_history_cliff
 		_pending_history_rebuild = false
@@ -1540,3 +1630,86 @@ func _set_status(text: String) -> void:
 	elif status_label != null:
 		status_label.text = text
 	print("Editor: %s" % text)
+
+
+func _confirm_discard() -> bool:
+	if _doc == null or not _doc.is_dirty():
+		return true
+	if _discard_pending:
+		return false
+	if _discard_dialog == null:
+		_discard_dialog = ConfirmationDialog.new()
+		_discard_dialog.title = "未保存的地图更改"
+		_discard_dialog.dialog_text = "当前地图有未保存更改。继续会丢弃这些更改。\n如需保留，请取消并先保存地图。"
+		_discard_dialog.ok_button_text = "放弃更改并继续"
+		_discard_dialog.cancel_button_text = "取消"
+		add_child(_discard_dialog)
+		_discard_dialog.confirmed.connect(func(): discard_decided.emit(true))
+		_discard_dialog.canceled.connect(func(): discard_decided.emit(false))
+	_discard_pending = true
+	_discard_dialog.popup_centered()
+	var accepted: bool = await discard_decided
+	_discard_pending = false
+	return accepted
+
+
+func _request_exit() -> void:
+	if await _confirm_discard():
+		get_tree().quit()
+
+
+func _show_map_preview() -> void:
+	if _preview != null and is_instance_valid(_preview):
+		_preview.grab_focus()
+		return
+	var data: Dictionary = _doc.file_data().duplicate(true)
+	var problem: String = preload("res://editor/scripts/map_file.gd").validate(data)
+	if not problem.is_empty():
+		_set_status("无法预览：" + problem)
+		return
+	_preview = preload("res://editor/scripts/map_preview.gd").new()
+	_preview.snapshot = data
+	_preview.transient = true
+	_preview.exclusive = true
+	# Brushes poll global Input, so window exclusivity alone is insufficient.
+	var suspended: Dictionary = {}
+	for node in [brush, doodad_brush, unit_brush, input_router]:
+		if node != null:
+			suspended[node] = node.process_mode
+			node.process_mode = Node.PROCESS_MODE_DISABLED
+	_preview.tree_exited.connect(func():
+		for node in suspended:
+			if is_instance_valid(node):
+				node.process_mode = suspended[node]
+	)
+	add_child(_preview)
+	if DisplayServer.get_name() == "headless":
+		_preview.show()
+	else:
+		_preview.popup_centered()
+
+func _on_doodad_properties_requested(cn: int) -> void:
+	var index: int = _doc.find_doodad_index_by_creation_number(cn)
+	if index < 0:
+		return
+	if not is_instance_valid(_doodad_props_dialog):
+		_doodad_props_dialog = preload("res://editor/ui/doodad_properties_dialog.gd").new()
+		add_child(_doodad_props_dialog)
+		_doodad_props_dialog.applied.connect(func(entry: Dictionary):
+			if not map_root.update_doodad_instance(entry, _doc.as_build_dict()):
+				_rebuild_doodads_present()
+			doodad_brush.select_creation_number(int(entry.creationNumber))
+			_refresh_hud_props()
+			if toolbar != null and toolbar.has_method("set_dirty"):
+				toolbar.set_dirty(_doc.is_dirty())
+		)
+	_doodad_props_dialog.document = _doc
+	_doodad_props_dialog.history = _history
+	_doodad_props_dialog.open_for_entry(_doc.get_doodad(index), map_root.get_id_catalog())
+
+
+func _finish_active_stroke() -> void:
+	if input_router != null and input_router.brush != null:
+		var active = input_router.brush
+		if active.has_method("stroke_release"):
+			active.stroke_release()

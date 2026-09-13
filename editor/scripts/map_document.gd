@@ -6,6 +6,12 @@ extends RefCounted
 signal changed
 signal dirty_changed(is_dirty: bool)
 
+const MapFile := preload("res://editor/scripts/map_file.gd")
+var file_path: String = ""
+var last_file_error: String = ""
+var import_warnings: Array = []
+var _file_original: Dictionary = {}
+
 const _PathingMapScript := preload("res://scripts/map/data/wc3_pathing_map.gd")
 
 const DEFAULT_MAP_DIR := "res://assets/map-parsed/losttemple"
@@ -208,38 +214,14 @@ func brush_tile_id() -> String:
 
 
 func load_from_map_dir(path: String = DEFAULT_MAP_DIR) -> Error:
-	var hf_path: String = path.path_join("terrain-heightfield.json")
-	if not FileAccess.file_exists(hf_path):
-		push_error("MapDocument: 缺少 %s" % hf_path)
-		return ERR_FILE_NOT_FOUND
-	var f: FileAccess = FileAccess.open(hf_path, FileAccess.READ)
-	if f == null:
-		return ERR_CANT_OPEN
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return ERR_PARSE_ERROR
-	heightfield = Wc3Heightfield.from_dict(parsed as Dictionary, false)
-	_rebind_logic()
-	info = {}
-	var info_path: String = path.path_join("info.json")
-	if FileAccess.file_exists(info_path):
-		var fi: FileAccess = FileAccess.open(info_path, FileAccess.READ)
-		if fi:
-			var ip: Variant = JSON.parse_string(fi.get_as_text())
-			if typeof(ip) == TYPE_DICTIONARY:
-				info = ip
-	map_dir = path
-	source_name = path.get_file()
-	_load_doodads_from_map_dir(path)
-	_load_units_from_map_dir(path)
-	_load_pathing_from_map_dir(path)
-	# 已解析图若 flags 未含 MAP_EDGE，用 info.cameraBoundsComplements 补写
-	_ensure_map_edge_from_info()
-	_dirty = false
-	ensure_brush_index_valid()
-	dirty_changed.emit(false)
-	changed.emit()
-	return OK
+	var result := MapFile.read_map_dir(path)
+	last_file_error = str(result.get("message", ""))
+	if result.error != OK:
+		return result.error
+	var err := _apply_file_data(result.data, "", path)
+	if err == OK:
+		import_warnings = result.get("warnings", [])
+	return err
 
 
 ## 从 info 补写 FLAG_MAP_EDGE（兼容旧 map-parse 未打包 boundary1 的 JSON）。
@@ -395,6 +377,9 @@ func create_from_options(options: Dictionary) -> void:
 	# 实用区外缘 → FLAG_MAP_EDGE（对齐 HiveWE set_unplayable_boundaries）
 	if terrain != null:
 		terrain.apply_unplayable_boundaries(complements)
+	file_path = ""
+	_file_original = {}
+	import_warnings = []
 	map_dir = ""
 	source_name = "untitled"
 	brush_tile_index = tile_index
@@ -420,6 +405,13 @@ func paint_tile(tx: int, ty: int, tex_index: int = -1) -> bool:
 
 
 ## 写单个中级栅格顶点（tilepoint）的地表索引。对齐 WE / HiveWE 角点笔刷。
+func sculpt_height(points: Array, tool: int, plateau_offset: float = 0.0) -> bool:
+	if preload("res://scripts/map/logic/terrain/height_sculpt.gd").apply(heightfield, points, tool, plateau_offset):
+		mark_dirty()
+		return true
+	return false
+
+
 func paint_corner(ix: int, iy: int, tex_index: int = -1) -> bool:
 	if is_empty():
 		AppLog.warn(AppLog.Layer.EDITOR, "Document", "paint_corner: 文档空")
@@ -569,32 +561,81 @@ func _corner_height_clamped(ix: int, iy: int, tp_w: int, tp_h: int, heights: Arr
 	return float(heights[i])
 
 
+func file_data() -> Dictionary:
+	return MapFile.merge(_file_original, {
+		"format": MapFile.FORMAT, "version": MapFile.VERSION,
+		"terrain": heightfield.to_dict() if heightfield != null else {},
+		"info": info.duplicate(true), "units": units_as_dict(),
+		"doodads": doodads_as_dict(),
+		"pathing": pathing.to_dict() if pathing != null else null,
+		"importWarnings": import_warnings.duplicate(),
+		"source": _file_original.get("source", {"name": source_name, "directory": map_dir}),
+	})
+
+
 func save_json(path: String = "") -> Error:
+	last_file_error = ""
 	if is_empty():
+		last_file_error = "地图为空"
 		return ERR_INVALID_DATA
-	var out_path: String = path
+	var out_path: String = path if not path.is_empty() else file_path
 	if out_path.is_empty():
-		var dir: String = "user://editor_maps"
-		var abs_dir: String = ProjectSettings.globalize_path(dir)
-		DirAccess.make_dir_recursive_absolute(abs_dir)
-		var stamp: String = Time.get_datetime_string_from_system().replace(":", "-")
-		out_path = dir.path_join("%s_%s.json" % [source_name if not source_name.is_empty() else "map", stamp])
-	else:
-		var parent: String = out_path.get_base_dir()
-		if not parent.is_empty():
-			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(parent))
-	var f: FileAccess = FileAccess.open(out_path, FileAccess.WRITE)
-	if f == null:
-		push_error("MapDocument: cannot write %s (err=%s)" % [out_path, FileAccess.get_open_error()])
-		return ERR_CANT_CREATE
-	f.store_string(JSON.stringify(heightfield.to_dict(), "\t"))
-	# 若落在 map-parsed 目录旁，同步 doodads.json / units.json
-	if out_path.get_file().begins_with("terrain") or not map_dir.is_empty():
-		var base: String = map_dir if not map_dir.is_empty() else out_path.get_base_dir()
-		_save_doodads_json(base.path_join("doodads.json"))
-		_save_units_json(base.path_join("units.json"))
+		out_path = "user://editor_maps/map_%s_%s.wc3map.json" % [Time.get_datetime_string_from_system().replace(":", "-"), Time.get_ticks_usec()]
+	var data := file_data()
+	last_file_error = MapFile.validate(data)
+	if not last_file_error.is_empty():
+		return ERR_INVALID_DATA
+	var err: Error = MapFile.write(out_path, data)
+	if err != OK:
+		last_file_error = "保存失败：%s (%s)" % [out_path, error_string(err)]
+		return err
+	file_path = out_path
 	clear_dirty()
-	print("MapDocument: saved %s" % out_path)
+	return OK
+
+
+func load_json(path: String) -> Error:
+	var result := MapFile.read(path)
+	last_file_error = str(result.get("message", ""))
+	if result.error != OK:
+		return result.error
+	return _apply_file_data(result.data, path)
+
+
+func _apply_file_data(data: Dictionary, path: String, imported_dir: String = "") -> Error:
+	# Construct all candidate state before replacing the current document.
+	var new_heightfield := Wc3Heightfield.from_dict(data.terrain)
+	var new_units := Wc3UnitList.from_dict(data.units)
+	var new_doodads := Wc3DoodadList.from_dict(data.doodads)
+	var new_pathing = _PathingMapScript.from_dict(data.pathing) if data.get("pathing") != null else null
+	if not new_heightfield.is_valid() or not new_units.is_valid() or not new_doodads.is_valid():
+		last_file_error = "地图数据不完整"
+		return ERR_INVALID_DATA
+	heightfield = new_heightfield
+	units = new_units
+	doodads = new_doodads
+	pathing = new_pathing
+	info = data.info.duplicate(true)
+	# Source directory is provenance only; never use it as a write destination.
+	map_dir = imported_dir
+	source_name = imported_dir.get_file() if not imported_dir.is_empty() else path.get_file().get_basename()
+	file_path = path
+	_file_original = data.duplicate(true)
+	import_warnings = data.get("importWarnings", []).duplicate()
+	_next_creation_number = 1
+	_next_unit_creation_number = 1
+	for number in doodads.creation_numbers:
+		_next_creation_number = maxi(_next_creation_number, int(number) + 1)
+	for number in units.creation_numbers:
+		_next_unit_creation_number = maxi(_next_unit_creation_number, int(number) + 1)
+	_rebind_logic()
+	if not imported_dir.is_empty():
+		_ensure_map_edge_from_info()
+	ensure_brush_index_valid()
+	ensure_cliff_type_valid()
+	_dirty = false
+	dirty_changed.emit(false)
+	changed.emit()
 	return OK
 
 

@@ -304,6 +304,10 @@ func _process(_delta: float) -> void:
 
 
 func _hud_blocks_screen(screen_pos: Vector2) -> bool:
+	# _input 先于 GUI 更新悬停状态；动态背包可能位于底栏之外。
+	for panel in get_tree().get_nodes_in_group("world_input_blockers"):
+		if panel is Control and panel.is_visible_in_tree() and panel.get_global_rect().has_point(screen_pos):
+			return true
 	# 注意：框选进行中不要调用此函数拦截松手（见 handle_pointer_event）。
 	# 主判据：鼠标下已有接事件的 Control（HUD / GM / 命令卡 / Option 弹出项）。
 	# 框选走 _input 早于 GUI；若不让路，GM 勾选/下拉会被点选吃掉。

@@ -6,9 +6,10 @@ extends RefCounted
 const META_HERO_XP := "hero_xp"
 const MAX_HERO_LEVEL := 10
 
-## 到达该等级所需的累计经验（index = level）。
+## 到达该等级所需的累计经验（index = level - 1）。
+## https://classic.battle.net/war3/basics/heroes.shtml
 const _XP_THRESHOLDS := [
-	0, 200, 700, 1625, 2875, 4475, 6425, 8825, 11675, 14975, 999999,
+	0, 200, 500, 900, 1400, 2000, 2700, 3500, 4400, 5400,
 ]
 
 
@@ -29,6 +30,32 @@ static func set_level(unit: Node3D, level: int, xp_total: int = -1) -> void:
 	unit.set_meta(AbilityCatalog.META_HERO_LEVEL, lv)
 	var xp := xp_total if xp_total >= 0 else xp_threshold(lv)
 	unit.set_meta(META_HERO_XP, maxi(xp, 0))
+	UnitLife.sync_hero_max(unit)
+	UnitMana.sync_hero_max(unit)
+
+
+## 统一经验入账；经验来源、分摊和野怪等级限制由奖励分配层决定。
+static func add_experience(unit: Node3D, amount: int) -> Dictionary:
+	var result := {"gained": 0, "levels_gained": 0}
+	if not is_instance_valid(unit) or amount <= 0:
+		return result
+	if not TechPresence.is_hero_id(CombatQuery.type_id_of(unit)) or UnitLife.get_life(unit) <= 0.0:
+		return result
+	var level := AbilityCatalog.hero_level_of(unit)
+	if level >= MAX_HERO_LEVEL:
+		return result
+	var before := xp_of(unit)
+	var gain := mini(amount, maxi(xp_threshold(MAX_HERO_LEVEL) - before, 0))
+	if gain <= 0:
+		return result
+	var total := before + gain
+	var next_level := level
+	while next_level < MAX_HERO_LEVEL and total >= xp_threshold(next_level + 1):
+		next_level += 1
+	set_level(unit, next_level, total)
+	result.gained = gain
+	result.levels_gained = next_level - level
+	return result
 
 
 static func xp_of(unit: Node3D) -> int:

@@ -185,7 +185,7 @@ func cancel() -> bool:
 	var refund_g: int = int(round(float(_order.gold_spent) * ratio))
 	var refund_l: int = int(round(float(_order.lumber_spent) * ratio))
 	if _session != null:
-		var stock: PlayerStock = _session.local_stock()
+		var stock := _session.stocks.get(_order.owner) as PlayerStock
 		if stock != null:
 			stock.add_gold(refund_g)
 			stock.add_lumber(refund_l)
@@ -323,7 +323,7 @@ func _on_arrived() -> void:
 	_site = BuildSite.new()
 	_site.configure_session(_session)
 	add_child(_site)
-	_site.start(_order, _owner_of_peasant())
+	_site.start(_order, _order.owner)
 	if not _site.build_completed.is_connected(_on_site_completed):
 		_site.build_completed.connect(_on_site_completed)
 	_strategy.on_order_accepted(_site, _peasant)
@@ -367,9 +367,13 @@ func _validate_and_spend(order: BuildOrder) -> bool:
 		return false
 	var g: int = BuildingCatalog.get_gold_cost(order.building_id)
 	var l: int = BuildingCatalog.get_lumber_cost(order.building_id)
-	var stock: PlayerStock = _session.local_stock()
+	if not is_instance_valid(_peasant) or order.builder != _peasant:
+		return false
+	var owner := _owner_of_peasant()
+	var stock := _session.stocks.get(owner) as PlayerStock
 	if stock == null or not stock.try_spend(g, l):
 		return false
+	order.owner = owner
 	order.gold_spent = g
 	order.lumber_spent = l
 	order.build_time_sec = BuildingCatalog.get_build_time(order.building_id)

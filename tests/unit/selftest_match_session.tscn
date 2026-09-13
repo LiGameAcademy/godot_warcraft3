@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/unit/selftest_match_session.gd" id="1"]
+
+[node name="SelftestMatchSession" type="Node"]
+script = ExtResource("1")

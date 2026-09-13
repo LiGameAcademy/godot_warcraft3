@@ -378,7 +378,7 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 		scale_node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
 	node.name = "%s_%s" % [type_id, str(u.get("creationNumber", 0))]
 	node.position = gpos
-	# 单位前进轴 = 本地 +X（与 UnitNavigator 一致）；勿用 doodad 的 -a+π
+	# 模型和地图使用相同换轴，单位与装饰物均保留原始朝向角。
 	node.rotation.y = Wc3Coords.yaw_wc3_unit_to_godot(angle)
 	node.set_meta("unit_data", u.duplicate(true))
 	add_child(node)

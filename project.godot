@@ -20,6 +20,11 @@ config/icon="res://icon.svg"
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
 EditorI18n="*res://editor/ui/editor_i18n.gd"
 Wc3DefStore="*res://scripts/auto/wc3_def_store.gd"
+GameplayAbilitySystem="*res://addons/godot_ability_system/scripts/singletons/gameplay_ability_system.gd"
+DamageCalculator="*res://addons/godot_ability_system/scripts/singletons/damage_calculator.gd"
+TagManager="*res://addons/godot_ability_system/scripts/singletons/gameplay_tag_manager.gd"
+AbilityEventBus="*res://addons/godot_ability_system/scripts/singletons/ability_event_bus.gd"
+GameplayCueManager="*res://addons/godot_ability_system/scripts/singletons/gameplay_cue_manager.gd"
 
 [display]
 
@@ -32,7 +37,7 @@ project/assembly_name="godot_warcraft3"
 
 [editor_plugins]
 
-enabled=PackedStringArray()
+enabled=PackedStringArray("res://addons/godot_ability_system/plugin.cfg")
 
 [internationalization]
 

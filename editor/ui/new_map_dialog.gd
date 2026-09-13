@@ -39,6 +39,7 @@ var _tile_buttons: Array = []
 var _water_buttons: Array = []
 
 func _ready() -> void:
+	preload("res://editor/ui/world_edit_icons.gd").apply(self)
 	hide()
 
 ## 初始化对话框

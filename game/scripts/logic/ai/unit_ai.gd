@@ -34,6 +34,9 @@ const THREAT_DECAY_PER_SEC := 0.3
 const TARGET_HOLD_SEC := 1.5
 ## 切目标最小冷却（秒）：新目标锁定后短时间内不切。
 const TARGET_SWAP_COOLDOWN_SEC := 0.25
+## WC3：Lv≥7 野怪走「智能」选目标（残血优先）；此前用 sticky 威胁。
+## 智能档后置；当前仍 sticky，避免 last-hit 抽风。见 UNIT_AI.md §4.5。
+const SMART_CREEP_LEVEL := 7
 
 enum Profile {
 	PASSIVE = 0, ## 不主动索敌、默认不反击（小动物等）
@@ -88,6 +91,10 @@ var _swap_cd: float = 0.0
 var _locked_target: Node3D = null
 ## 锁定时刻（msec 时间戳）；超 TARGET_HOLD_SEC 后允许被新候选覆盖。
 var _locked_at_msec: int = 0
+## 短期忽略的威胁：instance_id → 过期 msec。友军甩仇恨后避免立刻 find_acquire 拉回。
+var _threat_ignore_until: Dictionary = {}
+## 友军甩仇恨后的忽略时长（秒）。
+const THREAT_IGNORE_AFTER_FRIENDLY_SEC := 2.0
 
 
 func configure(
@@ -114,15 +121,15 @@ static func of(body: Node) -> UnitAI:
 
 ## 按 owner / 武器选默认 Profile（入场 ensure 用；U0-2 接线）。
 ## - 中立可战斗 → CAMP_CREEP（营地 leash / 营友助攻）。
-## - 玩家可战斗 → REACTIVE（受击反击 + 盟友广播可拉；不 idle acquire 避免抢玩家命令）。
+## - 玩家可战斗 → TEAM_PLAYER（idle 警戒 + 受击反击 + 盟友助攻；Hold/显式命令由 occupied 压制）。
 ## - 其它 → PASSIVE。
-## 注：TEAMPlayer 待补「玩家显式命令时压制 idle acquire」边界后再切默认；见 UNIT_AI.md §4.4 / §4.2c。
+## REACTIVE 仍保留给「只要反击不要 idle 索敌」的特例，不再作为玩家默认。
 static func default_profile_for(body: Node) -> int:
 	if body == null or not CombatQuery.has_weapon(body):
 		return Profile.PASSIVE
 	if CombatQuery.is_neutral_owner(CombatQuery.owner_of(body)):
 		return Profile.CAMP_CREEP
-	return Profile.REACTIVE
+	return Profile.TEAM_PLAYER
 
 
 func get_profile() -> int:
@@ -150,19 +157,26 @@ func wants_retaliate() -> bool:
 	return _profile_retaliates()
 
 
-## Profile 是否允许 idle 警戒索敌（U2）；睡觉 / 归巢途中 false。
+## Profile 是否允许 idle 警戒索敌（U2）；睡觉 / 归巢 / Hold 途中 false。
 func wants_idle_acquire() -> bool:
-	return _profile_idle_acquires() and not is_asleep() and _state != State.RETURNING
+	return (
+		_profile_idle_acquires()
+		and not is_asleep()
+		and _state != State.RETURNING
+		and not _is_hold_stance()
+	)
 
 
 ## 是否允许「盟友挨打」广播拉自己参战（CAMP_CREEP / TEAM_PLAYER / REACTIVE）。
-## 仅在 IDLE 时被广播；玩家显式占用或正在 RETURNING 时不拉。
+## 仅在 IDLE 时被广播；玩家显式占用、Hold、正在 RETURNING 时不拉。
 func allows_ally_engage() -> bool:
 	if is_asleep():
 		return false
 	if _state == State.RETURNING:
 		return false
 	if _player_occupied():
+		return false
+	if _is_hold_stance():
 		return false
 	if _state == State.SLEEPING:
 		return false
@@ -315,7 +329,12 @@ func _alert_nearby_allies(attacker: Node3D) -> void:
 
 
 ## 当前攻击目标死亡/离场（DeathService 广播）。脱战并归巢（leash）。
-func notify_combat_target_lost(_dead: Node3D) -> void:
+func notify_combat_target_lost(dead: Node3D) -> void:
+	if dead != null:
+		clear_threat_for(dead)
+		if _locked_target == dead:
+			_locked_target = null
+			_locked_at_msec = 0
 	if not _owns_engagement and _state != State.ENGAGED:
 		return
 	var ac := _attack_controller()
@@ -343,8 +362,11 @@ func try_engage(target: Node3D) -> bool:
 		return false
 	if _player_occupied():
 		return false
+	if _is_hold_stance():
+		return false
+	if _is_threat_ignored(target):
+		return false
 	# 切目标冷却未到：仅当「当前锁定目标已死/失效」或「目标就是攻击者」才允许。
-	# 受击反击已在外层清 swap_cd。
 	if _swap_cd > 0.0 and target != _locked_target:
 		var cur := _locked_target
 		if cur != null and is_instance_valid(cur) and CombatQuery.is_auto_acquire_target(_body(), cur):
@@ -362,6 +384,7 @@ func try_engage(target: Node3D) -> bool:
 
 
 ## 受击反击（U1）：合法敌对来源 → Attack Order（source=UNIT_AI）。
+## WC3 低级野怪：粘住当前威胁，不「每刀跟 last-hitter」；仅首仇 / 当前目标失效时才切。
 func notify_damaged(result: Dictionary) -> void:
 	if result.is_empty() or not bool(result.get("ok", false)):
 		return
@@ -383,14 +406,148 @@ func notify_damaged(result: Dictionary) -> void:
 		return
 	if not CombatQuery.is_auto_acquire_target(body, attacker):
 		return
-	# 受击 → 加仇恨（受击伤害是仇恨的主要来源）
+	# 受击 → 加仇恨（供脱威胁后重选 / top_threat）
 	var dmg := float(result.get("amount", 0.0))
 	if dmg > 0.0:
 		add_threat(attacker, dmg * THREAT_PER_DAMAGE)
-	# 受击强制让仇恨表「拿主意」：清切目标冷却，立即可切回攻击者
+	# Sticky：已有有效锁定目标 → 只记仇恨 + 助攻，不跟刀换人
+	if _should_hold_current_target():
+		_alert_nearby_allies(attacker)
+		return
+	# 无锁 / 锁失效：开打（或切到）攻击者
 	_swap_cd = 0.0
 	try_engage(attacker)
 	_alert_nearby_allies(attacker)
+
+
+## 单位等级（UnitBalance.level）；无表 / "-" → -1。
+func unit_level() -> int:
+	var body := _body()
+	if body == null:
+		return -1
+	var bal := CombatQuery.balance_of(body)
+	if bal == null:
+		return -1
+	return int(bal.level)
+
+
+## 低级粘仇：反击 Profile 启用。Lv≥7 智能档后置，暂仍 sticky。
+func uses_sticky_threat() -> bool:
+	if _profile == Profile.PASSIVE:
+		return false
+	# SMART_CREEP_LEVEL：智能档落地后 CAMP_CREEP 且 lv>=7 返回 false
+	return (
+		_profile == Profile.CAMP_CREEP
+		or _profile == Profile.TEAM_PLAYER
+		or _profile == Profile.REACTIVE
+	)
+
+
+## 已锁定且目标仍存活敌对 → 受击不换人（交战中不因 acquire 边缘松锁）。
+func _should_hold_current_target() -> bool:
+	if not uses_sticky_threat():
+		return false
+	if not (_owns_engagement or _state == State.ENGAGED):
+		return false
+	var cur := _locked_target
+	if cur == null or not is_instance_valid(cur):
+		return false
+	var body := _body()
+	if body == null:
+		return false
+	return CombatQuery.is_auto_acquire_target(body, cur)
+
+
+## 玩家单位对友军下令攻击（WC3 甩仇恨）：粘仇野怪把该单位踢出威胁并重选。
+## `CommandRouter.issue_attack_target` 在友军强制攻击时广播。
+static func broadcast_friendly_attack_order(source: Node3D) -> void:
+	if source == null or not is_instance_valid(source):
+		return
+	var host := source.get_parent()
+	if host == null:
+		return
+	for c in host.get_children():
+		if c == source or not (c is Node3D):
+			continue
+		var ai := of(c)
+		if ai != null:
+			ai.on_unit_issued_friendly_attack(source)
+
+
+## CAMP_CREEP 粘仇：source 对友军攻击 → 不再视为威胁；若正锁着它则重选。
+## 无次要威胁时脱战/归巢，禁止 find_acquire 立刻把 source 拉回。
+func on_unit_issued_friendly_attack(source: Node3D) -> void:
+	if source == null or not is_instance_valid(source):
+		return
+	# 甩仇恨是野怪营机制；玩家军事/反应型不跟这套职业局操作
+	if _profile != Profile.CAMP_CREEP:
+		return
+	if not uses_sticky_threat():
+		return
+	var id := source.get_instance_id()
+	var was_lock := _locked_target == source
+	var had_threat := _threat.has(id)
+	if not was_lock and not had_threat:
+		return
+	clear_threat_for(source)
+	_ignore_threat_for(source, THREAT_IGNORE_AFTER_FRIENDLY_SEC)
+	if not was_lock:
+		return
+	_locked_target = null
+	_locked_at_msec = 0
+	_swap_cd = 0.0
+	if not (_owns_engagement or _state == State.ENGAGED):
+		return
+	var host: Node = null
+	if _unit_host.is_valid():
+		host = _unit_host.call() as Node
+	var body := _body()
+	if host == null and body != null:
+		host = body.get_parent()
+	# 只从剩余仇恨表选（不走最近兜底，否则单挑会立刻锁回 source）
+	var next := top_threat(host)
+	if next != null and try_engage(next):
+		return
+	_disengage_without_reacquire()
+
+
+## 脱战但不立刻 find_acquire 重索（友军甩仇恨无次要目标时用）。
+func _disengage_without_reacquire() -> void:
+	_owns_engagement = false
+	_locked_target = null
+	_clear_ai_order_if_ours()
+	var ac := _attack_controller()
+	if ac != null:
+		_ac_cancel(ac)
+	var nav := _navigator()
+	if nav != null:
+		_nav_stop(nav)
+	if uses_leash() and not _is_at_home():
+		_begin_return()
+		return
+	if _state != State.SLEEPING:
+		_set_state(State.IDLE)
+	_refresh_process()
+
+
+func _ignore_threat_for(unit: Node3D, seconds: float) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var until := Time.get_ticks_msec() + int(maxf(seconds, 0.0) * 1000.0)
+	_threat_ignore_until[unit.get_instance_id()] = until
+
+
+func _is_threat_ignored(unit: Node3D) -> bool:
+	if unit == null or not is_instance_valid(unit):
+		return false
+	var id := unit.get_instance_id()
+	if not _threat_ignore_until.has(id):
+		return false
+	var until := int(_threat_ignore_until[id])
+	if Time.get_ticks_msec() >= until:
+		_threat_ignore_until.erase(id)
+		return false
+	return true
 
 
 func _ready() -> void:
@@ -464,7 +621,11 @@ func _on_combat_ended() -> void:
 		_nav_stop(nav)
 	var body := _body()
 	if body != null and (wants_idle_acquire() or _profile_retaliates()):
-		var host := body.get_parent()
+		var host: Node = null
+		if _unit_host.is_valid():
+			host = _unit_host.call() as Node
+		if host == null:
+			host = body.get_parent()
 		var acq := _pick_target(host)
 		if acq != null and try_engage(acq):
 			return
@@ -551,6 +712,8 @@ func add_threat(attacker: Node3D, amount: float) -> void:
 		return
 	if amount <= 0.0:
 		return
+	if _is_threat_ignored(attacker):
+		return
 	var id := attacker.get_instance_id()
 	_threat[id] = float(_threat.get(id, 0.0)) + amount
 
@@ -561,7 +724,7 @@ func clear_threat_for(target: Node3D) -> void:
 	_threat.erase(target.get_instance_id())
 
 
-## 取仇恨表里仇恨最高的「存活 + 敌对 + 在 acquire 半径内」的目标。无则 null。
+## 取仇恨表里仇恨最高的「存活 + 敌对 + 未被忽略」的目标。无则 null。
 ## `host` 可为 null（仅做敌对 / 存活过滤，不做距离）。
 func top_threat(host: Node = null) -> Node3D:
 	var body := _body()
@@ -572,6 +735,9 @@ func top_threat(host: Node = null) -> Node3D:
 	for id in _threat.keys():
 		var n := instance_from_id(int(id)) as Node3D
 		if n == null or not is_instance_valid(n):
+			_threat.erase(id)
+			continue
+		if _is_threat_ignored(n):
 			_threat.erase(id)
 			continue
 		if not CombatQuery.is_valid_attack_target(body, n):
@@ -609,7 +775,7 @@ func _pick_target(host: Node = null) -> Node3D:
 	var now_msec := Time.get_ticks_msec()
 	# 1) Sticky 锁定：当前 _locked_target 还活着 + 仍敌对 + 在 acquire 半径内 → 保留
 	var cur := _locked_target
-	if cur != null and is_instance_valid(cur):
+	if cur != null and is_instance_valid(cur) and not _is_threat_ignored(cur):
 		var stuck_ms := now_msec - _locked_at_msec
 		if stuck_ms < int(TARGET_HOLD_SEC * 1000.0):
 			if (
@@ -627,8 +793,11 @@ func _pick_target(host: Node = null) -> Node3D:
 	var top := top_threat(host)
 	if top != null:
 		return top
-	# 3) 兜底：按距离最近
-	return CombatQuery.find_acquire_target(body, host, effective_acquire_range_wc3())
+	# 3) 兜底：按距离最近（跳过 ignore 名单）
+	var nearest := CombatQuery.find_acquire_target(body, host, effective_acquire_range_wc3())
+	if nearest != null and _is_threat_ignored(nearest):
+		return null
+	return nearest
 
 
 ## 对目标发 AI Attack；成功则 ENGAGED。
@@ -799,6 +968,20 @@ func _profile_idle_acquires() -> bool:
 func _player_occupied() -> bool:
 	if _is_player_occupied.is_valid():
 		return bool(_is_player_occupied.call())
+	return false
+
+
+## Hold（H）：不追击、不参与盟友拉仇恨；射程内交火交给 AttackController.HOLD。
+func _is_hold_stance() -> bool:
+	var body := _body()
+	if body == null:
+		return false
+	if bool(body.get_meta("hold_position", false)):
+		return true
+	if body.has_meta(META_ORDER_QUEUE):
+		var q := body.get_meta(META_ORDER_QUEUE) as OrderQueue
+		if q != null and q.current != null and q.current.kind == UnitOrder.Kind.HOLD:
+			return true
 	return false
 
 

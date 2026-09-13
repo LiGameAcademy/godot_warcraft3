@@ -6,7 +6,8 @@ extends SceneTree
 ## - top_threat 按仇恨排序，过滤死亡 / 失效
 ## - _pick_target：sticky 锁定 > top_threat > 最近兜底
 ## - try_engage 触发切目标冷却 0.25s
-## - 受击强制清 swap_cd（攻击者必中）
+## - 受击不打断 sticky（WC3 低级野怪：不跟 last-hitter）
+## - 友军攻击令 → CAMP_CREEP 脱威胁并重选
 ## - REACTIVE 玩家单位：受击反击 + 盟友广播可拉，不 idle acquire
 ##
 ## godot --headless --path . -s res://tests/unit/selftest_threat_table.gd
@@ -25,7 +26,9 @@ func _run() -> void:
 	_test_sticky_holds_through_tiny_window()
 	_test_sticky_drops_when_target_out_of_range()
 	_test_swap_cooldown_blocks_extra_pick()
-	_test_swap_cooldown_cleared_by_damage()
+	_test_damage_does_not_break_sticky()
+	_test_friendly_attack_drops_creep_threat()
+	_test_friendly_attack_solo_does_not_reacquire()
 	_test_reactive_does_not_idle_acquire()
 	_test_reactive_does_ally_engage()
 	_test_pick_target_prefers_higher_threat_over_closer()
@@ -138,6 +141,33 @@ func _make_simple_pair() -> Dictionary:
 	var ai := _attach_ai(victim, UnitAI.Profile.REACTIVE)
 	ai.captures_home_from_body()
 	return {"layer": layer, "attacker": attacker, "victim": victim, "ai": ai}
+
+
+func _make_creep_pair() -> Dictionary:
+	## 中立野怪 victim (owner=12 CAMP_CREEP) + 两个玩家单位 (owner=1)
+	var layer := Node3D.new()
+	layer.name = "CreepThreat_%d" % Time.get_ticks_msec()
+	root.add_child(layer)
+	var first := _make_unit(layer, "Footman", 1, Vector2(0, 0))
+	var other := _make_unit(layer, "Footman", 1, Vector2(40, 0))
+	var victim := _make_unit(layer, "Ogre", 12, Vector2(100, 0))
+	var ai := _attach_ai(victim, UnitAI.Profile.CAMP_CREEP)
+	ai.captures_home_from_body()
+	# 给 idle/engaged 索敌用 host
+	ai.configure(
+		Callable(),
+		func(_u: Node3D) -> Node: return victim.get_node("AttackController"),
+		func() -> Node: return layer,
+		Callable(),
+		func(_u: Node3D) -> Node: return victim.get_node("UnitNavigator")
+	)
+	return {
+		"layer": layer,
+		"attacker": first,
+		"other": other,
+		"victim": victim,
+		"ai": ai,
+	}
 
 
 # ---------------------------------------------------------------------------
@@ -267,23 +297,99 @@ func _test_swap_cooldown_blocks_extra_pick() -> void:
 
 
 # ---------------------------------------------------------------------------
-# 7) 受击（notify_damaged）强制清 swap_cd：可立刻切回攻击者
+# 7) 受击不打断 sticky：已锁 A 时 B 打来只加仇恨，不切到 B
 # ---------------------------------------------------------------------------
-func _test_swap_cooldown_cleared_by_damage() -> void:
-	var pair := _make_simple_pair()
+func _test_damage_does_not_break_sticky() -> void:
+	var pair := _make_creep_pair()
 	var ai: UnitAI = pair["ai"]
-	var attacker: Node3D = pair["attacker"]
-	if not ai.try_engage(attacker):
-		_fail("swap_cd_dmg: 第一次 try_engage 失败")
+	var first: Node3D = pair["attacker"]
+	var other: Node3D = pair["other"]
+	if not ai.try_engage(first):
+		_fail("sticky_dmg: 第一次 try_engage 失败")
 		pair["layer"].queue_free()
 		return
-	# 模拟 victim 被 attacker 打了 10 伤（amount=10）
-	ai.notify_damaged({"ok": true, "attacker": attacker, "amount": 10.0})
-	# swap_cd 已被清 → 再次 try_engage 同 target 应仍允许
-	if not ai.try_engage(attacker):
-		_fail("swap_cd_dmg: 受击清 swap_cd 后再次 engage 应允许")
-	else:
-		_ok("swap_cooldown_cleared_by_damage")
+	var ac: FakeAttack = pair["victim"].get_node("AttackController")
+	var starts_before := ac.start_count
+	# B 打一刀：应只加仇恨，不切目标
+	ai.notify_damaged({"ok": true, "attacker": other, "amount": 10.0})
+	if ai._locked_target != first:
+		_fail("sticky_dmg: 受击后应仍锁 first, got %s" % ai._locked_target)
+		pair["layer"].queue_free()
+		return
+	if ac.last_target != first:
+		_fail("sticky_dmg: AttackController 不应切到 other")
+		pair["layer"].queue_free()
+		return
+	if ac.start_count != starts_before:
+		_fail("sticky_dmg: 不应再次 start_attack（got +%d）" % (ac.start_count - starts_before))
+		pair["layer"].queue_free()
+		return
+	if float(ai._threat.get(other.get_instance_id(), 0.0)) < 10.0:
+		_fail("sticky_dmg: other 应写入仇恨")
+		pair["layer"].queue_free()
+		return
+	_ok("damage_does_not_break_sticky")
+	pair["layer"].queue_free()
+
+
+# ---------------------------------------------------------------------------
+# 7b) 友军攻击令：CAMP_CREEP 把锁定单位踢出威胁并切到次高仇恨
+# ---------------------------------------------------------------------------
+func _test_friendly_attack_drops_creep_threat() -> void:
+	var pair := _make_creep_pair()
+	var ai: UnitAI = pair["ai"]
+	var first: Node3D = pair["attacker"]
+	var other: Node3D = pair["other"]
+	if not ai.try_engage(first):
+		_fail("friendly_drop: try_engage 失败")
+		pair["layer"].queue_free()
+		return
+	ai.add_threat(other, 5.0)
+	# first 对友军下令攻击 → 广播脱威胁
+	ai.on_unit_issued_friendly_attack(first)
+	if ai._threat.has(first.get_instance_id()):
+		_fail("friendly_drop: first 应被踢出仇恨表")
+		pair["layer"].queue_free()
+		return
+	if ai._locked_target != other:
+		_fail("friendly_drop: 应切到 other, got %s" % ai._locked_target)
+		pair["layer"].queue_free()
+		return
+	_ok("friendly_attack_drops_creep_threat")
+	pair["layer"].queue_free()
+
+
+# ---------------------------------------------------------------------------
+# 7c) 单挑甩仇恨：无次要目标时脱战，不能立刻锁回 source
+# ---------------------------------------------------------------------------
+func _test_friendly_attack_solo_does_not_reacquire() -> void:
+	var pair := _make_creep_pair()
+	var ai: UnitAI = pair["ai"]
+	var first: Node3D = pair["attacker"]
+	# 不给 other 加仇恨
+	if not ai.try_engage(first):
+		_fail("solo_drop: try_engage 失败")
+		pair["layer"].queue_free()
+		return
+	ai.on_unit_issued_friendly_attack(first)
+	if ai._locked_target == first:
+		_fail("solo_drop: 不应立刻锁回 first")
+		pair["layer"].queue_free()
+		return
+	if ai.is_engaged():
+		_fail("solo_drop: 无次要威胁应脱战")
+		pair["layer"].queue_free()
+		return
+	if ai._threat.has(first.get_instance_id()):
+		_fail("solo_drop: first 应仍在忽略期 / 不在仇恨表")
+		pair["layer"].queue_free()
+		return
+	# ignore 期内 try_engage(first) 应拒
+	if ai.try_engage(first):
+		_fail("solo_drop: ignore 期内不应再 engage first")
+		pair["layer"].queue_free()
+		return
+	_ok("friendly_attack_solo_does_not_reacquire")
 	pair["layer"].queue_free()
 
 

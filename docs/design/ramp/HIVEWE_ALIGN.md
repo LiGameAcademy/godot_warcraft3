@@ -1,5 +1,7 @@
 # 斜坡层向 HivEWE 对齐的路线图
 
+> 2026-09-13 最新渲染规则与用户地图回归见 [HiveWE 源码对照](HIVEWE_RENDER_PARITY.md)。下文有关 L 碗、外角补洞和污染列容错的记录已被替代。
+
 > **角色**：记录 `wc3_ramp_paint.gd` / `wc3_ramp_collect.gd` 当前与 HivEWE 的差异、
 > 已对齐项、待重构项。**HivEWE 是行为权威**（来自 `D:\GameMaker\HiveWE\src\brush\terrain_operators.cpp`
 > `CliffOperator::update_ramp` + `CliffOperator::check_ramp_direction` ~L406-463）；

@@ -3,6 +3,7 @@ extends Node3D
 ## 静物 / 装饰物层：GLB 实例或按 Geoset 分片 MultiMesh。
 
 const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
+const DoodadTexture := preload("res://scripts/map/presentation/doodad_texture.gd")
 
 
 @export var try_load_glb: bool = true
@@ -66,7 +67,7 @@ func remove_by_creation_number(creation_number: int) -> bool:
 		if pn != null and is_instance_valid(pn):
 			if pn.get_parent() == self:
 				remove_child(pn)
-			pn.free()
+			pn.queue_free()
 			removed = true
 	if _mm_by_cn.has(creation_number):
 		_hide_mm_instance(creation_number)
@@ -78,7 +79,22 @@ func remove_by_creation_number(creation_number: int) -> bool:
 	if node == null:
 		return false
 	remove_child(node)
-	node.free()
+	node.queue_free()
+	return true
+
+
+## Transform edits retain the instance, materials and animation state.
+func update_one(entry: Dictionary, hf: Wc3Heightfield) -> bool:
+	var cn := int(entry.get("creationNumber", -1))
+	var node := ensure_promoted(cn)
+	if node == null:
+		return false
+	var previous: Dictionary = node.get_meta("doodad_data", {})
+	if str(previous.get("id", "")) != str(entry.get("id", "")) or int(previous.get("variation", 0)) != int(entry.get("variation", 0)):
+		return false
+	_apply_doodad_xform(node, entry, bool(node.get_meta("doodad_imported_scale", true)))
+	node.set_meta("doodad_data", entry.duplicate(true))
+	_refresh_one_height(node, hf)
 	return true
 
 
@@ -117,6 +133,7 @@ func ensure_promoted(creation_number: int) -> Node3D:
 	_apply_doodad_xform(node, entry, true)
 	node.set_meta("doodad_data", entry)
 	node.set_meta("promoted_from_mm", true)
+	DoodadTexture.apply(node, _catalog.lookup(type_id))
 	# A：先入树
 	add_child(node)
 	_promoted_by_cn[creation_number] = node
@@ -322,6 +339,7 @@ func _place_multimesh_group(type_id: String, variation: int, glb: String, list: 
 	if root.get_child_count() == 0:
 		root.free()
 		return false
+	DoodadTexture.apply(root, _catalog.lookup(type_id))
 	add_child(root)
 	# 双向索引：供 ensure_promoted / 精确 hide（勿依赖 GPU 侧数据）
 	for i in range(list.size()):
@@ -353,6 +371,7 @@ func _place_doodad_instance(type_id: String, glb: String, d: Dictionary, play_an
 	node.set_meta("doodad_data", d)  # 供 refresh_heights 重算 Y 用
 	var info: Dictionary = _catalog.lookup(type_id) if _catalog != null else {}
 	var has_mesh: bool = MapPlaceholders.node_has_mesh(node)
+	DoodadTexture.apply(node, info)
 	_Pe2.attach_to(node, glb)
 	var helpers := MapPlaceholders.attach_editor_helpers(
 		node, info, has_mesh, show_editor_helpers
@@ -399,6 +418,26 @@ func refresh_heights(hf: Wc3Heightfield) -> void:
 func _apply_height_update(hf: Wc3Heightfield) -> void:
 	if hf == null or not hf.is_valid():
 		return
+	for cn in _mm_by_cn:
+		# Promoted objects are updated as regular children below; their old slot
+		# must stay hidden. Deleted slots no longer appear in this index.
+		if _promoted_by_cn.has(cn):
+			continue
+		var info: Dictionary = _mm_by_cn[cn]
+		var root: Node = info.get("root")
+		if not is_instance_valid(root):
+			continue
+		var entry: Dictionary = info.entry.duplicate(true)
+		var pos: Dictionary = entry.get("position", {})
+		pos["z"] = hf.interpolated_height(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+		entry["position"] = pos
+		var xf := _doodad_transform(entry)
+		info["entry"] = entry
+		info["xf"] = xf
+		var index := int(info.index)
+		for part in root.get_children():
+			if part is MultiMeshInstance3D and part.multimesh != null and index >= 0 and index < part.multimesh.instance_count:
+				part.multimesh.set_instance_transform(index, xf)
 	for c in get_children():
 		if not (c is Node3D):
 			continue
@@ -416,6 +455,9 @@ func _apply_height_update(hf: Wc3Heightfield) -> void:
 
 
 func _apply_doodad_xform(node: Node3D, d: Dictionary, multiply_imported_scale: bool) -> void:
+	if not node.has_meta("doodad_base_scale"):
+		node.set_meta("doodad_base_scale", node.scale)
+		node.set_meta("doodad_imported_scale", multiply_imported_scale)
 	var pos: Dictionary = d.get("position", {})
 	var scale_data: Dictionary = d.get("scale", {})
 	var angle := float(d.get("angle", 0.0))
@@ -430,7 +472,7 @@ func _apply_doodad_xform(node: Node3D, d: Dictionary, multiply_imported_scale: b
 	var sz := float(scale_data.get("z", 1.0))
 	if multiply_imported_scale:
 		# GLB 根节点已含 MODEL_SCALE=0.01，只乘地图缩放
-		var b := node.scale
+		var b: Vector3 = node.get_meta("doodad_base_scale")
 		node.scale = Vector3(b.x * sx, b.y * sz, b.z * sy)
 	else:
 		node.scale = Vector3(sx, sz, sy) * Wc3Coords.WORLD_SCALE
@@ -460,4 +502,5 @@ func _clear_children() -> void:
 	_mm_by_cn.clear()
 	_promoted_by_cn.clear()
 	for c in get_children():
+		remove_child(c)
 		c.queue_free()

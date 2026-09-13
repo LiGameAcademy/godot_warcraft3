@@ -120,7 +120,7 @@ game/scripts/logic/
 | 谁挂 | 规则 |
 |------|------|
 | 可战斗中立野怪 | 挂；Profile=`CAMP_CREEP`（U0-2 ensure） |
-| 可战斗玩家军事单位 | P0 挂 `PASSIVE`（占位）；P1 可改 `TEAM_PLAYER`（待补 idle 抢占边界后切） |
+| 可战斗玩家军事单位 | 挂；Profile=`TEAM_PLAYER`（idle 警戒；Hold/显式命令由 occupied 压制） |
 | 无武器 / 小动物 | **不挂**，或挂 `PASSIVE` 空转（优先不挂） |
 | 农民 | **不靠 UnitAI 做采集**；采集见下「与 Harvest 边界」 |
 | **防御塔 / 有武器建筑** | **算单位微观 AI，不是 AI 玩家**。P0 `ensure` 刻意跳过建筑（Echo 竖切先跑野怪）；P1 应对「有武器建筑」单独挂：`AttackController` + `UnitAI`（Profile 近 `CAMP_CREEP`/`GUARD`：acquire 内打、**通常不追出射程/锚点**） |
@@ -202,36 +202,46 @@ U2 索敌必须用 `effective_acquire_range_wc3()`，不要直接裸读 `CombatQ
 |---------|------|-----------|----------|----------------|-------|
 | `PASSIVE` | 小动物等（可选） | 无 | 可选逃跑后置 | — | — |
 | `CAMP_CREEP` | Echo 野怪默认 | ✅ | ✅ | ✅（同 camp 全员可拉） | ✅ |
-| `TEAM_PLAYER` | 玩家军事单位（暂未默认） | ✅ | ✅ | ✅（同 team 有人已 ENGAGED 才拉） | —（跟玩家命令） |
-| `REACTIVE` | 玩家辅助单位（默认） | ✘ | ✅ | ✅ | — |
+| `TEAM_PLAYER` | 玩家军事单位（**当前默认**） | ✅ | ✅ | ✅（同 team 有人已 ENGAGED 才拉） | —（跟玩家命令） |
+| `REACTIVE` | 只要反击不要 idle 索敌的特例 | ✘ | ✅ | ✅ | — |
 
-> **当前默认**：中立可战 → `CAMP_CREEP`；玩家可战 → `REACTIVE`（受击反击 + 盟友广播可拉；不主动 idle acquire，避免抢玩家命令）。
-> `TEAM_PLAYER` 代码已就位（盟友挨打广播 / `allows_ally_engage`），但 `wants_idle_acquire` 一开会跟玩家命令争抢 `set_current` 序列，**待 P1 补「玩家显式命令时压制 idle acquire」边界后再切默认**。
-> P1 路线：`default_profile_for` 玩家单位改回 `TEAM_PLAYER`，并加 selftest 兜住「move 后 6Hz 内不被偷打」。
+> **当前默认**：中立可战 → `CAMP_CREEP`；玩家可战 → `TEAM_PLAYER`（idle 警戒 + 盟友助攻；对齐 WC3「闲置会接战」）。
+> **Hold（H）**：`hold_position` / Hold 订单 → 不 idle 索敌、不参与盟友追击；射程内交火仍由 `AttackController.HOLD` 负责。
+> **玩家显式命令**（Move / Attack / Harvest…）：`_player_occupied` 为真 → AI 不抢单；Stop 清空后恢复 idle 索敌。
+> `REACTIVE` 仍保留给「不要主动警戒」的特例，不再作玩家默认。
 
-P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；玩家可战 → `REACTIVE`；其余不挂或 `PASSIVE`。
+P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；玩家可战 → `TEAM_PLAYER`；其余不挂或 `PASSIVE`。
 
 > **别名**：`PLAYER_MILITARY = TEAM_PLAYER`，保留供旧引用；新代码统一用 `TEAM_PLAYER`。
 
 ### 4.5 仇恨表（ThreatTable）+ Sticky Target（U5）
 
-**问题**：旧 `_issue_ai_attack` 每次都「按距离最近」选目标，野怪 / 玩家单位会在多个敌人之间来回横跳，仇恨完全不稳定。
+**问题**：旧实现「受击必 `try_engage(攻击者)`」→ 多人围殴时野怪每刀换人，目标抽风。
 
-**解法**：每个 `UnitAI` 维护一张仇恨表，叠加「sticky 锁定」+「切目标冷却」，让目标选择有记忆。
+**解法（对齐 WC3 低级野怪）**：粘住当前威胁；受击只加仇恨表；对友军下攻击令才脱威胁。
+
+#### 行为
+
+| 时机 | 动作 |
+|------|------|
+| 首仇 / 无锁 | `add_threat` + `try_engage(attacker)` |
+| 已锁且目标仍有效 | 只 `add_threat` + 营友助攻，**不切人** |
+| 当前目标死 / 出 acquire | `_on_combat_ended` → `_pick_target`（sticky→top→最近） |
+| 锁定单位对**友军**下令攻击 | `broadcast_friendly_attack_order` → 踢出仇恨 + 2s ignore；有次要威胁则切，否则脱战/归巢（禁止立刻 find_acquire 拉回） |
 
 #### 数据结构
 
 | 字段 | 含义 |
 |------|------|
 | `_threat: Dictionary[id → float]` | 仇恨值表；写入：受击 `add_threat(attacker, dmg × 1.0)` + idle acquire 候选基础值 0.1 |
-| `_swap_cd: float` | 切目标冷却（0.25s）；受击强制清零 |
-| `_locked_target: Node3D` | sticky 锁定目标；hold 窗口 1.5s 内不重新 acquire |
-| `_locked_at_msec: int` | 锁定时间戳 |
+| `_swap_cd: float` | 切目标冷却（0.25s）；idle acquire / try_engage 用 |
+| `_locked_target: Node3D` | sticky 锁定目标 |
+| `_locked_at_msec: int` | 锁定时间戳（idle hold 窗口） |
 
 #### 衰减
 
-- 每秒 `THREAT_DECAY_PER_SEC = 0.3`（WC3 经典值）；≤0 即从表移除
-- 死亡 / 脱敌对 / 脱离 acquire 半径 → 立即移除并清 sticky 锁
+- 每秒 `THREAT_DECAY_PER_SEC = 0.3`；≤0 即从表移除
+- 死亡 / 脱敌对 → 立即移除；友军攻击令 → `clear_threat_for`
 
 #### 选目标（`_pick_target`）
 
@@ -243,14 +253,9 @@ P0 实现：地图中立 + `has_weapon` → `CAMP_CREEP`；玩家可战 → `REA
 3) 兜底: CombatQuery.find_acquire_target（最近敌对）
 ```
 
-#### 触发写入 / 重读
+#### Lv7+（后置）
 
-| 时机 | 动作 |
-|------|------|
-| `notify_damaged` | `add_threat(attacker, dmg)` + 清 `_swap_cd`（保证攻击者必中） |
-| `try_engage` 成功 | `_locked_target = target`；`_swap_cd = 0.25`；`_threat[id] = max(_, 0.1)` |
-| `_process` 节流（6Hz） | `_decay_threat(delta)` + `_swap_cd -= delta`；到 0 才让 `_tick_idle_acquire` 重新选 |
-| `_on_combat_ended` | 走 `_pick_target`（不再直接 `find_acquire_target`） |
+原作 Lv≥7 倾向残血/英雄，甩仇恨常失效。`SMART_CREEP_LEVEL` / `uses_sticky_threat()` 已留钩子；智能档落地前暂仍 sticky。
 
 #### AttackController 切目标防卡刀
 
@@ -265,14 +270,14 @@ _cooldown_left = maxf(_cooldown_left, _MIN_SWAP_COOLDOWN)
 
 | Profile | idle acquire | 受击反击 | 盟友挨打可拉 | 应用 |
 |---------|-------------|----------|--------------|------|
-| `CAMP_CREEP` | ✅ | ✅ | ✅ | Echo 野怪 |
+| `CAMP_CREEP` | ✅ | ✅ | ✅ | Echo 野怪（粘仇 + 友军甩仇恨） |
 | `TEAM_PLAYER` | ✅ | ✅ | ✅ | 玩家军事（P1 切默认） |
 | `REACTIVE` | ✘ | ✅ | ✅ | 玩家辅助（当前默认） |
 | `PASSIVE` | ✘ | ✘ | ✘ | 小动物 |
 
 #### 验证
 
-`tests/unit/selftest_threat_table.gd`（10 用例）：`threat_add_and_top` / `threat_decay_removes_when_zero` / `threat_filters_dead_and_neutral` / `sticky_holds_through_tiny_window` / `sticky_drops_when_target_out_of_range` / `swap_cooldown_blocks_extra_pick` / `swap_cooldown_cleared_by_damage` / `reactive_does_not_idle_acquire` / `reactive_does_ally_engage` / `pick_target_prefers_higher_threat_over_closer`。
+`tests/unit/selftest_threat_table.gd`：`threat_add_and_top` / `threat_decay_removes_when_zero` / `threat_filters_dead_and_neutral` / `sticky_holds_through_tiny_window` / `sticky_drops_when_target_out_of_range` / `swap_cooldown_blocks_extra_pick` / `damage_does_not_break_sticky` / `friendly_attack_drops_creep_threat` / `reactive_does_not_idle_acquire` / `reactive_does_ally_engage` / `pick_target_prefers_higher_threat_over_closer`。
 
 ---
 

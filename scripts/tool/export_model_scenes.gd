@@ -14,6 +14,7 @@ const Wc3ScnRebucketScript := preload("res://scripts/tool/wc3_scn_rebucket.gd")
 const Wc3ScnAnimkeysScript := preload("res://scripts/tool/wc3_scn_animkeys.gd")
 const Wc3ScnPe2Script := preload("res://scripts/tool/wc3_scn_pe2.gd")
 const Wc3ScnRibbonScript := preload("res://scripts/tool/wc3_scn_ribbon.gd")
+const Wc3ScnDependencies := preload("res://scripts/tool/wc3_scn_dependencies.gd")
 const Wc3ModelSceneScript := preload("res://scripts/presentation/wc3_model/wc3_model_scene.gd")
 const Wc3AnimPlayerScript := preload("res://scripts/presentation/wc3_model/wc3_anim_player.gd")
 
@@ -81,6 +82,7 @@ func _run() -> void:
 	print(found_msg)
 	_plog("INFO", found_msg)
 	var cache := MapModelCache.new()
+	var dependencies := Wc3ScnDependencies.new()
 	var exported := 0
 	var skipped := 0
 	var failed := 0
@@ -109,15 +111,12 @@ func _run() -> void:
 		var glb_res := RuntimeAssets.converted_path(logical_glb)
 		var scn_res := RuntimeAssets.model_scene_path(logical_glb)
 		var disk_scn := RuntimeAssets.project_abs(scn_res)
+		var dependency_signature := dependencies.signature(glb_res)
 		if force and FileAccess.file_exists(disk_scn):
 			DirAccess.remove_absolute(disk_scn)
 			cache.evict(glb_res)
 		elif not force and FileAccess.file_exists(disk_scn):
-			var gstat := FileAccess.get_modified_time(disk_glb)
-			var sstat := FileAccess.get_modified_time(disk_scn)
-			var pe2_stat := _sidecar_mtime(logical_glb, ".pe2.json")
-			var cam_stat := _sidecar_mtime(logical_glb, ".cameras.json")
-			if sstat >= gstat and sstat >= pe2_stat and sstat >= cam_stat:
+			if dependencies.is_current(scn_res, dependency_signature):
 				skipped += 1
 				if considered % 50 == 0:
 					_progress_line(considered, exported, skipped, failed)
@@ -213,6 +212,8 @@ func _run() -> void:
 			failed += 1
 			continue
 		# 释放原型，避免 headless 退出泄漏（下一文件再 ensure）
+		if dependencies.record(scn_res, dependency_signature) != OK:
+			_plog("WARN", "bake dependency manifest not saved: %s" % logical_glb)
 		if cache.has_cached(glb_res):
 			cache.evict(glb_res)
 		exported += 1
@@ -226,8 +227,8 @@ func _run() -> void:
 	)
 	print(done_msg)
 	_plog("INFO", done_msg)
-	# 部分模型（DNC/UI 等）headless 加载失败属可预期；有成功导出则视为通过
-	quit(0 if failed == 0 or exported > 0 or skipped > 0 else 1)
+	# Partial success must not conceal a failed requested model.
+	quit(0 if failed == 0 else 1)
 
 
 func _progress_line(considered: int, exported: int, skipped: int, failed: int) -> void:

@@ -3,7 +3,7 @@ extends RefCounted
 ## 小地图工具函数：坐标转换 + 视口梯形。纯函数，无状态。
 
 ## 黄框投影用等效 FOV（不改真实编辑相机）。手测可调。
-const DEFAULT_EFFECTIVE_FOV_DEG := 50.0
+const DEFAULT_EFFECTIVE_FOV_DEG := 40.0
 ## 等效 FOV 启用时默认不再二次收缩；需要再缩可 < 1。
 const DEFAULT_FOOTPRINT_SCALE := 1.0
 
@@ -69,7 +69,7 @@ static func compute_height_range(hf: Wc3Heightfield) -> Vector2i:
 
 
 ## 视锥四角 → 小地图 UV 梯形。
-## effective_fov_deg：用较窄 FOV 估黄框（默认 50）；≤0 则用相机真实 FOV。
+## effective_fov_deg：用较窄 FOV 估黄框（默认 40）；≤0 则用相机真实 FOV。
 ## footprint_scale：朝观察点再收缩（默认 1=不缩）。
 static func compute_camera_minimap_uv_quad(
 	cam: Camera3D,
@@ -103,6 +103,8 @@ static func compute_camera_minimap_uv_quad(
 		var hit: Variant = _ray_to_ground(cam, sample_scr, plane_y)
 		if hit == null:
 			hit = _ray_to_ground(cam, sample_scr, look.y)
+		if hit != null and cam.global_position.distance_to(hit as Vector3) > maxf(cam.global_position.distance_to(look) * 4.0, 1.0):
+			hit = null
 		if hit == null:
 			out.clear()
 			break
@@ -192,6 +194,28 @@ static func _ray_to_ground(cam: Camera3D, screen: Vector2, plane_y: float) -> Va
 	if absf(dir.y) < 0.0001:
 		return null
 	var t: float = (plane_y - from.y) / dir.y
-	if t < 0.05:
+	if t < 0.05 or t > cam.far:
 		return null
 	return from + dir * t
+
+
+## Sutherland-Hodgman clipping preserves intersections instead of clamping corners.
+static func clip_uv_polygon(polygon: PackedVector2Array) -> PackedVector2Array:
+	var result := polygon
+	for axis in range(2):
+		for boundary in [0.0, 1.0]:
+			var input := result
+			result = PackedVector2Array()
+			if input.is_empty():
+				return result
+			var previous := input[input.size() - 1]
+			for current in input:
+				var inside: bool = current[axis] >= boundary if boundary == 0.0 else current[axis] <= boundary
+				var was_inside: bool = previous[axis] >= boundary if boundary == 0.0 else previous[axis] <= boundary
+				if inside != was_inside:
+					var t: float = (boundary - previous[axis]) / (current[axis] - previous[axis])
+					result.append(previous.lerp(current, t))
+				if inside:
+					result.append(current)
+				previous = current
+	return result

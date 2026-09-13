@@ -12,6 +12,7 @@ enum Kind {
 	BUILD_SITE = 4,
 	## 敌对 / 可攻击单位
 	ENEMY_UNIT = 5,
+	ITEM = 6,
 }
 
 
@@ -73,6 +74,8 @@ static func enemy_unit(unit: Node3D, goal: Vector2) -> SmartTarget:
 
 func kind_name() -> String:
 	match kind:
+		Kind.ITEM:
+			return "Item"
 		Kind.GROUND:
 			return "Ground"
 		Kind.GOLD_MINE:

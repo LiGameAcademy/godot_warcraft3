@@ -11,6 +11,7 @@ const UnitEditCommandScript := preload("res://editor/scripts/commands/unit_edit_
 
 var _entry: Dictionary = {}
 var _before: Dictionary = {}
+var _general_initial: Dictionary = {}
 var _catalog: Wc3IdCatalog = null
 var _document = null
 var _history: EditorCommandHistory = null
@@ -30,6 +31,8 @@ var _hp_max_label: Label
 var _mp_spin: SpinBox
 var _mp_max_label: Label
 var _acq_normal: CheckBox
+var _acq_custom: CheckBox
+var _acq_spin: SpinBox
 var _acq_camp: CheckBox
 var _skills_list: ItemList
 var _drops_list: ItemList
@@ -45,8 +48,8 @@ func _ready() -> void:
 	title = EditorI18n.t("EDITOR_UNIT_PROPS_TITLE")
 	exclusive = true
 	unresizable = false
-	size = Vector2i(420, 380)
-	min_size = Vector2i(360, 320)
+	size = Vector2i(420, 460)
+	min_size = Vector2i(420, 460)
 	_build_ui()
 	close_requested.connect(_on_cancel)
 	if not EditorI18n.locale_changed.is_connected(_on_locale):
@@ -70,6 +73,7 @@ func open_for_entry(entry: Dictionary) -> void:
 	_load_balance_caps()
 	_load_type_abilities()
 	_populate_general()
+	_general_initial = _general_values()
 	_populate_skills()
 	_populate_drops()
 	_apply_locale()
@@ -108,6 +112,8 @@ func _apply_locale() -> void:
 		var dn := _tab_drops.find_child("DropsNote", true, false) as Label
 		if dn:
 			dn.text = EditorI18n.t("EDITOR_UNIT_PROPS_DROPS_NOTE")
+	if _acq_custom:
+		_acq_custom.text = EditorI18n.t("EDITOR_UNIT_PROPS_ACQ_CUSTOM")
 	if _acq_normal:
 		_acq_normal.text = EditorI18n.t("EDITOR_UNIT_PROPS_ACQ_NORMAL", [500])
 	if _acq_camp:
@@ -247,6 +253,18 @@ func _make_general_tab() -> Control:
 	_acq_camp.button_group = _acq_normal.button_group
 	acq.add_child(_acq_normal)
 	acq.add_child(_acq_camp)
+	var custom_row := HBoxContainer.new()
+	_acq_custom = CheckBox.new()
+	_acq_custom.button_group = _acq_normal.button_group
+	custom_row.add_child(_acq_custom)
+	_acq_spin = SpinBox.new()
+	_acq_spin.min_value = 0
+	_acq_spin.max_value = 100000
+	_acq_spin.allow_greater = true
+	_acq_spin.step = 0.1
+	_acq_spin.value_changed.connect(func(_value): _acq_custom.button_pressed = true)
+	custom_row.add_child(_acq_spin)
+	acq.add_child(custom_row)
 	grid.add_child(acq)
 	return margin
 
@@ -309,6 +327,9 @@ func _fill_owner_options() -> void:
 		_owner_opt.set_item_metadata(_owner_opt.item_count - 1, p)
 	_owner_opt.add_item(EditorI18n.t("EDITOR_UNIT_OWNER_NEUTRAL_HOSTILE"))
 	_owner_opt.set_item_metadata(_owner_opt.item_count - 1, 12)
+	for neutral in [13, 14]:
+		_owner_opt.add_item(EditorI18n.t("EDITOR_UNIT_OWNER_NEUTRAL_ID", [neutral]))
+		_owner_opt.set_item_metadata(_owner_opt.item_count - 1, neutral)
 	_owner_opt.add_item(EditorI18n.t("EDITOR_UNIT_OWNER_NEUTRAL_PASSIVE"))
 	_owner_opt.set_item_metadata(_owner_opt.item_count - 1, 15)
 
@@ -414,9 +435,10 @@ func _populate_general() -> void:
 	else:
 		_mp_spin.value = clampf(mp, 0.0, float(_max_mp))
 	var acq := float(_entry.get("targetAcquisition", ACQ_NORMAL))
-	var is_camp := absf(acq - ACQ_CAMP) < 0.01 or absf(acq - 200.0) < 0.5
-	_acq_camp.button_pressed = is_camp
-	_acq_normal.button_pressed = not is_camp
+	_acq_spin.set_value_no_signal(maxf(acq, 0))
+	_acq_camp.button_pressed = acq == ACQ_CAMP
+	_acq_normal.button_pressed = acq == ACQ_NORMAL
+	_acq_custom.button_pressed = acq != ACQ_CAMP and acq != ACQ_NORMAL
 	_acq_normal.text = EditorI18n.t("EDITOR_UNIT_PROPS_ACQ_NORMAL", [500])
 	_acq_camp.text = EditorI18n.t("EDITOR_UNIT_PROPS_ACQ_CAMP", [200])
 
@@ -466,26 +488,39 @@ func _update_skills_tab_visibility() -> void:
 	_tabs.set_tab_hidden(_tabs.get_tab_idx_from_control(_tab_skills), not show_skills)
 
 
+func _general_values() -> Dictionary:
+	return {
+		"owner": int(_owner_opt.get_item_metadata(_owner_opt.selected)),
+		"facing": _facing_spin.value,
+		"hp": _hp_spin.value,
+		"mp": _mp_spin.value,
+		"acq": _acq_spin.value if _acq_custom.button_pressed else (ACQ_CAMP if _acq_camp.button_pressed else ACQ_NORMAL),
+	}
+
+
 func _collect_entry() -> Dictionary:
+	# Preserve untouched imported fields, including defaults and values outside UI limits.
 	var out := _entry.duplicate(true)
-	var owner := int(_owner_opt.get_item_metadata(_owner_opt.selected))
-	out["owner"] = clampi(owner, 0, 15)
-	var deg := float(_facing_spin.value)
-	out["angleDegrees"] = deg
-	out["angle"] = deg_to_rad(deg)
-	var hp_pct := float(_hp_spin.value)
-	out["hitPoints"] = -1.0 if absf(hp_pct - 100.0) < 0.5 else hp_pct
-	if _max_mp <= 0:
-		out["manaPoints"] = -1.0
-	else:
-		var mp := float(_mp_spin.value)
-		out["manaPoints"] = -1.0 if absf(mp - float(_max_mp)) < 0.5 else mp
-	out["targetAcquisition"] = ACQ_CAMP if _acq_camp.button_pressed else ACQ_NORMAL
+	var values := _general_values()
+	if values.owner != _general_initial.owner:
+		out["owner"] = values.owner
+	if values.facing != _general_initial.facing:
+		out["angleDegrees"] = values.facing
+		out["angle"] = deg_to_rad(values.facing)
+	if values.hp != _general_initial.hp:
+		out["hitPoints"] = values.hp
+	if values.mp != _general_initial.mp:
+		out["manaPoints"] = values.mp
+	if values.acq != _general_initial.acq:
+		out["targetAcquisition"] = values.acq
 	return out
 
 
 func _on_ok() -> void:
 	var after := _collect_entry()
+	if after == _before:
+		hide()
+		return
 	if _document != null:
 		var cn := int(after.get("creationNumber", -1))
 		if cn >= 0:

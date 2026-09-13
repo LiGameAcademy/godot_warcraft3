@@ -1,36 +1,11 @@
 [gd_scene format=3 uid="uid://cxqauera443ph"]
 
 [ext_resource type="Script" uid="uid://bqu2h0ywu2y78" path="res://editor/ui/tool_palette_window.gd" id="1_script"]
-[ext_resource type="Texture2D" uid="uid://bdg0rfip0qhw7" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush07.png" id="4_x365p"]
-[ext_resource type="Texture2D" uid="uid://hdyv3lug5pdu" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush04.png" id="8_be5ku"]
-[ext_resource type="Texture2D" uid="uid://rorq3x4741fs" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/BoundaryPlace.png" id="boundary_place"]
-[ext_resource type="Texture2D" uid="uid://dj08304xk45rc" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/BoundaryRemove.png" id="boundary_remove"]
-[ext_resource type="Texture2D" uid="uid://cow51rl7mch53" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush01.png" id="cliff_deep"]
-[ext_resource type="Texture2D" uid="uid://b3tm81f24y6i6" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush02.png" id="cliff_level"]
-[ext_resource type="Texture2D" uid="uid://bmjlp1lag73uw" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush06.png" id="cliff_lower"]
-[ext_resource type="Texture2D" uid="uid://5nkb3smynw52" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush03.png" id="cliff_raise"]
-[ext_resource type="Texture2D" uid="uid://f6bg30b2rqrd" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RampBrush00.png" id="cliff_ramp"]
-[ext_resource type="Texture2D" uid="uid://dxnqx0hmokde2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush00.png" id="cliff_shallow"]
-[ext_resource type="Texture2D" uid="uid://b4p87paofsfqv" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush01.png" id="height_lower"]
-[ext_resource type="Texture2D" uid="uid://mo24k85wcjdb" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush03.png" id="height_noise"]
-[ext_resource type="Texture2D" uid="uid://bydy0xva44ko3" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush02.png" id="height_plateau"]
-[ext_resource type="Texture2D" uid="uid://dch81ioxcbcm5" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush00.png" id="height_raise"]
-[ext_resource type="Texture2D" uid="uid://cganbtbr6n4tg" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/HeightBrush04.png" id="height_smooth"]
-[ext_resource type="Texture2D" uid="uid://c4b3ljkjbcqsc" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush04.png" id="shape_circle"]
-[ext_resource type="Texture2D" uid="uid://qmda3fhl7kgu" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/SquareSizeBrush04.png" id="shape_square"]
-[ext_resource type="Texture2D" uid="uid://dddwjbvlovxih" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush00.png" id="size_c0"]
-[ext_resource type="Texture2D" uid="uid://34lt7g1vvgqx" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush01.png" id="size_c1"]
-[ext_resource type="Texture2D" uid="uid://cxlt06ic33sf8" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush02.png" id="size_c2"]
-[ext_resource type="Texture2D" uid="uid://bog3hdoys2lh2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/TextureBrush03.png" id="size_c3"]
-[ext_resource type="Texture2D" uid="uid://4anpnuwoujmp" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomRotation.png" id="rand_rot"]
-[ext_resource type="Texture2D" uid="uid://crm54xhqj7bla" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-Symmetric.png" id="rand_scale_sym"]
-[ext_resource type="Texture2D" uid="uid://bwfe4v72ughj" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricZ.png" id="rand_scale_z"]
-[ext_resource type="Texture2D" uid="uid://bn08x8ltvr8te" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricXY.png" id="rand_scale_xy"]
 
 [node name="ToolPaletteWindow" type="Window" unique_id=278871348]
 oversampling_override = 1.0
 title = "WESTRING_TOOL_PALETTE"
-initial_position = 4
+initial_position = 0
 size = Vector2i(268, 612)
 always_on_top = true
 script = ExtResource("1_script")
@@ -106,7 +81,7 @@ columns = 4
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_place")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryPlace.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -114,7 +89,7 @@ stretch_mode = 5
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_place")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryPlace.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -135,7 +110,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_place")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryPlace.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -144,7 +119,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_remove")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryRemove.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -169,7 +144,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("4_x365p")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush07.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -178,7 +153,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("cliff_lower")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush06.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -188,7 +163,7 @@ custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-texture_normal = ExtResource("cliff_level")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush02.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -197,7 +172,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("cliff_raise")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush03.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -206,7 +181,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("8_be5ku")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -222,7 +197,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("cliff_deep")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush01.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -231,7 +206,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("cliff_shallow")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush00.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -240,7 +215,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("cliff_ramp")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/RampBrush00.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -258,7 +233,7 @@ theme_override_constants/separation = 4
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_place")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryPlace.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -266,7 +241,7 @@ stretch_mode = 5
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("boundary_place")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/BoundaryPlace.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -291,7 +266,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("height_raise")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/HeightBrush00.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -300,7 +275,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("height_lower")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/HeightBrush01.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -309,7 +284,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("height_plateau")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/HeightBrush02.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -318,7 +293,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("height_noise")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/HeightBrush03.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -327,7 +302,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("height_smooth")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/HeightBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -351,7 +326,7 @@ custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-texture_normal = ExtResource("size_c0")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush00.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -360,7 +335,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("size_c1")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush01.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -369,7 +344,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("size_c2")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush02.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -378,7 +353,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("size_c3")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush03.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -387,7 +362,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("shape_circle")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -407,7 +382,7 @@ custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-texture_normal = ExtResource("shape_circle")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -416,7 +391,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("shape_square")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/SquareSizeBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -459,7 +434,7 @@ custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-texture_normal = ExtResource("rand_rot")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/RandomRotation.png"
 ignore_texture_size = true
 stretch_mode = 5
 tooltip_text = "EDITOR_DOODAD_RAND_ROTATION"
@@ -469,7 +444,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("rand_scale_sym")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/RandomScale-Symmetric.png"
 ignore_texture_size = true
 stretch_mode = 5
 tooltip_text = "EDITOR_DOODAD_RAND_SCALE_SYM"
@@ -479,7 +454,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("rand_scale_z")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricZ.png"
 ignore_texture_size = true
 stretch_mode = 5
 tooltip_text = "EDITOR_DOODAD_RAND_SCALE_Z"
@@ -489,7 +464,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("rand_scale_xy")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/RandomScale-AsymmetricXY.png"
 ignore_texture_size = true
 stretch_mode = 5
 tooltip_text = "EDITOR_DOODAD_RAND_SCALE_XY"
@@ -565,7 +540,7 @@ custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-texture_normal = ExtResource("shape_circle")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/TextureBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 
@@ -574,7 +549,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 toggle_mode = true
-texture_normal = ExtResource("shape_square")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/SquareSizeBrush04.png"
 ignore_texture_size = true
 stretch_mode = 5
 

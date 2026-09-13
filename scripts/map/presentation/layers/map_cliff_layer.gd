@@ -1,9 +1,11 @@
 class_name MapCliffLayer
 extends Node3D
 
+const CliffStitcher := preload("res://scripts/map/presentation/cliff/wc3_cliff_stitcher.gd")
+
 ## 悬崖表现层：只读 Context.placements + Catalog 资产 → MultiMesh。
 ## 禁止改 Heightfield；禁止做 TAG / 挖洞 / 变体选型（一律 Logic）。
-## 禁止读斜坡 Collect；斜坡跳过由 Loader 在 build 前 filter_cliff_placements。
+## 斜坡跳过由 Loader 在 build 前 filter_cliff_placements；共享边缘使用 Logic 的入口与高度计划。
 ## hide_* 仅调试/兼容；主路径不依赖事后零缩放。
 
 var _shader: Shader
@@ -30,7 +32,12 @@ func build(ctx: MapBuildContext) -> void:
 	if hf == null or not hf.is_valid():
 		return
 
+	ctx.ensure_ramp_topology()
+	var entrance_boost := Wc3RampLogic.plan_entrance_height_boost(hf, ctx.ramp)
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
+	var entries: Dictionary = {}
+	for tile in Wc3RampLogic.plan_entrance_tiles(hf, ctx.ramp):
+		entries[tile] = true
 	_shader = load("res://assets/shaders/wc3_cliff.gdshader") as Shader
 	_dbg_center = hf.center_offset
 	_dbg_tile_size = hf.tile_size
@@ -82,30 +89,33 @@ func build(ctx: MapBuildContext) -> void:
 				continue
 			mesh_by_key[key] = mesh
 
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = mesh
-		mm.instance_count = transforms.size()
+		var batches: Dictionary = {}
 		for i in range(transforms.size()):
-			mm.set_instance_transform(i, transforms[i])
-			var tile := Vector2i(g.tiles[i].x, g.tiles[i].y) if i < g.tiles.size() else Vector2i(-1, -1)
-			var base_l: int = int(g.base_layers[i]) if i < g.base_layers.size() else 2
-			_instances.append({
-				"mm": mm,
-				"index": i,
-				"ix": tile.x,
-				"iy": tile.y,
-				"base_layer": base_l,
-				"xf": transforms[i],
-			})
-
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]
-		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.layers = Wc3Coords.RENDER_LAYER_TERRAIN
-		add_child(mmi)
-		last_placed += transforms.size()
+			var tile: Vector2i = g.tiles[i]
+			var actual: Mesh = mesh
+			if entries.has(tile + Vector2i.LEFT) or entries.has(tile + Vector2i.RIGHT) or entries.has(tile + Vector2i.UP) or entries.has(tile + Vector2i.DOWN):
+				actual = CliffStitcher.build_mesh(mesh, transforms[i], hf, entries, entrance_boost)
+			if not batches.has(actual):
+				batches[actual] = []
+			batches[actual].append(i)
+		for actual in batches:
+			var ids: Array = batches[actual]
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = actual
+			mm.instance_count = ids.size()
+			for slot in range(ids.size()):
+				var i: int = ids[slot]
+				mm.set_instance_transform(slot, transforms[i])
+				_instances.append({"mm": mm, "index": slot, "ix": g.tiles[i].x, "iy": g.tiles[i].y,
+					"base_layer": g.base_layers[i], "xf": transforms[i]})
+			var mmi := MultiMeshInstance3D.new()
+			mmi.name = "Cliff_%s_%d" % [glb.get_file().get_basename(), tex_idx]
+			mmi.multimesh = mm
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mmi.layers = Wc3Coords.RENDER_LAYER_TERRAIN
+			add_child(mmi)
+			last_placed += ids.size()
 
 	_apply_debug_grid_to_mats()
 

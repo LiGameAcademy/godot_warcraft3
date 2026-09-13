@@ -164,3 +164,22 @@ static func pick_random_sloc(slocs: Array[Dictionary], rng: RandomNumberGenerato
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
 	return slocs[rng.randi_range(0, slocs.size() - 1)]
+
+
+## 从尚未占用的物理出生点中分配；重复的 sloc 记录不能让两个基地重叠。
+static func available_slocs(slocs: Array[Dictionary], occupied: Array[Dictionary]) -> Array[Dictionary]:
+	var used: Array[Vector2] = []
+	for entry in occupied:
+		var p: Dictionary = entry.get("position", {})
+		used.append(Vector2(float(p.get("x", 0.0)), float(p.get("y", 0.0))))
+	var out: Array[Dictionary] = []
+	for entry in slocs:
+		var p: Dictionary = entry.get("position", {})
+		if not p.has("x") or not p.has("y"):
+			continue
+		var point := Vector2(float(p.x), float(p.y))
+		if not point.is_finite() or used.has(point):
+			continue
+		out.append(entry)
+		used.append(point)
+	return out

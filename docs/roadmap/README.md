@@ -7,6 +7,9 @@
 
 | 文件 | 内容 |
 |------|------|
+| [ACCEPTANCE.md](ACCEPTANCE.md) | 长期目标与分阶段验收草案：游戏、编辑器、兼容、改进和质量门槛 |
+| [ACCEPTANCE_PROGRESS.md](ACCEPTANCE_PROGRESS.md) | 当前验收证据、已复现缺陷与验证边界 |
+| [人族对战验收规程](../test-cases/MELEE_ACCEPTANCE.md) | 正常经营远征的运行方法、证据要求与结算待验收项 |
 | **[NEXT.md](NEXT.md)** | **近中期冲刺（N0–N4）——选下一个玩法 PR 先读这里** |
 | [ROADMAP.md](ROADMAP.md) | 地图 ①–⑫ 模块清单 + 验收；Data→Logic→Present→Editor |
 | [TODO.md](TODO.md) | 编辑器/地图细粒度缺陷清单（带「最后更新」日期） |

@@ -288,6 +288,9 @@ static func _attack_stat(type_id: String, unit: Node3D = null) -> Dictionary:
 	var at := str(w.atk_type1).strip_edges().to_lower()
 	var at_cn := str(_ATK_TYPE_CN.get(at, at if not at.is_empty() else "—"))
 	var dmg := _damage_text(w)
+	if unit != null and TechPresence.is_hero_id(type_id):
+		var primary_bonus := CombatQuery.hero_primary_damage(unit)
+		dmg = "%d–%d" % [roundi(w.dmgplus1 + w.dice1 + primary_bonus), roundi(w.dmgplus1 + w.dice1 * w.sides1 + primary_bonus)]
 	var dmg_mul := 1.0
 	if unit != null:
 		dmg_mul = BuffQuery.damage_mul(unit)
@@ -333,6 +336,7 @@ static func _armor_stat(bal: UnitBalanceDef, unit: Node3D = null) -> Dictionary:
 	var def_v := bal.realdef if bal.realdef != 0.0 else bal.def
 	var bonus := 0.0
 	if unit != null:
+		def_v = CombatQuery.armor_wc3(unit)
 		bonus = BuffQuery.bonus_armor(unit)
 	def_v += bonus
 	var def_s := (
@@ -443,7 +447,7 @@ static func _special_lines(
 		var pri := str(bal.primary_attr).strip_edges().to_upper()
 		var pri_cn := str(_PRIMARY_CN.get(pri, pri))
 		lines.append(
-			"主%s · 力%d 敏%d 智%d" % [pri_cn, bal.str_base, bal.agi_base, bal.int_base]
+			"主%s · 力%d 敏%d 智%d" % [pri_cn, CombatQuery.hero_attribute_value(primary, "STR"), CombatQuery.hero_attribute_value(primary, "AGI"), CombatQuery.hero_attribute_value(primary, "INT")]
 		)
 	if bal != null and bal.spd > 0.0 and not bal.isbldg:
 		lines.append("移动 %.0f" % bal.spd)

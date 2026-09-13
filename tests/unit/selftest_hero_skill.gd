@@ -92,9 +92,9 @@ func _test_hero_mana() -> void:
 	root.add_child(u)
 	UnitMana.ensure(u)
 	var mx := UnitMana.get_max_mana(u)
-	# Hamg INT=19 → 19×12=228
-	if mx < 125:
-		_fail("1 级 Hamg 魔法上限应 ≥125（水元素耗蓝），实际 %d" % mx)
+	# 官方一级大法师：19 智力 × 15 = 285。
+	if mx != 285:
+		_fail("1 级 Hamg 魔法上限应为285，实际 %d" % mx)
 		u.queue_free()
 		return
 	if not UnitMana.can_spend(u, 125.0):

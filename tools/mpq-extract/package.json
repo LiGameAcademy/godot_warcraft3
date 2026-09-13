@@ -10,7 +10,8 @@
   "scripts": {
     "fetch-stormlib": "node scripts/fetch-stormlib.js",
     "postinstall": "node scripts/fetch-stormlib.js",
-    "extract": "node src/cli.js"
+    "extract": "node src/cli.js",
+    "test": "node src/extract.test.mjs"
   },
   "dependencies": {
     "koffi": "^2.11.0",

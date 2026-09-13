@@ -71,7 +71,7 @@ func _run() -> void:
 			% [img.get_width(), img.get_height(), img.get_pixel(80, 80)]
 		)
 
-	var tmp := "user://selftest_war3mapMap.png"
+	var tmp := "res://tmp/selftest_war3mapMap.png"
 	var bake_err: Error = MapMinimapRaster.bake_war3map_png(img, tmp)
 	if bake_err != OK:
 		push_error("selftest_minimap_raster: bake failed %s" % error_string(bake_err))

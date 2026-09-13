@@ -10,6 +10,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	_test_completed_outer_corners()
 	_test_dig_and_entrance_plans()
 	_test_footprint_both_tiles_dug()
 	_test_entrance_height_boost()
@@ -210,29 +211,7 @@ func _test_l_recess_entrance() -> void:
 	if not bool(doc.try_paint_ramp_at(10, 11, 1, 0).get("changed", false)):
 		_fail("l_recess paint right fail")
 		return
-	# L 补心 (11,11)
-	if (int(hf.flags_packed[11 * w + 11]) & Wc3Coords.FLAG_RAMP) == 0:
-		_fail("l_recess missing L-fill (11,11)")
-		return
-	# 内角崖格 (10,10)：三高一低，高角无旗 → L 凹陷入口
-	if not Wc3RampCollect.is_entrance(hf.flags_packed, hf.layer_heights, w, hf.height, 10, 10):
-		_fail("l_recess expect entrance at (10,10)")
-		return
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, Wc3RampLogic.collect_placements(hf, {}, null))
-	var map_w: int = w - 1
-	if dig[10 * map_w + 10] != 0:
-		_fail("l_recess (10,10) should not be dug")
-		return
-	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf)
-	if boost[11 * w + 11] == 0:
-		_fail("l_recess L-fill corner should get +0.5 boost")
-		return
-	if not Wc3RampCollect.should_hide_cliff_piece(
-		10, 10, 2, hf, Wc3RampLogic.collect_placements(hf, {}, null)
-	):
-		_fail("l_recess should hide cliff at (10,10)")
-		return
-	print("  l_recess_entrance OK boost@L-fill dig=0 hide=1")
+	_assert_source_cells(hf, "_test_l_recess_entrance")
 
 
 func _test_l_recess_not_fake_diagonal() -> void:
@@ -261,45 +240,7 @@ func _test_l_recess_not_fake_diagonal() -> void:
 	if not bool(doc.try_paint_ramp_at(10, 11, 1, 0).get("changed", false)):
 		_fail("l2x2 paint right fail")
 		return
-	hf.flags_packed[10 * w + 12] = int(hf.flags_packed[10 * w + 12]) | Wc3Coords.FLAG_RAMP
-	var cat := Wc3CliffCatalog.new()
-	cat.load_default()
-	var ramp: Wc3RampCollectResult = Wc3RampLogic.collect_placements(hf, {}, cat)
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp)
-	var keep: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp)
-	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ramp)
-	var map_w: int = w - 1
-	var bowl: Array[Vector2i] = [
-		Vector2i(10, 10), Vector2i(11, 10), Vector2i(10, 11), Vector2i(11, 11)
-	]
-	for t in bowl:
-		var found := false
-		for k in keep:
-			if k == t:
-				found = true
-				break
-		if not found:
-			_fail("l2x2 bowl must undig %s" % str(t))
-			return
-		if dig[t.y * map_w + t.x] != 0:
-			_fail("l2x2 bowl must not dig %s" % str(t))
-			return
-	if _count_ones(boost) != 1:
-		_fail("l2x2 boost should be 1 low corner got=%d" % _count_ones(boost))
-		return
-	if boost[11 * w + 11] == 0:
-		_fail("l2x2 boost must be low corner (11,11)")
-		return
-	# 凹槽与臂上崖格都要 hide
-	for t in [Vector2i(10, 10), Vector2i(11, 10), Vector2i(10, 11)]:
-		if not Wc3RampLogic.should_hide_cliff_piece(t.x, t.y, 2, hf, ramp):
-			_fail("l2x2 must hide cliff %s" % str(t))
-			return
-	# 三低伪对角格仍不 hide
-	if Wc3RampLogic.should_hide_cliff_piece(12, 10, 2, hf, ramp):
-		_fail("l2x2 3-low tile must NOT hide as entrance")
-		return
-	print("  l_recess_not_fake_diagonal OK bowl=4 boost=1 hide")
+	_assert_source_cells(hf, "_test_l_recess_not_fake_diagonal")
 
 
 func _test_outer_corner_l_arm_undig() -> void:
@@ -329,38 +270,7 @@ func _test_outer_corner_l_arm_undig() -> void:
 		Vector2i(16, 15), Vector2i(16, 16), Vector2i(17, 16),
 	]:
 		hf.flags_packed[p.y * w + p.x] = int(hf.flags_packed[p.y * w + p.x]) | Wc3Coords.FLAG_RAMP
-	var cat := Wc3CliffCatalog.new()
-	cat.load_default()
-	var ramp: Wc3RampCollectResult = Wc3RampLogic.collect_placements(hf, {}, cat)
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp)
-	var ents: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp)
-	if ents.is_empty():
-		_fail("outer_l_arm expect entrances > 0")
-		return
-	# SE 外角崖格 (16,17)：三低一高，旗在邻边
-	var outer := Vector2i(16, 17)
-	if not Wc3RampCollect._is_outer_corner_ramp_tile(
-		hf.flags_packed, hf.layer_heights, w, hf.height, outer.x, outer.y
-	):
-		_fail("outer_l_arm expect outer at %s" % str(outer))
-		return
-	var map_w: int = w - 1
-	var found_outer := false
-	for e in ents:
-		if e == outer:
-			found_outer = true
-			break
-	if not found_outer:
-		_fail("outer_l_arm outer tile not in entrances")
-		return
-	var di: int = int(dig[outer.y * map_w + outer.x])
-	if di != 0:
-		_fail("outer_l_arm outer must not stay dug")
-		return
-	if not Wc3RampLogic.should_hide_cliff_piece(outer.x, outer.y, 2, hf, ramp):
-		_fail("outer_l_arm must hide outer cliff")
-		return
-	print("  outer_corner_l_arm_undig OK ents=%d hide/undig @%s" % [ents.size(), str(outer)])
+	_assert_source_cells(hf, "_test_outer_corner_l_arm_undig")
 
 
 func _test_widen_keeps_footprint_dug() -> void:
@@ -440,29 +350,7 @@ func _test_l_corner_clifftrans() -> void:
 	if not bool(doc.try_paint_ramp_at(10, 11, 1, 0).get("changed", false)):
 		_fail("l_corner_ct paint right fail")
 		return
-	var cat := Wc3CliffCatalog.new()
-	cat.load_default()
-	var ramp: Wc3RampCollectResult = Wc3RampLogic.collect_placements(hf, {}, cat)
-	var tags: Dictionary = {}
-	for p in ramp.placements:
-		tags["%d,%d:%s" % [p.ix, p.iy, p.tag]] = true
-	if not tags.has("11,10:LABH"):
-		_fail("l_corner_ct expect LABH @ (11,10) got %s" % str(tags.keys()))
-		return
-	if not tags.has("10,11:BALH"):
-		_fail("l_corner_ct expect BALH @ (10,11) got %s" % str(tags.keys()))
-		return
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp)
-	var map_w: int = w - 1
-	# L 凹槽 2×2 四格不挖；凹陷藏崖
-	for t in [Vector2i(10, 10), Vector2i(11, 10), Vector2i(10, 11), Vector2i(11, 11)]:
-		if dig[t.y * map_w + t.x] != 0:
-			_fail("l_corner_ct bowl must not dig %s" % str(t))
-			return
-	if not Wc3RampLogic.should_hide_cliff_piece(10, 10, 2, hf, ramp):
-		_fail("l_corner_ct recess must hide cliff")
-		return
-	print("  l_corner_clifftrans OK LABH+BALH bowl_keep=4")
+	_assert_source_cells(hf, "_test_l_corner_clifftrans")
 
 
 func _test_no_clifftrans_keeps_ground() -> void:
@@ -491,25 +379,7 @@ func _test_no_clifftrans_keeps_ground() -> void:
 	if not bool(doc.try_paint_ramp_at(10, 11, 1, 0).get("changed", false)):
 		_fail("no_ct paint right fail")
 		return
-	var empty: Wc3RampCollectResult = Wc3RampCollectResult.empty_for_size(hf.width, hf.height)
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, empty)
-	var keep: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, empty)
-	if _count_ones(dig) != 0:
-		_fail("no_ct must dig nothing got=%d" % _count_ones(dig))
-		return
-	for t in [Vector2i(10, 10), Vector2i(11, 10), Vector2i(10, 11), Vector2i(11, 11)]:
-		var found := false
-		for k in keep:
-			if k == t:
-				found = true
-				break
-		if not found:
-			_fail("no_ct expect bowl undig %s got %s" % [str(t), str(keep)])
-			return
-	if not Wc3RampCollect.should_hide_cliff_piece(10, 10, 2, hf, empty):
-		_fail("no_ct expect hide recess cliff (10,10)")
-		return
-	print("  no_clifftrans_keeps_ground OK dig=0 bowl=4")
+	_assert_source_cells(hf, "_test_no_clifftrans_keeps_ground")
 
 
 func _count_ones(mask: PackedByteArray) -> int:
@@ -652,6 +522,8 @@ func _test_hide_cliff_piece_by_slice() -> void:
 		)
 	)
 
+	ramp.romp[cliff_iy * w + cliff_ix] = 1
+	ramp.romp[(cliff_iy + 1) * w + cliff_ix] = 1
 	var hide_low: bool = Wc3RampLogic.should_hide_cliff_piece(
 		cliff_ix, cliff_iy, low_base, doc.heightfield, ramp
 	)
@@ -661,8 +533,8 @@ func _test_hide_cliff_piece_by_slice() -> void:
 	if not hide_low:
 		_fail("hide_slice low base=%d should hide" % low_base)
 		return
-	if hide_high:
-		_fail("hide_slice high base=%d must stay" % high_base)
+	if not hide_high:
+		_fail("romp replaces the cliff tile at every slice, as HiveWE does")
 		return
 	# footprint 第二格 (ix, iy+1) 同规则
 	if not Wc3RampLogic.should_hide_cliff_piece(
@@ -673,7 +545,7 @@ func _test_hide_cliff_piece_by_slice() -> void:
 	if Wc3RampLogic.should_hide_cliff_piece(1, 1, low_base, doc.heightfield, ramp):
 		_fail("hide_slice far tile must not hide")
 		return
-	print("  hide_slice OK low=%d hide high=%d stay" % [low_base, high_base])
+	print("  hide_slice OK low=%d hide high=%d hide" % [low_base, high_base])
 
 
 func _test_filter_cliff_placements() -> void:
@@ -717,29 +589,68 @@ func _test_filter_cliff_placements() -> void:
 		)
 	)
 
+	ramp.romp[cliff_iy * w + cliff_ix] = 1
+	ramp.romp[(cliff_iy + 1) * w + cliff_ix] = 1
 	var filtered: Array[Wc3CliffPlacement] = Wc3RampLogic.filter_cliff_placements(
 		raw, doc.heightfield, ramp
 	)
-	if filtered.size() != 2:
-		_fail("filter expect 2 kept got %d" % filtered.size())
-		return
-	var bases: Dictionary = {}
-	for p in filtered:
-		bases[p.base_layer] = true
-		if p.ix == cliff_ix and p.iy == cliff_iy and p.base_layer == low_base:
-			_fail("filter still has low slice")
-			return
-	if not bases.has(high_base):
-		_fail("filter dropped high slice")
-		return
-	if not bases.has(low_base):
-		# far tile (1,1) may keep low_base — OK
-		pass
-	var far_ok := false
-	for p in filtered:
-		if p.ix == 1 and p.iy == 1:
-			far_ok = true
-	if not far_ok:
-		_fail("filter dropped far tile")
-		return
-	print("  filter_placements OK kept=%d" % filtered.size())
+	if filtered.size() != 1 or filtered[0].ix != 1 or filtered[0].iy != 1:
+		_fail("romp must replace both cliff slices while retaining the distant cliff")
+	print("  filter_placements checked cell-level replacement")
+
+
+func _test_completed_outer_corners() -> void:
+	for dx in [-1, 1]:
+		for dy in [-1, 1]:
+			var doc = preload("res://editor/scripts/map_document.gd").new()
+			doc.create_from_options({"width": 16, "height": 16, "main_tileset": "L", "ground_tilesets": ["Ldrt"], "cliff_tilesets": ["CLdi"]})
+			var hf: Wc3Heightfield = doc.heightfield
+			for y in range(hf.height):
+				for x in range(hf.width):
+					hf.layer_heights[y * hf.width + x] = 3 if (x - 8) * dx <= 0 and (y - 8) * dy <= 0 else 2
+			doc._rebind_logic()
+			doc.try_paint_ramp_at(8, 8, dx, 0)
+			doc.try_paint_ramp_at(8, 8, 0, dy)
+			var cat := Wc3CliffCatalog.new()
+			cat.load_default()
+			var ramp := Wc3RampLogic.collect_placements(hf, {}, cat)
+			var entrances := Wc3RampLogic.plan_entrance_tiles(hf, ramp)
+			var corner := Vector2i(8 if dx > 0 else 7, 8 if dy > 0 else 7)
+			var covered := entrances.has(corner)
+			for placement in ramp.placements:
+				for tile in Wc3RampCollect.placement_footprint_tiles(placement):
+					if tile == corner:
+						covered = true
+					if entrances.has(tile):
+						_fail("outer corner ground must not cover CT footprint %s" % tile)
+			if not covered:
+				_fail("completed outer corner must have ground or CT coverage %s" % corner)
+	print("  completed_outer_corners checked four orientations")
+
+func _assert_source_cells(hf: Wc3Heightfield, label: String) -> void:
+	var ramp := Wc3RampLogic.collect_placements(hf)
+	var entries := Wc3RampLogic.plan_entrance_tiles(hf, ramp)
+	var boosts := Wc3RampLogic.plan_entrance_height_boost(hf, ramp)
+	var expected_boost := PackedByteArray()
+	expected_boost.resize(hf.width * hf.height)
+	for y in range(hf.height - 1):
+		for x in range(hf.width - 1):
+			var ids := [y * hf.width + x, y * hf.width + x + 1, (y + 1) * hf.width + x, (y + 1) * hf.width + x + 1]
+			var all_flags := true
+			var levels: Array[int] = []
+			for i in ids:
+				all_flags = all_flags and (int(hf.flags_packed[i]) & Wc3Coords.FLAG_RAMP) != 0
+				levels.append(int(hf.layer_heights[i]))
+			var entrance := all_flags and not (levels[0] == levels[3] and levels[1] == levels[2])
+			if entries.has(Vector2i(x, y)) != entrance:
+				_fail(label + " ground differs from source entrance")
+			if entrance:
+				for k in range(4):
+					if levels[k] == levels.min():
+						expected_boost[ids[k]] = 1
+			var hide := entrance or ramp.romp[ids[0]] != 0
+			if Wc3RampLogic.should_hide_cliff_piece(x, y, 2, hf, ramp) != hide:
+				_fail(label + " cliff visibility differs from source")
+	if boosts != expected_boost:
+		_fail(label + " heights differ from source")
+	print("  " + label + " checked source ground/height/cliff consistency")

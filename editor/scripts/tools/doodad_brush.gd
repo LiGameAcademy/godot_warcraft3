@@ -4,6 +4,7 @@ extends Node3D
 
 
 signal rebuild_requested
+signal properties_requested(creation_number: int)
 signal brush_settings_changed(size: int, shape: int)
 signal placed(count: int)
 signal selection_changed(creation_number: int) ## primary cn；-1 = 无选中
@@ -294,6 +295,9 @@ func select_creation_number(cn: int) -> void:
 
 
 func clear_selection() -> void:
+	# Finish live movement before discarding selection or switching tools.
+	if _dragging:
+		_end_drag()
 	if _selected_cn < 0 and _selected_cns.is_empty() and not _dragging:
 		_update_sel_markers()
 		return
@@ -316,6 +320,8 @@ func clear_palette() -> void:
 
 
 func delete_selection() -> bool:
+	if _dragging:
+		_end_drag()
 	if document == null or _selected_cns.is_empty():
 		return false
 	var to_remove: PackedInt32Array = _selected_cns.duplicate()
@@ -1056,3 +1062,23 @@ func _ray_plane_fallback(screen_pos: Vector2) -> Vector3:
 	if t < 0.0:
 		return Vector3.INF
 	return from + dir * t
+
+func handle_double_click(screen_pos: Vector2) -> void:
+	if not enabled or document == null:
+		return
+	var picked := _pick_creation_number(screen_pos)
+	if picked < 0:
+		return
+	if _dragging:
+		_end_drag()
+	_cancel_marquee()
+	select_creation_number(picked)
+	properties_requested.emit(picked)
+
+
+func refresh_selection_after_history() -> void:
+	var remaining := PackedInt32Array()
+	for cn in _selected_cns:
+		if not _entry_by_cn(cn).is_empty():
+			remaining.append(cn)
+	_set_selection(remaining)

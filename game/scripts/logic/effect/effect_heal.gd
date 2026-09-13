@@ -21,12 +21,8 @@ static func run(ec: EffectContext, data_field: String = "data_a") -> float:
 	amount = maxf(amount, 0.0)
 	if amount <= 0.0:
 		return 0.0
-	UnitLife.ensure(ec.target)
-	var before := UnitLife.get_life(ec.target)
-	var mx := UnitLife.get_max_life(ec.target)
-	var after := mini(before + amount, mx)
-	UnitLife.set_life(ec.target, after)
-	var healed := maxf(after - before, 0.0)
+	var result := Wc3AbilityEffects.heal(ec.target, ec.caster, amount)
+	var healed := result.actual_amount
 	ec.result["heal_amount"] = healed
 	ec.result["heal_target"] = ec.target
 	return healed

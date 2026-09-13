@@ -28,8 +28,8 @@ const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.
 
 ## MMP 图标逻辑路径（AssetProvider / converted）。
 const ICON_PATHS := {
-	0: "UI/MiniMap/MiniMapIcon/MinimapIconGold.png",
-	1: "UI/MiniMap/MiniMapIcon/MinimapIconNeutralBuilding.png",
+	0: "UI/MiniMap/minimap-gold.png",
+	1: "UI/MiniMap/minimap-neutralbuilding.png",
 	2: "UI/MiniMap/MiniMapIcon/MinimapIconStartLoc.png",
 	3: "UI/MiniMap/MinimapIconCreepLoc.png",
 	4: "UI/MiniMap/MinimapIconCreepLoc2.png",
@@ -86,6 +86,11 @@ var _suppress_edit_signal: bool = false
 var _orbit_dragging: bool = false
 var _orbit_last: Vector2 = Vector2.ZERO
 var _minimap_raster: MapMinimapRaster
+const MarkerRules := preload("res://scripts/map/minimap/minimap_marker_rules.gd")
+var _foliage_texture: ImageTexture
+var _live_icons: Array = []
+var _has_live_units := false
+var _using_baked := false
 var _minimap_image: Image
 var _viewport_quad: PackedVector2Array = PackedVector2Array()
 var _show_viewport_rect: bool = true
@@ -134,7 +139,10 @@ func setup(catalog: Wc3IdCatalog, cache: MapModelCache) -> void:
 
 
 func _wire() -> void:
-	_minimap_overlay.gui_input.connect(_on_minimap_gui)
+	_minimap_overlay.clip_contents = true
+	_minimap_overlay.tooltip_text = "金色：金矿 · 小屋：中立建筑 · 橙色：野怪 · 黄色框：当前观察范围"
+	_minimap_overlay.bind_background(_minimap_tex)
+	_minimap_overlay.clicked.connect(func(uv: Vector2): minimap_clicked.emit(uv))
 	_minimap_overlay.draw.connect(_on_minimap_overlay_draw)
 	_minimap_overlay.resized.connect(func() -> void: _minimap_overlay.queue_redraw())
 	_chk_viewport.toggled.connect(func(on: bool) -> void:
@@ -398,6 +406,7 @@ func refresh_minimap(
 		_mmp_icons = _try_load_mmp_icons(map_dir)
 	if _game_preview and not map_dir.is_empty():
 		_minimap_image = _try_load_war3map_map(map_dir)
+	_using_baked = _minimap_image != null
 	if _minimap_image == null:
 		_minimap_image = _rasterize_live(hf, tiles, cliff_catalog, romp)
 	_apply_minimap_texture(_minimap_image)
@@ -416,7 +425,7 @@ func refresh_minimap_live(
 	if cliff_catalog != null:
 		_last_cliff_catalog = cliff_catalog
 	_last_romp = romp
-	if _game_preview:
+	if _game_preview and _using_baked:
 		_minimap_overlay.queue_redraw()
 		return
 	_minimap_image = _rasterize_live(
@@ -429,6 +438,21 @@ func refresh_minimap_live(
 
 
 ## 工作图（1:1）优先；无 raster 时退回当前显示图（如磁盘 PNG）。
+func refresh_minimap_texture_vertices(hf: Wc3Heightfield, vertices: Array,
+	tiles: Wc3TerrainTileCatalog, cliffs: Wc3CliffCatalog) -> void:
+	if (_game_preview and _using_baked) or _minimap_raster == null or _minimap_raster.hf != hf:
+		refresh_minimap_live(hf, tiles, cliffs)
+		return
+	_last_hf = hf
+	for value in vertices:
+		var index := int(value)
+		if index >= 0 and index < hf.width * hf.height:
+			_minimap_raster.mark_dirty(Rect2i(index % hf.width, index / hf.width, 1, 1))
+	_minimap_raster.rasterize_dirty()
+	_minimap_image = _minimap_raster.get_image()
+	_apply_minimap_texture(_minimap_image)
+
+
 func get_minimap_image() -> Image:
 	if _minimap_raster != null:
 		var work: Image = _minimap_raster.get_image()
@@ -462,21 +486,74 @@ func _rasterize_live(
 		c2g = cliff_catalog.build_cliff_to_ground_map(hf.cliff_tilesets, hf.ground_tilesets)
 	_minimap_raster.setup_terrain(colors, c2g, romp)
 	_minimap_raster.rasterize()
-	return _minimap_raster.get_display_image()
+	return _minimap_raster.get_image()
 
 
 func _apply_minimap_texture(img: Image) -> void:
 	if img == null:
-		_minimap_tex.texture = null
+		_minimap_overlay.set_texture(null)
 		_minimap_overlay.queue_redraw()
 		return
 	_minimap_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_minimap_tex.texture = ImageTexture.create_from_image(img)
+	_minimap_overlay.set_texture(ImageTexture.create_from_image(img))
+	_minimap_overlay.queue_redraw()
+
+
+func set_minimap_doodads(entries: Array) -> void:
+	_foliage_texture = null
+	if _last_hf == null or _catalog == null:
+		return
+	var image := Image.create(_last_hf.width, _last_hf.height, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	var trees := {}
+	for entry in entries:
+		var id := str(entry.get("id", ""))
+		if not trees.has(id):
+			trees[id] = str(_catalog.lookup(id).get("file", "")).to_lower().contains("tree")
+		if not trees[id] or int(entry.get("life", 100)) == 0:
+			continue
+		var p: Dictionary = entry.get("position", {})
+		var uv := MapMinimapUtils.world_to_minimap_uv(Wc3Coords.wc3_xy_to_godot(float(p.get("x", 0)), float(p.get("y", 0))), _last_hf)
+		var x := roundi(uv.x * (_last_hf.width - 1))
+		var y := roundi(uv.y * (_last_hf.height - 1))
+		if x >= 0 and y >= 0 and x < image.get_width() and y < image.get_height():
+			image.set_pixel(x, y, Color(0.07, 0.20, 0.12, 0.85))
+	_foliage_texture = ImageTexture.create_from_image(image)
+	_minimap_overlay.queue_redraw()
+
+
+func set_minimap_units(entries: Array) -> void:
+	_has_live_units = true
+	_live_icons.clear()
+	if _last_hf == null:
+		return
+	for entry in entries:
+		var id := str(entry.get("typeId", ""))
+		var owner := int(entry.get("owner", 0))
+		var info: Dictionary = _catalog.lookup(id) if _catalog != null else {}
+		var type := MarkerRules.classify(id, owner, info)
+		if type < 0:
+			continue
+		var p: Dictionary = entry.get("position", {})
+		var uv := MapMinimapUtils.world_to_minimap_uv(Wc3Coords.wc3_xy_to_godot(float(p.get("x", 0)), float(p.get("y", 0))), _last_hf)
+		if uv.x < 0 or uv.x > 1 or uv.y < 0 or uv.y > 1:
+			continue
+		if type == 3:
+			var merged := false
+			var span := Vector2(_last_hf.width - 1, _last_hf.height - 1) * _last_hf.tile_size
+			for icon in _live_icons:
+				if int(icon.type) == 3 and ((Vector2(icon.x, icon.y) / 256.0 - uv) * span).length() <= 256.0:
+					icon["members"] = int(icon.get("members", 1)) + 1
+					merged = true
+					break
+			if merged:
+				continue
+		_live_icons.append({"type": type, "x": uv.x * 256, "y": uv.y * 256, "members": 1})
 	_minimap_overlay.queue_redraw()
 
 
 func set_viewport_uv_quad(quad: PackedVector2Array) -> void:
-	_viewport_quad = quad
+	_viewport_quad = MapMinimapUtils.clip_uv_polygon(quad)
 	_minimap_overlay.queue_redraw()
 
 
@@ -523,20 +600,19 @@ func _try_load_mmp_icons(map_dir: String) -> Array:
 func _on_minimap_overlay_draw() -> void:
 	if _minimap_image == null:
 		return
+	if not _using_baked and _foliage_texture != null:
+		_minimap_overlay.draw_texture_rect(_foliage_texture, _minimap_drawn_rect(), false)
 	_draw_mmp_icons()
-	if _show_viewport_rect and _viewport_quad.size() >= 4:
-		var pts := PackedVector2Array()
-		for i in range(4):
-			pts.append(_minimap_uv_to_overlay_pos(_viewport_quad[i]))
-		pts.append(pts[0])
-		_minimap_overlay.draw_polyline(pts, Color(1.0, 0.85, 0.2, 1.0), 1.5, true)
+	if _show_viewport_rect:
+		_minimap_overlay.draw_camera(_viewport_quad)
 
 
 func _draw_mmp_icons() -> void:
-	if _mmp_icons.is_empty():
+	var icons: Array = _live_icons if _has_live_units else _mmp_icons
+	if icons.is_empty():
 		return
 	var canvas: float = 256.0
-	for item in _mmp_icons:
+	for item in icons:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		var d: Dictionary = item
@@ -544,13 +620,10 @@ func _draw_mmp_icons() -> void:
 		if not _icon_type_visible(t):
 			continue
 		var tex: Texture2D = _icon_textures.get(t) as Texture2D
-		if tex == null:
-			continue
 		var ix: float = float(d.get("x", 0))
 		var iy: float = float(d.get("y", 0))
 		var uv := Vector2(ix / canvas, iy / canvas)
-		var pos: Vector2 = _minimap_uv_to_overlay_pos(uv)
-		var sz: Vector2 = tex.get_size()
+		var sz := Vector2(10, 10)
 		# 小地图上图标略放大一点，贴近 WE 观感
 		var draw_sz: Vector2 = sz * 1.25
 		var col := Color(1, 1, 1, 1)
@@ -558,7 +631,12 @@ func _draw_mmp_icons() -> void:
 		if typeof(c) == TYPE_ARRAY and (c as Array).size() >= 3 and t == 2:
 			var a: Array = c
 			col = Color(float(a[0]), float(a[1]), float(a[2]), float(a[3]) if a.size() > 3 else 1.0)
-		_minimap_overlay.draw_texture_rect(tex, Rect2(pos - draw_sz * 0.5, draw_sz), false, col)
+		if t == 3:
+			_minimap_overlay.draw_marker(uv, null, Color(1, 0.42, 0.12), Vector2(5.4, 5.4), true)
+		elif tex != null:
+			_minimap_overlay.draw_marker(uv, tex, col, draw_sz)
+		else:
+			_minimap_overlay.draw_marker(uv, null, Color(0.3, 0.85, 1), Vector2(5, 5), true)
 
 
 func _icon_type_visible(t: int) -> bool:
@@ -573,46 +651,15 @@ func _icon_type_visible(t: int) -> bool:
 
 ## 小地图 UV（可出 0..1）→ Overlay 本地坐标（相对 TextureRect 绘制区；可落入灰边）。
 func _minimap_uv_to_overlay_pos(uv: Vector2) -> Vector2:
-	var drawn: Rect2 = _minimap_drawn_rect()
-	return Vector2(
-		drawn.position.x + uv.x * drawn.size.x,
-		drawn.position.y + uv.y * drawn.size.y,
-	)
+	return _minimap_overlay.uv_to_position(uv)
 
 
-## TextureRect KEEP_ASPECT_CENTERED 实际绘制矩形（相对 Overlay）。
 func _minimap_drawn_rect() -> Rect2:
-	var cs: Vector2 = _minimap_overlay.size
-	if cs.x <= 1.0 or cs.y <= 1.0 or _minimap_image == null:
-		return Rect2(Vector2.ZERO, cs)
-	var ts := Vector2(float(_minimap_image.get_width()), float(_minimap_image.get_height()))
-	var scale: float = minf(cs.x / ts.x, cs.y / ts.y)
-	var drawn: Vector2 = ts * scale
-	var offset: Vector2 = (cs - drawn) * 0.5
-	return Rect2(offset, drawn)
+	return _minimap_overlay.drawn_rect()
 
 
-func _on_minimap_gui(event: InputEvent) -> void:
-	if not (event is InputEventMouseButton and event.pressed):
-		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT:
-		return
-	var uv := control_pos_to_minimap_uv(mb.position)
-	if uv.x < 0.0 or uv.y < 0.0 or uv.x > 1.0 or uv.y > 1.0:
-		return
-	minimap_clicked.emit(uv)
-
-
-## 控件坐标 → 小地图纹理 UV（处理 KEEP_ASPECT_CENTERED 留白）。
 func control_pos_to_minimap_uv(pos: Vector2) -> Vector2:
-	var drawn: Rect2 = _minimap_drawn_rect()
-	if drawn.size.x <= 1.0 or drawn.size.y <= 1.0:
-		return Vector2(-1, -1)
-	var local: Vector2 = pos - drawn.position
-	if local.x < 0.0 or local.y < 0.0 or local.x > drawn.size.x or local.y > drawn.size.y:
-		return Vector2(-1, -1)
-	return Vector2(local.x / drawn.size.x, local.y / drawn.size.y)
+	return _minimap_overlay.position_to_uv(pos)
 
 
 func step_variation(delta: int) -> void:
@@ -970,6 +1017,7 @@ func _polish_preview_deferred(gen: int, path: String, info: Dictionary) -> void:
 	if not path.is_empty():
 		_Pe2.attach_to(node, path)
 	if _preview_kind != "unit":
+		preload("res://scripts/map/presentation/doodad_texture.gd").apply(node, info)
 		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	if _preview_kind == "unit" and _cache != null:
 		var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)

@@ -4,6 +4,17 @@
 
 SLK 是暴雪用来存单位数值、技能、地形类型、音效表等的表格格式。第一行是列名，之后每行一条记录。
 
+## 换表前比较
+
+在仓库根目录运行（输入支持导出的 JSON 或原始 SLK）：
+
+```powershell
+node tools/slk-export/src/compare-tables.mjs assets/slk-exported/Units/UnitBalance.json tmp/patch-probe-extracted/Units/UnitBalance.slk tmp/patch-unitbalance-comparison.json
+node tools/slk-export/src/compare-tables.test.mjs
+```
+
+比较按主键匹配，不依赖行顺序。报告区分新增/删除记录、新增/删除字段及已有字段值变化，避免新增列使全表看起来都是数值变更。缺失或重复主键会失败，防止静默丢行。默认第一列为主键，也可用第四个参数明确指定；比较不会修改输入表。
+
 ## 用法
 
 ```bash

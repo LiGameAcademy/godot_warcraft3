@@ -12,6 +12,12 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	if Wc3RampPaint.pointer_dirs(20, 30, false, true) != Vector2i(0, 1):
+		_fail("Alt must retain dominant vertical axis")
+	if Wc3RampPaint.pointer_dirs(-30, 20, true, true) != Vector2i(1, 0):
+		_fail("Shift reverses the dominant horizontal axis")
+	if Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 0, 0, 0):
+		_fail("an isolated flag must not produce a ramp column")
 	_test_h_slope()
 	_test_v_slope()
 	_test_low_side_intent()
@@ -971,12 +977,12 @@ func _test_ramp_cols_opposite() -> void:
 		_fail("_ramp_cols_opposite strict opposite should be true")
 		return
 	## 放宽 A 污染：A=[1,1,1] B=[0,1,0] → true（中格被染）
-	if not Wc3RampCollect._ramp_cols_opposite(1, 1, 1, 0, 1, 0):
-		_fail("_ramp_cols_opposite A-polluted should be true")
+	if Wc3RampCollect._ramp_cols_opposite(1, 1, 1, 0, 1, 0):
+		_fail("_ramp_cols_opposite broken column A must be rejected")
 		return
-	## 放宽 B 污染：A=[0,1,0] B=[0,0,0] → true（中格被染）
-	if not Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 0, 0, 0):
-		_fail("_ramp_cols_opposite B-polluted should be true")
+	## 对称放宽：A=[0,1,0] B=[1,1,1] → true（A 中格被染）
+	if Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 1, 1, 1):
+		_fail("_ramp_cols_opposite broken column B must be rejected")
 		return
 	## 非法：双向各污染 A=[0,1,0] B=[1,0,1] → false（无法判断 base）
 	if Wc3RampCollect._ramp_cols_opposite(0, 1, 0, 1, 0, 1):

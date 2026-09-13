@@ -265,7 +265,12 @@ static func classify_mesh(mi: MeshInstance3D) -> int:
 	if _is_horizontal_ground_disk(sx, sy, sz):
 		return MeshKind.KEEP
 
-	# 单四边形 / 极少面 → 广告牌（须先于 aspect 判定：扁圆盘 aspect 极大）
+	# 细长扁片（ArrowMissile 等箭矢）：KEEP，由弹道壳把长轴对准飞行方向。
+	# 须先于「≤4 三角 → 广告牌」：否则会被压成正方形 Billboard，箭横着飞/糊成方块。
+	if tri_count <= 8 and aspect >= 3.0 and mn / mx < 0.25:
+		return MeshKind.KEEP
+
+	# 单四边形 / 极少面 → 广告牌（须先于一般 aspect 判定：扁圆盘 aspect 极大）
 	if tri_count <= 4:
 		return MeshKind.FLAT_BILLBOARD
 
@@ -389,8 +394,11 @@ static func _replace_with_textured_billboard(root: Node3D, mi: MeshInstance3D) -
 		return false
 	var sm := src_mat as StandardMaterial3D
 	var aabb := mi.get_aabb()
-	var side := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
-	side = maxf(side, 8.0)
+	# 保留贴图宽高比（箭矢等细长 mesh 不能压成正方形）
+	var dims := [aabb.size.x, aabb.size.y, aabb.size.z]
+	dims.sort()
+	var short_a := maxf(float(dims[1]), 4.0)
+	var long_a := maxf(float(dims[2]), short_a)
 	var center := aabb.get_center()
 	mi.mesh = null
 	mi.set_meta(META_PRESENTED, true)
@@ -398,7 +406,7 @@ static func _replace_with_textured_billboard(root: Node3D, mi: MeshInstance3D) -
 	var bb := MeshInstance3D.new()
 	bb.name = "FxBillboard"
 	var quad := QuadMesh.new()
-	quad.size = Vector2(side, side)
+	quad.size = Vector2(long_a, short_a)
 	bb.mesh = quad
 	bb.position = center
 	bb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

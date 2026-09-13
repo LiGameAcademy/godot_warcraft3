@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Wc3FxPresenter 语义分类：FireBall 软球、Arrow 广告牌、Axe 保留实体。
+## Wc3FxPresenter 语义分类：FireBall 软球、Arrow 细长 KEEP、Axe 保留实体。
 ## godot --headless --path . -s res://tests/unit/selftest_wc3_fx_presenter.gd
 
 var failed := 0
@@ -30,6 +30,19 @@ func _fail(msg: String) -> void:
 
 func _load_fx(logical_gltf: String) -> Node3D:
 	var path := "res://assets/asset-converted/%s" % logical_gltf
+	var document: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not document is Dictionary:
+		_fail("invalid glTF %s" % logical_gltf)
+		return null
+	for section in ["images", "buffers"]:
+		for dependency in document.get(section, []):
+			var uri := str(dependency.get("uri", ""))
+			if uri.is_empty() or uri.begins_with("data:"):
+				continue
+			var dependency_path := path.get_base_dir().path_join(uri.uri_decode()).simplify_path()
+			if not FileAccess.file_exists(dependency_path):
+				_fail("missing glTF dependency %s" % dependency_path)
+				return null
 	var cache := MapModelCache.new()
 	# prefer gltf path through ensure; bake may exist
 	var root := cache.instance_glb_preview(path, false, false)
@@ -77,10 +90,11 @@ func _check_arrow() -> void:
 	if root == null:
 		return
 	var bbs := _count_fx_billboards(root)
-	if bbs < 1:
-		_fail("ArrowMissile: expected textured FxBillboard, got %d" % bbs)
+	# 细长箭矢应 KEEP（长轴对准飞行），勿压成正方形 Billboard
+	if bbs > 0:
+		_fail("ArrowMissile: expected KEEP elongated mesh (0 billboard), got %d" % bbs)
 	else:
-		print("ArrowMissile: billboards=%d OK" % bbs)
+		print("ArrowMissile: keep elongated arrow mesh OK")
 	root.free()
 
 

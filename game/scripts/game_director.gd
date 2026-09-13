@@ -1,6 +1,8 @@
 class_name GameDirector
 extends Node
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## 游戏总管（对标 MapEditor）。
 ## 职责：配置 MapLoader、Melee 开局、Session/库存、选中、相机。
 
@@ -9,6 +11,9 @@ signal session_ready
 
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
+const PlayerEconomyAIScript = preload("res://game/scripts/logic/ai/player_economy_ai.gd")
+const MatchResultScreenScript = preload("res://game/scripts/presentation/match_result_screen.gd")
+const PlayerArmyAIScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
 const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_shell.tscn")
 
 @export var map_root: MapLoader
@@ -31,6 +36,10 @@ const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_
 ## true：在地图 sloc 中随机选一个；false：优先匹配 local_player 的 owner
 @export var random_start_location: bool = true
 @export var spawn_melee_base: bool = true
+## 双方开局接入验证；电脑经营控制器尚未接入时默认关闭。
+@export var spawn_opponent_base: bool = false
+@export var enable_opponent_economy: bool = false
+@export var enable_opponent_army: bool = false
 ## TODO(临时)：开局刷大法师便于测英雄技能，验收后删除。
 @export var dev_spawn_archmage: bool = true
 ## TODO(临时)：开局刷牧师（含牧师大师训练 → 心灵之火），验收后删除。
@@ -73,6 +82,8 @@ var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
 var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
+var _item_service: ItemService
+var _ground_items: Node3D
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（Phase E）：ctx / HUD / 瞄准 / 单位 runtime
@@ -319,6 +330,10 @@ func _apply_camera_world_bounds() -> void:
 
 
 func _wire_hud() -> void:
+	if game_hud != null:
+		game_hud.item_use.connect(_on_item_use)
+		game_hud.item_drop.connect(_on_item_drop)
+		game_hud.item_swap.connect(_on_item_swap)
 	if game_hud == null:
 		return
 	if not map_dir.is_empty():
@@ -383,6 +398,11 @@ func _setup_selector() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# 背包点击交给 GUI，包括移动/技能瞄准期间，不把槽位当世界落点。
+	if event is InputEventMouseButton and is_instance_valid(game_hud) and is_instance_valid(game_hud.inventory_panel):
+		var panel := game_hud.inventory_panel
+		if panel.is_visible_in_tree() and panel.get_global_rect().has_point(event.position):
+			return
 	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
 	if unit_selector == null:
 		_resolve_exports()
@@ -528,6 +548,8 @@ func _on_map_loaded() -> void:
 	_setup_health_bars()
 	_wire_all_gold_mines()
 	_wire_all_unit_ai()
+	if enable_opponent_economy:
+		_setup_opponent_economy()
 	if dev_spawn_archmage:
 		call_deferred("_dev_spawn_archmage")
 	if dev_spawn_priest:
@@ -535,7 +557,89 @@ func _on_map_loaded() -> void:
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
+	_setup_match_end()
 	session_ready.emit()
+
+
+func _setup_match_end() -> void:
+	if _session == null or not spawn_opponent_base:
+		return
+	# 当前双人开局各自为队；后续房间/地图队伍配置需从正式槽位注入。
+	var teams: Dictionary = {}
+	for player in _session.stocks:
+		teams[player] = player
+	_session.arm_match(teams)
+	_session.match_finished.connect(_on_match_finished)
+
+
+func _on_match_finished(result: Dictionary) -> void:
+	# 只冻结本局节点，避免暂停编辑器宿主或外层测试场景。
+	var game := get_parent()
+	_disable_match_processing(game)
+	var screen := MatchResultScreenScript.new()
+	screen.name = "MatchResultScreen"
+	game.add_child(screen)
+	screen.show_result(result, _session.local_player)
+	screen.exit_requested.connect(func() -> void: get_tree().quit())
+	screen.restart_requested.connect(_restart_match, CONNECT_ONE_SHOT)
+
+
+func _restart_match() -> void:
+	var game := get_parent()
+	var packed := load(game.scene_file_path) as PackedScene
+	if packed == null:
+		push_error("无法重新加载对局场景")
+		return
+	var restart := preload("res://game/scripts/session/match_restart.gd").new()
+	restart.old_game = game
+	restart.packed = packed
+	restart.players = _session.stocks.keys()
+	# 复制导出的值配置，节点引用由新场景自行绑定，运行时状态不复制。
+	for property in get_property_list():
+		if int(property.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE and int(property.usage) & PROPERTY_USAGE_STORAGE:
+			var value: Variant = get(property.name)
+			if not value is Object and not value is NodePath:
+				restart.settings[property.name] = value
+	game.get_parent().add_child(restart)
+
+
+func _disable_match_processing(node: Node) -> void:
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	for child in node.get_children():
+		_disable_match_processing(child)
+
+
+func _setup_opponent_economy() -> void:
+	var owner := 1 if local_player == 0 else 0
+	if _session == null or not _session.stocks.has(owner) or has_node("OpponentEconomy"):
+		return
+	var commands := CommandRouter.new()
+	commands.configure(_path_query, _crowd_query, _ensure_navigator, _ensure_harvest_controller, _ensure_build_controller, _session, _find_build_site, _find_build_site_by_node, _ensure_attack_controller, owner)
+	commands.production_queue_ready.connect(_wire_train_queue)
+	var economy := PlayerEconomyAIScript.new()
+	economy.name = "OpponentEconomy"
+	economy.configure(commands, map_root.get_unit_layer(), _tree_registry, owner)
+	economy.stock = _stock_for_owner(owner)
+	economy.pathing = _pathing
+	economy.path_query = _path_query
+	add_child(economy)
+	if enable_opponent_army:
+		var army := PlayerArmyAIScript.new()
+		army.name = "OpponentArmy"
+		army.router = commands
+		army.unit_host = map_root.get_unit_layer()
+		army.observe_enemies = _observe_player_enemies.bind(owner)
+		add_child(army)
+
+## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。
+func _observe_player_enemies(owner: int) -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for unit in map_root.get_unit_layer().get_children():
+		if unit is Node3D and CombatQuery.is_alive_in_world(unit):
+			var other := CombatQuery.owner_of(unit)
+			if other != owner and not CombatQuery.is_neutral_owner(other):
+				out.append(unit)
+	return out
 
 
 func _setup_health_bars() -> void:
@@ -570,6 +674,7 @@ func _setup_pathing() -> void:
 	_command_router = CommandRouter.new()
 	_death_service = DeathService.new()
 	_death_service.on_before_exit = Callable(self, "_on_unit_dying")
+	_death_service.unit_died.connect(_award_death_experience)
 	_damage_pipeline = DamagePipeline.new()
 	_damage_pipeline.death = _death_service
 	_damage_pipeline.damage_applied.connect(_on_damage_applied_present)
@@ -590,8 +695,24 @@ func _setup_pathing() -> void:
 		Callable(self, "_find_build_site_by_node"),
 		Callable(self, "_ensure_attack_controller")
 	)
+	if not _command_router.production_queue_ready.is_connected(_wire_train_queue):
+		_command_router.production_queue_ready.connect(_wire_train_queue)
 	_setup_tree_registry()
 	_ensure_path_debug()
+	_setup_item_system()
+
+
+func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
+	const Experience = preload("res://game/scripts/logic/hero/hero_experience.gd")
+	if map_root != null:
+		var awards := Experience.award_death(victim, killer, map_root.get_unit_layer())
+		var primary := _ability_get_primary()
+		for award in awards:
+			if award.hero == primary:
+				_apply_selection_info_to_hud(primary, _get_selected_safe())
+				if int(award.levels_gained) > 0:
+					_refresh_command_card()
+				break
 
 
 func _ensure_build_sites_host() -> void:
@@ -710,6 +831,10 @@ func _ensure_path_debug() -> void:
 
 
 func _process(delta: float) -> void:
+	if _session != null and spawn_opponent_base and is_session_ready():
+		var result := _session.evaluate_match(map_root.get_unit_layer())
+		if bool(result.finished):
+			return
 	if _projectile_service != null:
 		_projectile_service.tick(delta)
 	if _ability_runtime != null:
@@ -850,10 +975,33 @@ func _bootstrap_melee() -> void:
 	if rts_camera and hall_world != Vector3.ZERO:
 		rts_camera.snap_to(hall_world)
 		rts_camera.focus_on_position(hall_world, 0.35)
+	if spawn_melee_base and spawn_opponent_base:
+		_spawn_opponent_base(slocs, sloc)
 
 	# 开局刷兵后立刻同步动态 pathing（与叠层一致），避免瞄准时漏检脚印
 	_pathing = map_root.get_pathing_map() if map_root != null else null
 	_refresh_dynamic_pathing()
+
+
+func _spawn_opponent_base(slocs: Array[Dictionary], local_sloc: Dictionary) -> bool:
+	if _session == null or map_root == null:
+		return false
+	var available := MeleeBootstrap.available_slocs(slocs, [local_sloc])
+	if available.is_empty():
+		push_warning("双玩家开局：没有独立的对手出生点")
+		return false
+	var owner := 1 if local_player == 0 else 0
+	if _session.stocks.has(owner):
+		return false
+	var sloc := MeleeBootstrap.pick_random_sloc(available, _rng)
+	var race := MeleeRacePreview.race_from_string("human")
+	var result := MeleeBootstrap.spawn_at_sloc(map_root, sloc, race, owner, map_root.get_heightfield_dict())
+	if not bool(result.get("ok", false)):
+		return false
+	var workers := maxi(int(result.get("spawned", 1)) - 1, 0)
+	var cap := BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
+	_session.set_stock(owner, PlayerStock.melee_start(workers, cap))
+	return true
 
 
 func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary:
@@ -1314,6 +1462,14 @@ const SMART_BUILDING_FOOT_PX := 40.0
 
 func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
 	var ground_goal := _screen_to_goal_wc3(screen_pos)
+	if _ground_items != null and rts_camera != null:
+		var item := GroundItemVisual.pick_at(_ground_items, rts_camera.get_camera(), screen_pos)
+		if item != null:
+			var target := SmartTarget.new()
+			target.kind = SmartTarget.Kind.ITEM
+			target.node = item
+			target.goal_wc3 = Wc3Coords.godot_to_wc3_xy(item.global_position)
+			return target
 	var best: SmartTarget = null
 	var best_score := INF
 
@@ -1502,6 +1658,8 @@ func _format_smart_status(result: Dictionary) -> String:
 	var kind := str(result.get("kind", ""))
 	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
 	match kind:
+		"Item":
+			return "前往拾取道具" if moved > 0 else "请选择有空位的己方英雄拾取"
 		"GoldMine":
 			if harvested > 0 and moved > 0:
 				return "智能 · 采金 %d · 移动 %d" % [harvested, moved]
@@ -2023,6 +2181,9 @@ func _ensure_caster_runtime(unit: Node3D) -> void:
 
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
+	var inv := Inventory.ensure_on(unit)
+	if inv != null and not inv.changed.is_connected(_on_inventory_changed):
+		inv.changed.connect(_on_inventory_changed)
 	if _ability_runtime != null:
 		_ability_runtime.ensure_hero_passives(unit)
 
@@ -2206,7 +2367,7 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	if existing != null:
 		existing.configure(
 			Callable(self, "_ensure_navigator"),
-			Callable(self, "_local_stock"),
+			Callable(self, "_stock_for_unit").bind(unit),
 			Callable(self, "_unit_host"),
 			Callable(self, "_path_query_ref"),
 			Callable(self, "_crowd_query_ref"),
@@ -2218,7 +2379,7 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	hc.name = "HarvestController"
 	hc.configure(
 		Callable(self, "_ensure_navigator"),
-		Callable(self, "_local_stock"),
+		Callable(self, "_stock_for_unit").bind(unit),
 		Callable(self, "_unit_host"),
 		Callable(self, "_path_query_ref"),
 		Callable(self, "_crowd_query_ref"),
@@ -2266,6 +2427,8 @@ func _ensure_unit_ai(unit: Node3D) -> UnitAI:
 	var existing := UnitAI.of(unit)
 	if existing != null:
 		_configure_unit_ai(existing, unit)
+		# 刷新默认 Profile（玩家 REACTIVE → TEAM_PLAYER），避免旧局袖手旁观
+		existing.set_profile(UnitAI.default_profile_for(unit))
 		# Bug #2 修复：已挂 AI 的野怪再次入场（重复调用、或者重训）也要入营。
 		_attach_to_camp_if_neutral(unit, existing)
 		return existing
@@ -2647,8 +2810,14 @@ func _on_unit_dying(unit: Node3D) -> void:
 	var bh := BuffHost.of(unit)
 	if bh != null:
 		bh.clear_all()
+	if _item_service != null:
+		_item_service.prepare_hero_death(unit)
 	HeroDeathRegistry.register_death(unit)
+	var inv := Inventory.of(unit)
+	if inv != null:
+		inv.clear()
 	_release_unit_food(unit)
+	_terminate_unit_production(unit)
 	# 立刻移出选中；命令卡随 selection_changed 清空（与野怪观察一致）。
 	if unit_selector != null and unit_selector.has_method("deselect_unit"):
 		unit_selector.call("deselect_unit", unit)
@@ -2667,7 +2836,7 @@ func _on_unit_dying(unit: Node3D) -> void:
 	else:
 		var tree := get_tree()
 		if tree != null:
-			tree.create_timer(Unit.CORPSE_LINGER_SEC).timeout.connect(
+			SceneDelay.create_timer(self, Unit.CORPSE_LINGER_SEC).timeout.connect(
 				_on_corpse_expired.bind(unit)
 			)
 		else:
@@ -2750,7 +2919,7 @@ func _on_gold_mine_depleted(mine: Node3D) -> void:
 		wait = 1.6
 	var tree := get_tree()
 	if tree != null:
-		tree.create_timer(wait).timeout.connect(_on_gold_mine_collapse_finished.bind(mine))
+		SceneDelay.create_timer(self, wait).timeout.connect(_on_gold_mine_collapse_finished.bind(mine))
 	else:
 		_on_gold_mine_collapse_finished(mine)
 
@@ -2759,21 +2928,32 @@ func _on_gold_mine_collapse_finished(mine: Node3D) -> void:
 	_on_corpse_expired(mine)
 
 
+func _terminate_unit_production(unit: Node3D) -> void:
+	if not is_instance_valid(unit):
+		return
+	var queue := unit.get_node_or_null("TrainQueue") as TrainQueue
+	if queue != null:
+		_wire_train_queue(queue)
+		queue.terminate()
+
+
 func _release_unit_food(unit: Node3D) -> void:
 	if unit == null or bool(unit.get_meta("food_released", false)):
 		return
 	var d: Dictionary = unit.get_meta("unit_data", {})
 	var owner := int(d.get("owner", -1))
-	if _session != null and owner != int(_session.local_player):
-		return
 	var tid := str(d.get("typeId", "")).strip_edges()
 	var food := BuildingCatalog.get_food_used(tid)
-	if food <= 0:
+	var capacity := BuildingCatalog.get_food_made(tid) if not UnitLife.is_under_construction(unit) else 0
+	if food <= 0 and capacity <= 0:
 		return
-	var stock := _local_stock()
+	var stock := _stock_for_owner(owner)
 	if stock == null:
 		return
-	stock.add_food_used(-food)
+	if food > 0:
+		stock.add_food_used(-food)
+	if capacity > 0:
+		stock.add_food_cap(-capacity)
 	unit.set_meta("food_released", true)
 
 
@@ -3377,10 +3557,8 @@ func _on_build_started(order: BuildOrder) -> void:
 		return
 	# 半成品已刷出：撤掉落点幽灵
 	_clear_pinned_site_ghost()
-	var player_owner := 0
+	var player_owner := order.owner
 	if order.builder != null:
-		var d: Dictionary = order.builder.get_meta("unit_data", {})
-		player_owner = int(d.get("owner", local_player))
 		# 仅当该农民已在工地施工时播锤子（join 先到时不要让还在路上的首工进入 Stand Work）
 		var bc0 := order.builder.get_node_or_null("BuildController") as BuildController
 		if bc0 != null and bc0.is_building():
@@ -3509,7 +3687,7 @@ func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int
 		_refresh_dynamic_pathing()
 	# 人口上限（首工已离开时 BuildController 不会加）
 	if _session != null:
-		var stock: PlayerStock = _session.local_stock()
+		var stock := _stock_for_owner(player_owner)
 		if stock != null:
 			var fmade: int = BuildingCatalog.get_food_made(order.building_id)
 			if fmade > 0:
@@ -3722,7 +3900,7 @@ func _try_issue_revive(unit_id: String) -> void:
 		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
-	if building_id != "halt":
+	if not HeroDeathRegistry.can_revive_at(building_id):
 		if game_hud:
 			game_hud.set_status("仅祭坛可复活英雄")
 		return
@@ -3740,8 +3918,8 @@ func _try_issue_revive(unit_id: String) -> void:
 			game_hud.set_status("无待复活的 %s" % uid)
 		return
 	var lv := maxi(int(entry.get("level", 1)), 1)
-	var gold := HeroDeathRegistry.revive_cost(lv)
-	var time_sec := HeroDeathRegistry.revive_time_sec(lv)
+	var gold := HeroDeathRegistry.revive_cost(lv, uid)
+	var time_sec := HeroDeathRegistry.revive_time_sec(lv, uid)
 	var stock := _local_stock()
 	if stock != null and stock.gold < gold:
 		HeroDeathRegistry.restore_dead(entry)
@@ -3873,7 +4051,7 @@ func _wire_train_queue(queue: TrainQueue) -> void:
 		return
 	_wired_train_queues[id] = true
 	queue.training_completed.connect(_on_training_completed.bind(queue))
-	queue.training_cancelled.connect(_on_training_cancelled)
+	queue.training_cancelled.connect(_on_training_cancelled.bind(queue))
 	if not queue.queue_changed.is_connected(_on_train_queue_changed):
 		queue.queue_changed.connect(_on_train_queue_changed.bind(queue))
 	if not queue.progress_changed.is_connected(_on_train_progress_changed):
@@ -3930,7 +4108,9 @@ func _on_train_queue_cancel(slot_index: int) -> void:
 	if unit_selector == null or not unit_selector.has_method("get_primary"):
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
+	if not is_instance_valid(primary) or _session == null:
+		return
+	if not CombatQuery.is_controllable(primary, int(_session.local_player)) or not CombatQuery.is_alive_in_world(primary):
 		return
 	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
 	if tq == null:
@@ -3938,11 +4118,6 @@ func _on_train_queue_cancel(slot_index: int) -> void:
 	_wire_train_queue(tq)
 	if not tq.cancel_at(slot_index):
 		return
-	var cancelled := tq.take_last_cancelled()
-	if bool(cancelled.get("is_revive", false)):
-		var rev: Variant = cancelled.get("revive_entry", {})
-		if typeof(rev) == TYPE_DICTIONARY and not (rev as Dictionary).is_empty():
-			HeroDeathRegistry.restore_dead(rev as Dictionary)
 	_sync_building_train_visual(primary)
 	var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
 	if not tid.is_empty():
@@ -3970,7 +4145,7 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 		completed = queue.take_last_completed()
 	_sync_building_train_visual(building)
 	if TechPresence.is_upgrade_id(unit_id):
-		_on_research_completed(unit_id, building)
+		_on_research_completed(unit_id, building, owner)
 		return
 	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
 	if node == null:
@@ -3980,7 +4155,7 @@ func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queu
 			var rev: Variant = completed.get("revive_entry", {})
 			if typeof(rev) == TYPE_DICTIONARY and not (rev as Dictionary).is_empty():
 				HeroDeathRegistry.restore_dead(rev as Dictionary)
-		var stock := _local_stock()
+		var stock := _stock_for_owner(owner)
 		if stock != null:
 			var food := BuildingCatalog.get_food_used(unit_id)
 			if food > 0:
@@ -4016,10 +4191,17 @@ func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
 	if typeof(levels) == TYPE_DICTIONARY:
 		unit.set_meta(AbilityCatalog.META_ABILITY_LEVELS, (levels as Dictionary).duplicate(true))
 	_ensure_hero_runtime(unit)
+	var entry: Dictionary = completed.get("revive_entry", {})
+	var inv := Inventory.of(unit)
+	if inv != null:
+		inv.restore(entry.get("inventory", {}))
+	# 祭坛复活：恢复等级与物品后设置生命、魔法，避免初始化覆盖。
+	UnitLife.set_life(unit, UnitLife.get_max_life(unit))
+	unit.set_meta(UnitMana.META_MANA, mini(100, UnitMana.get_max_mana(unit)))
 
 
-func _on_research_completed(upgrade_id: String, building: Node3D) -> void:
-	var stock := _local_stock()
+func _on_research_completed(upgrade_id: String, building: Node3D, owner: int) -> void:
+	var stock := _stock_for_owner(owner)
 	if stock != null:
 		stock.grant_upgrade(upgrade_id)
 	# 科技是玩家级：场上已有步兵与之后新训的步兵都解锁同一按钮
@@ -4036,8 +4218,15 @@ func _on_research_completed(upgrade_id: String, building: Node3D) -> void:
 		game_hud.set_status("研究完成：%s" % TechPresence.display_name(upgrade_id))
 
 
-func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int = -1) -> void:
-	var stock := _local_stock()
+func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int, owner: int, queue: TrainQueue) -> void:
+	# 所有取消来源共用此处：电脑和建筑生命周期无需走 UI 才能保住英雄。
+	if is_instance_valid(queue):
+		var cancelled := queue.take_last_cancelled()
+		if bool(cancelled.get("is_revive", false)):
+			var rev: Variant = cancelled.get("revive_entry", {})
+			if rev is Dictionary and not rev.is_empty():
+				HeroDeathRegistry.restore_dead(rev)
+	var stock := _stock_for_owner(owner)
 	if stock != null:
 		if refund_g > 0:
 			stock.add_gold(refund_g)
@@ -4140,6 +4329,20 @@ func _teleport_unit_wc3(unit: Node3D, wc3_xy: Vector2) -> void:
 		pos["z"] = z
 		d["position"] = pos
 		unit.set_meta("unit_data", d)
+
+
+## 只结算已加入会话的玩家；中立或无效 owner 不创建隐式库存。
+func _stock_for_unit(unit: Node3D) -> PlayerStock:
+	if not is_instance_valid(unit):
+		return null
+	var data: Dictionary = unit.get_meta("unit_data", {})
+	return _stock_for_owner(int(data.get("owner", -1)))
+
+
+func _stock_for_owner(owner: int) -> PlayerStock:
+	if _session == null:
+		return null
+	return _session.stocks.get(owner) as PlayerStock
 
 
 func _local_stock() -> PlayerStock:
@@ -4532,6 +4735,8 @@ func _clear_command_card_hotkeys() -> void:
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
+	if game_hud != null:
+		game_hud.bind_inventory(Inventory.of(primary) if _is_controllable(primary) else null)
 	_set_move_targeting(false)
 	_set_attack_targeting(false)
 	_set_patrol_targeting(false)
@@ -5040,3 +5245,103 @@ func _primary_type_id(_selected: Array = []) -> String:
 		var d2: Dictionary = (_selected[0] as Node3D).get_meta("unit_data", {})
 		return str(d2.get("typeId", "")).strip_edges()
 	return ""
+
+
+func _setup_item_system() -> void:
+	_ground_items = Node3D.new()
+	_ground_items.name = "GroundItems"
+	get_parent().add_child(_ground_items)
+	_item_service = ItemService.new()
+	_item_service.name = "ItemService"
+	add_child(_item_service)
+	_item_service.configure(_ground_items, _heightfield, map_dir)
+	_item_service.ground_spawned.connect(GroundItemVisual.attach.bind(map_root.get_model_cache()))
+	_item_service.message.connect(_ability_set_status)
+	_command_router.item_feedback.connect(_ability_set_status)
+	_death_service.unit_died.connect(_item_service.on_unit_died)
+
+
+func _on_inventory_changed() -> void:
+	var primary := _ability_get_primary()
+	if primary != null and game_hud != null:
+		_apply_selection_info_to_hud(primary, _get_selected_safe())
+
+
+func _on_item_use(slot: int) -> void:
+	var unit := _ability_get_primary()
+	if not _is_controllable(unit):
+		return
+	var inv := Inventory.of(unit)
+	if inv != null:
+		var result := inv.try_use(slot)
+		_ability_set_status(str(result.get("reason", "")))
+
+
+func _on_item_drop(slot: int) -> void:
+	var unit := _ability_get_primary()
+	if _is_controllable(unit) and _item_service != null:
+		_item_service.drop_from(unit, slot)
+
+
+func _on_item_swap(a: int, b: int) -> void:
+	var unit := _ability_get_primary()
+	if not _is_controllable(unit):
+		return
+	var inv := Inventory.of(unit)
+	if inv != null:
+		inv.swap_slots(a, b)
+
+
+## GM：只生成测试物品，不修改地图掉落或普通开局。
+func gm_item_test_kit() -> void:
+	var unit := _ability_get_primary()
+	if not _is_controllable(unit) or Inventory.of(unit) == null or _item_service == null:
+		_ability_set_status("请先选中己方英雄")
+		return
+	var origin := Wc3Coords.godot_to_wc3_xy(unit.global_position)
+	var ids := ["phea", "phea", "pman", "pman", "rde1", "rde1", "phea"]
+	for i in range(ids.size()):
+		var angle := TAU * float(i) / ids.size()
+		_item_service.spawn(ItemInstance.create(ids[i]), origin + Vector2(cos(angle), sin(angle)) * 180.0)
+	_ability_set_status("已生成 7 件测试道具：右键拾取，六格满后应剩一件")
+
+
+func gm_item_test_vitals() -> void:
+	var unit := _ability_get_primary()
+	if not _is_controllable(unit) or Inventory.of(unit) == null:
+		_ability_set_status("请先选中己方英雄")
+		return
+	UnitLife.set_life(unit, maxf(1.0, UnitLife.get_max_life(unit) * 0.3))
+	UnitMana.spend(unit, UnitMana.get_mana(unit) * 0.7)
+	_on_inventory_changed()
+	_ability_set_status("测试：英雄生命与魔法降至约 30%")
+
+
+func gm_item_test_death() -> void:
+	var unit := _ability_get_primary()
+	if _is_controllable(unit) and Inventory.of(unit) != null:
+		_kill_unit(unit)
+		_ability_set_status("测试：英雄阵亡，请在祭坛复活后检查背包")
+
+
+func gm_item_test_creep() -> void:
+	var unit := _ability_get_primary()
+	if not _is_controllable(unit) or map_root == null or _heightfield == null:
+		return
+	var xy := Wc3Coords.godot_to_wc3_xy(unit.global_position) + Vector2(280.0, 0.0)
+	var entry := {
+		"typeId": "nogr", "owner": 12, "flags": 2, "variation": 0,
+		"position": {"x": xy.x, "y": xy.y, "z": 0.0},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"creationNumber": _alloc_runtime_cn(),
+		"droppedItemSets": [[{"id": "phea", "chance": 100}], [{"id": "rde1", "chance": 100}]],
+	}
+	var creep := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if creep != null:
+		UnitLife.ensure(creep)
+		UnitLife.set_life(creep, 20.0)
+		_ensure_unit_ai(creep)
+		if health_bar_manager != null:
+			health_bar_manager.resync()
+		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")

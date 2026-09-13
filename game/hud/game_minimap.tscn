@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://game/hud/game_minimap.gd" id="1_script"]
 
+[ext_resource type="Script" path="res://scripts/map/minimap/minimap_view.gd" id="minimap_shared"]
+
 [node name="GameMinimap" type="Control"]
 custom_minimum_size = Vector2(176, 176)
 layout_mode = 3
@@ -29,3 +31,5 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+script = ExtResource("minimap_shared")

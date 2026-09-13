@@ -1,9 +1,6 @@
 [gd_scene format=3 uid="uid://dphccp4bf1ij5"]
 
 [ext_resource type="Script" uid="uid://bfbnq1kjnfd34" path="res://editor/ui/new_map_dialog.gd" id="1_script"]
-[ext_resource type="Texture2D" uid="uid://b3tm81f24y6i6" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush02.png" id="2_gr2fj"]
-[ext_resource type="Texture2D" uid="uid://dxnqx0hmokde2" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush00.png" id="3_q24pc"]
-[ext_resource type="Texture2D" uid="uid://cow51rl7mch53" path="res://assets/asset-converted/ReplaceableTextures/WorldEditUI/CliffBrush01.png" id="4_h1rmo"]
 
 [node name="NewMapDialog" type="Window" unique_id=313171683]
 oversampling_override = 1.0
@@ -192,7 +189,7 @@ theme_override_constants/separation = 6
 unique_name_in_owner = true
 custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
-texture_normal = ExtResource("2_gr2fj")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush02.png"
 ignore_texture_size = true
 stretch_mode = 0
 
@@ -200,7 +197,7 @@ stretch_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
-texture_normal = ExtResource("3_q24pc")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush00.png"
 ignore_texture_size = true
 stretch_mode = 0
 
@@ -208,7 +205,7 @@ stretch_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
-texture_normal = ExtResource("4_h1rmo")
+metadata/wc3_icon = "ReplaceableTextures/WorldEditUI/CliffBrush01.png"
 ignore_texture_size = true
 stretch_mode = 0
 

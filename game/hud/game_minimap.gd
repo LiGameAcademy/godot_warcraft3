@@ -5,6 +5,8 @@ extends Control
 ## 玩家单位/建筑 → 队伍色正方形；中立单位 → 黑色。
 ## 坐标与编辑器共用 MapMinimapUtils（heightfield UV）。
 
+const MarkerRules := preload("res://scripts/map/minimap/minimap_marker_rules.gd")
+
 const BuildingVisualScr = preload("res://scripts/map/presentation/building_visual.gd")
 
 signal clicked(uv: Vector2)
@@ -35,7 +37,6 @@ var _camera_rig: Node3D = null
 var _local_player: int = 0
 var _catalog: Wc3IdCatalog = null
 var _viewport_quad: PackedVector2Array = PackedVector2Array()
-var _drag_pressed: bool = false
 var _icon_gold: Texture2D = null
 var _icon_neutral_bldg: Texture2D = null
 var _icons_loaded: bool = false
@@ -48,12 +49,12 @@ func _ready() -> void:
 	if custom_minimum_size.x < 64.0 or custom_minimum_size.y < 64.0:
 		custom_minimum_size = Vector2(DEFAULT_SIDE, DEFAULT_SIDE)
 	_ensure_icons()
+	_overlay.bind_background(_tex)
+	_overlay.clicked.connect(func(uv: Vector2): clicked.emit(uv))
 	if _overlay != null and not _overlay.draw.is_connected(_on_overlay_draw):
 		_overlay.draw.connect(_on_overlay_draw)
 	if not resized.is_connected(_on_resized):
 		resized.connect(_on_resized)
-	if not gui_input.is_connected(_on_gui_input):
-		gui_input.connect(_on_gui_input)
 	set_process(true)
 
 
@@ -72,6 +73,7 @@ func configure(
 	_local_player = local_player
 	if catalog != null:
 		_catalog = catalog
+	_nbmm_cache.clear()
 	_ensure_icons()
 	if _overlay != null:
 		_overlay.queue_redraw()
@@ -91,7 +93,7 @@ func load_from_map_dir(map_dir: String) -> bool:
 	_image = img
 	if _tex != null:
 		_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		_tex.texture = ImageTexture.create_from_image(img)
+		_overlay.set_texture(ImageTexture.create_from_image(img))
 	if _overlay != null:
 		_overlay.queue_redraw()
 	return true
@@ -99,7 +101,7 @@ func load_from_map_dir(map_dir: String) -> bool:
 
 func set_background_texture(tex: Texture2D) -> void:
 	if _tex != null:
-		_tex.texture = tex
+		_overlay.set_texture(tex)
 	_image = tex.get_image() if tex != null else null
 	if _overlay != null:
 		_overlay.queue_redraw()
@@ -160,71 +162,21 @@ func _try_load_war3map(map_dir: String) -> Image:
 	return null
 
 
-func _on_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index != MOUSE_BUTTON_LEFT:
-			return
-		_drag_pressed = mb.pressed
-		if mb.pressed:
-			_emit_click_at(mb.position)
-			accept_event()
-	elif event is InputEventMouseMotion and _drag_pressed:
-		var mm := event as InputEventMouseMotion
-		_emit_click_at(mm.position)
-		accept_event()
-
-
-func _emit_click_at(local_pos: Vector2) -> void:
-	var uv := _control_to_uv(local_pos)
-	if uv.x < 0.0 or uv.y < 0.0 or uv.x > 1.0 or uv.y > 1.0:
-		return
-	clicked.emit(uv)
-
-
 func _control_to_uv(pos: Vector2) -> Vector2:
-	var drawn := _drawn_rect()
-	if drawn.size.x < 1.0 or drawn.size.y < 1.0:
-		return Vector2(-1, -1)
-	return Vector2(
-		(pos.x - drawn.position.x) / drawn.size.x,
-		(pos.y - drawn.position.y) / drawn.size.y
-	)
+	return _overlay.position_to_uv(pos)
 
 
 func _uv_to_overlay(uv: Vector2) -> Vector2:
-	var drawn := _drawn_rect()
-	return Vector2(
-		drawn.position.x + uv.x * drawn.size.x,
-		drawn.position.y + uv.y * drawn.size.y
-	)
+	return _overlay.uv_to_position(uv)
 
 
-## 与 TextureRect KEEP_ASPECT_CENTERED 一致：按底图像素比居中 letterbox。
 func _drawn_rect() -> Rect2:
-	var cs := size
-	if cs.x <= 1.0 or cs.y <= 1.0:
-		return Rect2(Vector2.ZERO, cs)
-	if _image == null:
-		# 无图时仍按正方形可用区（避免矩形控件里 UV 被压扁）
-		var side := minf(cs.x, cs.y)
-		return Rect2((cs - Vector2(side, side)) * 0.5, Vector2(side, side))
-	var ts := Vector2(float(_image.get_width()), float(_image.get_height()))
-	if ts.x < 1.0 or ts.y < 1.0:
-		return Rect2(Vector2.ZERO, cs)
-	var sc := minf(cs.x / ts.x, cs.y / ts.y)
-	var drawn := ts * sc
-	return Rect2((cs - drawn) * 0.5, drawn)
+	return _overlay.drawn_rect()
 
 
 func _on_overlay_draw() -> void:
 	_draw_unit_markers()
-	if _viewport_quad.size() >= 4:
-		var pts := PackedVector2Array()
-		for i in range(4):
-			pts.append(_uv_to_overlay(_viewport_quad[i]))
-		pts.append(pts[0])
-		_overlay.draw_polyline(pts, Color(1.0, 0.85, 0.2, 1.0), 1.5, true)
+	_overlay.draw_camera(_viewport_quad)
 
 
 func _draw_unit_markers() -> void:
@@ -246,17 +198,16 @@ func _draw_unit_markers() -> void:
 		var uv := MapMinimapUtils.world_to_minimap_uv(n.global_position, _hf)
 		if uv.x < -0.02 or uv.y < -0.02 or uv.x > 1.02 or uv.y > 1.02:
 			continue
-		var pos := _uv_to_overlay(uv)
 		var owner_id := int(d.get("owner", -1))
 		var is_bldg := _is_building_type(tid)
 		var icon := _pick_icon(tid, owner_id, is_bldg)
 		if icon != null:
 			var sz := _icon_draw_size(icon)
-			_overlay.draw_texture_rect(icon, Rect2(pos - sz * 0.5, sz), false)
+			_overlay.draw_marker(uv, icon, Color.WHITE, sz)
 		else:
 			var col := _dot_color(tid, owner_id)
 			var half := DOT_BLDG if is_bldg else DOT_UNIT
-			_overlay.draw_rect(Rect2(pos - Vector2(half, half), Vector2(half * 2.0, half * 2.0)), col)
+			_overlay.draw_marker(uv, null, col, Vector2(half * 2, half * 2))
 
 
 func _is_building_type(type_id: String) -> bool:
@@ -283,23 +234,17 @@ func _pick_icon(type_id: String, owner_id: int, is_building: bool) -> Texture2D:
 
 
 func _shows_neutral_building_icon(type_id: String, owner_id: int) -> bool:
-	if _nbmm_cache.has(type_id):
-		return bool(_nbmm_cache[type_id])
-	var show_icon := false
-	if _catalog != null:
-		var info: Dictionary = _catalog.lookup(type_id)
-		if info.has("nbmm_icon"):
-			show_icon = bool(info.get("nbmm_icon", false))
-		else:
-			var is_neutral := owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0
-			show_icon = is_neutral and bool(info.get("is_building", false))
-	else:
+	var key := "%s:%d" % [type_id, owner_id]
+	if _nbmm_cache.has(key):
+		return bool(_nbmm_cache[key])
+	var info: Dictionary = _catalog.lookup(type_id).duplicate() if _catalog != null else {}
+	info["is_building"] = _is_building_type(type_id)
+	if not info.has("nbmm_icon"):
 		var from_ui := _nbmm_lookup_defstore(type_id)
-		if from_ui["found"]:
-			show_icon = bool(from_ui["value"])
-		else:
-			show_icon = owner_id >= NEUTRAL_OWNER_MIN or owner_id < 0
-	_nbmm_cache[type_id] = show_icon
+		if from_ui.found:
+			info["nbmm_icon"] = from_ui.value
+	var show_icon := MarkerRules.classify(type_id, owner_id, info) == MarkerRules.NEUTRAL_BUILDING
+	_nbmm_cache[key] = show_icon
 	return show_icon
 
 

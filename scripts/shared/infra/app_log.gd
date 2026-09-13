@@ -115,7 +115,7 @@ static func _apply_config_file(path: String) -> void:
 	# 去 BOM / NUL 转义
 	if text.unicode_at(0) == 0xFEFF:
 		text = text.substr(1)
-	text = text.replace(String.chr(0), "")
+	# _read_utf8_safe 已拒绝 NUL；不要构造非法的 NUL 字符串。
 	var data: Variant = RuntimeAssets.parse_json_text(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		return

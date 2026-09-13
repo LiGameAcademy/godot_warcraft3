@@ -114,6 +114,12 @@ export function closeArchive(archive) {
   }
 }
 
+/** Probe a known name even when the archive's listfile omits it. */
+export function hasFile(archive, archivedName) {
+  ensureLoaded();
+  return api.SFileHasFile(archive.handle, archivedName);
+}
+
 /**
  * Prefer reading embedded (listfile); fall back to FindFirst enumeration.
  * @param {{ handle: object }} archive

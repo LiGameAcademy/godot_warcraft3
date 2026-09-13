@@ -78,7 +78,30 @@ static func _inject_tracks(root: Node, ribbon_root: Node, glb_path: String) -> i
 			anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
 			anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
 			anim.track_insert_key(ti, 0.0, on)
+			var visibility: Array = em.get_meta("wc3_ribbon_visibility", [])
+			if not visibility.is_empty():
+				anim.track_insert_key(ti, 0.0, on and Wc3Pe2Particles._sample_track(visibility, int(interval.x), int(interval.x), int(interval.y), 1.0) >= 0.5)
+				for key in visibility:
+					var frame := float(key.get("frame", 0.0))
+					if frame >= interval.x and frame <= interval.y:
+						anim.track_insert_key(ti, minf((frame - interval.x) / 1000.0, anim.length), on and float(key.get("value", 0.0)) >= 0.5)
 			n += 1
+			em.set_meta("wc3_ribbon_timeline_baked", true)
+			var positions: Dictionary = em.get_meta("wc3_ribbon_positions", {})
+			var samples: Array = []
+			for name in positions:
+				if AnimPlayback.compact_seq_name(str(name)) == AnimPlayback.compact_seq_name(str(anim_name)):
+					samples = positions[name]
+					break
+			if not samples.is_empty():
+				_remove_tracks_with_path(anim, rel, Animation.TYPE_POSITION_3D)
+				var position_track := anim.add_track(Animation.TYPE_POSITION_3D)
+				anim.track_set_path(position_track, rel)
+				for sample in samples:
+					var v: Array = sample.get("position", [0, 0, 0])
+					anim.track_insert_key(position_track, minf(float(sample.get("t", 0.0)), anim.length), Vector3(v[0], v[1], v[2]))
+				n += 1
+				continue
 			# Birth 内 Translation 摆动（水元素 Ribbon）
 			var trans_meta: Variant = em.get_meta("wc3_ribbon_translation", null)
 			if not (trans_meta is Dictionary):

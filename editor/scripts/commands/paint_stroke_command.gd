@@ -31,6 +31,17 @@ func affects_cliffs_water() -> bool:
 	return _affects_cliff
 
 
+func changes_only_ground_texture() -> bool:
+	if _affects_cliff or before.size() != after.size():
+		return false
+	for key in before:
+		var a: EditorVertexSnapshot = before[key]
+		var b: EditorVertexSnapshot = after.get(key)
+		if b == null or a.height != b.height or a.water_height != b.water_height or a.layer != b.layer or a.flags != b.flags or a.cliff_tex != b.cliff_tex or a.cliff_var != b.cliff_var:
+			return false
+	return true
+
+
 func execute(document) -> void:
 	_apply_map(document, after)
 

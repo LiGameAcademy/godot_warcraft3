@@ -64,7 +64,7 @@ WC3（~2002）特效不是「画质差」这么简单，而是**为固定管线 
 | 能自动判的（推荐） | 依据 | 例 |
 |--------------------|------|-----|
 | Additive·少面·近正方 AABB | 面数 / aspect / blend | 火球壳、牧师星闪 → soft-orb |
-| ≤4 三角扁片 | 面数 | lensflare、箭矢贴图 → billboard |
+| ≤4 三角扁片 | 面数 | lensflare → billboard；**细长箭矢**（aspect≥3）→ **KEEP** + 弹道壳长轴对准飞行 |
 | 水平极薄盘 | Y≪XZ | 法师光环脚底 → **KEEP**（勿竖广告牌） |
 | 细长高 aspect | aspect + 面数 | 实体矛/斧 → KEEP |
 | PE2 Head/Tail / sheet | `frame_flags` / rows×cols | 拉伸或播格，仍挂原 emitter |

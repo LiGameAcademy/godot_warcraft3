@@ -64,17 +64,18 @@ func add_quad(
 	var p_tr := positions[3]
 	var n0 := (p_tl - p_bl).cross(p_tr - p_bl).normalized()
 	var n1 := (p_tr - p_bl).cross(p_br - p_bl).normalized()
-	var uv0 := PackedVector2Array([Vector2(0, 0), Vector2(0, 1), Vector2(1, 1)])
-	var uv1 := PackedVector2Array([Vector2(0, 0), Vector2(1, 1), Vector2(1, 0)])
-	if uvs.size() >= 6:
-		uv0 = PackedVector2Array([uvs[0], uvs[1], uvs[2]])
-		uv1 = PackedVector2Array([uvs[3], uvs[4], uvs[5]])
-	add_triangle(
-		PackedVector3Array([p_bl, p_tl, p_tr]), n0, uv0, custom0, custom1
-	)
-	add_triangle(
-		PackedVector3Array([p_bl, p_tr, p_br]), n1, uv1, custom0, custom1
-	)
+	assert(_building)
+	if n0.is_zero_approx():
+		n0 = Vector3.UP
+	if n1.is_zero_approx():
+		n1 = Vector3.UP
+	var custom_uv := uvs.size() >= 6
+	_append_vert(p_bl, n0, uvs[0] if custom_uv else Vector2(0, 0), custom0, custom1)
+	_append_vert(p_tl, n0, uvs[1] if custom_uv else Vector2(0, 1), custom0, custom1)
+	_append_vert(p_tr, n0, uvs[2] if custom_uv else Vector2(1, 1), custom0, custom1)
+	_append_vert(p_bl, n1, uvs[3] if custom_uv else Vector2(0, 0), custom0, custom1)
+	_append_vert(p_tr, n1, uvs[4] if custom_uv else Vector2(1, 1), custom0, custom1)
+	_append_vert(p_br, n1, uvs[5] if custom_uv else Vector2(1, 0), custom0, custom1)
 
 ## 提交构建
 ## [return ArrayMesh] 构建好的网格
@@ -105,6 +106,35 @@ func commit_build() -> ArrayMesh:
 ## [param m: ArrayMesh] 网格
 func set_array_mesh(m: ArrayMesh) -> void:
 	mesh = m
+
+
+## Ground texture paint changes UV/custom attributes only, not vertices or collision.
+func update_quad_attributes(first_vertex: int, custom0: PackedFloat32Array, custom1: PackedFloat32Array) -> bool:
+	if not mesh is ArrayMesh or mesh.get_surface_count() != 1 or first_vertex < 0 or first_vertex + 6 > _verts.size():
+		return false
+	var format: int = mesh.surface_get_format(0)
+	var count := _verts.size()
+	var stride := RenderingServer.mesh_surface_get_format_attribute_stride(format, count)
+	var uv_offset := RenderingServer.mesh_surface_get_format_offset(format, count, Mesh.ARRAY_TEX_UV)
+	var c0_offset := RenderingServer.mesh_surface_get_format_offset(format, count, Mesh.ARRAY_CUSTOM0)
+	var c1_offset := RenderingServer.mesh_surface_get_format_offset(format, count, Mesh.ARRAY_CUSTOM1)
+	# This builder uses uncompressed float UV + two RGBA float custom channels.
+	if stride != 40 or uv_offset + 8 > stride or c0_offset + 16 > stride or c1_offset + 16 > stride:
+		return false
+	var bytes := PackedByteArray()
+	bytes.resize(stride * 6)
+	for v in range(6):
+		var index := first_vertex + v
+		var start := v * stride
+		bytes.encode_float(start + uv_offset, _uvs[index].x)
+		bytes.encode_float(start + uv_offset + 4, _uvs[index].y)
+		for k in range(4):
+			_custom0[index * 4 + k] = custom0[k]
+			_custom1[index * 4 + k] = custom1[k]
+			bytes.encode_float(start + c0_offset + k * 4, custom0[k])
+			bytes.encode_float(start + c1_offset + k * 4, custom1[k])
+	mesh.surface_update_attribute_region(0, first_vertex * stride, bytes)
+	return true
 
 ## 清空网格
 func clear_mesh() -> void:
@@ -168,9 +198,13 @@ func _append_vert(pos: Vector3, normal: Vector3, local_uv: Vector2, custom0: Pac
 	_norms.append(normal)
 	_uvs.append(local_uv)
 	if _use_custom:
-		for k in range(4):
-			_custom0.append(custom0[k] if k < custom0.size() else -1.0)
-			_custom1.append(custom1[k] if k < custom1.size() else 0.0)
+		if custom0.size() == 4 and custom1.size() == 4:
+			_custom0.append_array(custom0)
+			_custom1.append_array(custom1)
+		else:
+			for k in range(4):
+				_custom0.append(custom0[k] if k < custom0.size() else -1.0)
+				_custom1.append(custom1[k] if k < custom1.size() else 0.0)
 	_indices.append(base)
 
 

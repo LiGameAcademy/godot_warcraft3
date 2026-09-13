@@ -5,6 +5,18 @@ extends Node3D
 signal tile_hovered(tile: Vector2i) ## 实为顶点坐标 (ix, iy)
 signal painted
 signal rebuild_requested
+var _texture_vertices: Dictionary = {}
+var _texture_only_pending := true
+var apply_height := false
+var height_tool := 0
+var _height_anchor := NAN
+
+
+func consume_texture_vertices() -> Array:
+	var vertices := _texture_vertices.keys() if _texture_only_pending else []
+	_texture_vertices.clear()
+	_texture_only_pending = true
+	return vertices
 signal ramp_feedback(message: String)
 signal brush_settings_changed(size: int, shape: int)
 
@@ -32,6 +44,8 @@ var history: EditorCommandHistory = null
 
 var _painting: bool = false
 var _last_vert: Vector2i = INVALID_VERT
+var _last_ramp_dirs: Vector2i = Vector2i.ZERO
+var _hover_ramp_dirs: Vector2i = Vector2i.ZERO
 var _hover_vert: Vector2i = INVALID_VERT
 var _dirty_paint: bool = false
 var _last_rebuild_ms: int = 0
@@ -96,6 +110,7 @@ func stroke_press(screen_pos: Vector2) -> void:
 	if not enabled or document == null or camera == null:
 		return
 	_painting = true
+	_height_anchor = NAN
 	_cliff_level_anchor = -1
 	_begin_stroke()
 	_paint_at_mouse(screen_pos)
@@ -193,6 +208,7 @@ func _ready() -> void:
 
 
 func setup(doc, cam: Camera3D, world: World3D, p_history: EditorCommandHistory = null) -> void:
+	consume_texture_vertices()
 	document = doc
 	camera = cam
 	space = world
@@ -304,6 +320,10 @@ func _main_window_mouse_local() -> Vector2:
 
 func _set_hover_vert(vert: Vector2i) -> void:
 	if vert == _hover_vert:
+		if is_ramp_tool() and vert != INVALID_VERT:
+			var dirs := _ramp_dirs_from_mouse(vert, _main_window_mouse_local())
+			if dirs != _hover_ramp_dirs:
+				_update_hover_preview(vert)
 		return
 	_hover_vert = vert
 	if vert == INVALID_VERT:
@@ -318,15 +338,21 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	_set_hover_vert(vert)
 	if vert == INVALID_VERT:
 		return
-	if vert == _last_vert and _painting:
+	var ramp_dirs := _ramp_dirs_from_mouse(vert, screen_pos) if is_ramp_tool() else Vector2i.ZERO
+	if vert == _last_vert and _painting and (not is_ramp_tool() or ramp_dirs == _last_ramp_dirs):
 		return
 	_last_vert = vert
+	_last_ramp_dirs = ramp_dirs
 	var boundary_mode: bool = is_boundary_tool()
-	if not apply_texture and not apply_cliff and not boundary_mode:
+	if not apply_texture and not apply_cliff and not apply_height and not boundary_mode:
 		return
 
 	if apply_cliff and cliff_tool_id == "2" and _cliff_level_anchor < 0:
 		_cliff_level_anchor = int(document.layer_at(vert.x, vert.y))
+
+	if apply_height and is_nan(_height_anchor):
+		var index: int = document.heightfield.index_at(vert.x, vert.y)
+		_height_anchor = float(document.heightfield.heights[index]) - float(document.heightfield.layer_heights[index] - 2) * 128.0
 
 	var painted_any := false
 	var cliff_any := false
@@ -336,7 +362,7 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 	# 边界特殊纹理：cell 模式写 BL（HiveWE Nothing）；不画普通地表
 	if apply_cliff and cliff_tool_id == "Ramp" and not boundary_mode:
 		# 鼠标相对角点的坡向（对齐 HiveWE apply_ramps）
-		var dirs: Vector2i = _ramp_dirs_from_mouse(vert, screen_pos)
+		var dirs: Vector2i = ramp_dirs
 		var hx: int = dirs.x
 		var hy: int = dirs.y
 		# 先采足够大邻域 before（低侧意图原点≤2 + 臂长≤2 + L 补心）；避免只记 click 漏掉真正落旗点
@@ -374,13 +400,28 @@ func _paint_at_mouse(screen_pos: Vector2) -> void:
 			if boundary_mode:
 				if bool(document.paint_boundary_cell(ix, iy, boundary_enable)):
 					painted_any = true
+					_texture_only_pending = false
 			elif apply_texture and bool(document.paint_corner(ix, iy)):
 				painted_any = true
+				_texture_vertices[document.heightfield.index_at(ix, iy)] = true
 			_stroke.capture_after_at(ix, iy)
+	if apply_height and not boundary_mode:
+		var points: Array = []
+		for offset in _brush_offsets():
+			var point: Vector2i = vert + offset
+			points.append(point)
+			_stroke.capture_before_at(point.x, point.y)
+		if document.sculpt_height(points, height_tool, _height_anchor):
+			painted_any = true
+			cliff_any = true # Full terrain/water/ramp rebuild until height updates are incremental.
+			_stroke.mark_cliff()
+		for point in points:
+			_stroke.capture_after_at(point.x, point.y)
 	if painted_any:
 		_dirty_paint = true
 		if cliff_any:
 			cliff_dirty = true
+			_texture_only_pending = false
 		painted.emit()
 		var brush_tex: int = int(document.brush_tile_index) if document != null else -1
 		AppLog.info(
@@ -428,7 +469,9 @@ func _end_stroke() -> void:
 		_stroke.cancel()
 		return
 	var label := "Paint"
-	if is_boundary_tool():
+	if apply_height:
+		label = "Height"
+	elif is_boundary_tool():
 		label = "Boundary" if special_texture == 2 else "BoundaryRemove"
 	elif apply_cliff and cliff_tool_id == "Ramp":
 		label = "Ramp"
@@ -496,19 +539,10 @@ func _ramp_dirs_from_mouse(vert: Vector2i, screen_pos: Vector2) -> Vector2i:
 	var corner: Vector2 = Wc3Coords.tilepoint_wc3(
 		vert.x, vert.y, document.center_offset(), document.tile_size()
 	)
-	var dirs: Vector2i = Wc3RampPaint.soften_dirs(
-		mouse_wc3.x - corner.x, mouse_wc3.y - corner.y
+	return Wc3RampPaint.pointer_dirs(
+		mouse_wc3.x - corner.x, mouse_wc3.y - corner.y,
+		Input.is_key_pressed(KEY_SHIFT), Input.is_key_pressed(KEY_ALT)
 	)
-	# Shift 反向（HivEWE apply_ramps 行为）
-	if Input.is_key_pressed(KEY_SHIFT):
-		dirs = Vector2i(-dirs.x, -dirs.y)
-	# Alt 强制单轴（覆盖 soften_dirs 的 2x 软化，保留 abs 大的轴）
-	if Input.is_key_pressed(KEY_ALT) and dirs.x != 0 and dirs.y != 0:
-		if absi(dirs.x) >= absi(dirs.y):
-			dirs = Vector2i(dirs.x, 0)
-		else:
-			dirs = Vector2i(0, dirs.y)
-	return dirs
 
 
 ## 沿视线与 heightfield（含层高）求交；悬崖挖洞处仍可命中台顶。
@@ -611,6 +645,7 @@ func _update_hover_preview(vert: Vector2i) -> void:
 ## 失败时降级为单格红框（提示"点这无效"）。
 func _update_ramp_hover_preview(vert: Vector2i) -> void:
 	var dirs: Vector2i = _ramp_dirs_from_mouse(vert, _main_window_mouse_local())
+	_hover_ramp_dirs = dirs
 	var spine: Array[Vector2i] = document.peek_ramp_spine_at(vert.x, vert.y, dirs.x, dirs.y)
 	if spine.is_empty():
 		# 落坡会失败：画当前点红框

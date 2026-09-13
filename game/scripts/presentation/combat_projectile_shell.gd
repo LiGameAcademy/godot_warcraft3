@@ -1,5 +1,7 @@
 extends Node3D
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## Present 弹道壳：与 Logic 同速制导追目标；不改生命。
 
 const TRACER_RADIUS := 0.14
@@ -126,11 +128,10 @@ func _ensure_missile_model() -> void:
 	var pe2_only := _is_pe2_only_missile(inst)
 	var modern_fireball := bool(inst.get_meta(FireballMissileModern.META_APPLIED, false))
 	_missile_root.scale = Vector3.ONE * (PE2_ONLY_MISSILE_SCALE if pe2_only else MISSILE_SCALE)
-	# 有实体 mesh 的飞弹（火球）：模型轴多为 +Y，look_at 对齐 -Z
-	# PE2-only（水元素弹）：粒子已是广告牌，再拧 -90° 会把曳迹拧扁
-	# 现代火球：光核/粒子已是 billboard，勿再拧轴
+	# 有实体 mesh：把模型最长轴对准 Godot look_at 的前向 -Z（箭矢长轴常是 +X，不能死拧 -90°X）
+	# PE2-only / 现代火球：粒子已是广告牌，勿再拧轴
 	if not pe2_only and not modern_fireball:
-		_missile_root.rotation.x = -PI * 0.5
+		_align_missile_long_axis_to_forward(inst)
 	if not modern_fireball:
 		Wc3Pe2Particles.attach_to(inst, art_path)
 	# 飞行序列：Stand（火球）→ Birth（水元素弹等仅有 Birth/Death 的 PE2 弹）
@@ -261,7 +262,7 @@ func _spawn_impact() -> void:
 	var life := IMPACT_LIFETIME * (1.25 if pe2_only else 1.0)
 	var tree := parent.get_tree()
 	if tree != null:
-		tree.create_timer(life).timeout.connect(
+		SceneDelay.create_timer(fx, life).timeout.connect(
 			func() -> void:
 				if is_instance_valid(fx):
 					fx.queue_free()
@@ -346,7 +347,7 @@ func _spawn_fallback_flash(host: Node, at: Vector3, use_global: bool = true) -> 
 	fx.material_override = mat
 	var tree := host.get_tree()
 	if tree != null:
-		tree.create_timer(0.35).timeout.connect(
+		SceneDelay.create_timer(fx, 0.35).timeout.connect(
 			func() -> void:
 				if is_instance_valid(fx):
 					fx.queue_free()
@@ -403,6 +404,65 @@ func _is_pe2_only_missile(root: Node) -> bool:
 		if n2 is GPUParticles3D:
 			return true
 	return false
+
+
+## 把实例视觉 AABB 最长轴旋到本地 -Z（与 look_at 前向一致）。
+## ArrowMissile 长轴在 +X；旧逻辑一律 rotation.x=-90° 会让箭横着飞。
+func _align_missile_long_axis_to_forward(inst: Node3D) -> void:
+	if _missile_root == null or inst == null:
+		return
+	var aabb := _missile_local_aabb(inst)
+	if aabb.size.length_squared() < 1e-8:
+		_missile_root.rotation.x = -PI * 0.5
+		return
+	var sx := aabb.size.x
+	var sy := aabb.size.y
+	var sz := aabb.size.z
+	var model_fwd := Vector3.UP
+	if sx >= sy and sx >= sz:
+		model_fwd = Vector3.RIGHT
+	elif sz >= sx and sz >= sy:
+		model_fwd = Vector3.BACK # +Z
+	else:
+		model_fwd = Vector3.UP
+	var want := Vector3(0.0, 0.0, -1.0) # look_at 前向
+	_missile_root.basis = _basis_aligning(model_fwd, want)
+
+
+func _missile_local_aabb(inst: Node3D) -> AABB:
+	var aabb := AABB()
+	var first := true
+	for c in inst.find_children("*", "VisualInstance3D", true, false):
+		var vi := c as VisualInstance3D
+		if vi == null or not vi.visible:
+			continue
+		if str(vi.name) == "FxBillboard":
+			continue
+		var la := vi.get_aabb()
+		var xf: Transform3D = inst.global_transform.affine_inverse() * vi.global_transform
+		var world_box := xf * la
+		if first:
+			aabb = world_box
+			first = false
+		else:
+			aabb = aabb.merge(world_box)
+	return aabb if not first else AABB()
+
+
+func _basis_aligning(from_dir: Vector3, to_dir: Vector3) -> Basis:
+	var f := from_dir.normalized()
+	var t := to_dir.normalized()
+	if f.length_squared() < 1e-8 or t.length_squared() < 1e-8:
+		return Basis.IDENTITY
+	var d := f.dot(t)
+	if d > 0.9999:
+		return Basis.IDENTITY
+	if d < -0.9999:
+		var axis := f.cross(Vector3.UP)
+		if axis.length_squared() < 1e-6:
+			axis = f.cross(Vector3.RIGHT)
+		return Basis(axis.normalized(), PI)
+	return Basis(f.cross(t).normalized(), f.angle_to(t))
 
 
 func _fit_missile_model_scale(inst: Node3D) -> void:

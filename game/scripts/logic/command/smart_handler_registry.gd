@@ -239,8 +239,26 @@ class AttackHandler extends SmartInteractHandler:
 		return {"moved": n}
 
 
+class ItemHandler extends SmartInteractHandler:
+	func priority() -> int:
+		return 110
+
+	func applies_to(target: SmartTarget) -> bool:
+		return target != null and target.kind == SmartTarget.Kind.ITEM
+
+	func claim(movers: Array[Node3D], _rally: Array[Node3D], _target: SmartTarget, _router: Variant) -> Dictionary:
+		var taken := movers.duplicate()
+		movers.clear()
+		return {"movers": taken, "rally": []}
+
+	func execute(movers: Array, _rally: Array, target: SmartTarget, source: int, router: Variant) -> Dictionary:
+		var count: int = router.issue_pickup(movers, target.node as GroundItem, source)
+		return {"moved": count, "failed": 1 if count == 0 else 0}
+
+
 static func all_sorted() -> Array[SmartInteractHandler]:
 	var list: Array[SmartInteractHandler] = [
+		ItemHandler.new(),
 		ReturnHandler.new(),
 		HarvestGoldHandler.new(),
 		HarvestLumberHandler.new(),

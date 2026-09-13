@@ -469,7 +469,7 @@ game/scripts/
 
 **魔法值**
 
-- 英雄 / 单位 `mana` 上限与出生量来自 `UnitBalanceDef`（英雄：INT×12，见 `UnitMana`）
+- 英雄 / 单位 `mana` 上限与出生量来自 `UnitBalanceDef`（英雄：取整 INT×15，见 `UnitMana`）
 - 施放扣蓝：`UnitMana.spend`
 - **自然回复**：`UnitRegen`（`AbilityRuntimeRegistry.tick_all_units` 顺带 tick）
   - 蓝：`regenMana` + 英雄 INT×0.05（与 `regenType` 无关；光环等额外回复仍走 `UnitMana.regenerate`）

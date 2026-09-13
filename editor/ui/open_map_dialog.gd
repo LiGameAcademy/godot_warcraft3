@@ -3,6 +3,7 @@ extends Window
 
 
 signal confirmed(entry: Dictionary)
+signal file_requested
 
 const MapDocumentScript := preload("res://editor/scripts/map_document.gd")
 
@@ -16,6 +17,13 @@ var _entries: Array = [] ## { dir, slug, name, detail }
 
 func _ready() -> void:
 	hide()
+	var browse := Button.new()
+	browse.text = "打开编辑器地图文件…"
+	_cancel_btn.get_parent().add_child(browse)
+	browse.pressed.connect(func():
+		hide()
+		file_requested.emit()
+	)
 
 
 func setup() -> void:

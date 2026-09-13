@@ -139,7 +139,7 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	if dead_heroes == null:
 		dead_heroes = []
 	var dead_type_ids: Dictionary = {}
-	if not hide_trains and BuildingCatalog.is_building(uid):
+	if not hide_trains and HeroDeathRegistry.can_revive_at(uid):
 		var revive_slot := 0
 		for dead in dead_heroes:
 			if typeof(dead) != TYPE_DICTIONARY:
@@ -153,8 +153,8 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 				continue
 			dead_type_ids[hid] = true
 			var lv := maxi(int(d.get("level", 1)), 1)
-			var gold := HeroDeathRegistry.revive_cost(lv)
-			var sec := HeroDeathRegistry.revive_time_sec(lv)
+			var gold := HeroDeathRegistry.revive_cost(lv, hid)
+			var sec := HeroDeathRegistry.revive_time_sec(lv, hid)
 			var exec := training_unit == hid or queued.has(hid)
 			var opts_r := {
 				"enabled": true,

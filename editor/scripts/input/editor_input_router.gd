@@ -231,6 +231,16 @@ func _nudge_brush_size(dir: int) -> void:
 
 
 func _keyboard_move_dir() -> Vector3:
+	# Input state is global across native windows; typing into a floating editor
+	# window must not move the background map camera.
+	var window := get_window()
+	if window == null or not window.has_focus():
+		return Vector3.ZERO
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return Vector3.ZERO
+	if Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_ALT) or Input.is_key_pressed(KEY_META):
+		return Vector3.ZERO
 	var input_dir := Vector3.ZERO
 	# WE 主路径：方向键
 	if Input.is_key_pressed(KEY_UP):

@@ -27,6 +27,17 @@ var last_cache_hits: int = 0
 var _warned_preview_fail: Dictionary = {}
 
 
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE:
+		return
+	# 缓存原型不在 SceneTree 中，RefCounted 的 Dictionary 析构不会 free Node。
+	# 仅释放原型；instance_glb 返回的副本由各自宿主负责。
+	for prototype in _scene_cache.values():
+		if prototype is Node and is_instance_valid(prototype):
+			prototype.free()
+	_scene_cache.clear()
+
+
 func reset_load_stats() -> void:
 	last_scn_hits = 0
 	last_gltf_loads = 0
@@ -142,6 +153,12 @@ func request_preload(glb_path: String) -> void:
 		return
 	var scn_path := RuntimeAssets.resolve_model_scene(path)
 	if not scn_path.is_empty():
+		# Godot 4.6 的 Dummy Renderer 资源 RID 分配不是线程安全的。
+		# https://github.com/godotengine/godot/issues/121949
+		# 保留完整资源，在主线程按帧预算加载；有窗口渲染仍使用后台预载。
+		if DisplayServer.get_name() == "headless":
+			_preload[path] = {"kind": "scn_main", "scn_path": scn_path}
+			return
 		var err := ResourceLoader.load_threaded_request(scn_path, "PackedScene", true)
 		# OK / ERR_BUSY（已在加载）均可轮询
 		if err == OK or err == ERR_BUSY:
@@ -166,7 +183,7 @@ func cancel_preloads() -> void:
 	_preload.clear()
 
 
-## 主线程每帧调用：收割线程结果；gltf_budget=本帧最多解析几个无 .scn 的 GLB。
+## 主线程每帧调用：收割线程结果；gltf_budget 限制 GLB 解析与无窗口 .scn 加载总数。
 ## 返回本帧新写入缓存的路径数。
 func poll_preloads(gltf_budget: int = 1) -> int:
 	if _preload.is_empty():
@@ -183,6 +200,17 @@ func poll_preloads(gltf_budget: int = 1) -> int:
 		var info: Dictionary = _preload[path]
 		var kind := str(info.get("kind", ""))
 		match kind:
+			"scn_main":
+				if gltf_left <= 0:
+					continue
+				gltf_left -= 1
+				var packed := ResourceLoader.load(str(info.scn_path), "PackedScene") as PackedScene
+				if packed != null:
+					register_external_packed(path, packed)
+					newly += 1
+				else:
+					_preload.erase(path)
+					_start_bytes_preload(path)
 			"scn":
 				newly += _poll_scn_preload(path, info)
 			"bytes":
@@ -1209,6 +1237,13 @@ func prepare_fx_model(root: Node3D, source_path: String = "") -> void:
 		FireballMissileModern.apply(root)
 	else:
 		Wc3FxPresenter.present(root)
+	# 整体覆盖优先于表面覆盖；去掉不可见的重复引用，规避 Godot #85817。
+	# 包含烘焙后改名为 Geoset 的广告牌，不依赖节点名。
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.material_override != null and mesh_instance.mesh != null:
+			for surface in mesh_instance.mesh.get_surface_count():
+				mesh_instance.set_surface_override_material(surface, null)
 	if bool(root.get_meta("wc3_fx_scaled", false)):
 		return
 	# 已有 MODEL_SCALE 子根（convert 写入）→ 世界 AABB 应 < ~2m

@@ -2,7 +2,7 @@ class_name GmDebugPanel
 extends CanvasLayer
 
 ## 开发 GM 面板。热键由 GameDirector 转发（默认 ` 反引号 / F4），避免编辑器抢走 F10。
-## 控制地面栅格、pathing overlay、斜坡 debug、寻路线等。
+## 控制地面栅格、pathing overlay、斜坡 debug、寻路线、血条常显、头顶单位名等。
 
 signal toggled(visible_now: bool)
 
@@ -12,6 +12,7 @@ var _pathing_check: CheckBox
 var _ramp_check: CheckBox
 var _path_dbg_check: CheckBox
 var _hp_bar_check: CheckBox
+var _unit_name_check: CheckBox
 var _hint: Label
 var _map: MapLoader
 var _director: Node
@@ -115,6 +116,11 @@ func _build_ui() -> void:
 	_hp_bar_check.toggled.connect(_on_hp_bar_toggled)
 	v.add_child(_hp_bar_check)
 
+	_unit_name_check = CheckBox.new()
+	_unit_name_check.text = "头顶单位名（血条上方）"
+	_unit_name_check.toggled.connect(_on_unit_name_toggled)
+	v.add_child(_unit_name_check)
+
 	var sep := HSeparator.new()
 	v.add_child(sep)
 	var hero_title := Label.new()
@@ -133,6 +139,15 @@ func _build_ui() -> void:
 	v.add_child(skill_row)
 	_add_btn(skill_row, "学一点", _on_hero_learn_one)
 	_add_btn(skill_row, "解锁全技能", _on_hero_unlock_all)
+
+	var item_row := HBoxContainer.new()
+	v.add_child(item_row)
+	_add_btn(item_row, "生成测试道具", func() -> void: _call_director_gm("gm_item_test_kit"))
+	_add_btn(item_row, "血蓝降至30%", func() -> void: _call_director_gm("gm_item_test_vitals"))
+	var item_death_row := HBoxContainer.new()
+	v.add_child(item_death_row)
+	_add_btn(item_death_row, "道具掉落测试怪", func() -> void: _call_director_gm("gm_item_test_creep"))
+	_add_btn(item_death_row, "英雄阵亡测试", func() -> void: _call_director_gm("gm_item_test_death"))
 
 	_hint = Label.new()
 	_hint.text = "日志：game/config/debug_log.json · 英雄 GM 作用于主选"
@@ -192,6 +207,11 @@ func _sync_from_world() -> void:
 		if _health_bars != null:
 			on = _health_bars.is_always_show()
 		_hp_bar_check.set_pressed_no_signal(on)
+	if _unit_name_check != null:
+		var names_on := true
+		if _health_bars != null:
+			names_on = _health_bars.is_show_unit_names()
+		_unit_name_check.set_pressed_no_signal(names_on)
 
 
 func _on_grid_selected(idx: int) -> void:
@@ -238,3 +258,10 @@ func _on_hp_bar_toggled(on: bool) -> void:
 	if _health_bars != null:
 		_health_bars.set_always_show(on)
 	AppLog.info(AppLog.Layer.GM, "GM", "hp_bars_always=%s" % on)
+
+
+func _on_unit_name_toggled(on: bool) -> void:
+	_resolve_refs()
+	if _health_bars != null:
+		_health_bars.set_show_unit_names(on)
+	AppLog.info(AppLog.Layer.GM, "GM", "unit_names=%s" % on)

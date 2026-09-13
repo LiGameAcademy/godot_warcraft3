@@ -21,6 +21,14 @@ func build(ctx) -> void:
 		return
 	var hf: Wc3Heightfield = ctx.heightfield as Wc3Heightfield
 	if hf != null and hf.is_valid():
+		# No markers can be drawn without a ramp flag; avoid planning boosts.
+		var has_ramp := false
+		for flag in hf.flags_packed:
+			if (int(flag) & Wc3Coords.FLAG_RAMP) != 0:
+				has_ramp = true
+				break
+		if not has_ramp:
+			return
 		var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ctx.ramp)
 		_build_from_arrays(
 			hf.width,

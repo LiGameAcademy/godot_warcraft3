@@ -1,10 +1,7 @@
 class_name MapRampLayer
 extends Node3D
 
-## 斜坡表现层：消费 Collect → 地面 dig/undig/入口+0.5 → 挂 CliffTrans。
-## 直崖跳过由 MapLoader 在挂崖前 filter_cliff_placements（对齐 WE continue）。
-## L 内角：只 undig 凹陷格（2×2 下凹）；邻臂不 undig，并挖三兄弟，避免伪 3×3 对角坡面。
-## 不另铺「甲板」Mesh：坡身靠 CliffTrans，入口靠 undig 地面 + 低角半层抬高。
+## HiveWE-compatible ramp presentation: collect models, preserve entrance ground, boost low corners.
 
 const Wc3RampCollectScript = preload("res://scripts/map/logic/ramp/wc3_ramp_collect.gd")
 
@@ -38,22 +35,29 @@ func build(ctx: MapBuildContext) -> void:
 	var ramp_data: Wc3RampCollectResult = ctx.ramp
 	if ramp_data == null:
 		return
+	var terrain_layer: MapTerrainLayer = terrain
+	if terrain_layer == null:
+		terrain_layer = get_node_or_null("../Terrain") as MapTerrainLayer
+	var has_ramp_flag := false
+	for flag in hf.flags_packed:
+		if (int(flag) & Wc3Coords.FLAG_RAMP) != 0:
+			has_ramp_flag = true
+			break
+	if not has_ramp_flag and ramp_data.placements.is_empty() and ramp_data.romp.count(0) == ramp_data.romp.size():
+		# No ramp can produce a dig/entrance without a ramp flag. Still clear the
+		# previous masks so erasing the last ramp restores the ground correctly.
+		if terrain_layer != null:
+			terrain_layer.apply_ramp_dig(PackedByteArray(), [], PackedByteArray(), ramp_data.romp)
+		return
 
 	# 挖洞 + 入口 undig + 入口低角半层（贴 CliffTrans 坡脚）
-	# dig = L bowl footprint dig + diagonal ramp dig（后者独立于 placement）
+	# Only model footprints are removed; entrance ground takes precedence.
 	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
-	var diag_dig: PackedByteArray = Wc3RampCollectScript.plan_diagonal_dig_mask(hf)
-	for i in range(mini(dig.size(), diag_dig.size())):
-		if diag_dig[i] != 0:
-			dig[i] = 1
 	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp_data)
 	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ramp_data)
 	last_dig_count = _count_ones(dig)
 	last_entrance_count = entrances.size()
 	last_boost_count = _count_ones(boost)
-	var terrain_layer: MapTerrainLayer = terrain
-	if terrain_layer == null:
-		terrain_layer = get_node_or_null("../Terrain") as MapTerrainLayer
 	if terrain_layer != null:
 		# 传 romp 让 corner_texture 能看 a_romp（对齐 HivEWE real_tile_texture）
 		terrain_layer.apply_ramp_dig(dig, entrances, boost, ramp_data.romp)

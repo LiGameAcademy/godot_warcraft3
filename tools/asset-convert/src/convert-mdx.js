@@ -108,6 +108,8 @@ function animTrackKeys(track) {
   return keys.map((k) => ({
     frame: Number(k.Frame) || 0,
     value: Number(k.Vector?.[0]) || 0,
+    ...(k.InTan ? { in_tan: Number(k.InTan[0]) || 0 } : {}),
+    ...(k.OutTan ? { out_tan: Number(k.OutTan[0]) || 0 } : {}),
   }));
 }
 
@@ -257,6 +259,7 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
       gravity: typeof pe.Gravity === "number" ? pe.Gravity : Number(pe.Gravity) || 0,
       life_span: typeof pe.LifeSpan === "number" ? pe.LifeSpan : Number(pe.LifeSpan) || 0.1,
       emission_rate: emissionRateForAmount(pe.EmissionRate),
+      emission_rate_interpolation: Number(pe.EmissionRate?.LineType) || 0,
       width: typeof pe.Width === "number" ? pe.Width : Number(pe.Width) || 0,
       length: typeof pe.Length === "number" ? pe.Length : Number(pe.Length) || 0,
       filter_mode: Number(pe.FilterMode) || 0,
@@ -265,12 +268,14 @@ function writePe2Sidecar(model, logicalPath, inDir, outDir) {
       frame_flags: Number(pe.FrameFlags ?? pe.HeadOrTail) || 0,
       tail_length: Number(pe.TailLength) || 0,
       squirt: Boolean(pe.Squirt),
-      time_middle: Number(pe.Time) || 0.5,
+      time_middle: Number(pe.Time ?? 0.5),
       segment_color: [asVec3(seg[0]), asVec3(seg[1]), asVec3(seg[2])],
       alpha: asVec3(pe.Alpha),
       particle_scaling: asVec3(pe.ParticleScaling),
       life_span_uv: asVec3(pe.LifeSpanUVAnim),
       decay_uv: asVec3(pe.DecayUVAnim),
+      tail_uv: asVec3(pe.TailUVAnim),
+      tail_decay_uv: asVec3(pe.TailDecayUVAnim),
       texture: resolved.pngLogical,
       priority_plane: Number(pe.PriorityPlane) || 0,
       pivot,
@@ -377,6 +382,62 @@ function bakePe2PivotsBySequence(allNodes, pe, sequences) {
     out[name] = wc3ToGltfVec3(wx, wy, wz);
   }
   return out;
+}
+
+/** Ribbon motion is sampled through the full node hierarchy, including helpers. */
+export function extractRibbons(model) {
+  const sequences = model.Sequences ?? [];
+  const nodes = model.Nodes ?? [];
+  return (model.RibbonEmitters ?? []).map((ribbon) => {
+    const positions = {};
+    for (const seq of sequences) {
+      const start = Number(seq.Interval[0]);
+      const end = Number(seq.Interval[1]);
+      const samples = [];
+      const frames = new Set([start, end]);
+      for (let frame = start; frame < end; frame += 1000 / 30) frames.add(frame);
+      const pivot = asVec3(ribbon.PivotPoint);
+      for (const frame of [...frames].sort((a, b) => a - b)) {
+        const world = evaluateNodeWorldMatrices(nodes, frame, start, end)[ribbon.ObjectId];
+        const xyz = world ? [
+          world[0]*pivot[0] + world[4]*pivot[1] + world[8]*pivot[2] + world[12],
+          world[1]*pivot[0] + world[5]*pivot[1] + world[9]*pivot[2] + world[13],
+          world[2]*pivot[0] + world[6]*pivot[1] + world[10]*pivot[2] + world[14],
+        ] : pivot;
+        samples.push({ t: (frame - start) / 1000, position: wc3ToGltfVec3(...xyz) });
+      }
+      positions[String(seq.Name)] = samples;
+    }
+    return {
+      name: sanitizeMdxText(ribbon.Name),
+      life_span: Number(ribbon.LifeSpan) || 0.1,
+      emission_rate: Number(ribbon.EmissionRate) || 0,
+      height_above: typeof ribbon.HeightAbove === "number" ? ribbon.HeightAbove : 0,
+      height_below: typeof ribbon.HeightBelow === "number" ? ribbon.HeightBelow : 0,
+      alpha: typeof ribbon.Alpha === "number" ? ribbon.Alpha : 1,
+      color: asVec3(ribbon.Color),
+      pivot: wc3ToGltfVec3(...asVec3(ribbon.PivotPoint)),
+      visibility_keys: animTrackKeys(ribbon.Visibility) ?? [],
+      active_sequences: activeSequencesForEmitter(ribbon, sequences),
+      positions_by_sequence: positions,
+      material_id: Number(ribbon.MaterialID) || 0,
+    };
+  });
+}
+
+function writeRibbonSidecar(model, logicalPath, inDir, outDir) {
+  const ribbons = extractRibbons(model);
+  for (const ribbon of ribbons) {
+    const layer = model.Materials?.[ribbon.material_id]?.Layers?.[0];
+    const info = model.Textures?.[typeof layer?.TextureID === "number" ? layer.TextureID : 0];
+    ribbon.texture = resolveTexturePng(info?.Image ?? "", inDir, outDir, {
+      isReplaceable: Boolean(info?.ReplaceableId), replaceableId: info?.ReplaceableId || 0,
+    }).pngLogical;
+    ribbon.filter_mode = Number(layer?.FilterMode) || 0;
+  }
+  const destination = path.join(outDir, ...mdxLogicalToPe2(logicalPath).replace(/\.pe2\.json$/i, ".ribbon.json").split("/"));
+  atomicWriteBytesSync(destination, JSON.stringify({ version: 1, source: logicalPath,
+    sequences: (model.Sequences ?? []).map((seq) => ({ name: sanitizeMdxText(seq.Name), interval: Array.from(seq.Interval) })), ribbons }, null, 2) + "\n");
 }
 
 /**
@@ -1880,6 +1941,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
   // sidecar 先写；gltf/bin 后写。中途失败清掉本模型产物。
   try {
     writePe2Sidecar(model, logicalPath, inDir, outDir);
+    writeRibbonSidecar(model, logicalPath, inDir, outDir);
     writeGeosetVisSidecar(model, logicalPath, outDir, geosetMeshNodes.keys());
     writeAttachmentsSidecar(model, logicalPath, outDir);
     writeCamerasSidecar(model, logicalPath, outDir);
@@ -1892,6 +1954,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(dest);
     unlinkQuiet(destBin);
     unlinkQuiet(pe2Dest);
+    unlinkQuiet(pe2Dest.replace(/\.pe2\.json$/i, ".ribbon.json"));
     unlinkQuiet(geosetVisDest);
     unlinkQuiet(attDest);
     unlinkQuiet(camDest);

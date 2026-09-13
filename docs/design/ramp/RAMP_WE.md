@@ -1,5 +1,7 @@
 # WE / HiveWE 斜坡实现思路
 
+> 2026-09-13 最新渲染规则与用户地图回归见 [HiveWE 源码对照](HIVEWE_RENDER_PARITY.md)。下文有关 L 碗、外角补洞和污染列容错的记录已被替代。
+
 > **角色**：重做斜坡前的**领域权威**（只讲 WE 怎么想、怎么算；不写本仓库实现清单）。  
 > **对照源码**：本地 `_ref/HiveWE`（gitignored）  
 > - 落旗：`src/brush/terrain_operators.cpp` → `CliffOperator::update_ramp` / `apply_ramps`  
@@ -87,8 +89,7 @@
 1. **三步都在地图内**（含原点共 3 点：`step=0..2`）。  
 2. **后两步**层高必须等于 `target_level`（低一层）。  
 3. **垂直侧邻**（相对坡向的左右）层高不得 **高于** `origin_level`。  
-4. **紧贴对侧斜坡禁门**（对齐 HiveWE `check_ramp_direction` line 448-459）：若侧翼 corner 已有 ramp 但沿本坡向延伸不齐 → 拒绝。避免细脊两侧各落一条坡的视觉错位。  
-5. **侧翼禁贴**：若侧向邻点已有 ramp：  
+4. **侧翼禁贴**：若侧向邻点已有 ramp：  
    - 沿本坡向有完整 3 点臂 → 允许（平行加宽）；  
    - 或侧邻属于从原点出发的垂直完整臂（L / 半侧转角）→ 允许；  
    - 否则拒绝（畸形贴边）。  
@@ -308,3 +309,17 @@ Logic：`Wc3RampCollect.should_hide_cliff_piece` / `filter_cliff_placements`；�
 | W3E 读写 ramp | 同上 | load/save flags 中 `corner_ramp` bit |
 
 本地克隆：`_ref/HiveWE`（见根目录 `.gitignore`）。经典 0.3 可执行对照路径见 `.cursor/rules/hivewe-cliff-reference.mdc`。
+
+
+## 2026-09-13 绘制与外角缺口修复
+
+- 删除先于侧翼检查的重复四邻拒绝逻辑：它同时检查沿坡方向的邻点，并在完整垂直臂判断之前返回，导致 L 形第二臂、反向坡与内角接坡失败。仍保留低一层、完整三点、边界、高侧邻及平行/L 侧翼检查。
+- Alt 根据鼠标原始 X/Y 偏移选择主轴，之后才归一化；Shift 反向照常应用。
+- 同一格点内改变坡向可以继续落笔，悬停预览同步更新方向；相同方向重复采样仍去重，连续拖动只产生一条撤销命令。
+- 四旗齐全的外角中心保留地面，前提是该格不属于原版 CliffTrans 模型覆盖范围。此前此格既无地面又无模型，实际渲染出现整格缺口。四方向入口/模型 footprint 回归与真实渲染场景覆盖此问题。
+- 修正列匹配单测的错误对称样例：中点孤立旗加空列不应生成模型，完整列加另一列中点污染才是已有容错规则；未放宽生产模型匹配条件。
+
+验证：`selftest_ramp_logic.gd`、`selftest_ramp_present.gd`；`selftest_ramp_brush_direction.tscn` 在 D3D12 下验证同格方向切换、预览方向、单笔撤销重做、保存重开和原版模型挂载。测试的拾取与方向输入为可控替身，不能等同完整操作系统鼠标验收；方向幅度/修饰键另由逻辑测试覆盖。截图 `tmp/ramp-brush-direction.png`，可打开样例 `tmp/ramp-brush-direction.wc3map.json`。
+
+
+外角方向补充：高台支撑检查原来固定采样 (vx-1..vx, vy-1..vy)，仅对一个朝向有效。现根据唯一高角确定高台所在象限；四方向样例验证转角处有地面或实际 CT footprint，并保证入口不覆盖 CT。最终逻辑、数据、表现测试均 PASS，D3D12 笔刷方向集成 PASS（0 failures）；环境仍报告系统证书读取错误。既有 Lost Temple 收集保持 58 个坡体、116 个 romp 点；入口覆盖数量会因修复增长。

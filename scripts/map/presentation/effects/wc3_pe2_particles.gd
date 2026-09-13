@@ -26,6 +26,10 @@ const META_BONE_BOUND := "pe2_bone_bound"
 ## MDX ParticleEmitter2.Flags（与 Magos / war3-model 一致）
 const FLAG_LINE_EMITTER := 0x20000
 const FLAG_XY_QUAD := 0x100000
+const FLAG_MODEL_SPACE := 0x80000
+const FLAG_SORT_FAR_Z := 0x10000
+const EMITTER_SCRIPT := preload("res://scripts/presentation/wc3_model/wc3_pe2_emitter.gd")
+const MATERIAL_SCRIPT := preload("res://scripts/presentation/wc3_model/wc3_pe2_material.gd")
 ## FrameFlags：bit0=Head，bit1=Tail；也有导出写成枚举 0/1/2。
 ## 仅 2/3 或 bit1 当 Tail，避免把 Head-only 的 1 拧成拖尾（ArchMage 普攻火花）。
 
@@ -86,7 +90,19 @@ static func has_emitters(glb_path: String) -> bool:
 
 ## 从 pe2.json 构建 Pe2Root（bake:scn 打进场景；运行时仅作旧 .scn 回退）。
 static func build_root_from_glb(glb_path: String) -> Node3D:
-	return build_root_from_payload(load_payload(glb_path))
+	var data := load_payload(glb_path)
+	var stem := pe2_path_from_glb(glb_path).trim_suffix(".pe2.json")
+	var overrides_path := "res://assets/fx-overrides/" + stem.trim_prefix("res://assets/asset-converted/") + ".json"
+	if RuntimeAssets.file_exists(overrides_path):
+		var overrides: Variant = RuntimeAssets.parse_json_text(RuntimeAssets.read_utf8_text(RuntimeAssets.project_abs(overrides_path)))
+		if overrides is Dictionary:
+			var by_name: Dictionary = overrides.get("emitters", {})
+			for em in data.get("emitters", []):
+				var entry: Dictionary = by_name.get(str(em.get("name", "")), {})
+				for key in ["size_multiplier", "rate_multiplier", "color_multiplier", "local_coords"]:
+					if entry.has(key):
+						em[key] = entry[key]
+	return build_root_from_payload(data)
 
 
 static func build_root_from_payload(data: Dictionary) -> Node3D:
@@ -302,6 +318,16 @@ static func pivot_for_sequence(p: GPUParticles3D, sequence_name: String) -> Vect
 
 
 static func _apply_sequence_to_particle(p: GPUParticles3D, want_key: String) -> void:
+	# Explicit animation burst keys own emission; never turn them into continuous emitters.
+	if bool(p.get_meta("pe2_squirt", false)):
+		p.emitting = false
+		return
+	# New bakes carry complete emission tracks, including their t=0 state.
+	# Post-play sequence helpers must not overwrite a delayed Birth/Attack key.
+	if bool(p.get_meta("pe2_timeline_baked", false)):
+		if not emitting_for_sequence(p, want_key):
+			p.emitting = false
+		return
 	var in_seq := emitting_for_sequence(p, want_key)
 	var pulse := bool(p.get_meta(META_PULSE, false))
 	if bool(p.get_meta(META_ALWAYS_ON, false)):
@@ -445,19 +471,29 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 	)
 	# Godot 连续发射：同时存活数 ≈ rate × life。勿再 ×1.35（施工烟会叠成一团火）。
 	# rate=0 的死亡爆发仍可能有 animated keys；amount 至少给一点，靠 emitting 开关。
-	var amount: int = clampi(ceili((rate if rate > 0.01 else 8.0) * life), 1, 256)
+	var rate_multiplier := maxf(0.0, float(em.get("rate_multiplier", 1.0)))
+	var peak_rate := rate
+	for key in em.get("emission_rate_keys", []):
+		peak_rate = maxf(peak_rate, float(key.get("value", 0.0)))
+	var squirt := bool(em.get("squirt", false))
+	var amount: int = clampi(ceili(peak_rate * rate_multiplier * life), 1, 4096)
+	if squirt:
+		amount = clampi(ceili(peak_rate * rate_multiplier * maxf(life, 1.0) * maxi(1, em.get("emission_rate_keys", []).size())), 1, 4096)
 	var flight_trail := has_tail and _em_is_flight_trail(em)
-	# 飞行曳迹（Stand 青尾 / Birth-only 水滴）原作 rate 偏低 → 略增存活数
-	if flight_trail and rate < 100.0:
-		amount = clampi(maxi(amount * 3 + 8, amount + 14), 1, 72)
-	var p := GPUParticles3D.new()
+	var p: GPUParticles3D = EMITTER_SCRIPT.new()
 	p.name = str(em.get("name", "PE2_%d" % index))
 	p.amount = amount
 	p.lifetime = life
 	p.preprocess = 0.12 if flight_trail else 0.0
 	p.visibility_aabb = AABB(Vector3(-80, -20, -80), Vector3(160, 200, 160))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	p.local_coords = true
+	p.local_coords = bool(em.get("local_coords", (int(em.get("flags", 0)) & FLAG_MODEL_SPACE) != 0))
+	if (int(em.get("flags", 0)) & FLAG_SORT_FAR_Z) != 0:
+		p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	p.set("burst_mode", squirt)
+	p.set_meta("pe2_squirt", squirt)
+	p.set_meta("pe2_rate_multiplier", rate_multiplier)
+	p.set_meta("pe2_rate_interpolation", int(em.get("emission_rate_interpolation", 0)))
 
 	var pivot: Array = em.get("pivot", [0, 0, 0]) as Array
 	# 绑骨时优先 local_pivot（父骨局部）；否则用静态 PivotPoint
@@ -483,9 +519,10 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 			p.set_meta(META_PIVOT_BY_SEQ, store)
 
 	var scale_seg: Array = em.get("particle_scaling", [10, 10, 10]) as Array
-	var s0 := maxf(0.1, float(scale_seg[0]) if scale_seg.size() > 0 else 10.0)
-	var s1 := maxf(0.1, float(scale_seg[1]) if scale_seg.size() > 1 else s0)
-	var s2 := maxf(0.1, float(scale_seg[2]) if scale_seg.size() > 2 else s1)
+	var s0 := maxf(0.0, float(scale_seg[0]) if scale_seg.size() > 0 else 10.0)
+	var s1 := maxf(0.0, float(scale_seg[1]) if scale_seg.size() > 1 else s0)
+	var s2 := maxf(0.0, float(scale_seg[2]) if scale_seg.size() > 2 else s1)
+	var base_scale := maxf(maxf(s0, s1), maxf(s2, 0.001))
 
 	var tex_rel := str(em.get("texture", ""))
 	var tex: Texture2D = null
@@ -496,40 +533,8 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 			tex = _load_pe2_texture(tex_rel)
 			tex_cache[tex_rel] = tex
 
-	var filter_mode: int = int(em.get("filter_mode", 0))
-	var rows: int = maxi(1, int(em.get("rows", 1)))
-	var cols: int = maxi(1, int(em.get("columns", 1)))
 	var flags: int = int(em.get("flags", 0))
-	var frame_flags: int = frame_flags_early
-	var xy_quad := (flags & FLAG_XY_QUAD) != 0
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	# 粒子色 / color_ramp 写在 INSTANCE 顶点色上，必须开启
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_color = Color.WHITE
-	# Particle Billboard 才能启用序列帧；XY Quad 跟发射器平面，不朝相机转
-	if xy_quad:
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
-	else:
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-		mat.billboard_keep_scale = true
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	if tex != null:
-		mat.albedo_texture = tex
-	# WC3 FilterMode: 0 Blend, 1 Additive。Additive 仍走粒子 Alpha（200→100→0），
-	# 关掉 TRANSPARENCY 会把施工烟加成一团不透明亮斑。
-	if filter_mode == 1:
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	else:
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	if rows > 1 or cols > 1:
-		mat.particles_anim_h_frames = cols
-		mat.particles_anim_v_frames = rows
-		mat.particles_anim_loop = false
+	var mat := MATERIAL_SCRIPT.build(em, tex, has_tail)
 
 	# 材质挂在 Mesh 上（GPUParticles3D 的 material_override 对粒子 billboard 不可靠）
 	var quad := QuadMesh.new()
@@ -542,6 +547,12 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 		quad.size = Vector2(1, 1)
 	quad.material = mat
 	p.draw_pass_1 = quad
+	if frame_flags_early == 3:
+		var head := QuadMesh.new()
+		head.material = MATERIAL_SCRIPT.build(em, tex, false)
+		head.resource_local_to_scene = true
+		p.draw_passes = 2
+		p.draw_pass_2 = head
 
 	var proc := ParticleProcessMaterial.new()
 	var speed_raw: float = float(em.get("speed", 0.0))
@@ -573,33 +584,19 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 			proc.emission_box_extents = Vector3(half_w, 0.01, half_l)
 	if has_tail:
 		proc.particle_flag_align_y = true
-	if bool(em.get("squirt", false)):
-		p.explosiveness = 1.0
 	# 三段缩放：scale_min=s0，曲线乘 s1/s0、s2/s0
-	# Additive 短火花略放大，避免 Clouds 贴图在 Godot 里发灰发淡
-	var scale_boost := 1.35 if filter_mode == 1 and life < 0.6 else 1.0
-	if flight_trail:
-		scale_boost *= 1.65
-	proc.scale_min = s0 * scale_boost
-	proc.scale_max = s0 * scale_boost
+	# Artistic adjustments are per-model overrides, never global heuristics.
+	var scale_boost := maxf(0.0, float(em.get("size_multiplier", 1.0)))
+	proc.scale_min = base_scale * scale_boost
+	proc.scale_max = base_scale * scale_boost
 	proc.scale_curve = _scale_curve(s0, s1, s2, float(em.get("time_middle", 0.5)))
 	proc.color = Color.WHITE
-	proc.color_ramp = _color_ramp(em, filter_mode == 1)
-
-	if rows > 1 or cols > 1:
-		# speed=1 → 生命周期内播完整张表；用 life_span_uv 帧跨度估比例
-		var uv_life: Array = em.get("life_span_uv", [0, 0, 1]) as Array
-		var start_f := float(uv_life[0]) if uv_life.size() > 0 else 0.0
-		var end_f := float(uv_life[1]) if uv_life.size() > 1 else float(rows * cols - 1)
-		var total_frames := float(rows * cols)
-		var span := maxf(1.0, absf(end_f - start_f) + 1.0)
-		var speed_n := clampf(span / total_frames, 0.15, 1.0)
-		proc.anim_speed_min = speed_n
-		proc.anim_speed_max = speed_n
-		proc.anim_offset_min = start_f / total_frames
-		proc.anim_offset_max = start_f / total_frames
+	proc.color_ramp = _color_ramp(em)
 
 	p.process_material = proc
+	p.set("model_gravity", proc.gravity)
+	p.set("model_particle_scale", base_scale * scale_boost)
+	p.call("sync_simulation_space")
 	_mark_local(tex)
 	_mark_local(mat)
 	_mark_local(quad)
@@ -618,6 +615,9 @@ static func _make_emitter(em: Dictionary, index: int, tex_cache: Dictionary) -> 
 	# 火盆等全程发射需要预填，否则进场景是空的；施工烟一开就 preprocess 会瞬间灌满。
 	if bool(p.get_meta(META_ALWAYS_ON, false)):
 		p.preprocess = minf(life, 0.85)
+	if squirt:
+		p.emitting = false
+		p.preprocess = 0.0
 	return p
 
 
@@ -728,7 +728,10 @@ static func _sync_active_seqs_node(n: Node, by_name: Dictionary) -> void:
 		var p := n as GPUParticles3D
 		var em: Variant = by_name.get(p.name, null)
 		if em is Dictionary:
+			var was_emitting := p.emitting
 			_bind_sequence_meta(p, em as Dictionary)
+			if bool(p.get_meta("pe2_timeline_baked", false)):
+				p.emitting = was_emitting
 	for c in n.get_children():
 		_sync_active_seqs_node(c, by_name)
 
@@ -860,11 +863,12 @@ static func _color_ramp(em: Dictionary, additive_boost: bool = false) -> Gradien
 
 static func _scale_curve(s0: float, s1: float, s2: float, mid: float) -> CurveTexture:
 	var c := Curve.new()
-	var m := clampf(mid, 0.05, 0.95)
-	var denom := maxf(s0, 0.001)
-	c.add_point(Vector2(0.0, s0 / denom))
-	c.add_point(Vector2(m, s1 / denom))
-	c.add_point(Vector2(1.0, s2 / denom))
+	var m := clampf(mid, 0.0, 1.0)
+	var denom := maxf(maxf(s0, s1), maxf(s2, 0.001))
+	c.add_point(Vector2(0.0, (s1 if m == 0.0 else s0) / denom), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	if m > 0.0 and m < 1.0:
+		c.add_point(Vector2(m, s1 / denom), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	c.add_point(Vector2(1.0, (s1 if m == 1.0 else s2) / denom), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
 	var tex := CurveTexture.new()
 	tex.curve = c
 	return tex

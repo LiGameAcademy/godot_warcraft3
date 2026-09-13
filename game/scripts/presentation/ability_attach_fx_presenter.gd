@@ -1,6 +1,8 @@
 class_name AbilityAttachFxPresenter
 extends RefCounted
 
+const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
+
 ## 单位附着特效（Present · 通用）：施法者 / Buff 受益 / 限时 buff 附着。
 ## 组合用法：Logic 读 AbilityFxCatalog 路径，本类负责 spawn / sync / 清理。
 ##
@@ -70,7 +72,7 @@ static func spawn_timed(
 	var tree := host.get_tree()
 	if tree != null:
 		var dur := maxf(lifetime_sec, 0.35)
-		tree.create_timer(dur).timeout.connect(
+		SceneDelay.create_timer(inst, dur).timeout.connect(
 			func() -> void:
 				if is_instance_valid(inst):
 					inst.queue_free()

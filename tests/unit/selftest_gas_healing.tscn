@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tests/unit/selftest_gas_healing.gd" id="1"]
+[node name="GasHealingTest" type="Node"]
+script = ExtResource("1")

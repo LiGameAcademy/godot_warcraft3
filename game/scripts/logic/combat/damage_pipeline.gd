@@ -43,6 +43,8 @@ func apply(req: Dictionary) -> Dictionary:
 	var dice := int(req.get("dice", -1))
 	var sides := int(req.get("sides", -1))
 	var dmgplus := float(req.get("dmgplus", -1.0))
+	# 显式伤害参数是调用方给出的数值；仅默认武器伤害补英雄主属性。
+	var use_primary_attribute := source_kind == "weapon" and dmgplus < 0.0
 	if atk_type.is_empty() or dice < 0 or sides < 0 or dmgplus < 0.0:
 		var w := CombatQuery.weapons_of(attacker)
 		if w != null:
@@ -64,6 +66,8 @@ func apply(req: Dictionary) -> Dictionary:
 	var roll := dmgplus
 	for _i in range(dice):
 		roll += float(rng.randi_range(1, maxi(sides, 1)))
+	if use_primary_attribute:
+		roll += CombatQuery.hero_primary_damage(attacker)
 	if source_kind == "weapon" and attacker is Node3D:
 		roll *= UnitStatusEffects.damage_mul(attacker as Node3D)
 
@@ -72,7 +76,7 @@ func apply(req: Dictionary) -> Dictionary:
 	var bal := CombatQuery.balance_of(target)
 	if bal != null:
 		def_type = bal.def_type
-		armor = bal.realdef if bal.realdef != 0.0 else bal.def
+		armor = CombatQuery.armor_wc3(target)
 	armor += UnitStatusEffects.bonus_armor(target)
 
 	var mult := CombatDamageTable.multiplier(atk_type, def_type)

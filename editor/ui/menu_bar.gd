@@ -7,6 +7,7 @@ signal action_triggered(action_id: StringName)
 
 ## PopupMenu item id → action（与 menu_bar.tscn 中 item_*/id 对齐）
 const ID_TO_ACTION := {
+	435: &"view_asset_diagnostics",
 	1: &"file_new",
 	2: &"file_open",
 	3: &"file_close",
@@ -122,6 +123,7 @@ var _new_palette_popup: PopupMenu
 
 
 func _ready() -> void:
+	get_node("View").add_item("EDITOR_VIEW_ASSET_DIAGNOSTICS", 435)
 	_bootstrap_items()
 	_wire_popups()
 	_setup_grid_submenu()

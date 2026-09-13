@@ -14,6 +14,7 @@ const UNPLAYABLE_DARKEN := 0.55
 const BAKE_SIZE := 256
 
 var hf: Wc3Heightfield
+var _initialized := false
 var _img: Image
 var _img_w: int
 var _img_h: int
@@ -40,6 +41,7 @@ func setup_terrain(
 	romp: PackedByteArray = PackedByteArray(),
 	water_offset_wc3: float = NAN,
 ) -> void:
+	_initialized = false
 	_colors = colors
 	_cliff_to_ground = cliff_to_ground
 	_romp = romp
@@ -51,6 +53,26 @@ func setup_terrain(
 func rasterize() -> Image:
 	if hf == null or not hf.is_valid():
 		return _img
+	_rasterize_rect(Rect2i(0, 0, hf.width, hf.height))
+	_initialized = true
+	_dirty_rects.clear()
+	return _img
+
+
+## Dirty rectangles use heightfield coordinates; image Y remains inverted.
+func rasterize_dirty() -> Image:
+	if not _initialized:
+		return rasterize()
+	var bounds := Rect2i(0, 0, _img_w, _img_h)
+	for dirty in _dirty_rects:
+		var clipped := dirty.intersection(bounds)
+		if clipped.has_area():
+			_rasterize_rect(clipped)
+	_dirty_rects.clear()
+	return _img
+
+
+func _rasterize_rect(rect: Rect2i) -> void:
 	var w: int = hf.width
 	var h: int = hf.height
 	var ground_tex: Array = hf.ground_textures
@@ -59,8 +81,8 @@ func rasterize() -> Image:
 	var flags: Array = hf.flags_packed
 	var heights: Array = hf.heights
 	var water_h: Array = hf.water_heights
-	for j in range(h):
-		for i in range(w):
+	for j in range(rect.position.y, rect.end.y):
+		for i in range(rect.position.x, rect.end.x):
 			var col: Color
 			if Wc3CliffLogic.is_cliff_tile_corner(layers, w, h, i, j):
 				col = CLIFF_COLOR
@@ -87,13 +109,6 @@ func rasterize() -> Image:
 			if Wc3Coords.is_unplayable_cell_flags(f):
 				col = col.darkened(UNPLAYABLE_DARKEN)
 			_img.set_pixel(i, h - 1 - j, col)
-	_dirty_rects.clear()
-	return _img
-
-
-## 仅重绘 dirty region（第一版：忽略 rect，全量重绘）。
-func rasterize_dirty() -> Image:
-	return rasterize()
 
 
 func mark_dirty(rect: Rect2i) -> void:

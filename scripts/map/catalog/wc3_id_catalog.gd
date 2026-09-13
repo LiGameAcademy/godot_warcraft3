@@ -816,6 +816,7 @@ func _load_destructables() -> void:
 			"tilesets": tilesets,
 			"num_var": d.num_var if d.num_var > 0 else 1,
 			"tex_file": d.tex_file,
+			"tex_id": d.tex_id,
 			# 可破坏物无独立 defScale；WE 放置默认用 minScale
 			"def_scale": d.min_scale if d.min_scale > 0.0 else 1.0,
 			"min_scale": d.min_scale if d.min_scale > 0.0 else 1.0,

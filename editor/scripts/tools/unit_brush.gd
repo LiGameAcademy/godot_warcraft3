@@ -246,6 +246,9 @@ func select_creation_number(cn: int) -> void:
 
 
 func clear_selection() -> void:
+	# Finish live movement before discarding selection or switching tools.
+	if _dragging:
+		_end_drag()
 	if _selected_cn < 0 and _selected_cns.is_empty() and not _dragging:
 		_update_sel_markers()
 		return
@@ -265,6 +268,8 @@ func clear_palette() -> void:
 
 
 func delete_selection() -> bool:
+	if _dragging:
+		_end_drag()
 	if document == null or _selected_cns.is_empty():
 		return false
 	var to_remove: PackedInt32Array = _selected_cns.duplicate()
@@ -450,9 +455,12 @@ func _drag_to(screen_pos: Vector2) -> void:
 		var ny: float = float(bp.get("y", 0.0)) + delta.y
 		var cur: Dictionary = b.duplicate(true)
 		var pos: Dictionary = cur.get("position", {}).duplicate(true)
+		# Compare against the live position: the stroke snapshot is the destination
+		# when the cursor returns to its origin, not the position currently displayed.
+		var live_pos: Dictionary = _entry_by_cn(cn).get("position", {})
 		if (
-			absf(float(pos.get("x", 0.0)) - nx) < 0.01
-			and absf(float(pos.get("y", 0.0)) - ny) < 0.01
+			absf(float(live_pos.get("x", 0.0)) - nx) < 0.01
+			and absf(float(live_pos.get("y", 0.0)) - ny) < 0.01
 		):
 			continue
 		pos["x"] = nx
@@ -970,3 +978,12 @@ func _ray_plane_fallback(screen_pos: Vector2) -> Vector3:
 	if t < 0.0:
 		return Vector3.INF
 	return from + dir * t
+
+
+func refresh_selection_after_history() -> void:
+	var remaining := PackedInt32Array()
+	for cn in _selected_cns:
+		if not _entry_by_cn(cn).is_empty():
+			remaining.append(cn)
+	var primary := _selected_cn if _selected_cn in remaining else (remaining[0] if not remaining.is_empty() else -1)
+	_set_selection(remaining, primary)

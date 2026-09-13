@@ -93,15 +93,20 @@ func _finish() -> void:
 	var elapsed_sec := (Time.get_ticks_msec() - _shown_msec) / 1000.0
 	var wait := maxf(0.0, min_visible_sec - elapsed_sec)
 	if wait > 0.0:
-		await get_tree().create_timer(wait).timeout
+		preload("res://scripts/shared/infra/scene_delay.gd").create_timer(self, wait).timeout.connect(_begin_fade)
+	else:
+		_begin_fade()
+
+
+func _begin_fade() -> void:
 	_hide_game_ui(false)
 	if fade_out_sec <= 0.0 or _root == null:
 		queue_free()
 		return
 	var tw := create_tween()
 	tw.tween_property(_root, "modulate:a", 0.0, fade_out_sec)
-	await tw.finished
-	queue_free()
+	# 卸载时 Tween 会被取消，不保证发出 finished；避免协程持有它等待永远不会到来的信号。
+	tw.tween_callback(queue_free)
 
 
 func _hide_game_ui(should_hide: bool) -> void:

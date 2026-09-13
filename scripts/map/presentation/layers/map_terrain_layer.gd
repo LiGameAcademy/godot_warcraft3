@@ -28,6 +28,42 @@ var _entrance_h_boost: PackedByteArray = PackedByteArray()
 var _last_cliff_to_ground: PackedInt32Array = PackedInt32Array()
 ## tilepoint：CliffTrans 过渡 mask（corner_texture 读，对齐 HivEWE real_tile_texture）
 var _last_romp: PackedByteArray = PackedByteArray()
+var _cell_first_vertex := PackedInt32Array()
+
+
+## Recompute the four adjacent cells for each painted corner.
+## Slopes have separate meshes and still use the complete rebuild path.
+func update_texture_vertices(hf: Wc3Heightfield, vertices: Array) -> bool:
+	if _last_hf == null or hf.width != _last_hf.width or hf.height != _last_hf.height or _ground.mesh == null:
+		return false
+	if hf.ground_tilesets != _last_hf.ground_tilesets or _last_romp.count(0) != _last_romp.size():
+		return false
+	if _extra_dig.count(0) != _extra_dig.size() or _entrance_h_boost.count(0) != _entrance_h_boost.size():
+		return false
+	_last_hf = hf
+	var cells := {}
+	for value in vertices:
+		var index := int(value)
+		var x := index % hf.width
+		var y := index / hf.width
+		for dy in [-1, 0]:
+			for dx in [-1, 0]:
+				var cell := Vector2i(x + dx, y + dy)
+				if cell.x >= 0 and cell.y >= 0 and cell.x < hf.map_width and cell.y < hf.map_height:
+					cells[cell] = true
+	for cell: Vector2i in cells:
+		var offset := _cell_first_vertex[cell.y * hf.map_width + cell.x]
+		if offset < 0:
+			continue
+		var corners: Array[int] = []
+		for d in [Vector2i.ZERO, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.ONE]:
+			corners.append(corner_texture(hf.ground_textures, hf.layer_heights, hf.cliff_textures,
+				_last_cliff_to_ground, hf.width, hf.height, cell.x + d.x, cell.y + d.y))
+		var slots := _build_layers(corners[0], corners[1], corners[2], corners[3],
+			_var_at(hf.ground_variations, cell.y * hf.width + cell.x), _last_extended)
+		if not _ground.update_quad_attributes(offset, slots.tex, slots.variation):
+			return false
+	return true
 
 ## 四角 bitmask 结果（避免裸 Dictionary 键）。
 class CornerMask extends RefCounted:
@@ -139,6 +175,9 @@ func apply_ramp_dig(
 	entrance_height_boost: PackedByteArray = PackedByteArray(),
 	romp: PackedByteArray = PackedByteArray()
 ) -> void:
+	var old_gap := _compose_gap_mask()
+	var old_boost := _entrance_h_boost.duplicate()
+	var old_romp := _last_romp.duplicate()
 	_extra_dig = extra.duplicate() if not extra.is_empty() else PackedByteArray()
 	_set_undig_tiles(entrance_tiles)
 	_entrance_h_boost = (
@@ -146,7 +185,14 @@ func apply_ramp_dig(
 	)
 	if not romp.is_empty():
 		_last_romp = romp.duplicate()
+	if old_gap == _compose_gap_mask() and _same_mask(old_boost, _entrance_h_boost) and _same_mask(old_romp, _last_romp):
+		return
 	_rebuild_ground_mesh_only()
+
+
+static func _same_mask(a: PackedByteArray, b: PackedByteArray) -> bool:
+	# An absent mask and a correctly sized all-zero mask have the same effect.
+	return a == b or (a.count(0) == a.size() and b.count(0) == b.size())
 
 
 func _set_undig_tiles(tiles: Array[Vector2i]) -> void:
@@ -259,6 +305,21 @@ func _build_ground_mesh(
 	var ground_tex: Array = hf.ground_textures
 	var layer_heights: Array = hf.layer_heights
 	var cliff_tex: Array = hf.cliff_textures
+	_cell_first_vertex.resize(map_w * (height - 1))
+	_cell_first_vertex.fill(-1)
+	var next_vertex := 0
+	# Shared corners are evaluated once per build. Caches never outlive this call,
+	# so height, cliff, texture and ramp edits cannot reuse stale corner data.
+	var corner_types := PackedInt32Array()
+	var corner_positions := PackedVector3Array()
+	corner_types.resize(width * height)
+	corner_positions.resize(width * height)
+	for y in range(height):
+		for x in range(width):
+			var index := y * width + x
+			corner_types[index] = corner_texture(ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, x, y)
+			corner_positions[index] = HeightfieldMesh.sample_vert(x, y, _corner_h(hf, index), center, tile_size)
+	var layer_cache: Dictionary = {}
 
 	for iy in range(height - 1):
 		for ix in range(width - 1):
@@ -268,40 +329,19 @@ func _build_ground_mesh(
 				gap_count += 1
 				continue
 
-			var t_bl: int = corner_texture(
-				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy
-			)
-			var t_br: int = corner_texture(
-				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy
-			)
-			var t_tl: int = corner_texture(
-				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix, iy + 1
-			)
-			var t_tr: int = corner_texture(
-				ground_tex, layer_heights, cliff_tex, cliff_to_ground, width, height, ix + 1, iy + 1
-			)
+			var corner_key := Vector4i(corner_types[i00], corner_types[i00 + 1], corner_types[i00 + width], corner_types[i00 + width + 1])
+			if not layer_cache.has(corner_key):
+				layer_cache[corner_key] = {}
+			var variations: Dictionary = layer_cache[corner_key]
+			var variation := _var_at(hf.ground_variations, i00)
+			if not variations.has(variation):
+				variations[variation] = _build_layers(corner_key.x, corner_key.y, corner_key.z, corner_key.w, variation, extended_flags)
+			var slots: LayerSlots = variations[variation]
+			var positions := PackedVector3Array([corner_positions[i00], corner_positions[i00 + 1], corner_positions[i00 + width], corner_positions[i00 + width + 1]])
 
-			var slots: LayerSlots = _build_layers(
-				t_bl, t_br, t_tl, t_tr,
-				_var_at(hf.ground_variations, i00),
-				extended_flags
-			)
-
-			var positions := PackedVector3Array([
-				HeightfieldMesh.sample_vert(
-					ix, iy, _corner_h(hf, i00), center, tile_size
-				),
-				HeightfieldMesh.sample_vert(
-					ix + 1, iy, _corner_h(hf, i00 + 1), center, tile_size
-				),
-				HeightfieldMesh.sample_vert(
-					ix, iy + 1, _corner_h(hf, i00 + width), center, tile_size
-				),
-				HeightfieldMesh.sample_vert(
-					ix + 1, iy + 1, _corner_h(hf, i00 + width + 1), center, tile_size
-				),
-			])
 			_ground.add_quad(positions, slots.tex, slots.variation)
+			_cell_first_vertex[gi] = next_vertex
+			next_vertex += 6
 
 	_ground.commit_build()
 	return gap_count

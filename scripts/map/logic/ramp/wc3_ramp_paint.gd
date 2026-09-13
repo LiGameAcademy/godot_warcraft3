@@ -33,6 +33,14 @@ static func soften_dirs(dx: float, dy: float) -> Vector2i:
 	return Vector2i(hx, hy)
 
 
+## Select the dominant axis before quantization discards pointer magnitude.
+static func pointer_dirs(dx: float, dy: float, reverse: bool = false, force_axis: bool = false) -> Vector2i:
+	var dirs := soften_dirs(dx, dy)
+	if force_axis and dirs.x != 0 and dirs.y != 0:
+		dirs = Vector2i(dirs.x, 0) if absf(dx) >= absf(dy) else Vector2i(0, dirs.y)
+	return -dirs if reverse else dirs
+
+
 ## ============================================================
 ## Step 1：单列斜坡
 ## ============================================================
@@ -769,27 +777,6 @@ static func _check_column(
 	if _in_bounds(ix + nx2, iy + ny2, tp_w, tp_h):
 		if int(layers[(iy + ny2) * tp_w + (ix + nx2)]) > origin_level:
 			return false
-
-	## 紧贴对侧斜坡禁门（侧翼 ramp 不齐 → 拒绝，避免细脊双侧落坡）
-	## 对齐 HiveWE `CliffOperator::check_ramp_direction` line 448-459。
-	## 仅当"侧翼 corner 已有 ramp 但沿本坡向延伸不齐"时拒绝。
-	for side in [-1, 1]:
-		# Y 方向侧翼：(ix, iy+side) 有 ramp + 沿坡向延伸不齐
-		if _has_ramp(ramp, tp_w, tp_h, ix, iy + side):
-			var ok_y: bool = (
-				_has_ramp(ramp, tp_w, tp_h, ix + dir_x, iy + side + dir_y)
-				and _has_ramp(ramp, tp_w, tp_h, ix + 2 * dir_x, iy + side + 2 * dir_y)
-			)
-			if not ok_y:
-				return false
-		# X 方向侧翼：(ix+side, iy) 有 ramp + 沿坡向延伸不齐
-		if _has_ramp(ramp, tp_w, tp_h, ix + side, iy):
-			var ok_x: bool = (
-				_has_ramp(ramp, tp_w, tp_h, ix + side + dir_x, iy + dir_y)
-				and _has_ramp(ramp, tp_w, tp_h, ix + side + 2 * dir_x, iy + 2 * dir_y)
-			)
-			if not ok_x:
-				return false
 
 	## 侧翼禁贴：侧邻有 ramp 时须是「平行加宽」或「L/半侧转角」，禁止畸形对贴
 	if not _check_side_clearance(ix, iy, dir_x, dir_y, ramp, tp_w, tp_h):

@@ -220,8 +220,9 @@ func _chase_or_strike(_delta: float) -> void:
 			return
 		cancel()
 		return
-	_face_target()
 	if CombatQuery.in_attack_range(body, _target):
+		# 追击绕障时由导航面对下一个路点；出手时才转向敌人。
+		_face_target()
 		var nav := _nav()
 		if nav != null and nav.is_moving():
 			nav.stop()

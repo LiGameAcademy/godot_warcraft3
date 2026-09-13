@@ -66,10 +66,7 @@ static func parse_json_text(text: String) -> Variant:
 		return null
 	if text.find("\\u0000") >= 0:
 		text = text.replace("\\u0000", "")
-	# 勿在源码写 U+0000 字面量（会刷 Unicode NUL ERROR）；用 String.chr(0)。
-	var nul := String.chr(0)
-	if text.find(nul) >= 0:
-		text = text.replace(nul, "")
+	# read_utf8_text 已拒绝含 NUL 字节的输入；构造 String.chr(0) 本身会触发引擎错误。
 	return JSON.parse_string(text)
 
 

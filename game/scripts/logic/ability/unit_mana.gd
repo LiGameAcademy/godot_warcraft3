@@ -2,12 +2,12 @@ class_name UnitMana
 extends RefCounted
 
 ## 单位运行时魔法（Logic）。
-## 英雄：上限 = 智力 × 12（WC3）；非英雄：mana_n / mana0。
+## 英雄：上限 = 取整智力 × 15；非英雄：mana_n / mana0。
 ## 自然回蓝见 `UnitRegen`（本类 `regenerate` 供自然回复与光环共用）。
 
 const META_MANA := "mana"
 const META_MAX_MANA := "max_mana"
-const HERO_MANA_PER_INT := 12
+const HERO_MANA_PER_INT := 15
 
 
 static func intelligence_at_level(bal: UnitBalanceDef, hero_level: int) -> float:
@@ -35,7 +35,7 @@ static func max_for_hero_type(type_id: String, hero_level: int = 1) -> int:
 	var bal := store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 	if bal == null:
 		return 0
-	var intel := intelligence_at_level(bal, hero_level)
+	var intel := floorf(intelligence_at_level(bal, hero_level) + 0.00001)
 	return maxi(int(floor(intel * float(HERO_MANA_PER_INT))), 0)
 
 

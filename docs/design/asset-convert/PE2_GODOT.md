@@ -1,5 +1,7 @@
 # MDX 特效 → Godot（PE2 / TeamGlow / 光 / 飞弹面片）
 
+> 2026-09-13 更新：本页下方的映射表与“未做”清单包含历史状态。新的空间、混合、发射时序、Ribbon 导出及缓存规则见 [FX_BAKE_FIDELITY.md](FX_BAKE_FIDELITY.md)。
+
 > **层**：资源映射（`tools/asset-convert` sidecar）+ 表现烘焙（`export_model_scenes` / `MapModelCache` / **`Wc3FxPresenter`**）。  
 > **对照模型**：`Units/Human/HeroArchMage`（杖尖火花、施法焰、马蹄尘、脚底/杖尖 TeamGlow）；飞弹见 `Abilities/Weapons/*`。  
 > **最后更新**：2026-09-03  

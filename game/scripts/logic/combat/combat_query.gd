@@ -121,20 +121,56 @@ static func acquire_range_wc3(node: Node) -> float:
 		return 500.0
 	return maxf(w.acquire, attack_range_wc3(node))
 
-## 获取冷却时间
+## 英雄等级基础属性；装备和临时加成仍待接入统一属性来源。
+static func hero_attribute_value(node: Node, attribute: String) -> float:
+	var bal := balance_of(node)
+	if bal == null or not TechPresence.is_hero_id(type_id_of(node)):
+		return 0.0
+	var level := AbilityCatalog.hero_level_of(node as Node3D) if node is Node3D else 1
+	var base := 0.0
+	var growth := 0.0
+	match attribute.to_upper():
+		"STR":
+			base = bal.str_base
+			growth = bal.st_rplus
+		"AGI":
+			base = bal.agi_base
+			growth = bal.ag_iplus
+		"INT":
+			base = bal.int_base
+			growth = bal.in_tplus
+	return maxf(floorf(base + float(level - 1) * growth + 0.00001), 0.0)
+
+static func hero_primary_damage(node: Node) -> float:
+	var bal := balance_of(node)
+	return hero_attribute_value(node, bal.primary_attr) if bal != null else 0.0
+
+static func hero_attack_speed_multiplier(node: Node) -> float:
+	return 1.0 + hero_attribute_value(node, "AGI") * 0.02
+
+static func armor_wc3(node: Node) -> float:
+	var bal := balance_of(node)
+	if bal == null:
+		return 0.0
+	var armor := bal.realdef if bal.realdef != 0.0 else bal.def
+	if TechPresence.is_hero_id(type_id_of(node)):
+		# realdef 是一级派生护甲，不能再次叠加全部基础敏捷。
+		armor += (hero_attribute_value(node, "AGI") - float(bal.agi_base)) * 0.3
+	return armor
+
+## 基础武器间隔除以英雄敏捷攻速；临时效果仍由控制器处理。
 static func cooldown_sec(node: Node) -> float:
 	var w := weapons_of(node)
 	if w == null:
 		return 1.5
-	return maxf(w.cool1, 0.1)
+	return maxf(w.cool1 / hero_attack_speed_multiplier(node), 0.1)
 
 ## 伤害点（攻击开始后多久结算伤害，秒）。
 static func damage_point_sec(node: Node) -> float:
 	var w := weapons_of(node)
 	if w == null:
 		return 0.0
-	var cool := maxf(w.cool1, 0.1)
-	return clampf(w.dmgpt1, 0.0, cool)
+	return clampf(w.dmgpt1 / hero_attack_speed_multiplier(node), 0.0, cooldown_sec(node))
 
 
 ## 武器弹道类型字符串（weapTp1）。
@@ -331,12 +367,27 @@ static func distance_wc3(a: Node3D, b: Node3D) -> float:
 	var pb := Wc3Coords.godot_to_wc3_xy(b.global_position)
 	return pa.distance_to(pb)
 
+## 建筑使用当前轴对齐寻路占地的最近边缘，避免近战必须走进阻挡区。
+## 这是本项目占地几何规则；原版碰撞/射程的精确对照仍需独立验收。
+static func weapon_distance_wc3(attacker: Node3D, target: Node3D) -> float:
+	if attacker == null or target == null:
+		return INF
+	var id := type_id_of(target)
+	if not BuildingCatalog.is_building(id):
+		return distance_wc3(attacker, target)
+	var footprint := BuildingCatalog.get_footprint(id)
+	if footprint.x <= 0 or footprint.y <= 0:
+		return distance_wc3(attacker, target)
+	var delta := (Wc3Coords.godot_to_wc3_xy(attacker.global_position) - Wc3Coords.godot_to_wc3_xy(target.global_position)).abs()
+	var outside := delta - Vector2(footprint) * Wc3Coords.PATHING_CELL * 0.5
+	return Vector2(maxf(outside.x, 0), maxf(outside.y, 0)).length()
+
 ## 是否在出手射程内。
 ## 只用 range_n1（+ hysteresis）；RngBuff1 是追击/保持交战容差，不能整段加进出手判定
 ## （步兵 range=90、buff=250 → 误判成 340）。
 ## min_range>0 时过近不可打（竖切多数单位为 0）。
 static func in_attack_range(attacker: Node3D, target: Node3D, hysteresis: float = 0.0) -> bool:
-	var d := distance_wc3(attacker, target)
+	var d := weapon_distance_wc3(attacker, target)
 	var lim := attack_range_wc3(attacker) + hysteresis
 	if d > lim:
 		return false
@@ -349,7 +400,7 @@ static func in_attack_range(attacker: Node3D, target: Node3D, hysteresis: float 
 ## 是否仍处于交战距离（出手射程 + RngBuff；用于冷却中不立刻取消、Hold 近距索敌等）。
 static func in_engage_range(attacker: Node3D, target: Node3D, hysteresis: float = 0.0) -> bool:
 	var lim := attack_range_wc3(attacker) + range_buff_wc3(attacker) + hysteresis
-	return distance_wc3(attacker, target) <= lim
+	return weapon_distance_wc3(attacker, target) <= lim
 
 
 ## 双方是否敌对（竖切简化）。
@@ -394,7 +445,7 @@ static func _current_life(node: Node3D) -> float:
 
 ## 显式 Attack 合法目标（含友军强制攻击，对齐 WC3 A 点单位）。
 static func is_valid_attack_target(attacker: Node, target: Node) -> bool:
-	if not _attack_target_basics(attacker, target):
+	if not _attack_target_basics(attacker, target) or has_permanent_invulnerability(target):
 		return false
 	if is_hostile(attacker, target):
 		return true
@@ -440,7 +491,12 @@ static func is_valid_hostile_spell_target(caster: Node, target: Node) -> bool:
 
 ## 自动索敌 / 智能右键：仅敌对（不强制打友军）。
 static func is_auto_acquire_target(attacker: Node, target: Node) -> bool:
-	return _attack_target_basics(attacker, target) and is_hostile(attacker, target)
+	return _attack_target_basics(attacker, target) and not has_permanent_invulnerability(target) and is_hostile(attacker, target)
+
+## 单位定义的永久无敌 Avul；临时无敌 Buff 应由状态系统另行提供。
+## 不放进通用技能基础过滤，避免拒绝无敌友军的治疗/增益查询。
+static func has_permanent_invulnerability(target: Node) -> bool:
+	return "Avul" in AbilityCatalog.ability_ids_for_unit(type_id_of(target))
 
 
 ## 圆心 WC3 + 半径内、对 attacker 敌对的 Node3D 单位。
@@ -476,7 +532,7 @@ static func collision_radius_wc3(node: Node) -> float:
 
 ## 技能 AOE 可受伤目标（不分敌我；对齐暴风雪等友伤）。
 static func is_valid_spell_aoe_target(caster: Node, target: Node) -> bool:
-	return _attack_target_basics(caster, target)
+	return _attack_target_basics(caster, target) and not has_permanent_invulnerability(target)
 
 
 ## 暴风雪等：半径内所有可受伤目标（不分敌我，含建筑；距离扣碰撞半径）。
@@ -562,7 +618,7 @@ static func find_acquire_target(attacker: Node3D, host: Node, max_range: float =
 		var other := c as Node3D
 		if not is_auto_acquire_target(attacker, other):
 			continue
-		var d := distance_wc3(attacker, other)
+		var d := weapon_distance_wc3(attacker, other)
 		if d <= best_d:
 			best_d = d
 			best = other

@@ -27,9 +27,8 @@ static func damage_mul(unit: Node3D) -> float:
 
 static func bonus_armor(unit: Node3D) -> float:
 	var h := BuffHost.of(unit)
-	if h == null:
-		return 0.0
-	return h.bonus_armor()
+	var inv := Inventory.of(unit)
+	return (h.bonus_armor() if h != null else 0.0) + (inv.bonus_armor() if inv != null else 0.0)
 
 
 static func move_speed_mul(unit: Node3D) -> float:

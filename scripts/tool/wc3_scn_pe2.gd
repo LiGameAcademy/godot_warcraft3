@@ -85,6 +85,14 @@ static func _inject_tracks(root: Node, pe2_root: Node, glb_path: String = "") ->
 			for kv in keys:
 				anim.track_insert_key(ti, float(kv["t"]), bool(kv["on"]))
 			n += 1
+			n += _inject_rate_and_bursts(anim, p, rel, str(anim_name), interval)
+			p.set_meta("pe2_timeline_baked", true)
+			# Persist idle state for direct scene preview before an AP starts.
+			if Wc3Pe2Particles._normalize_seq_key(str(anim_name)) == "stand":
+				p.emitting = bool(keys[0]["on"])
+				var ratio_track := anim.find_track(NodePath("%s:amount_ratio" % rel), Animation.TYPE_VALUE)
+				if ratio_track >= 0 and anim.track_get_key_count(ratio_track) > 0:
+					p.amount_ratio = float(anim.track_get_key_value(ratio_track, 0))
 			# 绑骨：跟 BoneAttachment，不要世界空间 position 轨
 			if bool(p.get_meta(Wc3Pe2Particles.META_BONE_BOUND, false)):
 				continue
@@ -116,6 +124,8 @@ static func _seq_interval(seqs: Array, anim_name: String) -> Vector2:
 
 ## vis/rate 关键帧写进 clip：Birth 扬尘 333ms 才开，不是整段 emitting=true。
 static func _emitting_keys(p: GPUParticles3D, anim_name: String, interval: Vector2, anim_len: float) -> Array:
+	if bool(p.get_meta("pe2_squirt", false)):
+		return [{"t": 0.0, "on": false}]
 	var base_on := Wc3Pe2Particles.emitting_for_sequence(p, anim_name)
 	if not base_on:
 		return [{"t": 0.0, "on": false}]
@@ -149,7 +159,9 @@ static func _emitting_keys(p: GPUParticles3D, anim_name: String, interval: Vecto
 		var rate := static_rate
 		if not rate_keys.is_empty():
 			rate = Wc3Pe2Particles._sample_track(rate_keys, int(fr), int(start_ms), int(end_ms), 0.0)
-		var on := vis >= 0.5 and rate > 0.01
+		# Animated rates use amount_ratio (zero included), otherwise a ramp out of
+		# zero would remain blocked until its next positive endpoint.
+		var on := vis >= 0.5 and (rate > 0.01 or not rate_keys.is_empty())
 		var t := (fr - start_ms) / 1000.0
 		if anim_len > 0.0:
 			t = clampf(t, 0.0, anim_len)
@@ -161,6 +173,90 @@ static func _emitting_keys(p: GPUParticles3D, anim_name: String, interval: Vecto
 	if out.is_empty():
 		out.append({"t": 0.0, "on": true})
 	return out
+
+
+static func _inject_rate_and_bursts(anim: Animation, p: GPUParticles3D, rel: NodePath, anim_name: String, interval: Vector2) -> int:
+	var ratio_path := NodePath("%s:amount_ratio" % rel)
+	_remove_tracks_with_path(anim, ratio_path, Animation.TYPE_VALUE)
+	_remove_tracks_with_path(anim, rel, Animation.TYPE_METHOD)
+	var rate_keys: Array = p.get_meta(Wc3Pe2Particles.META_RATE_KEYS, [])
+	var static_rate := float(p.get_meta(Wc3Pe2Particles.META_STATIC_RATE, 0.0))
+	var multiplier := float(p.get_meta("pe2_rate_multiplier", 1.0))
+	var active := Wc3Pe2Particles.emitting_for_sequence(p, anim_name)
+	if bool(p.get_meta("pe2_squirt", false)):
+		if not active:
+			return 0
+		var bursts: Array = rate_keys
+		if bursts.is_empty():
+			bursts = [{"frame": interval.x, "value": static_rate}]
+		var method_track := anim.add_track(Animation.TYPE_METHOD)
+		anim.track_set_path(method_track, rel)
+		var vis_keys: Array = p.get_meta(Wc3Pe2Particles.META_VIS_KEYS, [])
+		for key in bursts:
+			var frame := float(key.get("frame", 0.0))
+			if frame < interval.x or frame > interval.y:
+				continue
+			var count := roundi(maxf(0.0, float(key.get("value", 0.0))) * multiplier)
+			var visible := Wc3Pe2Particles._sample_track(vis_keys, int(frame), int(interval.x), int(interval.y), 1.0) >= 0.5
+			if count > 0 and visible:
+				var time := minf((frame - interval.x) / 1000.0, anim.length)
+				# AnimPlayback seeks to zero after play(), skipping method keys exactly
+				# at zero. Put start bursts inside the first simulation tick instead.
+				if time == 0.0 and anim.length > 0.0:
+					time = minf(0.000001, anim.length * 0.5)
+				anim.track_insert_key(method_track, time, {"method": &"emit_burst", "args": [count]})
+		return 1
+	var ti := anim.add_track(Animation.TYPE_VALUE)
+	anim.track_set_path(ti, ratio_path)
+	anim.value_track_set_update_mode(ti, Animation.UPDATE_DISCRETE)
+	anim.track_set_interpolation_type(ti, Animation.INTERPOLATION_NEAREST)
+	var frames: Dictionary = {interval.x: true}
+	for key in rate_keys:
+		var frame := float(key.get("frame", 0.0))
+		if frame >= interval.x and frame <= interval.y:
+			frames[frame] = true
+	var interpolation := int(p.get_meta("pe2_rate_interpolation", 0))
+	if interpolation != 0 and not rate_keys.is_empty():
+		# Bake scalar curves at 60 Hz plus exact source keys; no runtime JSON reads.
+		var duration := minf(anim.length, maxf(0.0, interval.y - interval.x) / 1000.0)
+		for i in range(ceili(duration * 60.0) + 1):
+			frames[minf(interval.x + float(i) * 1000.0 / 60.0, interval.y)] = true
+	var ordered: Array = frames.keys()
+	ordered.sort()
+	for frame in ordered:
+		var rate := static_rate if rate_keys.is_empty() else _sample_rate(rate_keys, float(frame), interval, interpolation)
+		var ratio := clampf(rate * multiplier * p.lifetime / float(p.amount), 0.0, 1.0) if active else 0.0
+		anim.track_insert_key(ti, minf((float(frame) - interval.x) / 1000.0, anim.length), ratio)
+	return 1
+
+
+static func _sample_rate(keys: Array, frame: float, interval: Vector2, interpolation: int) -> float:
+	var previous: Dictionary = {}
+	for raw in keys:
+		var key: Dictionary = raw
+		var time := float(key.get("frame", 0.0))
+		if time < interval.x or time > interval.y:
+			continue
+		if time <= frame:
+			previous = key
+			continue
+		if previous.is_empty():
+			return 0.0
+		var a := float(previous.get("value", 0.0))
+		var b := float(key.get("value", 0.0))
+		var t := (frame - float(previous["frame"])) / (time - float(previous["frame"]))
+		if interpolation == 1:
+			return maxf(0.0, lerpf(a, b, t))
+		if interpolation == 2:
+			var out_tan := float(previous.get("out_tan", 0.0))
+			var in_tan := float(key.get("in_tan", 0.0))
+			return maxf(0.0, (2*t*t*t - 3*t*t + 1)*a + (t*t*t - 2*t*t + t)*out_tan + (-2*t*t*t + 3*t*t)*b + (t*t*t - t*t)*in_tan)
+		if interpolation == 3:
+			var out_tan := float(previous.get("out_tan", a))
+			var in_tan := float(key.get("in_tan", b))
+			return maxf(0.0, pow(1-t, 3)*a + 3*pow(1-t, 2)*t*out_tan + 3*(1-t)*t*t*in_tan + t*t*t*b)
+		return maxf(0.0, a)
+	return maxf(0.0, float(previous.get("value", 0.0)))
 
 
 static func _collect_particles(n: Node, out: Array[GPUParticles3D]) -> void:

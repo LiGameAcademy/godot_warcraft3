@@ -3,10 +3,12 @@ extends CanvasLayer
 
 ## 全局头顶血条（Present）。跟随 MapUnitLayer 单位/建筑；读 UnitLife，不写战斗逻辑。
 ## 默认常显；GM 可关。关闭后按住 Alt 临时显示。
+## 可选单位名 Label（血条上方）；GM 可关。
 ## 挂点：`Wc3ModelScene.overhead_anchor()`（OverHead Ref）→ 骨骼回退 → AABB 顶。
 
 const BAR_W := 52.0
 const BAR_H := 6.0
+const NAME_GAP := 2.0
 const Y_BIAS := 0.12
 const SKIP_META := {
 	"SelectionRing": true,
@@ -24,6 +26,8 @@ const BONE_CANDIDATES := [
 
 
 @export var always_show: bool = true
+## GM：头顶显示单位名（血条上方）
+@export var show_unit_names: bool = true
 @export var show_when_damaged: bool = true
 @export var show_when_selected: bool = true
 @export var show_under_construction: bool = true
@@ -32,7 +36,7 @@ const BONE_CANDIDATES := [
 var _camera: Camera3D = null
 var _unit_host: Node = null
 var _root: Control = null
-## instance_id → { bar, fill, bg, node, bone_idx, skeleton }
+## instance_id → { bar, fill, bg, name, node, bone_idx, skeleton }
 var _entries: Dictionary = {}
 ## instance_id → true（当前选中）
 var _selected: Dictionary = {}
@@ -57,12 +61,20 @@ func set_always_show(on: bool) -> void:
 	always_show = on
 
 
+func set_show_unit_names(on: bool) -> void:
+	show_unit_names = on
+
+
 func set_alt_hold_show(on: bool) -> void:
 	_alt_hold_show = on
 
 
 func is_always_show() -> bool:
 	return always_show
+
+
+func is_show_unit_names() -> bool:
+	return show_unit_names
 
 
 func set_selection(selected: Array) -> void:
@@ -90,6 +102,7 @@ func resync() -> void:
 			_entries[id] = _make_bar(n)
 		else:
 			_refresh_attach_entry(_entries[id], n)
+			_ensure_name_label(_entries[id], n)
 	var stale: Array = []
 	for id in _entries.keys():
 		if not alive.has(id):
@@ -112,20 +125,28 @@ func _process(_delta: float) -> void:
 		if node == null or bar == null:
 			_free_entry(int(id))
 			continue
+		var name_lbl := e.get("name") as Label
 		if not node.is_visible_in_tree() or not node.visible:
 			bar.visible = false
+			if name_lbl != null:
+				name_lbl.visible = false
 			continue
 		var want := _should_show(node, int(id))
 		bar.visible = want
 		if not want:
+			if name_lbl != null:
+				name_lbl.visible = false
 			continue
 		var world := _bar_world_pos(e, node)
 		if _camera.is_position_behind(world):
 			bar.visible = false
+			if name_lbl != null:
+				name_lbl.visible = false
 			continue
 		var screen := _camera.unproject_position(world)
 		bar.position = screen - Vector2(BAR_W * 0.5, BAR_H + 4.0)
 		_apply_fill(e, UnitLife.ratio(node))
+		_update_name_label(e, bar.position)
 
 
 func _ensure_root() -> void:
@@ -172,13 +193,13 @@ func _should_show(node: Node3D, id: int) -> bool:
 
 
 func _safe_node3d(v: Variant) -> Node3D:
-	if v is Object and is_instance_valid(v) and v is Node3D:
+	if typeof(v) == TYPE_OBJECT and is_instance_valid(v) and v is Node3D:
 		return v as Node3D
 	return null
 
 
 func _safe_skeleton(v: Variant) -> Skeleton3D:
-	if v is Object and is_instance_valid(v) and v is Skeleton3D:
+	if typeof(v) == TYPE_OBJECT and is_instance_valid(v) and v is Skeleton3D:
 		return v as Skeleton3D
 	return null
 
@@ -293,16 +314,84 @@ func _make_bar(node: Node3D) -> Dictionary:
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(fill)
 	_root.add_child(bar)
+	var name_lbl := Label.new()
+	name_lbl.name = "UnitName_%d" % node.get_instance_id()
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.visible = false
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.95, 0.88, 0.95))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	name_lbl.add_theme_constant_override("outline_size", 4)
+	name_lbl.text = _unit_display_name(node)
+	_root.add_child(name_lbl)
 	var attach_info := _resolve_attach(node)
 	return {
 		"node": node,
 		"bar": bar,
 		"fill": fill,
 		"bg": bg,
+		"name": name_lbl,
 		"attach": attach_info.get("attach"),
 		"skeleton": attach_info.get("skeleton"),
 		"bone_idx": int(attach_info.get("bone_idx", -1)),
 	}
+
+
+func _ensure_name_label(e: Dictionary, node: Node3D) -> void:
+	var name_lbl := e.get("name") as Label
+	if name_lbl != null and is_instance_valid(name_lbl):
+		if name_lbl.text.is_empty():
+			name_lbl.text = _unit_display_name(node)
+		return
+	name_lbl = Label.new()
+	name_lbl.name = "UnitName_%d" % node.get_instance_id()
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.visible = false
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.95, 0.88, 0.95))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	name_lbl.add_theme_constant_override("outline_size", 4)
+	name_lbl.text = _unit_display_name(node)
+	if _root != null:
+		_root.add_child(name_lbl)
+	e["name"] = name_lbl
+
+
+func _unit_display_name(node: Node3D) -> String:
+	if node == null:
+		return ""
+	var d: Dictionary = node.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	if tid.is_empty():
+		return str(node.name)
+	var n := TechPresence.display_name(tid)
+	return n if not n.is_empty() else tid
+
+
+func _update_name_label(e: Dictionary, bar_pos: Vector2) -> void:
+	var name_lbl := e.get("name") as Label
+	if name_lbl == null or not is_instance_valid(name_lbl):
+		return
+	if not show_unit_names:
+		name_lbl.visible = false
+		return
+	var node := _safe_node3d(e.get("node"))
+	if node != null and name_lbl.text.is_empty():
+		name_lbl.text = _unit_display_name(node)
+	name_lbl.visible = true
+	# 居中叠在血条上方
+	var min_sz := name_lbl.get_minimum_size()
+	var w := maxf(min_sz.x, BAR_W)
+	var h := maxf(min_sz.y, 14.0)
+	name_lbl.size = Vector2(w, h)
+	name_lbl.position = Vector2(
+		bar_pos.x + BAR_W * 0.5 - w * 0.5,
+		bar_pos.y - h - NAME_GAP
+	)
 
 
 func _apply_fill(e: Dictionary, r: float) -> void:
@@ -331,4 +420,7 @@ func _free_entry(id: int) -> void:
 	var bar := e.get("bar") as Control
 	if bar != null and is_instance_valid(bar):
 		bar.queue_free()
+	var name_lbl := e.get("name") as Label
+	if name_lbl != null and is_instance_valid(name_lbl):
+		name_lbl.queue_free()
 	_entries.erase(id)

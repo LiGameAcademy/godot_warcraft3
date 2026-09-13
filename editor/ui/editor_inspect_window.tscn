@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://couwjej62bclh" path="res://editor/ui/editor_inspect_window.gd" id="1_script"]
 
+[ext_resource type="Script" path="res://scripts/map/minimap/minimap_view.gd" id="minimap_shared"]
+
 [sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_3tof1"]
 
 [sub_resource type="Environment" id="Environment_preview"]
@@ -74,6 +76,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+script = ExtResource("minimap_shared")
 
 [node name="MinimapChecks" type="VBoxContainer" parent="Margin/Root" unique_id=2043387377]
 layout_mode = 2

@@ -25,7 +25,8 @@ static func spawn_on(
 		return null
 	if throttle_ms > 0:
 		var now := Time.get_ticks_msec()
-		var key := "%s:%s" % [META_THROTTLE, art_rel.strip_edges()]
+		# Metadata 名称必须是有效标识符；资源路径含斜线和点，不能直接拼入。
+		var key := "%s_%s" % [META_THROTTLE, art_rel.strip_edges().md5_text()]
 		if target.has_meta(key) and now - int(target.get_meta(key)) < throttle_ms:
 			return null
 		target.set_meta(key, now)

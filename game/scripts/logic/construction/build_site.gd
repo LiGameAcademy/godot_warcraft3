@@ -180,7 +180,7 @@ func _settle_powerbuild_cost(prev_ratio: float, new_ratio: float, builder_n: int
 	if g <= 0 and l <= 0:
 		_powerbuild_settled_ratio = new_ratio
 		return
-	var stock: PlayerStock = _session.local_stock()
+	var stock := _session.stocks.get(_owner) as PlayerStock
 	if stock == null:
 		_powerbuild_settled_ratio = new_ratio
 		return

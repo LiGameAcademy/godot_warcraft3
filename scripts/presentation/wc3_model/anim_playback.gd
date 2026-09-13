@@ -312,8 +312,14 @@ static func play_logical(
 		AppLog.warn(
 			AppLog.Layer.PRESENT,
 			_TAG,
-			"play_logical 无可用动画 logical=%s fallbacks=%s"
-			% [logical, str(fallbacks)]
+			"play_logical 无可用动画 logical=%s fallbacks=%s host=%s scene=%s animations=%s"
+			% [
+				logical,
+				str(fallbacks),
+				str(root.get_path()) if root != null and root.is_inside_tree() else "<outside tree>",
+				root.scene_file_path if root != null else "",
+				str(ap.get_animation_list()) if ap != null else "<no player>",
+			]
 		)
 		return out
 	# 战斗默认 Attack 单次；伐木 Attack Lumber / Attack Gold 仍要 LOOP

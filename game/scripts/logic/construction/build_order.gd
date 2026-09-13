@@ -37,6 +37,8 @@ var building_id: String = ""
 var site_wc3: Vector2 = Vector2.INF
 ## 接令农民（建造期间由 F2-5 隐藏 / 变工地）。
 var builder: Node3D = null
+## 成功扣费时固定的付款/工地玩家；不会随工人换主改变。
+var owner: int = -1
 ## 当前状态。
 var state: int = STATE_PENDING
 ## 资源快照（取消时按 50% 退款）。

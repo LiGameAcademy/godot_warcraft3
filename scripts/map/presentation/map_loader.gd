@@ -500,19 +500,44 @@ func get_pathing_doodad_entries() -> Array:
 	return _pathing_doodad_entries
 
 
-## 更新一条 Present：先删后加；失败（MultiMesh）返回 false，调用方应全量 rebuild。
+## 保留同类型实例更新变换；类型/变体变化时重建该实例。
 func update_doodad_instance(entry: Dictionary, hf: Dictionary) -> bool:
 	if _doodads == null or entry.is_empty():
 		return false
 	var cn: int = int(entry.get("creationNumber", -1))
 	if cn < 0:
 		return false
+	var heightfield: Wc3Heightfield = Wc3Heightfield.from_dict(hf, true) if not hf.is_empty() else null
+	if _doodads.update_one(entry, heightfield):
+		_replace_doodad_pathing_entry(entry)
+		return true
 	if not _doodads.remove_by_creation_number(cn):
 		return false
-	return add_doodad_instance(entry, hf)
+	if not _doodads.add_one(entry, heightfield):
+		return false
+	_replace_doodad_pathing_entry(entry)
+	return true
+
+
+func _replace_doodad_pathing_entry(entry: Dictionary) -> void:
+	var cn := int(entry.get("creationNumber", -1))
+	# Remove every prior copy: old updates appended footprints without removing them.
+	for i in range(_pathing_doodad_entries.size() - 1, -1, -1):
+		if int(_pathing_doodad_entries[i].get("creationNumber", -1)) == cn:
+			_pathing_doodad_entries.remove_at(i)
+	_pathing_doodad_entries.append(entry.duplicate(true))
+	_rebuild_pathing_overlay()
 
 
 ## 仅重建地面（笔刷脏更新）；不重载装饰/单位。
+func update_ground_textures(hf: Wc3Heightfield, vertices: Array) -> bool:
+	if vertices.is_empty() or not _terrain.update_texture_vertices(hf, vertices):
+		return false
+	_external_hf = hf.as_dict_view()
+	_last_hf_dict = _external_hf
+	return true
+
+
 func rebuild_terrain_only(hf: Dictionary, info: Dictionary = {}) -> void:
 	if hf.is_empty():
 		AppLog.warn(AppLog.Layer.PRESENT, "MapLoader", "rebuild_terrain_only: hf 空")
@@ -554,6 +579,9 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 	if hf.is_empty():
 		AppLog.warn(AppLog.Layer.PRESENT, "MapLoader", "rebuild_cliffs_water: hf 空")
 		return
+	last_terrain_rebuild_timings.clear()
+	var profile_start := Time.get_ticks_usec()
+	var profile_mark := profile_start
 	_external_hf = hf
 	if not info.is_empty():
 		_external_info = info
@@ -571,26 +599,44 @@ func rebuild_terrain_cliffs_water(hf: Dictionary, info: Dictionary = {}) -> void
 		"MapLoader",
 		"rebuild_cliffs_water %dx%d" % [ctx.width(), ctx.height()]
 	)
+	last_terrain_rebuild_timings["context_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	_apply_ramp_cliff_filter(ctx)
 	_terrain.build(ctx)
+	last_terrain_rebuild_timings["ground_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	_build_boundary(ctx)
+	last_terrain_rebuild_timings["boundary_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	if build_terrain_collision:
 		_ensure_terrain_collision()
+	last_terrain_rebuild_timings["collision_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	if build_cliffs:
 		_cliffs.build(ctx)
+	last_terrain_rebuild_timings["cliffs_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	_build_ramps(ctx)
+	last_terrain_rebuild_timings["ramps_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	if build_water:
 		_water.foam_cliff_out_extra = foam_cliff_out_extra
 		_water.foam_ramp_pull_tiles = foam_ramp_pull_tiles
 		_water.foam_shore_pull_tiles = foam_shore_pull_tiles
 		_water.build(ctx)
+	last_terrain_rebuild_timings["water_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	_build_ramp_debug(ctx)
 	_apply_view_grid()
+	last_terrain_rebuild_timings["overlays_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	profile_mark = Time.get_ticks_usec()
 	# 改地形后刷 doodad / unit Y（同 rebuild_terrain_only）
 	if _doodads != null:
 		_doodads.refresh_heights(ctx.heightfield)
 	if _units != null:
 		_units.refresh_heights(ctx.heightfield)
+	last_terrain_rebuild_timings["objects_ms"] = (Time.get_ticks_usec() - profile_mark) / 1000.0
+	last_terrain_rebuild_timings["total_ms"] = (Time.get_ticks_usec() - profile_start) / 1000.0
 
 func _load_all() -> void:
 	_map_ready = false
@@ -846,3 +892,6 @@ func _set_status(text: String, progress: float = -1.0) -> void:
 	# 进度文案走 AppLog.debug（安静模式下不刷屏）；HUD 仍更新。
 	AppLog.debug(AppLog.Layer.LOAD, "MapLoader", text)
 	load_progress.emit(text, _load_progress)
+
+
+var last_terrain_rebuild_timings: Dictionary = {}

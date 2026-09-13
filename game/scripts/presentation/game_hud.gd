@@ -11,6 +11,10 @@ signal minimap_clicked(uv: Vector2)
 signal multi_select_clicked(instance_id: int)
 ## 训练队列槽点击取消：slot_index
 signal train_queue_cancel(slot_index: int)
+signal item_use(slot: int)
+signal item_drop(slot: int)
+signal item_swap(a: int, b: int)
+var inventory_panel: InventoryPanel
 
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 @export var console_height_ratio: float = 0.2
@@ -71,6 +75,14 @@ const _HERO_LEVEL_BORDER := "UI/Buttons/HeroLevel/HeroLevel-Border.png"
 
 
 func _ready() -> void:
+	inventory_panel = InventoryPanel.new()
+	inventory_panel.name = "InventoryPanel"
+	$Root.add_child(inventory_panel)
+	inventory_panel.use_requested.connect(func(slot: int) -> void: item_use.emit(slot))
+	inventory_panel.drop_requested.connect(func(slot: int) -> void: item_drop.emit(slot))
+	inventory_panel.swap_requested.connect(func(a: int, b: int) -> void: item_swap.emit(a, b))
+	_command_panel.resized.connect(_layout_inventory_panel)
+	call_deferred("_layout_inventory_panel")
 	_style_command_panel()
 	_style_center_panel()
 	_wire_command_buttons()
@@ -116,6 +128,7 @@ func _apply_bottom_height() -> void:
 		return
 	var h := get_viewport().get_visible_rect().size.y
 	_bottom.offset_top = -h * console_height_ratio
+	_layout_inventory_panel()
 	if _hint:
 		_hint.offset_top = _bottom.offset_top - 28.0
 		_hint.offset_bottom = _bottom.offset_top - 8.0
@@ -132,6 +145,23 @@ func set_resources(gold: int, lumber: int, food: int, food_max: int) -> void:
 		_lumber_label.text = str(lumber)
 	if _food_label:
 		_food_label.text = "%d/%d" % [food, food_max]
+
+
+func bind_inventory(inv: Inventory) -> void:
+	if inventory_panel != null:
+		inventory_panel.bind_inventory(inv)
+		call_deferred("_layout_inventory_panel")
+
+
+func _layout_inventory_panel() -> void:
+	if inventory_panel == null or _command_panel == null:
+		return
+	var h := get_viewport().get_visible_rect().size.y
+	inventory_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	inventory_panel.offset_left = -244.0
+	inventory_panel.offset_right = -12.0
+	inventory_panel.offset_bottom = _command_panel.get_global_rect().position.y - h - 12.0
+	inventory_panel.offset_top = inventory_panel.offset_bottom - 200.0
 
 
 func bind_stock(stock) -> void:

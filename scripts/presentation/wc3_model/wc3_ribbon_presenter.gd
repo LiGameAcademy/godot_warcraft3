@@ -99,6 +99,8 @@ static func _make_emitter(d: Dictionary) -> MeshInstance3D:
 		col,
 		tex
 	)
+	em.set_meta("wc3_ribbon_visibility", d.get("visibility_keys", []))
+	em.set_meta("wc3_ribbon_positions", d.get("positions_by_sequence", {}))
 	var pivot: Array = d.get("pivot", [0, 0, 0]) as Array
 	if pivot.size() >= 3:
 		em.position = Vector3(float(pivot[0]), float(pivot[1]), float(pivot[2]))

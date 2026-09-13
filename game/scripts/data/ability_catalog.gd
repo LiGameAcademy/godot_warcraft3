@@ -31,16 +31,28 @@ static func data(abil_id: String) -> AbilityDataDef:
 	var id := abil_id.strip_edges()
 	if id.is_empty():
 		return null
-	Wc3DefStore.ensure_table(AbilityDataDef.TABLE_NAME)
-	return Wc3DefStore.get_row(AbilityDataDef.TABLE_NAME, id) as AbilityDataDef
+	var store := _def_store()
+	if store == null:
+		return null
+	store.ensure_table(AbilityDataDef.TABLE_NAME)
+	return store.get_row(AbilityDataDef.TABLE_NAME, id) as AbilityDataDef
 
 
 static func unit_abilities(type_id: String) -> UnitAbilitiesDef:
 	var uid := type_id.strip_edges()
 	if uid.is_empty():
 		return null
-	Wc3DefStore.ensure_table(UnitAbilitiesDef.TABLE_NAME)
-	return Wc3DefStore.get_row(UnitAbilitiesDef.TABLE_NAME, uid) as UnitAbilitiesDef
+	var store := _def_store()
+	if store == null:
+		return null
+	store.ensure_table(UnitAbilitiesDef.TABLE_NAME)
+	return store.get_row(UnitAbilitiesDef.TABLE_NAME, uid) as UnitAbilitiesDef
+
+
+## 与 UnitMana 一致：延迟查询 Autoload，避免 -s 自测提前编译依赖时找不到全局标识符。
+static func _def_store() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	return tree.root.get_node_or_null("Wc3DefStore") if tree != null else null
 
 
 static func ability_ids_for_unit(type_id: String) -> PackedStringArray:

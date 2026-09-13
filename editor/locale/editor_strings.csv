@@ -295,3 +295,7 @@ EDITOR_STATUS_PATHING_GROUND,路径-地面：%s,Pathing-Ground: %s
 EDITOR_STATUS_LOADING_UNITS,正在加载单位…,Loading units…
 EDITOR_STATUS_LOADING_UNITS_PROGRESS,后台加载单位… %d/%d,Loading units (bg)… %d/%d
 EDITOR_STATUS_PATHING_GROUND_ON,路径-地面：开（%d 格）,Pathing-Ground: On (%d cells)
+
+EDITOR_UNIT_PROPS_ACQ_CUSTOM,自定义,Custom
+EDITOR_UNIT_OWNER_NEUTRAL_ID,中立（ID %d）,Neutral (ID %d)
+EDITOR_VIEW_ASSET_DIAGNOSTICS,地图资源检查,Map Asset Check

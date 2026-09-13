@@ -6,7 +6,7 @@ import {
   matchesFilters,
   normalizeLogicalPath,
 } from "./paths.js";
-import { closeArchive, extractToBuffer, listFiles, openArchive } from "./stormlib.js";
+import * as stormlib from "./stormlib.js";
 
 /**
  * @typedef {{ sourceMpq: string, size: number, sha256: string }} ManifestEntry
@@ -69,7 +69,8 @@ function toArchiveName(logicalPath) {
  * @param {string[]} options.exclude
  * @param {string | null} [options.listFile]
  */
-export function extractMpqs(options) {
+export function extractMpqs(options, archiveIO = stormlib) {
+  const { closeArchive, extractToBuffer, listFiles, openArchive, hasFile } = archiveIO;
   const {
     mpqs,
     outDir,
@@ -88,6 +89,18 @@ export function extractMpqs(options) {
   const previous = force ? null : loadManifest(manifestPath);
   /** @type {Record<string, ManifestEntry>} */
   const files = previous?.files ? { ...previous.files } : {};
+
+  // MPQ listfiles can be incomplete, especially in patch archives. Carry known
+  // names forward and probe later archives; exact includes also work without a listfile.
+  const knownNames = new Map();
+  const remember = (name) => {
+    const logical = normalizeLogicalPath(name);
+    if (logical && !isInternalMpqFile(logical) && !knownNames.has(logical.toLowerCase())) {
+      knownNames.set(logical.toLowerCase(), logical);
+    }
+  };
+  Object.keys(files).forEach(remember);
+  include.filter((name) => !/[?*\[\]{}()!]/.test(name)).forEach(remember);
 
   let extracted = 0;
   let skipped = 0;
@@ -108,11 +121,13 @@ export function extractMpqs(options) {
     try {
       const names = listFiles(archive, listFile);
       console.log(`  列表文件数: ${names.length}`);
+      names.forEach(remember);
+      const listed = new Set(names.map((name) => normalizeLogicalPath(name).toLowerCase()));
 
-      for (const rawName of names) {
-        const logicalPath = normalizeLogicalPath(rawName);
+      for (const logicalPath of knownNames.values()) {
         if (!logicalPath || isInternalMpqFile(logicalPath)) continue;
         if (!matchesFilters(logicalPath, include, exclude)) continue;
+        if (!listed.has(logicalPath.toLowerCase()) && !hasFile(archive, toArchiveName(logicalPath))) continue;
 
         const destPath = path.join(outDir, ...logicalPath.split("/"));
         const existing = files[logicalPath];
