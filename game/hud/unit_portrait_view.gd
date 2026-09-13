@@ -129,7 +129,7 @@ func _process(_delta: float) -> void:
 
 
 func _try_attach_pending(gen: int) -> void:
-	if gen != _load_gen:
+	if gen != _load_gen or _is_closing():
 		return
 	if _pending_path.is_empty() or _cache == null or _world == null:
 		return
@@ -156,10 +156,11 @@ func _try_attach_pending(gen: int) -> void:
 
 
 func _finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) -> void:
-	if gen != _load_gen:
+	if gen != _load_gen or _is_closing():
 		return
 	if _model_root == null or not is_instance_valid(_model_root):
 		return
+	_normalize_portrait_materials(_model_root)
 	_normalize_portrait_model_scale(_model_root)
 	_model_root.position = Vector3.ZERO
 	_model_root.rotation = Vector3.ZERO
@@ -170,6 +171,43 @@ func _finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) 
 	_ensure_portrait_meshes_visible()
 	_fit_camera(_model_root, path)
 	_set_viewport_active(true)
+
+
+## 延迟头像任务不能在宿主已请求卸载后继续创建渲染资源。
+## queue_free父场景不会立即把子节点标为queued，因此必须检查祖先。
+func _is_closing() -> bool:
+	if not is_inside_tree():
+		return true
+	var node: Node = self
+	while node != null:
+		if node.is_queued_for_deletion():
+			return true
+		node = node.get_parent()
+	return false
+
+
+func _exit_tree() -> void:
+	_load_gen += 1
+	_pending_path = ""
+	set_process(false)
+	_disconnect_anim()
+
+
+## 光晕PrimitiveMesh使用表面覆盖且基础材质为空时，卸载可触发空RID查询。
+## 将同一个有效材质放入实例独有网格，保持外观并避免修改缓存/其他头像。
+func _normalize_portrait_materials(model: Node3D) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if not mi.mesh is PrimitiveMesh:
+			continue
+		var primitive := mi.mesh as PrimitiveMesh
+		var override := mi.get_surface_override_material(0)
+		if primitive.material != null or override == null:
+			continue
+		var local_mesh := primitive.duplicate() as PrimitiveMesh
+		local_mesh.material = override
+		mi.mesh = local_mesh
+		mi.set_surface_override_material(0, null)
 
 
 func _normalize_portrait_model_scale(root: Node3D) -> void:
