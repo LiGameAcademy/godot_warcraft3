@@ -146,8 +146,9 @@ var _build_sites_host: Node = null
 var _build_site_by_building: Dictionary = {}
 ## "%s_x_y" → BuildSite
 var _build_site_by_key: Dictionary = {}
-## 已接线的 TrainQueue instance_id（避免重复 connect）
-var _wired_train_queues: Dictionary = {}
+## 对局内生产功能及本地界面适配器；队列订阅由模块持有。
+var _production: ProductionModule
+var _production_panel: ProductionPanel
 
 
 func _ready() -> void:
@@ -697,6 +698,7 @@ func _setup_pathing() -> void:
 	)
 	if not _command_router.production_queue_ready.is_connected(_wire_train_queue):
 		_command_router.production_queue_ready.connect(_wire_train_queue)
+	_ensure_production_module()
 	_setup_tree_registry()
 	_ensure_path_debug()
 	_setup_item_system()
@@ -2929,12 +2931,7 @@ func _on_gold_mine_collapse_finished(mine: Node3D) -> void:
 
 
 func _terminate_unit_production(unit: Node3D) -> void:
-	if not is_instance_valid(unit):
-		return
-	var queue := unit.get_node_or_null("TrainQueue") as TrainQueue
-	if queue != null:
-		_wire_train_queue(queue)
-		queue.terminate()
+	_ensure_production_module().terminate(unit)
 
 
 func _release_unit_food(unit: Node3D) -> void:
@@ -3809,449 +3806,35 @@ func _primary_defend_active() -> bool:
 
 
 func _try_issue_train(unit_id: String) -> void:
-	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		if game_hud:
-			game_hud.set_status("请先选中可训练建筑")
-		return
-	if not _is_controllable(primary):
-		if game_hud:
-			game_hud.set_status("无法控制该建筑")
-		return
-	var d: Dictionary = primary.get_meta("unit_data", {})
-	var building_id := str(d.get("typeId", "")).strip_edges()
-	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
-		if game_hud:
-			game_hud.set_status("当前选中无法训练")
-		return
-	if UnitLife.is_under_construction(primary):
-		if game_hud:
-			game_hud.set_status("建造中，无法训练")
-		return
-	var uid := unit_id.strip_edges()
-	var trains := TechPresence.filter_vertical_trains(
-		building_id, CommandButtonCatalog.get_shared().get_trains(building_id)
-	)
-	if trains.find(uid) < 0:
-		if game_hud:
-			game_hud.set_status("%s 不能训练 %s" % [building_id, uid])
-		return
-	var owned := _owned_buildings_for_local()
-	var missing := TechPresence.missing_requires(
-		owned, UnitRequiresCatalog.get_shared().get_requires(uid)
-	)
-	if not missing.is_empty():
-		if game_hud:
-			game_hud.set_status(TechPresence.requires_tip(missing))
-		return
-	if TechPresence.is_hero_id(uid):
-		var owner_id := int(d.get("owner", 0))
-		if (
-			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
-			>= TechPresence.MAX_HEROES_PER_PLAYER
-		):
-			if game_hud:
-				game_hud.set_status("每位玩家同时只能拥有 %d 名英雄" % TechPresence.MAX_HEROES_PER_PLAYER)
-			return
-	var stock := _local_stock()
-	var gold := BuildingCatalog.get_gold_cost(uid)
-	var lumber := BuildingCatalog.get_lumber_cost(uid)
-	var food := BuildingCatalog.get_food_used(uid)
-	if stock != null:
-		if food > 0 and not stock.can_afford_food(food):
-			if game_hud:
-				game_hud.set_status("人口不足（%d/%d）" % [stock.food_used, stock.food_cap])
-			return
-		if stock.gold < gold or stock.lumber < lumber:
-			_notify_cannot_afford_build(uid)
-			return
-	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if existing != null and existing.is_full():
-		if game_hud:
-			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
-		return
-	if not _command_router.issue_train(primary, uid):
-		if game_hud:
-			game_hud.set_status("无法训练 %s" % uid)
-		return
-	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
-	_wire_train_queue(queue)
-	_apply_building_train_card(primary, building_id)
-	_sync_build_hud_for_selection()
-	if game_hud:
-		var n := queue.queue_count() if queue != null else 1
-		game_hud.set_status("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
+	_ensure_production_module()
+	_production_panel.request_train(unit_id)
 
 
 ## 祭坛复活阵亡英雄：费用/时间随等级；入 TrainQueue，完工刷回同等级。
 func _try_issue_revive(unit_id: String) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		if game_hud:
-			game_hud.set_status("请先选中祭坛")
-		return
-	if not _is_controllable(primary):
-		if game_hud:
-			game_hud.set_status("无法控制该建筑")
-		return
-	var d: Dictionary = primary.get_meta("unit_data", {})
-	var building_id := str(d.get("typeId", "")).strip_edges()
-	if not HeroDeathRegistry.can_revive_at(building_id):
-		if game_hud:
-			game_hud.set_status("仅祭坛可复活英雄")
-		return
-	if UnitLife.is_under_construction(primary):
-		if game_hud:
-			game_hud.set_status("建造中，无法复活")
-		return
-	var uid := unit_id.strip_edges()
-	if not TechPresence.is_hero_id(uid):
-		return
-	var owner_id := int(d.get("owner", 0))
-	var entry := HeroDeathRegistry.take_for_revive(owner_id, uid)
-	if entry.is_empty():
-		if game_hud:
-			game_hud.set_status("无待复活的 %s" % uid)
-		return
-	var lv := maxi(int(entry.get("level", 1)), 1)
-	var gold := HeroDeathRegistry.revive_cost(lv, uid)
-	var time_sec := HeroDeathRegistry.revive_time_sec(lv, uid)
-	var stock := _local_stock()
-	if stock != null and stock.gold < gold:
-		HeroDeathRegistry.restore_dead(entry)
-		if game_hud:
-			game_hud.set_status("金币不足（需要 %d）" % gold)
-		return
-	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if queue == null:
-		queue = TrainQueue.new()
-		queue.name = "TrainQueue"
-		primary.add_child(queue)
-	if queue.is_full():
-		HeroDeathRegistry.restore_dead(entry)
-		if game_hud:
-			game_hud.set_status("训练队列已满（%d/%d）" % [queue.queue_count(), TrainQueue.MAX_QUEUE])
-		return
-	if stock != null and not stock.try_spend(gold, 0):
-		HeroDeathRegistry.restore_dead(entry)
-		if game_hud:
-			game_hud.set_status("金币不足（需要 %d）" % gold)
-		return
-	var site := Wc3Coords.godot_to_wc3_xy(primary.global_position)
-	var ok := queue.enqueue(
-		uid,
-		time_sec,
-		gold,
-		0,
-		0,
-		site,
-		owner_id,
-		{
-			"is_revive": true,
-			"revive_level": lv,
-			"revive_ability_levels": entry.get("ability_levels", {}),
-			"revive_xp": int(entry.get("hero_xp", 0)),
-			"revive_entry": entry,
-		}
-	)
-	if not ok:
-		if stock != null:
-			stock.add_gold(gold)
-		HeroDeathRegistry.restore_dead(entry)
-		if game_hud:
-			game_hud.set_status("无法复活 %s" % uid)
-		return
-	_wire_train_queue(queue)
-	if game_hud:
-		game_hud.set_status("复活中：%s · Lv%d（%d金 · %.0fs）" % [uid, lv, gold, time_sec])
-	_apply_building_train_card(primary, building_id)
-	_sync_build_hud_for_selection()
+	_ensure_production_module()
+	_production_panel.request_revive(unit_id)
 
 
 func _try_issue_research(upgrade_id: String) -> void:
-	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		if game_hud:
-			game_hud.set_status("请先选中可研究建筑")
-		return
-	if not _is_controllable(primary):
-		if game_hud:
-			game_hud.set_status("无法控制该建筑")
-		return
-	var d: Dictionary = primary.get_meta("unit_data", {})
-	var building_id := str(d.get("typeId", "")).strip_edges()
-	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
-		if game_hud:
-			game_hud.set_status("当前选中无法研究")
-		return
-	if UnitLife.is_under_construction(primary):
-		if game_hud:
-			game_hud.set_status("建造中，无法研究")
-		return
-	var uid := upgrade_id.strip_edges()
-	var researches := TechPresence.filter_vertical_researches(
-		building_id, CommandButtonCatalog.get_shared().get_researches(building_id)
-	)
-	if researches.find(uid) < 0:
-		if game_hud:
-			game_hud.set_status("%s 不能研究 %s" % [building_id, uid])
-		return
-	var stock := _local_stock()
-	if stock != null and stock.has_upgrade(uid):
-		if game_hud:
-			game_hud.set_status("已研究：%s" % TechPresence.display_name(uid))
-		return
-	var owner_id := int(d.get("owner", 0))
-	if TechPresence.is_upgrade_queued(_unit_host(), owner_id, uid):
-		if game_hud:
-			game_hud.set_status("已在研究：%s" % TechPresence.display_name(uid))
-		return
-	var gold := TechPresence.upgrade_gold(uid)
-	var lumber := TechPresence.upgrade_lumber(uid)
-	if stock != null and (stock.gold < gold or stock.lumber < lumber):
-		if game_hud:
-			var msg := "资源不够（需 %d金" % gold
-			if lumber > 0:
-				msg += " %d木" % lumber
-			msg += "）"
-			if game_hud.has_method("show_command_tip"):
-				game_hud.show_command_tip(msg)
-			else:
-				game_hud.set_status(msg)
-		return
-	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if existing != null and existing.is_full():
-		if game_hud:
-			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
-		return
-	if not _command_router.issue_research(primary, uid):
-		if game_hud:
-			game_hud.set_status("无法研究 %s" % uid)
-		return
-	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
-	_wire_train_queue(queue)
-	_apply_building_train_card(primary, building_id)
-	_sync_build_hud_for_selection()
-	if game_hud:
-		var n := queue.queue_count() if queue != null else 1
-		game_hud.set_status("已加入研究队列：%s（%d/%d）" % [TechPresence.display_name(uid), n, TrainQueue.MAX_QUEUE])
+	_ensure_production_module()
+	_production_panel.request_research(upgrade_id)
 
 
 func _wire_train_queue(queue: TrainQueue) -> void:
-	if queue == null or not is_instance_valid(queue):
-		return
-	var id := queue.get_instance_id()
-	if _wired_train_queues.has(id):
-		return
-	_wired_train_queues[id] = true
-	queue.training_completed.connect(_on_training_completed.bind(queue))
-	queue.training_cancelled.connect(_on_training_cancelled.bind(queue))
-	if not queue.queue_changed.is_connected(_on_train_queue_changed):
-		queue.queue_changed.connect(_on_train_queue_changed.bind(queue))
-	if not queue.progress_changed.is_connected(_on_train_progress_changed):
-		queue.progress_changed.connect(_on_train_progress_changed.bind(queue))
-	if not queue.training_started.is_connected(_on_train_started_visual):
-		queue.training_started.connect(_on_train_started_visual.bind(queue))
-	_sync_building_train_visual(queue.get_parent() as Node3D)
-
-
-func _on_train_started_visual(_unit_id: String, _time_sec: float, queue: TrainQueue) -> void:
-	if queue == null or not is_instance_valid(queue):
-		return
-	_sync_building_train_visual(queue.get_parent() as Node3D)
+	_ensure_production_module().watch(queue)
 
 
 ## 训练中切 Stand Work（门开 + 门光）；队列空回 Stand。
-func _sync_building_train_visual(building: Node3D) -> void:
-	if building == null or not is_instance_valid(building) or map_root == null:
-		return
-	var tid := str(building.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	if tid.is_empty() or not BuildingCatalog.is_building(tid):
-		return
-	if UnitLife.is_under_construction(building):
-		return
-	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
-	if cache == null:
-		return
-	var q := building.get_node_or_null("TrainQueue") as TrainQueue
-	var phase := (
-		BuildingVisual.Phase.WORK if q != null and q.is_training() else BuildingVisual.Phase.IDLE
-	)
-	BuildingVisual.apply_phase(cache, building, tid, phase)
-
-
-func _on_train_progress_changed(_progress: float, _remaining_sec: float, queue: TrainQueue) -> void:
-	# 仅当该队列所属建筑是当前主选时刷 HUD（事件驱动，非 Director 轮询）
-	if queue == null or not is_instance_valid(queue):
-		return
-	if not _is_primary_train_queue(queue):
-		return
-	_push_train_queue_hud(queue)
-
-
-func _is_primary_train_queue(queue: TrainQueue) -> bool:
-	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return false
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		return false
-	return queue.get_parent() == primary
 
 
 func _on_train_queue_cancel(slot_index: int) -> void:
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if not is_instance_valid(primary) or _session == null:
-		return
-	if not CombatQuery.is_controllable(primary, int(_session.local_player)) or not CombatQuery.is_alive_in_world(primary):
-		return
-	var tq := primary.get_node_or_null("TrainQueue") as TrainQueue
-	if tq == null:
-		return
-	_wire_train_queue(tq)
-	if not tq.cancel_at(slot_index):
-		return
-	_sync_building_train_visual(primary)
-	var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
-	if not tid.is_empty():
-		_apply_building_train_card(primary, tid)
-	_sync_build_hud_for_selection()
-
-
-func _on_train_queue_changed(queue: TrainQueue = null) -> void:
-	if queue != null and is_instance_valid(queue):
-		_sync_building_train_visual(queue.get_parent() as Node3D)
-	_sync_build_hud_for_selection()
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null:
-			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
-			if not tid.is_empty() and not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
-				_apply_building_train_card(primary, tid)
-
-
-func _on_training_completed(unit_id: String, site_wc3: Vector2, owner: int, queue: TrainQueue) -> void:
-	var building: Node3D = null
-	var completed: Dictionary = {}
-	if queue != null and is_instance_valid(queue):
-		building = queue.get_parent() as Node3D
-		completed = queue.take_last_completed()
-	_sync_building_train_visual(building)
-	if TechPresence.is_upgrade_id(unit_id):
-		_on_research_completed(unit_id, building, owner)
-		return
-	var node := _spawn_trained_unit(unit_id, site_wc3, owner, building)
-	if node == null:
-		push_warning("GameDirector: 训练完成但刷单位失败 %s" % unit_id)
-		# 刷失败：释回人口（开训时已预占）；复活则写回阵亡登记
-		if bool(completed.get("is_revive", false)):
-			var rev: Variant = completed.get("revive_entry", {})
-			if typeof(rev) == TYPE_DICTIONARY and not (rev as Dictionary).is_empty():
-				HeroDeathRegistry.restore_dead(rev as Dictionary)
-		var stock := _stock_for_owner(owner)
-		if stock != null:
-			var food := BuildingCatalog.get_food_used(unit_id)
-			if food > 0:
-				stock.add_food_used(-food)
-		if game_hud:
-			game_hud.set_status("训练完成但刷出失败：%s" % unit_id)
-		return
-	if bool(completed.get("is_revive", false)):
-		_apply_revived_hero_state(node, completed)
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null and building != null and primary == building:
-			var tid := str(building.get_meta("unit_data", {}).get("typeId", ""))
-			if not tid.is_empty():
-				_apply_building_train_card(building, tid)
-			_sync_build_hud_for_selection()
-	if game_hud:
-		if bool(completed.get("is_revive", false)):
-			game_hud.set_status(
-				"复活完成：%s · Lv%d" % [unit_id, int(completed.get("revive_level", 1))]
-			)
-		else:
-			game_hud.set_status("训练完成：%s" % unit_id)
+	_ensure_production_module()
+	_production_panel.cancel_selected(slot_index)
 
 
 func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
-	if unit == null or completed.is_empty():
-		return
-	var lv := maxi(int(completed.get("revive_level", 1)), 1)
-	var xp := int(completed.get("revive_xp", -1))
-	HeroProgression.set_level(unit, lv, xp)
-	var levels: Variant = completed.get("revive_ability_levels", {})
-	if typeof(levels) == TYPE_DICTIONARY:
-		unit.set_meta(AbilityCatalog.META_ABILITY_LEVELS, (levels as Dictionary).duplicate(true))
-	_ensure_hero_runtime(unit)
-	var entry: Dictionary = completed.get("revive_entry", {})
-	var inv := Inventory.of(unit)
-	if inv != null:
-		inv.restore(entry.get("inventory", {}))
-	# 祭坛复活：恢复等级与物品后设置生命、魔法，避免初始化覆盖。
-	UnitLife.set_life(unit, UnitLife.get_max_life(unit))
-	unit.set_meta(UnitMana.META_MANA, mini(100, UnitMana.get_max_mana(unit)))
-
-
-func _on_research_completed(upgrade_id: String, building: Node3D, owner: int) -> void:
-	var stock := _stock_for_owner(owner)
-	if stock != null:
-		stock.grant_upgrade(upgrade_id)
-	# 科技是玩家级：场上已有步兵与之后新训的步兵都解锁同一按钮
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null and building != null and primary == building:
-			var tid := str(building.get_meta("unit_data", {}).get("typeId", ""))
-			if not tid.is_empty():
-				_apply_building_train_card(building, tid)
-			_sync_build_hud_for_selection()
-		else:
-			_refresh_command_card()
-	if game_hud:
-		game_hud.set_status("研究完成：%s" % TechPresence.display_name(upgrade_id))
-
-
-func _on_training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: int, owner: int, queue: TrainQueue) -> void:
-	# 所有取消来源共用此处：电脑和建筑生命周期无需走 UI 才能保住英雄。
-	if is_instance_valid(queue):
-		var cancelled := queue.take_last_cancelled()
-		if bool(cancelled.get("is_revive", false)):
-			var rev: Variant = cancelled.get("revive_entry", {})
-			if rev is Dictionary and not rev.is_empty():
-				HeroDeathRegistry.restore_dead(rev)
-	var stock := _stock_for_owner(owner)
-	if stock != null:
-		if refund_g > 0:
-			stock.add_gold(refund_g)
-		if refund_l > 0:
-			stock.add_lumber(refund_l)
-		var food_n := food if food >= 0 else BuildingCatalog.get_food_used(unit_id)
-		if food_n > 0:
-			stock.add_food_used(-food_n)
-	if game_hud:
-		var kind := "研究" if TechPresence.is_upgrade_id(unit_id) else "训练"
-		game_hud.set_status("取消%s：%s（退 %d金 %d木）" % [kind, TechPresence.display_name(unit_id), refund_g, refund_l])
-	_sync_build_hud_for_selection()
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null:
-			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
-			if not tid.is_empty() and not CommandButtonCatalog.get_shared().get_trains(tid).is_empty():
-				_apply_building_train_card(primary, tid)
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		var primary: Node3D = unit_selector.call("get_primary") as Node3D
-		if primary != null:
-			var tid := str(primary.get_meta("unit_data", {}).get("typeId", ""))
-			if BuildingCatalog.is_building(tid):
-				_apply_building_train_card(primary, tid)
-			_sync_build_hud_for_selection()
+	_ensure_production_module().apply_revived_hero_state(unit, completed)
 
 
 ## 训练完工刷单位：脚印四角（集结最近 / 默认左下）→ 重叠则自建筑中心挤位 → 再跟集结。
@@ -4915,31 +4498,9 @@ func _sync_build_hud_for_selection() -> void:
 		game_hud.clear_train_queue()
 
 
-func _push_train_queue_hud(tq: TrainQueue) -> void:
-	if game_hud == null or tq == null:
-		return
-	if not game_hud.has_method("set_train_queue"):
-		return
-	var slots: Array = []
-	var cat := CommandButtonCatalog.get_shared()
-	for e in tq.snapshot():
-		var uid := str(e.get("unit_id", ""))
-		var entry := cat.unit_hud_entry(uid, "train:" + uid, {})
-		if entry.is_empty():
-			entry = cat.upgrade_hud_entry(uid, "research:" + uid, {})
-		var shown_name := str(entry.get("name", "")).strip_edges()
-		if shown_name.is_empty():
-			shown_name = TechPresence.display_name(uid)
-		slots.append({
-			"unit_id": uid,
-			"name": shown_name,
-			"icon": str(entry.get("icon", "")),
-			"progress": float(e.get("progress", 0.0)),
-			"active": bool(e.get("active", false)),
-			"remaining_sec": float(e.get("remaining_sec", 0.0)),
-			"tooltip": "%s · 点击取消" % shown_name,
-		})
-	game_hud.set_train_queue(slots, tq.queue_count(), TrainQueue.MAX_QUEUE)
+func _push_train_queue_hud(queue: TrainQueue) -> void:
+	_ensure_production_module()
+	_production_panel.show_queue(queue)
 
 
 func _bind_hud_build_site(site: BuildSite) -> void:
@@ -5345,3 +4906,27 @@ func gm_item_test_creep() -> void:
 		if health_bar_manager != null:
 			health_bar_manager.resync()
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
+
+
+## 只负责装配对局生产模块及其界面适配器。
+## 单位创建暂经显式接口注入，待后续单位模块迁移。
+func _ensure_production_module() -> ProductionModule:
+	if not is_instance_valid(_production):
+		_production = ProductionModule.new()
+		_production.name = "ProductionModule"
+		add_child(_production)
+		_production_panel = ProductionPanel.new()
+		_production_panel.name = "ProductionPanel"
+		add_child(_production_panel)
+		_production_panel.production = _production
+		_production.queue_changed.connect(_production_panel.on_queue_changed)
+		_production.progress_changed.connect(_production_panel.on_progress)
+		_production.feedback.connect(_production_panel.show_feedback)
+		_production.research_completed.connect(_production_panel.on_research_completed)
+		_production_panel.command_card_requested.connect(_apply_building_train_card)
+		_production_panel.selection_refresh_requested.connect(_sync_build_hud_for_selection)
+		_production_panel.command_refresh_requested.connect(_refresh_command_card)
+	_production.configure(_session, _spawn_trained_unit, _ensure_hero_runtime)
+	_production_panel.configure(_session, _command_router, unit_selector, game_hud,
+		_unit_host(), map_root.get_model_cache() if map_root != null else null)
+	return _production

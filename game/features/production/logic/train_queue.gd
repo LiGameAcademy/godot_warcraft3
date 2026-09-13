@@ -15,7 +15,7 @@ signal training_cancelled(unit_id: String, refund_g: int, refund_l: int, food: i
 ## 当前槽进度（约 10Hz）；HUD 订阅，勿让 Director 每帧轮询。
 signal progress_changed(progress: float, remaining_sec: float)
 
-## 最近一次完工条目（含 is_revive / revive_level）；Director 读后即清。
+## 最近一次完工条目（含 is_revive / revive_level）；ProductionModule 读后即清。
 var _last_completed: Dictionary = {}
 ## 最近一次取消条目（复活失败时写回 DeathRegistry）。
 var _last_cancelled: Dictionary = {}

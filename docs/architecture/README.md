@@ -6,6 +6,7 @@
 
 | 文件 | 内容 |
 |------|------|
+| [FEATURE_MODULE_REFACTOR.md](FEATURE_MODULE_REFACTOR.md) | 游戏按功能聚合的目录约定、生产模块迁移及后续批次 |
 | [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层分层总纲（Data / Catalog / Logic / Presentation / Editor）+ 门禁 + 命名约定 |
 | [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | MapRoot 节点树 + 脚本职责全表 + 手动干预速查 + 重构优先级 |
 | [MAP_DATA.md](MAP_DATA.md) | 地图数据契约（`Wc3Heightfield` / `Wc3TileVertex` JSON 键表 + 序列化示例） |
