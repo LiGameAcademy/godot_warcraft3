@@ -568,16 +568,7 @@ func set_viewport_uv(rect: Rect2) -> void:
 
 
 func _try_load_war3map_map(map_dir: String) -> Image:
-	var dir := map_dir.replace("\\", "/")
-	if dir.begins_with("res://"):
-		dir = ProjectSettings.globalize_path(dir)
-	for fname in ["war3mapMap.png", "war3mapMap.tga"]:
-		var p: String = dir.path_join(fname)
-		if FileAccess.file_exists(p):
-			var img := Image.new()
-			if img.load(p) == OK:
-				return img
-	return null
+	return preload("res://scripts/map/minimap/minimap_background.gd").load_baked(map_dir)
 
 
 func _try_load_mmp_icons(map_dir: String) -> Array:

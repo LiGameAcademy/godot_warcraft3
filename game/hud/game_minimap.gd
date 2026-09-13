@@ -149,17 +149,7 @@ func _load_icon(logical: String) -> Texture2D:
 
 
 func _try_load_war3map(map_dir: String) -> Image:
-	if map_dir.is_empty():
-		return null
-	for file_name in ["war3mapMap.png", "war3mapMap.tga", "war3mapMap.blp"]:
-		var path := map_dir.path_join(file_name)
-		var disk := RuntimeAssets.project_abs(path)
-		if disk.is_empty() or not FileAccess.file_exists(disk):
-			continue
-		var img := Image.new()
-		if img.load(disk) == OK:
-			return img
-	return null
+	return preload("res://scripts/map/minimap/minimap_background.gd").load_baked(map_dir)
 
 
 func _control_to_uv(pos: Vector2) -> Vector2:

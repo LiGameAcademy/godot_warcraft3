@@ -16,6 +16,8 @@ func _ready() -> void:
 	var a = editor._minimap_overlay
 	var b = game._overlay
 	check(a.get_script() == b.get_script(), "both surfaces instantiate the same shared view")
+	a.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	b.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	var clicks: Array = []
 	game.clicked.connect(func(uv: Vector2): clicks.append(uv))
 	for dimensions in [Vector2(256, 256), Vector2(400, 200), Vector2(180, 300)]:
@@ -31,6 +33,13 @@ func _ready() -> void:
 		press.position = point
 		b._on_input(press)
 		check(clicks.back().distance_to(Vector2(0.25, 0.75)) < 0.001, "shared input reaches game signal")
+		var motion := InputEventMouseMotion.new()
+		motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+		motion.position = b.uv_to_position(Vector2(0.7, 0.3))
+		b._on_input(motion)
+		check(clicks.back().distance_to(Vector2(0.7, 0.3)) < 0.001, "shared drag navigation")
+		press.pressed = false
+		b._on_input(press)
 		var before := clicks.size()
 		b._emit_at(Vector2(-10, -10))
 		check(clicks.size() == before, "outside click rejected")
