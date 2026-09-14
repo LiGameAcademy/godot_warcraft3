@@ -3,6 +3,9 @@ extends RefCounted
 
 ## Adjust only boundary vertices shared with retained ramp ground. Keep original UVs.
 static func build_mesh(source: Mesh, xf: Transform3D, hf: Wc3Heightfield, entries: Dictionary, boost: PackedByteArray) -> Mesh:
+	var world_bounds: AABB = xf * source.get_aabb()
+	var low := (Vector2(world_bounds.position.x, -world_bounds.end.z) / Wc3Coords.WORLD_SCALE - hf.center_offset) / hf.tile_size
+	var high := (Vector2(world_bounds.end.x, -world_bounds.position.z) / Wc3Coords.WORLD_SCALE - hf.center_offset) / hf.tile_size
 	var surfaces: Array = []
 	var changed := false
 	for surface in range(source.get_surface_count()):
@@ -11,6 +14,9 @@ static func build_mesh(source: Mesh, xf: Transform3D, hf: Wc3Heightfield, entrie
 		for i in range(vertices.size()):
 			var world := xf * vertices[i]
 			var tp := (Vector2(world.x, -world.z) / Wc3Coords.WORLD_SCALE - hf.center_offset) / hf.tile_size
+			# Only perimeter edges, never the internal grid line of a two-cell ramp.
+			if minf(absf(tp.x-low.x), absf(tp.x-high.x)) > 0.001 and minf(absf(tp.y-low.y), absf(tp.y-high.y)) > 0.001:
+				continue
 			var near := Vector2i(roundi(tp.x), roundi(tp.y))
 			var cell := Vector2i(floori(tp.x), floori(tp.y))
 			var on_x := absf(tp.x - near.x) < 0.001

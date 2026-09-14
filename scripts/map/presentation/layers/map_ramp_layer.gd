@@ -54,7 +54,8 @@ func build(ctx: MapBuildContext) -> void:
 	# Only model footprints are removed; entrance ground takes precedence.
 	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
 	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp_data)
-	var boost: PackedByteArray = Wc3RampLogic.plan_entrance_height_boost(hf, ramp_data)
+	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ramp_data)
+	var boost: PackedByteArray = seam_plan.boost
 	last_dig_count = _count_ones(dig)
 	last_entrance_count = entrances.size()
 	last_boost_count = _count_ones(boost)
@@ -121,6 +122,7 @@ func _mount_groups(
 	var tex_cache: Dictionary = {}
 	var mesh_by_key: Dictionary = {}
 	var mounted := 0
+	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ctx.ramp)
 
 	for g in collected.groups:
 		var glb: String = g.glb
@@ -154,18 +156,17 @@ func _mount_groups(
 		var mat_override: Material = null
 		if mesh.get_surface_count() > 0:
 			mat_override = mesh.surface_get_material(0)
-		var local_aabb: AABB = mesh.get_aabb()
 		for i in range(transforms.size()):
 			var xf: Transform3D = transforms[i]
 			var mi := MeshInstance3D.new()
 			mi.name = "Ramp_%s_%d_%d" % [glb.get_file().get_basename(), tex_idx, i]
-			mi.mesh = mesh
+			mi.mesh = preload("res://scripts/map/presentation/cliff/wc3_cliff_stitcher.gd").build_mesh(mesh, xf, hf, seam_plan.tiles, seam_plan.boost)
 			mi.transform = xf
 			if mat_override != null:
 				mi.material_override = mat_override
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			# 本地 AABB；节点 transform 已含解旋，避免错误裁剪
-			mi.custom_aabb = local_aabb
+			mi.custom_aabb = mi.mesh.get_aabb()
 			mi.extra_cull_margin = 4.0
 			mi.layers = Wc3Coords.RENDER_LAYER_TERRAIN
 			add_child(mi)

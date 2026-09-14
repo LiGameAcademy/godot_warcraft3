@@ -7,6 +7,22 @@ func _ready() -> void:
 	if doc.load_json(map_path) != OK:
 		get_tree().quit(1)
 		return
+	var turns := int(args[1]) if args.size() > 1 else 0
+	if turns > 0:
+		var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(map_path))
+		var data: Dictionary = raw.terrain
+		var width := int(data.tilepointWidth)
+		assert(width == int(data.tilepointHeight))
+		for turn in range(turns):
+			for key in data:
+				if data[key] is Array and data[key].size() == width * width:
+					var rotated: Array = data[key].duplicate()
+					for y in range(width):
+						for x in range(width):
+							rotated[x * width + width - 1 - y] = data[key][y * width + x]
+					data[key] = rotated
+		doc.heightfield = Wc3Heightfield.from_dict(data)
+		doc._rebind_logic()
 	var hf: Wc3Heightfield = doc.heightfield
 	var average := Vector2.ZERO
 	var count := 0
@@ -19,7 +35,7 @@ func _ready() -> void:
 	var center := Wc3Coords.wc3_xy_to_godot(xy.x, xy.y, 0)
 	var camera := Camera3D.new()
 	add_child(camera)
-	camera.position = center + Vector3(3.5, 5, -4)
+	camera.position = center + (Vector3(3.5, 5, 4) if map_path.contains("222") else Vector3(3.5, 5, -4))
 	camera.look_at(center)
 	camera.current = true
 	var map: MapLoader = preload("res://scenes/map/map_root.tscn").instantiate()
@@ -34,6 +50,26 @@ func _ready() -> void:
 	var terrain: MapTerrainLayer = map.get_node("Terrain")
 	var ctx := MapBuildContext.create("res://", doc.as_build_dict(), doc.info, map.get_tiles(), map.get_id_catalog(), map._cache, map.get_cliff_catalog())
 	ctx.ensure_ramp_topology()
+	if map_path.contains("222"):
+		# The original CliffTrans edge at these two low-side midpoints is -64 WC3,
+		# while the saved terrain is -128. Assert actual mounted geometry agrees.
+		var samples := {Vector2i(28, 27): -0.5, Vector2i(30, 26): -0.5}
+		for turn in range(turns):
+			var rotated := {}
+			for point in samples:
+				rotated[Vector2i(hf.width - 1 - point.y, point.x)] = samples[point]
+			samples = rotated
+		for point in samples:
+			var ramp_count := 0
+			var cliff_count := 0
+			for node in map.get_node("Ramps").get_children():
+				if node is MeshInstance3D:
+					ramp_count += _check_sample(node.mesh, node.transform, point, samples[point], hf)
+			for instance in cliff_layer._instances:
+				cliff_count += _check_sample(instance.mm.mesh, instance.xf, point, samples[point], hf)
+			if ramp_count == 0 or cliff_count == 0:
+				failures += 1
+				push_error("222 boundary was not checked on both models at %s" % point)
 	# The continued 111 fixture exposed a non-linear rock edge against linear ramp ground.
 	if map_path.contains("continued") or map_path.contains("repaired"):
 		var edge_count := 0
@@ -75,3 +111,16 @@ func _ready() -> void:
 	get_viewport().get_texture().get_image().save_png("res://tmp/ramp-user-111-fixed.png")
 	print("ramp_user_visual: rendered user map, %d coverage/seam failures" % failures)
 	get_tree().quit(0 if failures == 0 else 1)
+
+func _check_sample(mesh: Mesh, xf: Transform3D, point: Vector2i, expected: float, hf: Wc3Heightfield) -> int:
+	var count := 0
+	for surface in range(mesh.get_surface_count()):
+		for vertex in mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
+			var world: Vector3 = xf * vertex
+			var tile := (Vector2(world.x, -world.z) / 0.01 - hf.center_offset) / 128.0
+			if tile.distance_to(Vector2(point)) < 0.001:
+				count += 1
+				if absf(world.y / 1.28 - expected) > 0.001:
+					failures += 1
+					push_error("222 seam height mismatch at %s: %s vs %s" % [point, world.y / 1.28, expected])
+	return count

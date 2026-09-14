@@ -50,3 +50,6 @@
 - `selftest_cliff_stitcher.gd` 检查边界中点与角点高度、内部顶点、UV、索引、源网格不变以及无入口时复用源网格。
 - `ramp_user_visual.tscn -- res://tests/fixtures/editor/ramp-user-111-continued.wc3map.json` 验证 4,096 格覆盖以及实际挂载直崖 (34,30) 接缝；修复副本同样检查。
 - `selftest_ramp_brush_direction.tscn` 新增草地悬崖搭配泥土面板选项的连续绘制、撤销、重做、保存重开纹理不变断言。
+
+
+2026-09-14：222 暴露未覆盖的坡体半层边界；新增共享周界计划，来源兼容范围与后续约束见 [RAMP_222_SEAMS.md](RAMP_222_SEAMS.md)。

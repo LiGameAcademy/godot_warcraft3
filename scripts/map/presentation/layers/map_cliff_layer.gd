@@ -33,11 +33,10 @@ func build(ctx: MapBuildContext) -> void:
 		return
 
 	ctx.ensure_ramp_topology()
-	var entrance_boost := Wc3RampLogic.plan_entrance_height_boost(hf, ctx.ramp)
+	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ctx.ramp)
+	var entrance_boost: PackedByteArray = seam_plan.boost
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
-	var entries: Dictionary = {}
-	for tile in Wc3RampLogic.plan_entrance_tiles(hf, ctx.ramp):
-		entries[tile] = true
+	var entries: Dictionary = seam_plan.tiles
 	_shader = load("res://assets/shaders/wc3_cliff.gdshader") as Shader
 	_dbg_center = hf.center_offset
 	_dbg_tile_size = hf.tile_size
@@ -93,7 +92,7 @@ func build(ctx: MapBuildContext) -> void:
 		for i in range(transforms.size()):
 			var tile: Vector2i = g.tiles[i]
 			var actual: Mesh = mesh
-			if entries.has(tile + Vector2i.LEFT) or entries.has(tile + Vector2i.RIGHT) or entries.has(tile + Vector2i.UP) or entries.has(tile + Vector2i.DOWN):
+			if _touches_seam(tile, entries):
 				actual = CliffStitcher.build_mesh(mesh, transforms[i], hf, entries, entrance_boost)
 			if not batches.has(actual):
 				batches[actual] = []
@@ -226,3 +225,10 @@ func _mesh_with_material(cache: MapModelCache, glb: String, mat: Material) -> Me
 func _clear_children() -> void:
 	for c in get_children():
 		c.queue_free()
+
+func _touches_seam(tile: Vector2i, entries: Dictionary) -> bool:
+	for y in range(-1, 2):
+		for x in range(-1, 2):
+			if entries.has(tile + Vector2i(x, y)):
+				return true
+	return false
