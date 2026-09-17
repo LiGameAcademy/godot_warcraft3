@@ -15,8 +15,15 @@ run/main_scene="uid://b20kj6oms7qoi"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[debug]
+
+file_logging/enable_file_logging=true
+file_logging/enable_file_logging.pc=true
+file_logging/log_path="user://logs/godot.log"
+
 [autoload]
 
+LogPruner="*res://core/logger/log_pruner.gd"
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
 EditorI18n="*res://editor/ui/editor_i18n.gd"
 Wc3DefStore="*res://scripts/auto/wc3_def_store.gd"
