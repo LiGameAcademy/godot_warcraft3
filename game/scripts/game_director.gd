@@ -84,6 +84,7 @@ var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
 var _item_service: ItemService
 var _ground_items: Node3D
+var _units: UnitsModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（Phase E）：ctx / HUD / 瞄准 / 单位 runtime
@@ -134,8 +135,6 @@ var _site_ghost_pinned: bool = false
 var _build_confirm_armed: bool = false
 ## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
 var _last_screen_pos: Vector2 = Vector2.ZERO
-## 运行时自增 creationNumber（建造半成品等）。
-var _next_runtime_cn: int = 900000
 ## construction_key → { cn, node, building_id, site }
 var _active_construction: Dictionary = {}
 ## 当前 HUD 绑定的工地 progress（避免重复 connect）。
@@ -703,6 +702,7 @@ func _setup_pathing() -> void:
 	_setup_tree_registry()
 	_ensure_path_debug()
 	_setup_item_system()
+	_ensure_units_module()
 
 
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
@@ -2184,11 +2184,7 @@ func _ensure_caster_runtime(unit: Node3D) -> void:
 
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
-	var inv := Inventory.ensure_on(unit)
-	if inv != null and not inv.changed.is_connected(_on_inventory_changed):
-		inv.changed.connect(_on_inventory_changed)
-	if _ability_runtime != null:
-		_ability_runtime.ensure_hero_passives(unit)
+	_ensure_units_module().ensure_hero(unit)
 
 
 func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
@@ -2419,96 +2415,12 @@ func _ensure_attack_controller(unit: Node3D) -> AttackController:
 
 ## U0-2：可战斗非建筑单位挂 UnitAI + AttackController；中立 → CAMP_CREEP。
 func _ensure_unit_ai(unit: Node3D) -> UnitAI:
-	if unit == null or not is_instance_valid(unit):
-		return null
-	if not CombatQuery.has_weapon(unit):
-		return null
-	var tid := CombatQuery.type_id_of(unit)
-	if BuildingCatalog.is_building(tid) or BuildingVisual.is_building(tid):
-		return null
-	_ensure_attack_controller(unit)
-	var existing := UnitAI.of(unit)
-	if existing != null:
-		_configure_unit_ai(existing, unit)
-		# 刷新默认 Profile（玩家 REACTIVE → TEAM_PLAYER），避免旧局袖手旁观
-		existing.set_profile(UnitAI.default_profile_for(unit))
-		# Bug #2 修复：已挂 AI 的野怪再次入场（重复调用、或者重训）也要入营。
-		_attach_to_camp_if_neutral(unit, existing)
-		return existing
-	var ai := UnitAI.new()
-	ai.name = UnitAI.NODE_NAME
-	unit.add_child(ai)
-	_configure_unit_ai(ai, unit)
-	ai.set_profile(UnitAI.default_profile_for(unit))
-	_attach_to_camp_if_neutral(unit, ai)
-	ai.captures_home_from_body()
-	return ai
-
-
-## 中立野怪入营：cluster_and_bind 之后训练/召唤出的新野怪会落到最近营地，
-## 并把 UnitAI.home_wc3 / camp_id 重新校准为 camp 中心。玩家/建筑不入营。
-func _attach_to_camp_if_neutral(unit: Node3D, ai: UnitAI) -> void:
-	if unit == null or ai == null:
-		return
-	var reg := TeamRegistry.get_for(self)
-	if reg == null:
-		return
-	if reg.attach_to_nearest_camp(unit):
-		# 入营后 home / camp_id 应以 camp 中心为准，重读一次。
-		ai.captures_home_from_body()
-
-
-func _configure_unit_ai(ai: UnitAI, unit: Node3D) -> void:
-	if ai == null or unit == null:
-		return
-	ai.configure(
-		func() -> bool: return _unit_ai_is_player_occupied(unit),
-		Callable(self, "_ensure_attack_controller"),
-		Callable(self, "_unit_host"),
-		Callable(),
-		Callable(self, "_ensure_navigator")
-	)
-
-
-## 当前订单非 UNIT_AI（且非空闲）→ 视为玩家/系统占用，AI 不得抢。
-func _unit_ai_is_player_occupied(unit: Node3D) -> bool:
-	if unit == null or _command_router == null:
-		return false
-	var q := _command_router.queue_for(unit)
-	if q == null or q.is_idle():
-		return false
-	var o: UnitOrder = q.current
-	if o == null:
-		return false
-	return o.source != UnitOrder.Source.UNIT_AI
+	return _ensure_units_module().ensure_combat_ai(unit)
 
 
 ## 地图已有单位 + 开局刷兵：pathing/战斗服务就绪后批量挂 AI。
 func _wire_all_unit_ai() -> void:
-	var host := _unit_host()
-	if host == null:
-		return
-	for c in host.get_children():
-		if c is Node3D:
-			_ensure_unit_ai(c as Node3D)
-			_ensure_hero_runtime(c as Node3D)
-	# 玩家 / 中立队伍与营地注册：聚类 + 设 camp_id / team_id。
-	# 注：需在 UnitAI 全部 ensure 之后跑，因为营地 leash 锚点从 camp 中心读。
-	var reg := TeamRegistry.attach(self)
-	if reg != null:
-		var summary := reg.cluster_and_bind(host)
-		print(
-			"[TeamRegistry] players=%d camps=%d units=%d"
-			% [summary.players, summary.camps, summary.units]
-		)
-		# Bug #1 修复：cluster_and_bind 时 UnitAI 还没挂上 reg，captures_home_from_body
-		# 退化成"出生点"home；这里再调一次，让 home_wc3 / camp_id 用 camp 中心。
-		# 幂等：已对齐 camp 中心的不变；玩家单位走 fallback 路径无副作用。
-		for c in host.get_children():
-			if c is Node3D:
-				var ai := UnitAI.of(c as Node3D)
-				if ai != null:
-					ai.captures_home_from_body()
+	_ensure_units_module().wire_existing()
 
 
 func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
@@ -3723,9 +3635,7 @@ func _on_build_cancelled(order: BuildOrder) -> void:
 
 
 func _alloc_runtime_cn() -> int:
-	var cn := _next_runtime_cn
-	_next_runtime_cn += 1
-	return cn
+	return _ensure_units_module().alloc_creation_number()
 
 
 func _construction_key(order: BuildOrder) -> String:
@@ -3842,77 +3752,12 @@ func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
 func _spawn_trained_unit(
 	unit_id: String, site_wc3: Vector2, owner: int, from_building: Node3D = null
 ) -> Node3D:
-	if map_root == null or _heightfield == null:
-		return null
-	var corner_xy := TrainSpawn.exit_xy_for_building(from_building, site_wc3)
-	var entry := {
-		"typeId": unit_id,
-		"position": {"x": corner_xy.x, "y": corner_xy.y, "z": 0.0},
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
-		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"owner": owner,
-		"flags": 2,
-		"creationNumber": _alloc_runtime_cn(),
-		"variation": 0,
-	}
-	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
-	if node == null:
-		return null
-	UnitLife.ensure(node)
-	var final_xy := TrainSpawn.resolve_with_displace(
-		corner_xy, site_wc3, node, unit_id, _path_query, _crowd_query
-	)
-	if final_xy != corner_xy:
-		_teleport_unit_wc3(node, final_xy)
-	_ensure_unit_ai(node)
-	_ensure_hero_runtime(node)
-	_refresh_dynamic_pathing()
-	if health_bar_manager:
-		health_bar_manager.resync()
-	_dispatch_trained_rally(from_building, node)
-	return node
-
-
-## 新兵出门后跟集结点：地面→移动；金矿/树→采集（人族农民）。
-func _dispatch_trained_rally(building: Node3D, unit: Node3D) -> void:
-	if building == null or unit == null or _command_router == null:
-		return
-	if not BuildingRally.has_rally(building):
-		return
-	match BuildingRally.kind(building):
-		BuildingRally.KIND_GOLD_MINE:
-			var mine := BuildingRally.mine_node(building)
-			if mine != null:
-				_command_router.issue_harvest_gold([unit], mine, UnitOrder.Source.UNKNOWN)
-				return
-		BuildingRally.KIND_TREE:
-			var cn := BuildingRally.tree_cn(building)
-			if cn >= 0:
-				_command_router.issue_harvest_lumber([unit], cn, UnitOrder.Source.UNKNOWN)
-				return
-	var goal := BuildingRally.goal_wc3(building)
-	if goal != Vector2.INF:
-		_command_router.issue_move_to_wc3([unit], goal, UnitOrder.Source.UNKNOWN)
+	return _ensure_units_module().spawn_trained(unit_id, site_wc3, owner, from_building)
 
 
 ## 训练刷兵后改坐标（挤位）；同步 unit_data 与贴地。
 func _teleport_unit_wc3(unit: Node3D, wc3_xy: Vector2) -> void:
-	if unit == null or not is_instance_valid(unit) or wc3_xy == Vector2.INF:
-		return
-	var z := 0.0
-	if _heightfield != null and _heightfield.is_valid():
-		z = _heightfield.interpolated_height(wc3_xy.x, wc3_xy.y)
-	unit.global_position = Wc3Coords.wc3_xy_to_godot(wc3_xy.x, wc3_xy.y, z)
-	if unit.has_meta("unit_data"):
-		var d: Dictionary = unit.get_meta("unit_data", {}).duplicate(true)
-		var pos: Dictionary = d.get("position", {})
-		if typeof(pos) != TYPE_DICTIONARY:
-			pos = {}
-		pos["x"] = wc3_xy.x
-		pos["y"] = wc3_xy.y
-		pos["z"] = z
-		d["position"] = pos
-		unit.set_meta("unit_data", d)
+	_ensure_units_module().teleport_wc3(unit, wc3_xy)
 
 
 ## 只结算已加入会话的玩家；中立或无效 owner 不创建隐式库存。
@@ -4917,8 +4762,34 @@ func gm_item_test_creep() -> void:
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
 
 
+## 装配单位出生 / AI / 英雄运行时模块；生产与技能通过其公开接口接入。
+func _ensure_units_module() -> UnitsModule:
+	if not is_instance_valid(_units):
+		_units = UnitsModule.new()
+		_units.name = "UnitsModule"
+		add_child(_units)
+	_units.configure({
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"path_query": _path_query,
+		"crowd_query": _crowd_query,
+		"command_router": _command_router,
+		"health_bar_manager": health_bar_manager,
+		"registry_host": self,
+		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_attack_controller": Callable(self, "_ensure_attack_controller"),
+		"unit_host": Callable(self, "_unit_host"),
+		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
+		"ensure_hero_passives": func(unit: Node3D) -> void:
+			if _ability_runtime != null:
+				_ability_runtime.ensure_hero_passives(unit),
+	})
+	return _units
+
+
 ## 只负责装配对局生产模块及其界面适配器。
-## 单位创建暂经显式接口注入，待后续单位模块迁移。
+## 单位创建经 UnitsModule 显式接口注入。
 func _ensure_production_module() -> ProductionModule:
 	if not is_instance_valid(_production):
 		_production = ProductionModule.new()
@@ -4935,7 +4806,8 @@ func _ensure_production_module() -> ProductionModule:
 		_production_panel.command_card_requested.connect(_apply_building_train_card)
 		_production_panel.selection_refresh_requested.connect(_sync_build_hud_for_selection)
 		_production_panel.command_refresh_requested.connect(_refresh_command_card)
-	_production.configure(_session, _spawn_trained_unit, _ensure_hero_runtime)
+	var units := _ensure_units_module()
+	_production.configure(_session, units.spawn_trained, units.ensure_hero)
 	_production_panel.configure(_session, _command_router, unit_selector, game_hud,
 		_unit_host(), map_root.get_model_cache() if map_root != null else null)
 	return _production

@@ -3,7 +3,7 @@ extends Node
 
 ## 对局内生产生命周期：持有队列订阅，负责完工、退款、复活及终止。
 ## 单位生成接口：(type_id, wc3_position, owner, building) -> Node3D。
-## 英雄初始化接口：(unit) -> void。两者由总管装配，本模块不依赖总管类型。
+## 英雄初始化接口：(unit) -> void。由 UnitsModule 方法注入，本模块不依赖总管类型。
 signal queue_changed(queue: TrainQueue)
 signal progress_changed(queue: TrainQueue)
 signal feedback(message: String)
