@@ -62,3 +62,14 @@ static func can_place(
 		if dx * dx + dy * dy < min_d * min_d * 0.92:
 			return false
 	return true
+
+
+## Editor building placement snaps the footprint's minimum corner to the pathing grid.
+## Ordinary units retain their exact coordinates. Map imports are not rewritten.
+static func snap_editor_position(raw: Vector2, info: Dictionary, origin := Vector2.ZERO, cell_size := Wc3Coords.PATHING_CELL) -> Vector2:
+	if not bool(info.get("is_building", false)) or cell_size <= 0:
+		return raw
+	var footprint := footprint_cells(info)
+	var half := Vector2(footprint) * 0.5
+	var minimum := (raw - origin) / cell_size - half
+	return origin + (minimum.round() + half) * cell_size

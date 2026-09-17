@@ -33,7 +33,8 @@ func build(ctx: MapBuildContext) -> void:
 		return
 
 	ctx.ensure_ramp_topology()
-	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ctx.ramp)
+	ctx.ensure_ramp_surface_plan()
+	var seam_plan: Dictionary = ctx.ramp_surface_plan
 	var entrance_boost: PackedByteArray = seam_plan.boost
 	_height_tex = Wc3CliffHeightMap.build_texture(ctx.hf, ctx.meta)
 	var entries: Dictionary = seam_plan.tiles
@@ -41,8 +42,12 @@ func build(ctx: MapBuildContext) -> void:
 	_dbg_center = hf.center_offset
 	_dbg_tile_size = hf.tile_size
 
+	var visible_placements: Array[Wc3CliffPlacement] = []
+	for placement in ctx.cliff_placements:
+		if not seam_plan.fallback_tiles.has(Vector2i(placement.ix, placement.iy)):
+			visible_placements.append(placement)
 	var collected: Wc3CliffBuildResult = Wc3CliffBuilder.build_from_placements(
-		ctx.cliff_placements,
+		visible_placements,
 		ctx.cliff_catalog,
 		hf.center_offset,
 		hf.tile_size

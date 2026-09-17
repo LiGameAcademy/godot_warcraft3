@@ -52,9 +52,10 @@ func build(ctx: MapBuildContext) -> void:
 
 	# 挖洞 + 入口 undig + 入口低角半层（贴 CliffTrans 坡脚）
 	# Only model footprints are removed; entrance ground takes precedence.
-	var dig: PackedByteArray = Wc3RampLogic.plan_dig_mask(hf, ramp_data)
-	var entrances: Array[Vector2i] = Wc3RampLogic.plan_entrance_tiles(hf, ramp_data)
-	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ramp_data)
+	ctx.ensure_ramp_surface_plan()
+	var dig: PackedByteArray = ctx.ramp_surface_plan.dig
+	var entrances: Array[Vector2i] = ctx.ramp_surface_plan.ground_tiles
+	var seam_plan: Dictionary = ctx.ramp_surface_plan
 	var boost: PackedByteArray = seam_plan.boost
 	last_dig_count = _count_ones(dig)
 	last_entrance_count = entrances.size()
@@ -72,7 +73,7 @@ func build(ctx: MapBuildContext) -> void:
 		AppLog.warn(AppLog.Layer.PRESENT, "Ramp", "terrain 未接线，romp 探出格不会挖洞")
 
 	var ramp_placements: Array[Wc3RampPlacement] = []
-	for p in ramp_data.placements:
+	for p in ctx.ramp_surface_plan.original_placements:
 		if p != null and p.has_glb:
 			ramp_placements.append(p)
 
@@ -122,7 +123,8 @@ func _mount_groups(
 	var tex_cache: Dictionary = {}
 	var mesh_by_key: Dictionary = {}
 	var mounted := 0
-	var seam_plan: Dictionary = preload("res://scripts/map/logic/ramp/wc3_ramp_seam_plan.gd").build(hf, ctx.ramp)
+	ctx.ensure_ramp_surface_plan()
+	var seam_plan: Dictionary = ctx.ramp_surface_plan
 
 	for g in collected.groups:
 		var glb: String = g.glb

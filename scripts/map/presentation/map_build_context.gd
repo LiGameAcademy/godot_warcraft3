@@ -37,6 +37,7 @@ var cliff_gap_stats: Dictionary = {}
 var ramp: Wc3RampCollectResult = null
 var _cliff_ready: bool = false
 var _ramp_ready: bool = false
+var ramp_surface_plan: Dictionary = {}
 
 
 static func create(
@@ -98,3 +99,9 @@ func width() -> int:
 
 func height() -> int:
 	return heightfield.height if heightfield else 0
+
+
+func ensure_ramp_surface_plan() -> void:
+	ensure_ramp_topology()
+	if ramp_surface_plan.is_empty():
+		ramp_surface_plan = preload("res://scripts/map/logic/ramp/wc3_ramp_surface_plan.gd").build(heightfield, ramp)
