@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
 EditorI18n="*res://editor/ui/editor_i18n.gd"
 Wc3DefStore="*res://scripts/auto/wc3_def_store.gd"
+Panku="*res://addons/panku_console/console.tscn"
 GameplayAbilitySystem="*uid://u2lf4qtnkmft"
 DamageCalculator="*uid://b2jxgcjagrkdx"
 TagManager="*uid://crdi6238nttlg"
@@ -37,7 +38,7 @@ project/assembly_name="godot_warcraft3"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot_ability_system/plugin.cfg")
+enabled=PackedStringArray("res://addons/godot_ability_system/plugin.cfg", "res://addons/panku_console/plugin.cfg")
 
 [internationalization]
 
