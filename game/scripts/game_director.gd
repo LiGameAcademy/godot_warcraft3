@@ -630,6 +630,7 @@ func _setup_opponent_economy() -> void:
 		army.router = commands
 		army.unit_host = map_root.get_unit_layer()
 		army.observe_enemies = _observe_player_enemies.bind(owner)
+		army.item_service = _item_service
 		add_child(army)
 
 ## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。
@@ -4816,10 +4817,18 @@ func _setup_item_system() -> void:
 	_item_service.name = "ItemService"
 	add_child(_item_service)
 	_item_service.configure(_ground_items, _heightfield, map_dir)
-	_item_service.ground_spawned.connect(GroundItemVisual.attach.bind(map_root.get_model_cache()))
+	# 每次生成时再取 cache，避免 connect 时缓存尚未就绪导致永久金色占位盒
+	_item_service.ground_spawned.connect(_on_ground_item_spawned)
 	_item_service.message.connect(_ability_set_status)
 	_command_router.item_feedback.connect(_ability_set_status)
 	_death_service.unit_died.connect(_item_service.on_unit_died)
+
+
+func _on_ground_item_spawned(ground: GroundItem) -> void:
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	GroundItemVisual.attach(ground, cache)
 
 
 func _on_inventory_changed() -> void:

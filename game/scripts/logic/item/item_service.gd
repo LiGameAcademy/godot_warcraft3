@@ -76,3 +76,21 @@ func on_unit_died(unit: Node3D, _killer: Node3D = null) -> void:
 	for diagnostic in drops.diagnostics:
 		message.emit(diagnostic)
 		push_warning("ItemDropTable: " + diagnostic)
+
+
+## AI / 扫描用：半径内未认领的地面道具（center 为 WC3 XY）。
+func get_ground_items_in_radius(center_wc3: Vector2, radius_wc3: float) -> Array[GroundItem]:
+	var out: Array[GroundItem] = []
+	if not is_instance_valid(ground_host) or radius_wc3 <= 0.0:
+		return out
+	var r2 := radius_wc3 * radius_wc3
+	for child in ground_host.get_children():
+		if not child is GroundItem:
+			continue
+		var ground := child as GroundItem
+		if ground.claimed or ground.item == null:
+			continue
+		var xy := Wc3Coords.godot_to_wc3_xy(ground.global_position)
+		if center_wc3.distance_squared_to(xy) <= r2:
+			out.append(ground)
+	return out

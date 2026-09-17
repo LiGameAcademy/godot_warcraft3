@@ -12,8 +12,8 @@
 | `ItemPickupController` | PICKUP_ITEM 订单接近/重校验/领取；新命令替换即让步 |
 | `ItemDropTable` | 固定掉落与互斥概率组、全局表引用、随机类别与等级 |
 | `ItemService` | 会话地面实体生成、丢弃、死亡掉落编排与失败回滚 |
-| `GroundItemVisual` | 现有模型缓存、材质修正、Stand 动画、名称及屏幕命中 |
-| `InventoryPanel` | 槽位信号刷新、局部冷却显示、使用/丢弃/换槽请求 |
+| `GroundItemVisual` | 现有模型缓存、材质修正、Stand 动画、名称及屏幕命中；`resolved_model_path` 优先 `.gltf`/同目录 `.scn` |
+| `InventoryPanel` | 2×3 方格 tile、Art 图标、次数角标、冷却扇形、使用/丢弃/换槽请求 |
 
 命令流：屏幕右键 → SmartTarget.ITEM → ItemHandler → CommandRouter.issue_pickup → ItemPickupController。拾取范围 128 WC3 单位；已经在范围内时不启动寻路脱困。
 
@@ -44,3 +44,17 @@
 - SpellHitFx 的节流标记改用资源路径摘要构成合法 metadata 标识符，修复低血量测试触发牧师治疗时的报错。
 
 商店、回城卷轴、全效果、PowerUp 自动触发及磁盘存档在本版之外。
+
+## 进度自检（与 [实施计划 I0–I4](../../roadmap/ITEMS_AND_MELEE_AI_PLAN.md) 对照）
+
+| 段 | 内容 | 当前 | 关键证据 |
+|---|---|---|---|
+| I0 | ItemCatalog / ItemInstance / Inventory（六格）| **闭环** | `item_catalog.gd:18-42`、`item_instance.gd:14-22`、`inventory.gd:16-160` |
+| I1 | GroundItem / ItemService / ItemPickupController / InventoryPanel / 智能右键拾取 / 抢道具 | **闭环** | `item_pickup_controller.gd:31-56`、`inventory_panel.gd:1-103`、`smart_handler_registry.gd:243-256`、Director L1465-1473 |
+| I2 | 使用效果 / 装备护甲 / 死亡保留 / 复活恢复 / 共享冷却组 | **闭环** | `inventory.gd:99-134`、`hero_death_registry.gd:21-39`、`production_module.gd:144-160` |
+| I3 | 死亡掉落 / 互斥组 / 全局表 / 随机码 / seed / 幂等 | **闭环** | `item_drop_table.gd:21-62`、`item_service.gd:65-73` |
+| I4 | 商店 / 回城卷轴 / PowerUp 自动触发 | **缺失**（与文档预期一致，第二批）| 全仓零 `**/shop*.gd`、零 `purchase/buy/cost_gold` 调用 |
+
+## AI 侧道具决策（与 [MELEE_AI.md](MELEE_AI.md) §4 共口径）
+
+A3 已闭环：`PlayerArmyAI` 在集结/撤退时拾取白名单地面道具，并按 HP 低于 50% / MP 低于 30% 调用 `Inventory.try_use`（与玩家同规则）。装备感知微调仍可选增强；商店等见 I4。

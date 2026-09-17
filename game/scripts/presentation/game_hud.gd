@@ -156,12 +156,14 @@ func bind_inventory(inv: Inventory) -> void:
 func _layout_inventory_panel() -> void:
 	if inventory_panel == null or _command_panel == null:
 		return
+	# 挂在 $Root 上、锚点右下：offset_bottom 相对视口底边（负值向上）。
+	# 2×3 方格：宽约 140，高约 260。
 	var h := get_viewport().get_visible_rect().size.y
 	inventory_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	inventory_panel.offset_left = -244.0
+	inventory_panel.offset_left = -156.0
 	inventory_panel.offset_right = -12.0
-	inventory_panel.offset_bottom = _command_panel.get_global_rect().position.y - h - 12.0
-	inventory_panel.offset_top = inventory_panel.offset_bottom - 200.0
+	inventory_panel.offset_bottom = _command_panel.get_global_rect().position.y - h - 10.0
+	inventory_panel.offset_top = inventory_panel.offset_bottom - 260.0
 
 
 func bind_stock(stock) -> void:

@@ -14,49 +14,63 @@
 
 ## 2. 已核实的项目状态
 
-以下“已有”表示已找到实现和接线，不表示全部完成实机验收。
+以下按 [ITEM_SYSTEM.md](../design/game/ITEM_SYSTEM.md) 与 [MELEE_AI.md](../design/game/MELEE_AI.md) 的最新进度。「闭环」=代码、自测与端到端集成测试齐备；「部分」=核心已落地但某条验收未闭环；「缺失」=仓库内无对应实现。
+
+### 道具系统（I0–I4）
+
+| 段 | 当前 | 关键证据 |
+|---|---|---|
+| I0 ItemCatalog / ItemInstance / Inventory（六格） | **闭环** | `item_catalog.gd:18-42`、`item_instance.gd:14-22`、`inventory.gd:16-160` |
+| I1 GroundItem / ItemService / Pickup / UI / 智能右键拾取 | **闭环** | `item_pickup_controller.gd:31-56`、`inventory_panel.gd:1-103`、`smart_handler_registry.gd:243-256` |
+| I2 使用效果 / 装备护甲 / 死亡保留 / 复活恢复 / 共享冷却组 | **闭环** | `inventory.gd:99-134`、`hero_death_registry.gd:21-39`、`production_module.gd:144-160` |
+| I3 死亡掉落 / 互斥组 / 全局表 / 随机码 / seed / 幂等 | **闭环** | `item_drop_table.gd:21-62`、`item_service.gd:65-73` |
+| I4 商店 / 回城卷轴 / PowerUp 自动触发 | **缺失**（第二批，不阻塞主线）| 全仓零 `shop*.gd`、零 `purchase/cost_gold` |
+
+### 对战 AI（A0–A4）
+
+| 段 | 当前 | 关键证据 |
+|---|---|---|
+| A0 双玩家开局 + owner 隔离 + 命令入口校验 | **闭环** | `melee_bootstrap.gd:23-185`、`game_session.gd:4-40`、`command_router.gd:89-105`、`production_module.gd:32-70` |
+| A1 经营 AI（工人 / 农场 / 兵营 / 祭坛 / 步兵 / 英雄） | **闭环** | `player_economy_ai.gd:33-203`（1Hz 决策、三档占位校验、首英雄预留五人口） |
+| A2 军队调度 + 进攻 + 回防 + 撤退 | **闭环** | `player_army_ai.gd:3-86`（状态机、阈值 4、`%d:%d:%d` 一次发令不重置） |
+| **A3 电脑英雄清野 + 拾取 + 使用道具** | **闭环** | `player_army_ai.gd` `_consider_pickup/_consider_use`；`ItemService.get_ground_items_in_radius` |
+| A4 胜负结算 + 重开 | **闭环** | `melee_victory_rules.gd:1-41`、`production_module.gd:165-225`、`match_result_screen.gd` |
+
+### 其它模块
 
 | 模块 | 当前证据 | 对下一步的意义 |
 |---|---|---|
-| 开局与玩家库存 | `game_session.gd` 有 owner→PlayerStock；`melee_bootstrap.gd` 支持传入 owner 刷主城与工人 | 有多玩家数据基础，但 Director 当前只初始化和生成本地玩家开局 |
-| 采集、建造 | `HarvestController`、`ReceiveResources`、`BuildController`、`BuildSite`、放置规则与占位模块 | AI 应复用订单执行，不复制采集和建造循环 |
-| 训练与研究 | `CommandRouter.issue_train/issue_research`、`TrainQueue`、训练出生与集结接线 | AI 可复用生产机制，但须先处理权限、扣费、退款和完工回调中的 local 耦合 |
-| 生产队列 UI | `game_hud.gd:453` 的 `set_train_queue`，Director 的进度/队列信号接线 | 旧 NEXT 中“生产队列 HUD 待做”已不准确，应改为验收已有实现 |
-| 英雄复活 | Director `_try_issue_revive`、`_apply_revived_hero_state` 与 `HeroDeathRegistry` | 已有等级、经验、技能恢复路径；道具需要补进死亡保存和复活恢复 |
-| 单位战斗 AI | `UnitAI` 已有索敌、反击、粘性仇恨、归巢和命令让步；`TeamRegistry` 已有队伍与营地助攻 | 这部分是单位级战斗决策，不是经营基地的电脑玩家 |
-| 技能与效果 | AbilityExecutor、施法控制器、EffectHeal、BuffHost/BuffQuery 等 | 可复用效果与表现，但不能假设任意道具 abilList 已被支持 |
-| 道具静态数据 | `ItemDef` 已注册到 `Wc3DefStore`，包括 abilList、uses、cooldownID、造价、模型、库存、死亡掉落标记 | 不需要从头设计一套与既有 SLK 无关的静态道具表 |
-| 地图道具数据 | `Wc3UnitPlacement` 保留 inventory、droppedItemSets、itemTablePtr；地图解析器读取 randomItemTables | 数据入口已有，未找到运行时背包、拾取、使用及实际掉落闭环 |
-| 掉落提示 | `map_unit_layer.gd:647` 根据 droppedItemSets 显示提示环 | 提示环不等于死亡生成道具 |
-| 玩家级 AI、结算 | 本次检索未发现完整电脑经营调度器或胜负系统 | 需要新增会话级决策与明确的结算规则 |
+| 开局与玩家库存 | `game_session.gd` owner→PlayerStock；`melee_bootstrap.gd` 双方各刷主城与工人 | 双玩家已就位，不再仅 local_player |
+| 采集、建造 | `HarvestController`、`BuildController`、`BuildSite`、PlacementRules | AI 复用订单执行 |
+| 训练与研究 | `ProductionModule` + `command_owner` 校验 | 已按 owner 隔离，不再依赖 Director |
+| 生产队列 UI | `production_panel.gd:305` 暴露 `ProductionModule.queue_changed/progress_changed` | 已模块化 |
+| 英雄复活 | `production_module.gd:165-225` + `HeroDeathRegistry` + `Inventory.restore` | 道具也已跨复活保留 |
+| 单位战斗 AI | `UnitAI` Profile + ThreatTable + sticky + 切目标冷却；`TeamRegistry` 队伍 / 营地助攻 | 这是单位级战斗决策 |
+| 技能与效果 | AbilityExecutor、EffectHeal、BuffQuery；道具 abilList 仅白名单 `AIhe/AIma/AIde` | 不能假设任意道具 abilList 已被支持 |
+| 道具静态数据 | `ItemDef` 注册到 `Wc3DefStore` | 不需要新增表 |
+| 地图道具数据 | `Wc3UnitPlacement` inventory / droppedItemSets / itemTablePtr；`ItemDropTable` 解析 randomItemTables | 已闭环到 `ItemService.on_unit_died` |
+| 掉落提示 | `map_unit_layer.gd:647` droppedItemSets 提示环 | 已与 I3 联动（提示+真实掉落并行） |
+| 玩家级 AI、结算 | `PlayerEconomyAI` / `PlayerArmyAI` / `MeleeVictoryRules` | 全闭环；唯一缺 A3 道具决策 |
 
 不能照搬旧文档的完成勾选。例如 [NEXT.md](NEXT.md) 仍将英雄复活和生产队列 HUD 列为缺口，而当前代码已有对应实现；是否稳定应实测，不应重新开发一遍。
 
-## 3. 必须先认清的接口缺口
+## 3. 历史接口缺口（已闭环，保留作为变更背景）
 
-### 3.1 电脑玩家接入存在真实的本地玩家耦合
+### 3.1 电脑玩家接入的本地玩家耦合 → A0 闭环
 
-可直接定位的入口：
+历史问题（已修）：`_bootstrap_melee` 只为 `local_player` 建库存；`issue_train/issue_research` 围绕 `local_owner_id` 校验；`_session.local_stock()` 在退款/扣费/出生失败里硬绑。
 
-- `game/scripts/game_director.gd:792`：`_bootstrap_melee` 只为 local_player 建会话初始库存并刷一处基地。
-- `game/scripts/logic/command/command_router.gd:71`：可控性围绕 local_owner_id；`issue_train/issue_research` 校验本地可控建筑。
-- 同文件 `:828`、`:875`：生产与研究使用 `_session.local_stock()`。
-- `game/scripts/logic/construction/build_controller.gd:188`、`:370`：取消/扣费路径使用本地库存。
-- `game/scripts/game_director.gd:4023`、`:4041`：研究完成和训练退款使用 `_local_stock()`；出生失败释放人口也使用本地库存。
+**当前实现**：命令入口显式接收执行玩家上下文（`command_owner`），由 `CommandRouter` + `ProductionModule` 一起按 owner 结算；建筑易主后取消按**原订单 owner** 退款；电脑工人造建筑只扣电脑库存；电脑与玩家各自有独立 `PlayerStock`。详见 [MELEE_AI.md §3](../design/game/MELEE_AI.md)。
 
-直接让电脑调用当前入口，会遇到权限拒绝；仅放开权限仍可能扣错玩家资源。因此，不能靠暂时切换 session.local_player 来驱动电脑。
+### 3.2 道具与技能/Buff 的边界 → I0–I2 闭环
 
-建议为命令入口增加显式的执行玩家上下文。生产、建造、资源交付、人口增减、研究、复活、取消与出生失败，都以订单/单位/建筑的 owner 为结算依据。队列取消信号目前不带 owner，应通过绑定队列上下文或补充事件数据获得所属玩家。
+历史问题（已修）：道具 abilList 不能直接走 `AbilityExecutor`；`BuffHost` 不能表达同类装备独立叠加；`HeroDeathRegistry` 当时未存背包。
 
-只把本阶段要复用的规则从 UI/Director 中抽到服务，不进行全项目重构。Director 保留输入、接线与表现协调，电脑控制器直接请求同一逻辑服务。
+**当前实现**：`ItemCatalog.effect(id)` 仅白名单 `AIhe/AIma/AIde`；装备按实例 ID 独立叠加（`BuffQuery.bonus_armor` 汇总）；`HeroDeathRegistry` 持久化 `Inventory.snapshot()`，复活走 `ProductionModule.apply_revived_hero_state` 调 `Inventory.restore`。详见 [ITEM_SYSTEM.md](../design/game/ITEM_SYSTEM.md)。
 
-### 3.2 道具不能直接等同于英雄技能或普通 Buff
+### 3.3 当前剩余缺口（最新）
 
-- `AbilityExecutor` 按已支持的行为分发；未知道具技能会失败。需要 ItemCatalog/ItemBehavior 映射及支持白名单。
-- `AbilityCastRules` 检查技能等级与冷却，需明确道具授予的能力来源，不占用英雄技能点。
-- `AbilityCooldowns` 以 abil_id 存储；道具还需要处理 cooldownID 共享组，以及换槽、丢弃、再拾取时的冷却语义。
-- `BuffHost` 目前按 buff_id 合并，且 `apply` 拒绝非正持续时间。不能直接用它表达同类永久装备的独立叠加，否则丢一件可能影响另一件。
-- `HeroDeathRegistry` 当前保存类型、等级、经验与技能，没有背包快照。道具实例身份、充能和冷却必须进入英雄死亡/复活生命周期。
+对战 AI **A0–A4 已闭环**。道具侧剩余 **I4**（商店 / 回城卷轴 / PowerUp 自动触发），不阻塞电脑对局。A3 详见 [MELEE_AI.md §4](../design/game/MELEE_AI.md)。
 
 ## 4. 道具系统计划
 
@@ -158,22 +172,18 @@
 
 验收：胜利、失败、同时毁灭均有结果；结果只触发一次；重新开始无上局残留。
 
-## 6. 推荐执行顺序与预算
+## 6. 推荐执行顺序与预算（最新）
 
-| 顺序 | 交付 | 估算 |
-|---|---|---|
-| 0 | 核实测试加载异常，建立能判定失败的基线 | 0.5～1 日，根因未定位前不作保证 |
-| 1 | I0～I3：可玩的道具闭环 | 6～10 日 |
-| 2 | A0：双玩家与 owner 隔离 | 2～4 日 |
-| 3 | A1～A2：自行经营、出兵、回防 | 4～6 日 |
-| 4 | A3～A4：英雄道具决策与对局结算 | 3～5 日 |
-| 后续 | I4：商店与回城卷轴 | 3～5 日，单独安排 |
+| 顺序 | 交付 | 当前 | 估算 |
+|---|---|---|---|
+| 1 | I0～I3：可玩的道具闭环 | **已完成** | 6～10 日（实际投入已落地） |
+| 2 | A0：双玩家与 owner 隔离 | **已完成** | 2～4 日 |
+| 3 | A1～A2：自行经营、出兵、回防 | **已完成** | 4～6 日 |
+| 4 | A4：胜负结算 + 重开 | **已完成** | 1～2 日 |
+| **5** | **A3：电脑英雄拾取 + 使用道具** | **已完成** | 2～3 日 |
+| 后续 | I4：商店与回城卷轴 | 未开始 | 3～5 日，单独安排 |
 
-主线约 16～26 个有效开发日（含半天估算取整），加缓冲按 4～6 周安排。基于代码阅读的粗估，未完成场景验收，不是交付承诺。
-
-如果更希望尽快看到电脑进攻，可把 A0～A2 提到 I0 前；模块依赖并不要求完整道具先完成。按本次用户提出的两项方向，默认推荐先交付道具清野体验，再交付完整电脑对手。
-
-**下一笔具体开发：先确认测试基线，然后实现 I0 的 ItemCatalog + ItemInstance + Inventory 及实例/槽位测试；紧接着做 I1 地面拾取场景。** 不从完整商店或大规模 AI 框架开始。
+**对战 AI A0–A4 已全部闭环**；道具侧下一笔为 I4（商店 / 回城）。A3 验收见 `selftest_player_army_pickup` / `selftest_player_army_item_use`。
 
 ## 7. 本次验证情况及工程边界
 

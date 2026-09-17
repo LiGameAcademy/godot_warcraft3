@@ -61,6 +61,9 @@ const includes = [
   "UI/Feedback/**",
   "ReplaceableTextures/TeamColor/**",
   "ReplaceableTextures/TeamGlow/**",
+  // 地面道具（宝箱等）；缺 PNG 会白模 / 只剩星星光晕
+  "Objects/InventoryItems/**",
+  "objects/InventoryItems/**",
 ];
 
 const extra = process.argv.slice(2);
