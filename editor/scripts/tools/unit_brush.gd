@@ -1,6 +1,6 @@
 extends Node3D
 ## 单位笔刷：幽灵预览 + LMB 放置；点选 / 框选 / 多选拖动 / Delete / [ ] 旋转。
-## 对齐 doodad_brush；单点放置（无笔刷形状），带队伍色；放置不做格子吸附。
+## 对齐 doodad_brush；单点放置（无笔刷形状），带队伍色；普通单位自由放置，建筑脚印吸附寻路栅格。
 
 
 signal rebuild_requested
@@ -114,7 +114,7 @@ func hover(screen_pos: Vector2) -> void:
 		_hide_ghost()
 		return
 	var ws: float = Wc3Coords.WORLD_SCALE
-	var wc3 := Vector2(hit.x / ws, -hit.z / ws)
+	var wc3 := _snap_position(Vector2(hit.x / ws, -hit.z / ws), type_id)
 	var ok: bool = _can_place_at(wc3.x, wc3.y)
 	_show_ghost_at(_wc3_to_world(wc3))
 	_set_ghost_placement_ok(ok)
@@ -343,7 +343,7 @@ func _place_at_mouse(screen_pos: Vector2) -> void:
 	if hit == Vector3.INF:
 		return
 	var ws: float = Wc3Coords.WORLD_SCALE
-	var center_wc3 := Vector2(hit.x / ws, -hit.z / ws)
+	var center_wc3 := _snap_position(Vector2(hit.x / ws, -hit.z / ws), type_id)
 	if _last_place_wc3 != INVALID_POS:
 		var min_dist: float = document.tile_size() * PLACE_SPACING_TILES * 0.5
 		if center_wc3.distance_to(_last_place_wc3) < min_dist:
@@ -357,6 +357,9 @@ func _place_at_mouse(screen_pos: Vector2) -> void:
 func _place_one(wc3_x: float, wc3_y: float) -> void:
 	if document == null or type_id.is_empty():
 		return
+	var snapped := _snap_position(Vector2(wc3_x, wc3_y), type_id)
+	wc3_x = snapped.x
+	wc3_y = snapped.y
 	if not _can_place_at(wc3_x, wc3_y):
 		return
 	var place_angle: float = randf() * 360.0 if random_rotation else angle_deg
@@ -441,7 +444,8 @@ func _drag_to(screen_pos: Vector2) -> void:
 		var bp0: Dictionary = b0.get("position", {})
 		var tx: float = float(bp0.get("x", 0.0)) + delta.x
 		var ty: float = float(bp0.get("y", 0.0)) + delta.y
-		if not UnitPlacementRules.can_place(tx, ty, tid, catalog, pathing, entries, -1, _selected_cns):
+		var snapped := _snap_position(Vector2(tx, ty), tid)
+		if not UnitPlacementRules.can_place(snapped.x, snapped.y, tid, catalog, pathing, entries, -1, _selected_cns):
 			return
 	for before in _drag_befores:
 		if typeof(before) != TYPE_DICTIONARY:
@@ -453,6 +457,9 @@ func _drag_to(screen_pos: Vector2) -> void:
 		var bp: Dictionary = b.get("position", {})
 		var nx: float = float(bp.get("x", 0.0)) + delta.x
 		var ny: float = float(bp.get("y", 0.0)) + delta.y
+		var snapped := _snap_position(Vector2(nx, ny), str(b.get("typeId", "")))
+		nx = snapped.x
+		ny = snapped.y
 		var cur: Dictionary = b.duplicate(true)
 		var pos: Dictionary = cur.get("position", {}).duplicate(true)
 		# Compare against the live position: the stroke snapshot is the destination
@@ -987,3 +994,14 @@ func refresh_selection_after_history() -> void:
 			remaining.append(cn)
 	var primary := _selected_cn if _selected_cn in remaining else (remaining[0] if not remaining.is_empty() else -1)
 	_set_selection(remaining, primary)
+
+
+func _snap_position(raw: Vector2, id: String) -> Vector2:
+	var catalog: Wc3IdCatalog = map_loader.get_id_catalog() if map_loader != null else null
+	var info: Dictionary = catalog.lookup(id) if catalog != null else {}
+	var origin: Vector2 = document.center_offset() if document != null else Vector2.ZERO
+	var cell_size := Wc3Coords.PATHING_CELL
+	if document != null and document.pathing != null and document.pathing.is_valid():
+		origin = document.pathing.origin_wc3
+		cell_size = document.pathing.cell_size
+	return UnitPlacementRules.snap_editor_position(raw, info, origin, cell_size)
