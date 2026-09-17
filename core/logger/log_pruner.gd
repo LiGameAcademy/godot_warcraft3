@@ -16,9 +16,9 @@ func _ready() -> void:
 		return
 	var entries: PackedStringArray = dir.get_files()
 	var history: Array[String] = []
-	for name in entries:
-		if name.ends_with(".log") and name != ACTIVE_LOG:
-			history.append(name)
+	for fname in entries:
+		if fname.ends_with(".log") and fname != ACTIVE_LOG:
+			history.append(fname)
 	# Godot 把历史文件命名为 godot<ISO 时间戳>.log, 字典序就是时间序
 	history.sort()
 	while history.size() > KEEP_FILES:
