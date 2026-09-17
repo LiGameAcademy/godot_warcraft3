@@ -92,10 +92,39 @@
 
 ## 后续批次（尚未实施）
 
-1. **建造模块**：集中工地表、施工生命周期、动态占地和取消；放置预览与指针输入分开。
-2. **战斗模块**：集中伤害、投射物和死亡的协调；单位死亡、尸体表现和库存释放分别明确所有者。
-3. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
-4. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
-5. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+1. **战斗模块**：集中伤害、投射物和死亡的协调；单位死亡、尸体表现和库存释放分别明确所有者。
+2. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
+3. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
+4. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+
+## 第三批：建造模块（已实现）
+
+目录：`game/features/build/build_module.gd`。
+
+### 职责
+
+- 工地注册表：`register_site` / `unregister_site` / `find_site` / `find_site_for_node`（`%s_x_y` 编码）。
+- 半成品设备：`on_construction_started` / `on_construction_completed` / `on_construction_cancelled`，内部维护 `_active_construction`。
+- 放置视觉：`begin_placement` / `update_placement_screen` / `commit_placement` / `cancel_placement`（与 `BuildPlacementController` + `BuildPlacementGhost` 协同）。
+- 工地钉住幽灵：`pin_site_ghost` / `clear_pinned_ghost`。
+- HUD 工地绑定：`sync_hud_for_selection` / `bind_hud_site` / `unbind_hud_site`；运行进度走 `progress_changed`。
+
+### 依赖方向
+
+`MapLoader` / 高度场 / 寻路查询 / `CommandRouter` / `GameSession` / 血条 / HUD 等经 `configure(Dictionary)` 注入；查找动画玩家、单位视觉、`UnitLife.set_ratio` 等以 Callable 注入。`BuildModule` 不依赖 `GameDirector` 类型。
+
+### 刻意未迁
+
+- 召唤完工、复活刷回未迁移（仍经 Director / UnitsModule 接口进入地图）。
+- `BuildController` 仍由 Director 装配；信号转发到 BuildModule 的 `on_construction_*`。
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_build_module.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_build_module_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
+```
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

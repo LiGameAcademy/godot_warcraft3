@@ -20,11 +20,11 @@ config/icon="res://icon.svg"
 AssetProvider="*res://addons/asset_provider/asset_provider.gd"
 EditorI18n="*res://editor/ui/editor_i18n.gd"
 Wc3DefStore="*res://scripts/auto/wc3_def_store.gd"
-GameplayAbilitySystem="*res://addons/godot_ability_system/scripts/singletons/gameplay_ability_system.gd"
-DamageCalculator="*res://addons/godot_ability_system/scripts/singletons/damage_calculator.gd"
-TagManager="*res://addons/godot_ability_system/scripts/singletons/gameplay_tag_manager.gd"
-AbilityEventBus="*res://addons/godot_ability_system/scripts/singletons/ability_event_bus.gd"
-GameplayCueManager="*res://addons/godot_ability_system/scripts/singletons/gameplay_cue_manager.gd"
+GameplayAbilitySystem="*uid://u2lf4qtnkmft"
+DamageCalculator="*uid://b2jxgcjagrkdx"
+TagManager="*uid://crdi6238nttlg"
+AbilityEventBus="*uid://dly4cms3ynkwf"
+GameplayCueManager="*uid://b4t83autfu2j7"
 
 [display]
 
