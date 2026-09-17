@@ -24,7 +24,8 @@
                                                ↓ 完工 / 取消
                                         ProductionModule
                                           ↓           ↓
-                                 单位生成接口      原订单玩家库存
+                                 UnitsModule.spawn_trained
+                                 UnitsModule.ensure_hero
                                           ↓
                                  信号 → ProductionPanel → HUD
 ```
@@ -39,7 +40,7 @@
 
 ### 第一批刻意保留的迁移接缝
 
-- 单位创建、导航/AI/英雄组件装配、动态寻路刷新和训练后集结仍在总管，生产模块通过两个有限接口访问：`spawn_unit(type_id, position, owner, building)` 和 `ensure_hero(unit)`。第二批将把它们交给单位模块。
+- ~~单位创建、导航/AI/英雄组件装配、动态寻路刷新和训练后集结仍在总管~~ → 已由第二批 `UnitsModule` 接管；生产模块继续只拿 `spawn_trained` / `ensure_hero` 两个 Callable。
 - 总管保留生产输入转发、命令卡生成及综合建造/生产选中面板协调。`_wire_train_queue`、`_apply_revived_hero_state` 等旧入口只转发，方便现有场景和测试逐步迁移。
 - 训练与研究的界面预检查和权威检查仍有重复。后续可用带失败原因的结果类型合并；本批优先保持原有中文提示和行为。
 - 不引入 ECS、通用模块框架、全局事件总线，也不增加玩法 Autoload。
@@ -58,12 +59,43 @@
 
 独立模块测试覆盖生成接口、重复接线只结算一次、卸载后不再结算、重新装配会话隔离、队列离树清理，以及非本地玩家复活扣费/取消/资金不足。既有测试保护生产归属、退款、研究授予、建筑终止、英雄状态、电脑完整场景和重开行为。
 
+## 第二批：单位模块（已实现）
+
+目录：`game/features/units/units_module.gd`。
+
+### 职责
+
+- 训练出生：`spawn_trained`（出口/挤位、`UnitLife`、战斗 AI、英雄装配、动态寻路刷新、集结派遣）。
+- 组件装配：`ensure_combat_ai`、`ensure_hero`、`wire_existing`（地图单位批量挂 AI/英雄 + `TeamRegistry` 营地聚类）。
+- 运行时编号：`alloc_creation_number`（建造半成品等也经总管转发共用）。
+- 坐标：`teleport_wc3`。
+
+### 依赖方向
+
+总管装配并注入 `MapLoader` / 高度场 / 寻路查询 / `CommandRouter` / 血条，以及导航、攻击控制器、单位宿主、背包变更、英雄被动等 Callable。`UnitsModule` 不依赖 `GameDirector` 类型。`ProductionModule` 只接收模块上的两个方法引用。
+
+### 刻意未迁
+
+- 召唤、建造完工入图、复活刷回仍可走总管窄入口；后续批次再统一到单位模块并保留来源差异配置。
+- `AttackController` 仍由总管创建，经 Callable 注入。
+- 建造工地 / 战斗伤害 / 技能物品运行时另批处理。
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_units_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_production_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_production_owners.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **单位模块**：统一单位出生与组件装配；先接管训练出生，再接入召唤、建造和复活，替换本批的总管接口。保留各出生来源的差异配置。
-2. **建造模块**：集中工地表、施工生命周期、动态占地和取消；放置预览与指针输入分开。
-3. **战斗模块**：集中伤害、投射物和死亡的协调；单位死亡、尸体表现和库存释放分别明确所有者。
-4. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
-5. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
+1. **建造模块**：集中工地表、施工生命周期、动态占地和取消；放置预览与指针输入分开。
+2. **战斗模块**：集中伤害、投射物和死亡的协调；单位死亡、尸体表现和库存释放分别明确所有者。
+3. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
+4. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
+5. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。
