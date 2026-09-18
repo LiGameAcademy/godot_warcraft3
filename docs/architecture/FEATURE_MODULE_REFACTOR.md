@@ -92,9 +92,8 @@
 
 ## 后续批次（尚未实施）
 
-1. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
-2. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
-3. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+1. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
+2. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
 
 ## 第三批：建造模块（已实现）
 
@@ -153,6 +152,45 @@
 ```powershell
 & $env:GODOT --headless --path . res://tests/unit/selftest_combat_module.tscn
 & $env:GODOT --headless --path . res://tests/unit/selftest_death_once.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
+```
+
+## 第五批：技能与物品模块（已实现）
+
+目录：
+- `game/features/abilities/abilities_module.gd`
+- `game/features/items/items_module.gd`
+
+### 职责（AbilitiesModule）
+
+- 持有 `AbilityCastContextFactory` / `AbilityHudFeedback` / `AbilityRuntimeRegistry` / `AbilityTargetingService`
+- `ensure_unit` / `ensure_hero_passives` / `ui_state_for` / `cast_context`
+- 瞄准：`begin_targeting` / `issue_*` / `set_targeting` / `cancel_targeting`
+- 引导：`clear_caster_orders` / `channel_interrupt_check` / `interrupt_channels`
+- 预览：`update_preview` / `clear_preview`（AHbz / AHmt）
+
+### 职责（ItemsModule）
+
+- 创建 `GroundItems` 宿主与 `ItemService`
+- `use_slot` / `drop_slot` / `swap_slots` / `prepare_hero_death`
+- 订阅 `CombatModule.connect_unit_died`；地面生成接 `GroundItemVisual`
+
+### 依赖方向
+
+技能模块注入战斗管线与选择/命令回调；物品模块注入 Combat + 高度场。二者都不依赖 `GameDirector` 类型。总管保留输入互斥、命令卡分发、英雄学习菜单与 GM 入口转发。
+
+### 刻意未迁
+
+- `logic/ability/*`、`logic/item/*` 脚本仍留在原目录（本批只抽装配协调）。
+- SmartTarget 拾取射线、命令卡总调度仍在总管（下一批交互/HUD）。
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_items_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_item_system.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
 ```

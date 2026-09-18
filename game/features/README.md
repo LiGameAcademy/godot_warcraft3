@@ -19,6 +19,10 @@ game/features/
     build_module.gd                对局内建造调度、工地注册表与放置视觉
   combat/
     combat_module.gd               对局内伤害管线、投射物、死亡与 AttackController
+  abilities/
+    abilities_module.gd            对局内技能 ctx / runtime / 瞄准 / 预览
+  items/
+    items_module.gd                对局内地面物品、背包操作与死亡掉落
 ```
 
 ## 依赖约定

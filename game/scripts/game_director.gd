@@ -86,9 +86,11 @@ var _ground_items: Node3D
 var _units: UnitsModule
 var _build: BuildModule
 var _combat: CombatModule
+var _abilities: AbilitiesModule
+var _items: ItemsModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
-## 技能编排（Phase E）：ctx / HUD / 瞄准 / 单位 runtime
+## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
 var _ability_ctx_factory: AbilityCastContextFactory = null
 var _ability_hud: AbilityHudFeedback = null
 var _ability_runtime: AbilityRuntimeRegistry = null
@@ -631,7 +633,7 @@ func _setup_opponent_economy() -> void:
 		army.router = commands
 		army.unit_host = map_root.get_unit_layer()
 		army.observe_enemies = _observe_player_enemies.bind(owner)
-		army.item_service = _item_service
+		army.item_service = _ensure_items_module().item_service
 		add_child(army)
 
 ## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。
@@ -676,7 +678,7 @@ func _setup_pathing() -> void:
 	)
 	_command_router = CommandRouter.new()
 	_ensure_combat_module()
-	_setup_ability_services()
+	_ensure_abilities_module()
 	_ensure_build_sites_host()
 	_command_router.configure(
 		_path_query,
@@ -694,7 +696,7 @@ func _setup_pathing() -> void:
 	_ensure_production_module()
 	_setup_tree_registry()
 	_ensure_path_debug()
-	_setup_item_system()
+	_ensure_items_module()
 	_ensure_units_module()
 
 
@@ -826,8 +828,8 @@ func _process(delta: float) -> void:
 			return
 	if is_instance_valid(_combat):
 		_combat.tick(delta)
-	if _ability_runtime != null:
-		_ability_runtime.tick_all_units(delta)
+	if is_instance_valid(_abilities):
+		_abilities.tick(delta)
 	_refresh_move_executing_ui()
 	_refresh_portrait_vitals()
 	_refresh_portrait_timed_life_bar()
@@ -1946,45 +1948,7 @@ func _begin_rally_targeting(source: int) -> void:
 
 
 func _setup_ability_services() -> void:
-	_ability_ctx_factory = AbilityCastContextFactory.new()
-	_ability_ctx_factory.configure({
-		"map_root": map_root,
-		"heightfield": _heightfield,
-		"damage_pipeline": _damage_pipeline,
-		"projectile_service": _projectile_service,
-		"path_query": _path_query,
-		"crowd_query": _crowd_query,
-		"alloc_creation_number": Callable(self, "_alloc_runtime_cn"),
-		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
-		"unit_host": Callable(self, "_unit_host"),
-		"channel_interrupt_check": Callable(self, "_ability_channel_interrupt_check"),
-		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
-		"kill_unit": Callable(self, "_kill_unit"),
-		# 引导技开场必须清队列，否则残留 MOVE/ABILITY 首帧即打断（暴风雪「放不出」）
-		"clear_caster_orders": Callable(self, "_clear_caster_orders"),
-	})
-	_ability_hud = AbilityHudFeedback.new()
-	_ability_hud.configure(Callable(self, "_ability_set_status"))
-	_ability_runtime = AbilityRuntimeRegistry.new()
-	_ability_runtime.configure({
-		"unit_host": Callable(self, "_unit_host"),
-		"ctx_factory": _ability_ctx_factory,
-		"map_root": map_root,
-	})
-	_ability_targeting_svc = AbilityTargetingService.new()
-	_ability_targeting_svc.configure({
-		"get_primary": Callable(self, "_ability_get_primary"),
-		"pick_at": Callable(self, "_ability_pick_at"),
-		"ground_at_screen": Callable(self, "_ground_at_screen"),
-		"ensure_runtime": Callable(self, "_ensure_caster_runtime"),
-		"build_ctx": Callable(self, "_ability_cast_context"),
-		"on_cast_resolved": Callable(self, "_on_ability_cast_resolved"),
-		"clear_rival_targeting": Callable(self, "_clear_rival_targeting_for_ability"),
-		"on_targeting_changed": Callable(self, "_on_ability_targeting_changed"),
-		"hud": _ability_hud,
-		"refresh_command_card": Callable(self, "_refresh_command_card"),
-		"on_blizzard_preview": Callable(self, "_ability_blizzard_preview_refresh"),
-	})
+	_ensure_abilities_module()
 
 
 func _ability_set_status(text: String) -> void:
@@ -2064,46 +2028,32 @@ func _on_ability_targeting_changed(active: bool, abil_id: String) -> void:
 
 
 func _begin_ability_targeting(abil_id: String, source: int) -> void:
-	if _ability_targeting_svc != null:
-		_ability_targeting_svc.begin_targeting(abil_id, source)
+	_ensure_abilities_module().begin_targeting(abil_id, source)
 
 
 ## 自身技能（雷霆一击 / 天神下凡）：点按钮即施法。
 func _issue_self_ability(abil_id: String, source: int) -> bool:
-	if _ability_targeting_svc == null:
-		return false
-	return _ability_targeting_svc.issue_self(abil_id, source)
+	return _ensure_abilities_module().issue_self(abil_id, source)
 
 
 ## 单位目标技能：瞄准态左键点单位。
 func _issue_ability_at_unit_screen(screen_pos: Vector2, source: int) -> bool:
-	if _ability_targeting_svc == null:
-		return false
-	return _ability_targeting_svc.issue_at_unit_screen(screen_pos, source)
+	return _ensure_abilities_module().issue_at_unit_screen(screen_pos, source)
 
 
 ## 技能瞄准落点：点地召唤 / 区域 DOT 等。
 func _issue_ability_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if _ability_targeting_svc == null:
-		return false
-	return _ability_targeting_svc.issue_at_screen(screen_pos, source)
+	return _ensure_abilities_module().issue_at_screen(screen_pos, source)
 
 
 func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
-	if _ability_hud != null:
-		_ability_hud.on_cast_resolved(result, abil_id)
-	if AbilityHudFeedback.should_refresh_world(result):
-		_refresh_dynamic_pathing()
-		if health_bar_manager:
-			health_bar_manager.resync()
-		_sync_selection_info_panel()
-	_refresh_command_card()
+	# 兼容旧入口；实际由 AbilitiesModule 处理。
+	if is_instance_valid(_abilities):
+		_abilities.call("_on_cast_resolved", result, abil_id)
 
 
 func _ability_cast_context() -> Dictionary:
-	if _ability_ctx_factory != null:
-		return _ability_ctx_factory.build()
-	return {}
+	return _ensure_abilities_module().cast_context()
 
 
 func _kill_unit(unit: Node3D) -> void:
@@ -2112,56 +2062,20 @@ func _kill_unit(unit: Node3D) -> void:
 
 ## 引导开场清空命令队列（见 AbilityCastController._stop_caster_for_cast）。
 func _clear_caster_orders(caster: Node3D) -> void:
-	if caster == null or not is_instance_valid(caster) or _command_router == null:
-		return
-	var q := _command_router.queue_for(caster)
-	if q != null:
-		q.clear()
+	_ensure_abilities_module().clear_caster_orders(caster)
 
 
 ## 引导中 / 接近施法点：玩家新指令（非 AI）→ 打断暴风雪等。
 func _ability_channel_interrupt_check(caster: Node3D) -> bool:
-	if caster == null or not is_instance_valid(caster) or _command_router == null:
-		return false
-	var q := _command_router.queue_for(caster)
-	if q == null or q.is_idle():
-		return false
-	var o: UnitOrder = q.current
-	if o == null:
-		return false
-	if o.source == UnitOrder.Source.UNIT_AI:
-		return false
-	match o.kind:
-		UnitOrder.Kind.MOVE, UnitOrder.Kind.STOP, UnitOrder.Kind.HOLD:
-			return true
-		UnitOrder.Kind.ATTACK, UnitOrder.Kind.ATTACK_MOVE, UnitOrder.Kind.PATROL:
-			return true
-		UnitOrder.Kind.HARVEST_GOLD, UnitOrder.Kind.HARVEST_LUMBER:
-			return true
-		UnitOrder.Kind.RETURN_GOODS, UnitOrder.Kind.BUILD:
-			return true
-		UnitOrder.Kind.ABILITY:
-			# 施法开场残留的「本技能」单不打断；另点其它技能才打断
-			var ctrl := AbilityCastController.of(caster)
-			if ctrl != null and (
-				ctrl.is_channeling() or ctrl.is_approaching() or ctrl.is_cast_delaying()
-			):
-				var pending := str(o.ability_id).strip_edges()
-				if not pending.is_empty() and pending == ctrl.channeling_abil_id():
-					return false
-			return true
-	return false
+	return _ensure_abilities_module().channel_interrupt_check(caster)
 
 
 func _ability_ui_state_for(primary: Node3D) -> Dictionary:
-	if _ability_hud == null:
-		return {}
-	return _ability_hud.build_command_card_state(primary, Callable(self, "_ensure_caster_runtime"))
+	return _ensure_abilities_module().ui_state_for(primary)
 
 
 func _ensure_caster_runtime(unit: Node3D) -> void:
-	if _ability_runtime != null:
-		_ability_runtime.ensure_unit(unit)
+	_ensure_abilities_module().ensure_unit(unit)
 
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
@@ -2169,14 +2083,7 @@ func _ensure_hero_runtime(unit: Node3D) -> void:
 
 
 func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
-	if _ability_targeting_svc == null:
-		_on_ability_targeting_changed(active, abil_id)
-		return
-	if active:
-		# 瞄准入口走 begin_targeting；此处仅兼容旧调用
-		_ability_targeting_svc.begin_targeting(abil_id, UnitOrder.Source.PANEL)
-	else:
-		_ability_targeting_svc.cancel()
+	_ensure_abilities_module().set_targeting(active, abil_id)
 
 
 func _set_move_targeting(active: bool) -> void:
@@ -2920,102 +2827,26 @@ func gm_hero_unlock_all_skills() -> void:
 
 
 func _clear_ability_preview() -> void:
-	if _ability_preview_decal != null and is_instance_valid(_ability_preview_decal):
-		_ability_preview_decal.queue_free()
-	_ability_preview_decal = null
-	_clear_ability_preview_tints()
-	_ability_preview_tint_goal = Vector2.INF
-	_ability_preview_tint_radius = 0.0
+	if is_instance_valid(_abilities):
+		_abilities.clear_preview()
 
 
 func _clear_ability_preview_tints() -> void:
-	UnitSpellTint.clear_many(_ability_preview_tinted)
-	_ability_preview_tinted.clear()
+	if is_instance_valid(_abilities):
+		_abilities.call("_clear_preview_tints")
 
 
 func _update_ability_preview(screen_pos: Vector2) -> void:
-	var abil_id := _pending_ability_id.strip_edges()
-	if not _ability_targeting or map_root == null:
-		_clear_ability_preview()
-		return
-	if abil_id != "AHbz" and abil_id != "AHmt":
-		_clear_ability_preview()
-		return
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
-		return
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		return
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal := Vector2(hit.x * inv, -hit.z * inv)
-	var radius: float
-	var tint_goal := goal
-	var do_tint := false
-	var preview_color := BlizzardAreaDecal.DEFAULT_COLOR
-	if abil_id == "AHbz":
-		var lv := AbilityCatalog.level_for(primary, "AHbz")
-		var ab := AbilityCatalog.data("AHbz")
-		radius = ab.area_at(lv) if ab != null else 200.0
-		do_tint = true
-	else:
-		# AHmt：落点标记圈；选人半径在施法者周围，瞄准阶段只标目的地。
-		radius = MassTeleportPresenter.DEST_PREVIEW_RADIUS_WC3
-		preview_color = MassTeleportPresenter.DEST_COLOR
-	if _ability_preview_decal == null or not is_instance_valid(_ability_preview_decal):
-		_ability_preview_decal = BlizzardAreaDecal.spawn_preview(
-			map_root, goal, radius, _heightfield, preview_color
-		)
-	else:
-		_ability_preview_decal.set_tint(preview_color)
-		_ability_preview_decal.reposition(goal, radius, _heightfield)
-	if do_tint:
-		_refresh_ability_preview_tints(primary, tint_goal, radius)
-	else:
-		_clear_ability_preview_tints()
+	_ensure_abilities_module().update_preview(screen_pos)
 
 
 func _refresh_ability_preview_tints(caster: Node3D, goal: Vector2, radius: float) -> void:
-	var host := _unit_host()
-	if host == null or caster == null:
-		_clear_ability_preview_tints()
-		return
-	_ability_preview_tint_goal = goal
-	_ability_preview_tint_radius = radius
-	var next: Array = CombatQuery.units_blizzard_victims_in_radius(
-		host, caster, goal, radius
-	)
-	var next_ids: Dictionary = {}
-	for n in next:
-		if n is Node3D and is_instance_valid(n):
-			next_ids[(n as Node3D).get_instance_id()] = n
-	# 移出范围的清染色
-	for old in _ability_preview_tinted:
-		if not (old is Node3D) or not is_instance_valid(old):
-			continue
-		var oid := (old as Node3D).get_instance_id()
-		if not next_ids.has(oid):
-			UnitSpellTint.clear(old as Node3D)
-	# 新入范围的染色
-	var tint := Color(0.38, 0.78, 1.0, 0.42)
-	_ability_preview_tinted.clear()
-	for id in next_ids.keys():
-		var node: Node3D = next_ids[id] as Node3D
-		# 已染色则保留 overlay，避免每帧重建材质
-		if not node.has_meta(UnitSpellTint.META_SAVED):
-			UnitSpellTint.apply(node, tint)
-		_ability_preview_tinted.append(node)
+	if is_instance_valid(_abilities):
+		_abilities.call("_refresh_preview_tints", caster, goal, radius)
 
 
 func _interrupt_channels_for_units(units: Array) -> void:
-	for u in units:
-		if not (u is Node3D) or not is_instance_valid(u):
-			continue
-		var acc := AbilityCastController.of(u as Node3D)
-		if acc != null and (acc.is_channeling() or acc.is_cast_delaying()):
-			acc.cancel_cast()
+	_ensure_abilities_module().interrupt_channels(units)
 
 
 func _commit_build_targeting(screen_pos: Vector2) -> void:
@@ -4178,70 +4009,33 @@ func _primary_type_id(_selected: Array = []) -> String:
 
 
 func _setup_item_system() -> void:
-	_ground_items = Node3D.new()
-	_ground_items.name = "GroundItems"
-	get_parent().add_child(_ground_items)
-	_item_service = ItemService.new()
-	_item_service.name = "ItemService"
-	add_child(_item_service)
-	_item_service.configure(_ground_items, _heightfield, map_dir)
-	# 每次生成时再取 cache，避免 connect 时缓存尚未就绪导致永久金色占位盒
-	_item_service.ground_spawned.connect(_on_ground_item_spawned)
-	_item_service.message.connect(_ability_set_status)
-	_command_router.item_feedback.connect(_ability_set_status)
-	_ensure_combat_module().connect_unit_died(Callable(_item_service, "on_unit_died"))
+	_ensure_items_module()
 
 
 func _on_ground_item_spawned(ground: GroundItem) -> void:
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	GroundItemVisual.attach(ground, cache)
+	if is_instance_valid(_items):
+		_items.call("_on_ground_spawned", ground)
 
 
 func _on_inventory_changed() -> void:
-	var primary := _ability_get_primary()
-	if primary != null and game_hud != null:
-		_apply_selection_info_to_hud(primary, _get_selected_safe())
+	_ensure_items_module().on_inventory_changed()
 
 
 func _on_item_use(slot: int) -> void:
-	var unit := _ability_get_primary()
-	if not _is_controllable(unit):
-		return
-	var inv := Inventory.of(unit)
-	if inv != null:
-		var result := inv.try_use(slot)
-		_ability_set_status(str(result.get("reason", "")))
+	_ensure_items_module().use_slot(slot)
 
 
 func _on_item_drop(slot: int) -> void:
-	var unit := _ability_get_primary()
-	if _is_controllable(unit) and _item_service != null:
-		_item_service.drop_from(unit, slot)
+	_ensure_items_module().drop_slot(slot)
 
 
 func _on_item_swap(a: int, b: int) -> void:
-	var unit := _ability_get_primary()
-	if not _is_controllable(unit):
-		return
-	var inv := Inventory.of(unit)
-	if inv != null:
-		inv.swap_slots(a, b)
+	_ensure_items_module().swap_slots(a, b)
 
 
 ## GM：只生成测试物品，不修改地图掉落或普通开局。
 func gm_item_test_kit() -> void:
-	var unit := _ability_get_primary()
-	if not _is_controllable(unit) or Inventory.of(unit) == null or _item_service == null:
-		_ability_set_status("请先选中己方英雄")
-		return
-	var origin := Wc3Coords.godot_to_wc3_xy(unit.global_position)
-	var ids := ["phea", "phea", "pman", "pman", "rde1", "rde1", "phea"]
-	for i in range(ids.size()):
-		var angle := TAU * float(i) / ids.size()
-		_item_service.spawn(ItemInstance.create(ids[i]), origin + Vector2(cos(angle), sin(angle)) * 180.0)
-	_ability_set_status("已生成 7 件测试道具：右键拾取，六格满后应剩一件")
+	_ensure_items_module().spawn_test_kit_around_primary()
 
 
 func gm_item_test_vitals() -> void:
@@ -4302,8 +4096,7 @@ func _ensure_combat_module() -> CombatModule:
 		"release_food": Callable(self, "_release_unit_food"),
 		"terminate_production": Callable(self, "_terminate_unit_production"),
 		"prepare_hero_death": func(unit: Node3D) -> void:
-			if _item_service != null:
-				_item_service.prepare_hero_death(unit),
+			_ensure_items_module().prepare_hero_death(unit),
 		"deselect_unit": Callable(self, "_deselect_unit_on_death"),
 		"get_primary": Callable(self, "_ability_get_primary"),
 		"get_selected": Callable(self, "_get_selected_safe"),
@@ -4393,10 +4186,80 @@ func _ensure_units_module() -> UnitsModule:
 		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
 		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
 		"ensure_hero_passives": func(unit: Node3D) -> void:
-			if _ability_runtime != null:
-				_ability_runtime.ensure_hero_passives(unit),
+			_ensure_abilities_module().ensure_hero_passives(unit),
 	})
 	return _units
+
+
+## 装配技能模块：cast ctx / runtime / 瞄准 / 预览。
+func _ensure_abilities_module() -> AbilitiesModule:
+	if not is_instance_valid(_abilities):
+		_abilities = AbilitiesModule.new()
+		_abilities.name = "AbilitiesModule"
+		add_child(_abilities)
+	_ensure_combat_module()
+	_abilities.configure({
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"path_query": _path_query,
+		"crowd_query": _crowd_query,
+		"command_router": _command_router,
+		"damage_pipeline": _damage_pipeline,
+		"projectile_service": _projectile_service,
+		"alloc_creation_number": Callable(self, "_alloc_runtime_cn"),
+		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
+		"unit_host": Callable(self, "_unit_host"),
+		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
+		"kill_unit": Callable(self, "_kill_unit"),
+		"get_primary": Callable(self, "_ability_get_primary"),
+		"pick_at": Callable(self, "_ability_pick_at"),
+		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"clear_rival_targeting": Callable(self, "_clear_rival_targeting_for_ability"),
+		"on_targeting_changed": Callable(self, "_on_ability_targeting_changed"),
+		"set_status": Callable(self, "_ability_set_status"),
+		"refresh_command_card": Callable(self, "_refresh_command_card"),
+		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"resync_health_bars": func() -> void:
+			if health_bar_manager != null:
+				health_bar_manager.resync(),
+		"sync_selection_info": Callable(self, "_sync_selection_info_panel"),
+		"last_screen_pos": func() -> Vector2: return _last_screen_pos,
+	})
+	_ability_ctx_factory = _abilities.ctx_factory
+	_ability_hud = _abilities.hud
+	_ability_runtime = _abilities.runtime
+	_ability_targeting_svc = _abilities.targeting
+	return _abilities
+
+
+## 装配物品模块：地面物、背包操作、死亡掉落订阅。
+func _ensure_items_module() -> ItemsModule:
+	if not is_instance_valid(_items):
+		_items = ItemsModule.new()
+		_items.name = "ItemsModule"
+		add_child(_items)
+	_items.configure({
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"map_dir": map_dir,
+		"ground_parent": get_parent(),
+		"combat": _ensure_combat_module(),
+		"command_router": _command_router,
+		"set_status": Callable(self, "_ability_set_status"),
+		"get_primary": Callable(self, "_ability_get_primary"),
+		"is_controllable": Callable(self, "_is_controllable"),
+		"on_inventory_ui_refresh": func() -> void:
+			var primary := _ability_get_primary()
+			if primary != null and game_hud != null:
+				_apply_selection_info_to_hud(primary, _get_selected_safe()),
+		"get_model_cache": func() -> MapModelCache:
+			if map_root != null and map_root.has_method("get_model_cache"):
+				return map_root.get_model_cache() as MapModelCache
+			return null,
+	})
+	_item_service = _items.item_service
+	_ground_items = _items.ground_host()
+	return _items
 
 
 ## 只负责装配对局生产模块及其界面适配器。
