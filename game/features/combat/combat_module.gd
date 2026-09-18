@@ -25,6 +25,8 @@ var _get_primary: Callable
 var _get_selected: Callable
 var _apply_selection_info: Callable
 var _refresh_command_card: Callable
+## connect_unit_died 登记的外部订阅，shutdown 时断开，避免旧 DeathService 残留。
+var _external_unit_died: Array[Callable] = []
 
 
 func configure(deps: Dictionary) -> void:
@@ -46,6 +48,7 @@ func configure(deps: Dictionary) -> void:
 
 func shutdown() -> void:
 	_disconnect_service_signals()
+	_disconnect_external_unit_died()
 	damage_pipeline = null
 	death_service = null
 	projectile_service = null
@@ -105,6 +108,8 @@ func connect_unit_died(cb: Callable) -> void:
 		return
 	if not death_service.unit_died.is_connected(cb):
 		death_service.unit_died.connect(cb)
+	if not _external_unit_died.has(cb):
+		_external_unit_died.append(cb)
 
 
 func _ensure_services() -> void:
@@ -133,7 +138,8 @@ func _disconnect_service_signals() -> void:
 	if death_service != null:
 		if death_service.unit_died.is_connected(_award_death_experience):
 			death_service.unit_died.disconnect(_award_death_experience)
-		death_service.on_before_exit = Callable()
+		# 保留 on_before_exit：Director 可能仍持有同一 DeathService 别名；
+		# 整场景销毁时一并回收。单独 shutdown 后勿再经别名 kill。
 	if damage_pipeline != null and damage_pipeline.damage_applied.is_connected(_on_damage_applied_present):
 		damage_pipeline.damage_applied.disconnect(_on_damage_applied_present)
 	if projectile_service != null:
@@ -141,6 +147,14 @@ func _disconnect_service_signals() -> void:
 			projectile_service.projectile_launched.disconnect(_on_projectile_launched)
 		if projectile_service.projectile_resolved.is_connected(_on_projectile_resolved):
 			projectile_service.projectile_resolved.disconnect(_on_projectile_resolved)
+
+
+func _disconnect_external_unit_died() -> void:
+	if death_service != null:
+		for cb in _external_unit_died:
+			if cb.is_valid() and death_service.unit_died.is_connected(cb):
+				death_service.unit_died.disconnect(cb)
+	_external_unit_died.clear()
 
 
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:

@@ -4292,6 +4292,7 @@ func _ensure_combat_module() -> CombatModule:
 		_combat = CombatModule.new()
 		_combat.name = "CombatModule"
 		add_child(_combat)
+		_combat.tree_exiting.connect(_on_combat_module_exiting)
 	_combat.configure({
 		"map_root": map_root,
 		"health_bar_manager": health_bar_manager,
@@ -4313,6 +4314,13 @@ func _ensure_combat_module() -> CombatModule:
 	_death_service = _combat.death_service
 	_projectile_service = _combat.projectile_service
 	return _combat
+
+
+func _on_combat_module_exiting() -> void:
+	_damage_pipeline = null
+	_death_service = null
+	_projectile_service = null
+	_combat = null
 
 
 func _deselect_unit_on_death(unit: Node3D) -> void:
