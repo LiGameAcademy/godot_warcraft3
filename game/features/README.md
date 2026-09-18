@@ -17,6 +17,8 @@ game/features/
     units_module.gd                对局内单位出生、AI/英雄装配与 CN 分配
   build/
     build_module.gd                对局内建造调度、工地注册表与放置视觉
+  combat/
+    combat_module.gd               对局内伤害管线、投射物、死亡与 AttackController
 ```
 
 ## 依赖约定

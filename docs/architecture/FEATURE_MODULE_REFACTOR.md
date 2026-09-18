@@ -92,10 +92,9 @@
 
 ## 后续批次（尚未实施）
 
-1. **战斗模块**：集中伤害、投射物和死亡的协调；单位死亡、尸体表现和库存释放分别明确所有者。
-2. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
-3. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
-4. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+1. **技能、物品模块**：收敛运行时注册、效果执行、背包事务和表现接线；通过适配层接入已有技能插件 Autoload。
+2. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
+3. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
 
 ## 第三批：建造模块（已实现）
 
@@ -123,6 +122,37 @@
 ```powershell
 & $env:GODOT --headless --path . res://tests/unit/selftest_build_module.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_build_module_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
+```
+
+## 第四批：战斗模块（已实现）
+
+目录：`game/features/combat/combat_module.gd`。
+
+### 职责
+
+- 服务所有权：`DamagePipeline` / `DeathService` / `ProjectileService` 在模块内创建并接线。
+- `ensure_attack_controller`：挂/刷新单位 `AttackController`。
+- `kill` / `tick`：死亡入口与弹道步进。
+- 表现：弹道壳、伤害飘字、技能命中 FX、尸体 linger / `remove_unit_instance`。
+- 死亡横切：Buff / 物品准备 / 库存清空 / 控制器停机；食物释放与生产终止经 Callable 注入。
+
+### 依赖方向
+
+总管注入 `MapLoader`、血条，以及导航、单位视觉、食物、生产终止、物品死亡准备、选中清理、HUD 刷新等 Callable。`CombatModule` 不依赖 `GameDirector` 类型。`UnitsModule` 仍经总管 `ensure_attack_controller` 转发接入。
+
+### 刻意未迁
+
+- `DamagePipeline` / `DeathService` / `ProjectileService` / `AttackController` 脚本仍在 `game/scripts/logic/combat/`（本批只抽装配与协调）。
+- 技能瞄准 / 命令卡 / 物品 HUD 仍在总管；下一批再收敛。
+- `_release_unit_food` 仍属会话库存，留在总管。
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_combat_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_death_once.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
 ```

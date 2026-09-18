@@ -14,7 +14,6 @@ const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 const PlayerEconomyAIScript = preload("res://game/scripts/logic/ai/player_economy_ai.gd")
 const MatchResultScreenScript = preload("res://game/scripts/presentation/match_result_screen.gd")
 const PlayerArmyAIScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
-const CombatProjectileShellScene = preload("res://game/scenes/combat_projectile_shell.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -86,6 +85,7 @@ var _item_service: ItemService
 var _ground_items: Node3D
 var _units: UnitsModule
 var _build: BuildModule
+var _combat: CombatModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（Phase E）：ctx / HUD / 瞄准 / 单位 runtime
@@ -675,16 +675,7 @@ func _setup_pathing() -> void:
 		map_root.get_id_catalog()
 	)
 	_command_router = CommandRouter.new()
-	_death_service = DeathService.new()
-	_death_service.on_before_exit = Callable(self, "_on_unit_dying")
-	_death_service.unit_died.connect(_award_death_experience)
-	_damage_pipeline = DamagePipeline.new()
-	_damage_pipeline.death = _death_service
-	_damage_pipeline.damage_applied.connect(_on_damage_applied_present)
-	_projectile_service = ProjectileService.new()
-	_projectile_service.pipeline = _damage_pipeline
-	_projectile_service.projectile_launched.connect(_on_combat_projectile_launched)
-	_projectile_service.projectile_resolved.connect(_on_combat_projectile_resolved)
+	_ensure_combat_module()
 	_setup_ability_services()
 	_ensure_build_sites_host()
 	_command_router.configure(
@@ -708,16 +699,9 @@ func _setup_pathing() -> void:
 
 
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
-	const Experience = preload("res://game/scripts/logic/hero/hero_experience.gd")
-	if map_root != null:
-		var awards := Experience.award_death(victim, killer, map_root.get_unit_layer())
-		var primary := _ability_get_primary()
-		for award in awards:
-			if award.hero == primary:
-				_apply_selection_info_to_hud(primary, _get_selected_safe())
-				if int(award.levels_gained) > 0:
-					_refresh_command_card()
-				break
+	# 兼容旧接线；实际由 CombatModule 处理。
+	if is_instance_valid(_combat):
+		_combat.call("_award_death_experience", victim, killer)
 
 
 func _ensure_build_sites_host() -> void:
@@ -840,8 +824,8 @@ func _process(delta: float) -> void:
 		var result := _session.evaluate_match(map_root.get_unit_layer())
 		if bool(result.finished):
 			return
-	if _projectile_service != null:
-		_projectile_service.tick(delta)
+	if is_instance_valid(_combat):
+		_combat.tick(delta)
 	if _ability_runtime != null:
 		_ability_runtime.tick_all_units(delta)
 	_refresh_move_executing_ui()
@@ -2123,12 +2107,7 @@ func _ability_cast_context() -> Dictionary:
 
 
 func _kill_unit(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	if _death_service != null:
-		_death_service.kill(unit)
-	else:
-		unit.queue_free()
+	_ensure_combat_module().kill(unit)
 
 
 ## 引导开场清空命令队列（见 AbilityCastController._stop_caster_for_cast）。
@@ -2392,27 +2371,7 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 
 
 func _ensure_attack_controller(unit: Node3D) -> AttackController:
-	_ensure_unit_visual(unit)
-	UnitLife.ensure(unit)
-	var existing := unit.get_node_or_null("AttackController") as AttackController
-	if existing != null:
-		existing.configure(
-			Callable(self, "_ensure_navigator"),
-			Callable(self, "_unit_host"),
-			_damage_pipeline,
-			_projectile_service
-		)
-		return existing
-	var ac := AttackController.new()
-	ac.name = "AttackController"
-	ac.configure(
-		Callable(self, "_ensure_navigator"),
-		Callable(self, "_unit_host"),
-		_damage_pipeline,
-		_projectile_service
-	)
-	unit.add_child(ac)
-	return ac
+	return _ensure_combat_module().ensure_attack_controller(unit)
 
 
 ## U0-2：可战斗非建筑单位挂 UnitAI + AttackController；中立 → CAMP_CREEP。
@@ -2631,167 +2590,27 @@ func _issue_town_bell_near_peasants(bells: Array[Node3D], source: int) -> int:
 
 
 func _on_combat_projectile_launched(info: Dictionary) -> void:
-	var from_wc3: Vector3 = info.get("from_wc3", Vector3.ZERO)
-	var to_wc3: Vector3 = info.get("to_wc3", Vector3.ZERO)
-	var duration := float(info.get("duration", 0.2))
-	var attacker: Node3D = info.get("attacker") as Node3D
-	var target: Node3D = info.get("target") as Node3D
-	var show_tracer := true
-	var impact_art := ""
-	var missile_art := ""
-	var arc := 0.0
-	var speed_wc3 := 900.0
-	if bool(info.get("is_spell", false)):
-		show_tracer = true
-		var spell_missile := str(info.get("missile_art", "")).strip_edges()
-		if not spell_missile.is_empty():
-			missile_art = spell_missile
-		var spell_impact := str(info.get("impact_art", "")).strip_edges()
-		if not spell_impact.is_empty():
-			impact_art = spell_impact
-	elif attacker != null and is_instance_valid(attacker):
-		show_tracer = CombatQuery.wants_tracer_visual(attacker)
-		impact_art = CombatQuery.weapon_impact_art(attacker)
-		missile_art = CombatQuery.weapon_missile_art(attacker)
-		arc = CombatQuery.missile_arc(attacker)
-		speed_wc3 = CombatQuery.missile_speed_wc3(attacker)
-	if info.has("speed_wc3"):
-		speed_wc3 = float(info.get("speed_wc3", speed_wc3))
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	var shell: Node3D = CombatProjectileShellScene.instantiate() as Node3D
-	if shell == null:
-		return
-	shell.name = "CombatProjectileShell_%s" % str(info.get("id", 0))
-	# 必须挂在 3D 场景树；优先 unit_layer（与单位同层）。
-	var fx_parent: Node = map_root
-	if map_root != null and map_root.has_method("get_unit_layer"):
-		var layer := map_root.get_unit_layer()
-		if layer != null:
-			fx_parent = layer
-	elif map_root == null:
-		fx_parent = self
-	fx_parent.add_child(shell)
-	if shell.has_method("play"):
-		shell.call(
-			"play",
-			from_wc3,
-			to_wc3,
-			duration,
-			show_tracer,
-			impact_art,
-			cache,
-			target,
-			missile_art,
-			arc,
-			speed_wc3
-		)
+	# 兼容旧信号名；实际由 CombatModule 订阅 ProjectileService。
+	if is_instance_valid(_combat):
+		_combat.call("_on_projectile_launched", info)
 
 
 func _on_combat_projectile_resolved(result: Dictionary) -> void:
-	if bool(result.get("visual_only", false)):
-		return
-	if bool(result.get("is_spell", false)):
-		var target: Node3D = result.get("target") as Node3D
-		var abil_id := str(result.get("spell_abil_id", "")).strip_edges()
-		var hit_art := AbilityCastCatalog.hit_effect_art(abil_id)
-		if not hit_art.is_empty() and target != null and is_instance_valid(target):
-			var cache: MapModelCache = null
-			if map_root != null and map_root.has_method("get_model_cache"):
-				cache = map_root.get_model_cache()
-			SpellHitFx.spawn_on(target, hit_art, cache)
-		if health_bar_manager != null:
-			health_bar_manager.resync()
-		return
-	var attacker: Node3D = result.get("attacker") as Node3D
-	if attacker == null or not is_instance_valid(attacker):
-		return
-	var ac := attacker.get_node_or_null("AttackController") as AttackController
-	if ac != null:
-		ac.notify_strike_result(result)
+	if is_instance_valid(_combat):
+		_combat.call("_on_projectile_resolved", result)
 
 
 func _on_damage_applied_present(result: Dictionary) -> void:
-	DamageFloatText.spawn(result.get("target") as Node3D, result)
-	var victim: Node3D = result.get("target") as Node3D
-	var ai := UnitAI.of(victim)
-	if ai != null:
-		ai.notify_damaged(result)
+	if is_instance_valid(_combat):
+		_combat.call("_on_damage_applied_present", result)
 
 
 func _on_unit_dying(unit: Node3D) -> void:
-	if unit == null:
-		return
-	InnerFireController.cleanup_on_death(unit)
-	var bh := BuffHost.of(unit)
-	if bh != null:
-		bh.clear_all()
-	if _item_service != null:
-		_item_service.prepare_hero_death(unit)
-	HeroDeathRegistry.register_death(unit)
-	var inv := Inventory.of(unit)
-	if inv != null:
-		inv.clear()
-	_release_unit_food(unit)
-	_terminate_unit_production(unit)
-	# 立刻移出选中；命令卡随 selection_changed 清空（与野怪观察一致）。
-	if unit_selector != null and unit_selector.has_method("deselect_unit"):
-		unit_selector.call("deselect_unit", unit)
-	elif unit_selector != null and unit_selector.has_method("clear_selection"):
-		# 兜底：无 deselect 时至少清掉单选尸体
-		var pri: Node3D = null
-		if unit_selector.has_method("get_primary"):
-			pri = unit_selector.call("get_primary") as Node3D
-		if pri == unit:
-			unit_selector.call("clear_selection")
-	var vis := _ensure_unit_visual(unit)
-	if vis != null:
-		if not vis.corpse_expired.is_connected(_on_corpse_expired):
-			vis.corpse_expired.connect(_on_corpse_expired)
-		vis.play_death()
-	else:
-		var tree := get_tree()
-		if tree != null:
-			SceneDelay.create_timer(self, Unit.CORPSE_LINGER_SEC).timeout.connect(
-				_on_corpse_expired.bind(unit)
-			)
-		else:
-			_on_corpse_expired(unit)
-	var hc := unit.get_node_or_null("HarvestController") as HarvestController
-	if hc != null:
-		hc.abort()
-	var ac := unit.get_node_or_null("AttackController") as AttackController
-	if ac != null:
-		ac.cancel()
-	var uai := UnitAI.of(unit)
-	if uai != null:
-		uai.yield_to_player()
-	var mc := MilitiaController.of(unit)
-	if mc != null:
-		mc.set_process(false)
-	var sl := unit.get_node_or_null("SummonLifetime") as SummonLifetime
-	if sl != null:
-		sl.set_process(false)
-	var pc := unit.get_node_or_null("PatrolController") as PatrolController
-	if pc != null:
-		pc.cancel()
-	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
-	if nav != null:
-		nav.stop()
-	var cast := AbilityCastController.of(unit)
-	if cast != null:
-		cast.cancel_cast()
+	_ensure_combat_module().on_unit_dying(unit)
 
 
 func _on_corpse_expired(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	var d: Dictionary = unit.get_meta("unit_data", {})
-	var cn := int(d.get("creationNumber", -1))
-	if map_root != null and cn >= 0 and map_root.remove_unit_instance(cn):
-		return
-	unit.queue_free()
+	_ensure_combat_module().on_corpse_expired(unit)
 
 
 func _wire_all_gold_mines() -> void:
@@ -4370,7 +4189,7 @@ func _setup_item_system() -> void:
 	_item_service.ground_spawned.connect(_on_ground_item_spawned)
 	_item_service.message.connect(_ability_set_status)
 	_command_router.item_feedback.connect(_ability_set_status)
-	_death_service.unit_died.connect(_item_service.on_unit_died)
+	_ensure_combat_module().connect_unit_died(Callable(_item_service, "on_unit_died"))
 
 
 func _on_ground_item_spawned(ground: GroundItem) -> void:
@@ -4464,6 +4283,47 @@ func gm_item_test_creep() -> void:
 		if health_bar_manager != null:
 			health_bar_manager.resync()
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
+
+
+## 装配战斗模块：伤害管线、投射物、死亡/尸体、AttackController。
+## 食物释放 / 生产终止 / 物品死亡准备 / 选中清理经 Callable 注入。
+func _ensure_combat_module() -> CombatModule:
+	if not is_instance_valid(_combat):
+		_combat = CombatModule.new()
+		_combat.name = "CombatModule"
+		add_child(_combat)
+	_combat.configure({
+		"map_root": map_root,
+		"health_bar_manager": health_bar_manager,
+		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
+		"unit_host": Callable(self, "_unit_host"),
+		"release_food": Callable(self, "_release_unit_food"),
+		"terminate_production": Callable(self, "_terminate_unit_production"),
+		"prepare_hero_death": func(unit: Node3D) -> void:
+			if _item_service != null:
+				_item_service.prepare_hero_death(unit),
+		"deselect_unit": Callable(self, "_deselect_unit_on_death"),
+		"get_primary": Callable(self, "_ability_get_primary"),
+		"get_selected": Callable(self, "_get_selected_safe"),
+		"apply_selection_info": Callable(self, "_apply_selection_info_to_hud"),
+		"refresh_command_card": Callable(self, "_refresh_command_card"),
+	})
+	_damage_pipeline = _combat.damage_pipeline
+	_death_service = _combat.death_service
+	_projectile_service = _combat.projectile_service
+	return _combat
+
+
+func _deselect_unit_on_death(unit: Node3D) -> void:
+	if unit_selector != null and unit_selector.has_method("deselect_unit"):
+		unit_selector.call("deselect_unit", unit)
+	elif unit_selector != null and unit_selector.has_method("clear_selection"):
+		var pri: Node3D = null
+		if unit_selector.has_method("get_primary"):
+			pri = unit_selector.call("get_primary") as Node3D
+		if pri == unit:
+			unit_selector.call("clear_selection")
 
 
 ## 装配建造调度模块：工地注册表、放置视觉、开工/完工/取消、HUD 工地绑定。
