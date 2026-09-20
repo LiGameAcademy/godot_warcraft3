@@ -19,6 +19,8 @@ var _unit_host: Callable
 var _refresh_pathing: Callable
 var _on_inventory_changed: Callable
 var _ensure_hero_passives: Callable
+var _ensure_caster: Callable
+var _add_food_used: Callable
 var _next_runtime_cn: int = 900000
 
 
@@ -36,6 +38,8 @@ func configure(deps: Dictionary) -> void:
 	_refresh_pathing = deps.get("refresh_pathing", Callable()) as Callable
 	_on_inventory_changed = deps.get("on_inventory_changed", Callable()) as Callable
 	_ensure_hero_passives = deps.get("ensure_hero_passives", Callable()) as Callable
+	_ensure_caster = deps.get("ensure_caster", Callable()) as Callable
+	_add_food_used = deps.get("add_food_used", Callable()) as Callable
 	if deps.has("next_runtime_cn"):
 		_next_runtime_cn = int(deps["next_runtime_cn"])
 
@@ -54,6 +58,8 @@ func shutdown() -> void:
 	_refresh_pathing = Callable()
 	_on_inventory_changed = Callable()
 	_ensure_hero_passives = Callable()
+	_ensure_caster = Callable()
+	_add_food_used = Callable()
 
 
 func _exit_tree() -> void:
@@ -100,6 +106,97 @@ func spawn_trained(
 		_health_bar_manager.resync()
 	_dispatch_trained_rally(from_building, node)
 	return node
+
+
+## 建造完工 / 半成品入图用的 unit entry（MapUnitLayer 字段）。
+func build_building_entry(
+	building_id: String, site_wc3: Vector2, player_owner: int, creation_number: int = -1
+) -> Dictionary:
+	var cn := creation_number if creation_number >= 0 else alloc_creation_number()
+	return {
+		"typeId": building_id,
+		"position": {"x": site_wc3.x, "y": site_wc3.y},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"owner": player_owner,
+		"creationNumber": cn,
+		"variation": 0,
+		"isBuilding": true,
+	}
+
+
+## 通用刷兵 entry：开发刷兵 / GM 野怪 / 其它来源共用。
+## opts: ensure_hero, ensure_caster, charge_food, life_override, refresh_pathing
+func build_unit_entry(
+	type_id: String, site_wc3: Vector2, owner: int, extras: Dictionary = {}
+) -> Dictionary:
+	var entry := {
+		"typeId": type_id,
+		"position": {"x": site_wc3.x, "y": site_wc3.y, "z": 0.0},
+		"angle": MeleeBootstrap.UNIT_FACING_RAD,
+		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+		"owner": owner,
+		"flags": 2,
+		"creationNumber": alloc_creation_number(),
+		"variation": 0,
+	}
+	entry.merge(extras, true)
+	return entry
+
+
+func spawn_entry(entry: Dictionary, opts: Dictionary = {}) -> Node3D:
+	if _map_root == null or _heightfield == null or entry.is_empty():
+		return null
+	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	if node == null:
+		return null
+	UnitLife.ensure(node)
+	if opts.has("life_override"):
+		UnitLife.set_life(node, float(opts["life_override"]))
+	ensure_combat_ai(node)
+	if bool(opts.get("ensure_hero", false)):
+		ensure_hero(node)
+	if bool(opts.get("ensure_caster", false)) and _ensure_caster.is_valid():
+		_ensure_caster.call(node)
+	if bool(opts.get("charge_food", false)) and _add_food_used.is_valid():
+		var food := BuildingCatalog.get_food_used(str(entry.get("typeId", "")))
+		if food > 0:
+			_add_food_used.call(int(entry.get("owner", 0)), food)
+	if bool(opts.get("refresh_pathing", true)) and _refresh_pathing.is_valid():
+		_refresh_pathing.call()
+	if _health_bar_manager != null:
+		_health_bar_manager.resync()
+	return node
+
+
+## 在锚点单位附近刷（开发/GM）。
+func spawn_near(
+	anchor: Node3D, type_id: String, owner: int, offset_wc3: Vector2, opts: Dictionary = {}
+) -> Node3D:
+	if anchor == null or not is_instance_valid(anchor):
+		return null
+	var xy := Wc3Coords.godot_to_wc3_xy(anchor.global_position) + offset_wc3
+	var extras: Dictionary = opts.get("entry_extras", {})
+	var entry := build_unit_entry(type_id, xy, owner, extras)
+	return spawn_entry(entry, opts)
+
+
+func find_owned_unit_by_types(owner_id: int, type_ids: PackedStringArray) -> Node3D:
+	var host: Node = _unit_host.call() if _unit_host.is_valid() else null
+	if host == null:
+		return null
+	for tid in type_ids:
+		for c in host.get_children():
+			if not (c is Node3D) or not is_instance_valid(c):
+				continue
+			var node := c as Node3D
+			var ud: Variant = node.get_meta("unit_data", {})
+			if typeof(ud) != TYPE_DICTIONARY:
+				continue
+			if str((ud as Dictionary).get("typeId", "")) != str(tid):
+				continue
+			if int((ud as Dictionary).get("owner", -1)) == owner_id:
+				return node
+	return null
 
 
 ## 英雄背包 + 被动技能运行时。

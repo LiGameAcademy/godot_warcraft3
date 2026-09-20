@@ -970,39 +970,17 @@ func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary
 
 ## TODO(临时)：开局在己方主城旁刷 Hamg，便于测技能/暴风雪；验收后整段删除。
 func _dev_spawn_archmage() -> void:
-	if map_root == null or _heightfield == null:
-		return
 	var hall := _find_local_town_hall()
 	if hall == null:
 		push_warning("GameDirector[dev]: 未找到己方主城，跳过大法师")
 		return
-	var hall_wc3 := Wc3Coords.godot_to_wc3_xy(hall.global_position)
-	var spawn_xy := hall_wc3 + Vector2(192.0, -192.0)
-	var entry := {
-		"typeId": "Hamg",
-		"position": {"x": spawn_xy.x, "y": spawn_xy.y, "z": 0.0},
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
-		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"owner": local_player,
-		"flags": 2,
-		"creationNumber": _alloc_runtime_cn(),
-		"variation": 0,
-	}
-	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	var node := _ensure_units_module().spawn_near(
+		hall, "Hamg", local_player, Vector2(192.0, -192.0),
+		{"ensure_hero": true, "charge_food": true}
+	)
 	if node == null:
 		push_warning("GameDirector[dev]: 大法师刷出失败")
 		return
-	UnitLife.ensure(node)
-	_ensure_unit_ai(node)
-	_ensure_hero_runtime(node)
-	var stock := _local_stock()
-	if stock != null:
-		var food := BuildingCatalog.get_food_used("Hamg")
-		if food > 0:
-			stock.add_food_used(food)
-	_refresh_dynamic_pathing()
-	if health_bar_manager:
-		health_bar_manager.resync()
 	if unit_selector != null and unit_selector.has_method("select_node"):
 		unit_selector.call("select_node", node)
 	if game_hud:
@@ -1011,8 +989,6 @@ func _dev_spawn_archmage() -> void:
 
 ## TODO(临时)：开局在己方主城旁刷 hmpr，并授予牧师大师训练（Rhpt L2 → 心灵之火）。
 func _dev_spawn_priest() -> void:
-	if map_root == null or _heightfield == null:
-		return
 	var hall := _find_local_town_hall()
 	if hall == null:
 		push_warning("GameDirector[dev]: 未找到己方主城，跳过牧师")
@@ -1020,33 +996,13 @@ func _dev_spawn_priest() -> void:
 	var stock := _local_stock()
 	if stock != null:
 		stock.grant_upgrade("Rhpt", 2)
-	var hall_wc3 := Wc3Coords.godot_to_wc3_xy(hall.global_position)
-	var spawn_xy := hall_wc3 + Vector2(64.0, -256.0)
-	var entry := {
-		"typeId": "hmpr",
-		"position": {"x": spawn_xy.x, "y": spawn_xy.y, "z": 0.0},
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
-		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"owner": local_player,
-		"flags": 2,
-		"creationNumber": _alloc_runtime_cn(),
-		"variation": 0,
-	}
-	var node := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	var node := _ensure_units_module().spawn_near(
+		hall, "hmpr", local_player, Vector2(64.0, -256.0),
+		{"ensure_caster": true, "charge_food": true}
+	)
 	if node == null:
 		push_warning("GameDirector[dev]: 牧师刷出失败")
 		return
-	UnitLife.ensure(node)
-	_ensure_unit_ai(node)
-	_ensure_caster_runtime(node)
-	var stock_after := _local_stock()
-	if stock_after != null:
-		var food := BuildingCatalog.get_food_used("hmpr")
-		if food > 0:
-			stock_after.add_food_used(food)
-	_refresh_dynamic_pathing()
-	if health_bar_manager:
-		health_bar_manager.resync()
 	if unit_selector != null and unit_selector.has_method("select_node"):
 		unit_selector.call("select_node", node)
 	if game_hud:
@@ -1054,22 +1010,9 @@ func _dev_spawn_priest() -> void:
 
 
 func _find_local_town_hall() -> Node3D:
-	var host := _unit_host()
-	if host == null:
-		return null
-	for tid in ["htow", "hkee", "hcas"]:
-		for c in host.get_children():
-			if not (c is Node3D) or not is_instance_valid(c):
-				continue
-			var node := c as Node3D
-			var ud: Variant = node.get_meta("unit_data", {})
-			if typeof(ud) != TYPE_DICTIONARY:
-				continue
-			if str((ud as Dictionary).get("typeId", "")) != tid:
-				continue
-			if int((ud as Dictionary).get("owner", -1)) == local_player:
-				return node
-	return null
+	return _ensure_units_module().find_owned_unit_by_types(
+		local_player, PackedStringArray(["htow", "hkee", "hcas"])
+	)
 
 
 func _order_militia_move_to_hall(unit: Node3D, hall: Node3D) -> void:
@@ -2982,16 +2925,7 @@ func _refresh_dynamic_pathing() -> void:
 
 ## 完工后入图的 unit entry dict（MapUnitLayer 期望的字段）。
 func _build_entry_for(building_id: String, site_wc3: Vector2, player_owner: int, creation_number: int = -1) -> Dictionary:
-	return {
-		"typeId": building_id,
-		"position": {"x": site_wc3.x, "y": site_wc3.y},
-		# 与 Melee 开局一致：默认朝南（bj_UNIT_FACING）；缺省 0 会让建筑「横着」
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
-		"owner": player_owner,
-		"creationNumber": creation_number,
-		"variation": 0,
-		"isBuilding": true,
-	}
+	return _ensure_units_module().build_building_entry(building_id, site_wc3, player_owner, creation_number)
 
 
 ## 主城/兵营等可训建筑：命令卡带 training_unit 高亮 + Requires 置灰。
@@ -3466,24 +3400,18 @@ func gm_item_test_death() -> void:
 
 func gm_item_test_creep() -> void:
 	var unit := _ability_get_primary()
-	if not _is_controllable(unit) or map_root == null or _heightfield == null:
+	if not _is_controllable(unit):
 		return
-	var xy := Wc3Coords.godot_to_wc3_xy(unit.global_position) + Vector2(280.0, 0.0)
-	var entry := {
-		"typeId": "nogr", "owner": 12, "flags": 2, "variation": 0,
-		"position": {"x": xy.x, "y": xy.y, "z": 0.0},
-		"angle": MeleeBootstrap.UNIT_FACING_RAD,
-		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"creationNumber": _alloc_runtime_cn(),
-		"droppedItemSets": [[{"id": "phea", "chance": 100}], [{"id": "rde1", "chance": 100}]],
-	}
-	var creep := map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	var creep := _ensure_units_module().spawn_near(
+		unit, "nogr", 12, Vector2(280.0, 0.0),
+		{
+			"life_override": 20.0,
+			"entry_extras": {
+				"droppedItemSets": [[{"id": "phea", "chance": 100}], [{"id": "rde1", "chance": 100}]],
+			},
+		}
+	)
 	if creep != null:
-		UnitLife.ensure(creep)
-		UnitLife.set_life(creep, 20.0)
-		_ensure_unit_ai(creep)
-		if health_bar_manager != null:
-			health_bar_manager.resync()
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
 
 
@@ -3688,6 +3616,13 @@ func _ensure_units_module() -> UnitsModule:
 		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
 		"ensure_hero_passives": func(unit: Node3D) -> void:
 			_ensure_abilities_module().ensure_hero_passives(unit),
+		"ensure_caster": Callable(self, "_ensure_caster_runtime"),
+		"add_food_used": func(owner_id: int, food: int) -> void:
+			if _session == null or food == 0:
+				return
+			var stock: PlayerStock = _session.stocks.get(owner_id) as PlayerStock
+			if stock != null:
+				stock.add_food_used(food),
 	})
 	return _units
 

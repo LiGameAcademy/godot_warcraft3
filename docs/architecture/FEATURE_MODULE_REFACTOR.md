@@ -269,9 +269,31 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_command_card_module.tscn
 ```
 
+## 第九批：单位出生来源补齐（部分实现）
+
+扩展：`game/features/units/units_module.gd`。
+
+### 新增
+
+- `build_building_entry` / `build_unit_entry` / `spawn_entry` / `spawn_near`
+- `find_owned_unit_by_types`
+- 开发刷兵、GM 野怪、建造 entry 经总管薄转发接入
+
+### 刻意未迁
+
+- `EffectSpawnSummon` 仍直接 `add_unit_instance`（下一批接入 `spawn_entry`）
+- `_bootstrap_melee` / `_spawn_opponent_base` 仍属会话开局
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_units_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_build_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+1. **召唤原子接入 UnitsModule**：`EffectSpawnSummon` 改为走 `spawn_entry`（保留 Birth / SummonLifetime 差异）。
 2. **调试表现抽离**（可选）：`path_debug` 等。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

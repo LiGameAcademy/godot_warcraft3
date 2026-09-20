@@ -58,6 +58,22 @@ func _ready() -> void:
 	check(is_equal_approx(float(pos.get("x", -1.0)), 64.0) and is_equal_approx(float(pos.get("y", -1.0)), 96.0),
 		"teleport 同步 unit_data 坐标")
 
+	var bentry := module.build_building_entry("hhou", Vector2(10.0, 20.0), 0, 42)
+	check(str(bentry.get("typeId", "")) == "hhou", "build_building_entry typeId")
+	check(bool(bentry.get("isBuilding", false)), "build_building_entry isBuilding")
+	check(int(bentry.get("creationNumber", -1)) == 42, "build_building_entry 保留 CN")
+
+	var uentry := module.build_unit_entry("hfoo", Vector2(1.0, 2.0), 0)
+	check(str(uentry.get("typeId", "")) == "hfoo", "build_unit_entry typeId")
+	check(int(uentry.get("owner", -1)) == 0, "build_unit_entry owner")
+
+	var hall := Node3D.new()
+	hall.name = "TownHall"
+	hall.set_meta("unit_data", {"typeId": "htow", "owner": 0})
+	host.add_child(hall)
+	var found := module.find_owned_unit_by_types(0, PackedStringArray(["htow", "hkee"]))
+	check(found == hall, "find_owned_unit_by_types 找到主城")
+
 	module.shutdown()
 	check(not module._on_inventory_changed.is_valid(), "shutdown 清空注入 Callable")
 	module.free()
