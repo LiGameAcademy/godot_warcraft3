@@ -325,7 +325,7 @@
 
 ### 刻意未迁
 
-- ~~`_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管~~ → 第十三批已迁出结束/重开；OpponentEconomy 仍在总管
+- ~~`_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管~~ → 第十三批已迁出结束/重开；第十四批已迁出 OpponentEconomy
 - ~~GM / Perf 面板装配仍在总管~~ → 第十二批已迁入 DebugToolsModule
 - `MeleeBootstrap` / `MeleeRacePreview` 静态规则类位置不变
 
@@ -370,7 +370,7 @@
 
 ### 刻意未迁
 
-- OpponentEconomy / OpponentArmy 装配仍在总管
+- ~~OpponentEconomy / OpponentArmy 装配仍在总管~~ → 第十四批已迁入 OpponentAiModule
 - `MatchResultScreen` / `match_restart.gd` 类位置不变
 
 ### 验收入口
@@ -379,8 +379,30 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_match_lifecycle_module.tscn
 ```
 
+## 第十四批：对手电脑挂接（已实现）
+
+目录：`game/features/match/opponent_ai_module.gd`。
+
+### 职责
+
+- `setup`：为对手玩家创建独立 `CommandRouter` + `OpponentEconomy`，可选 `OpponentArmy`
+- `observe_enemies`：全图可见敌方单位（迷雾前占位）
+- 节点仍挂在总管下，集成测试路径 `get_node("OpponentEconomy")` 不变
+- 总管保留 `_setup_opponent_economy` 薄转发
+
+### 刻意未迁
+
+- `player_economy_ai.gd` / `player_army_ai.gd` 决策实现仍在原目录
+- 迷雾 / 真实视野观察接口未做
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_opponent_ai_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **OpponentEconomy 装配**（可选）：电脑经营/军队挂接从总管挪出。
+总管装配面已明显变薄。后续可按需收敛：输入路由大块、建造瞄准细节、或继续把仍留在总管的薄转发改为测试直调模块。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

@@ -11,8 +11,6 @@ signal session_ready
 
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
-const PlayerEconomyAIScript = preload("res://game/scripts/logic/ai/player_economy_ai.gd")
-const PlayerArmyAIScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -92,6 +90,7 @@ var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
 var _match_bootstrap: MatchBootstrapModule
 var _match_lifecycle: MatchLifecycleModule
+var _opponent_ai: OpponentAiModule
 var _debug_tools: DebugToolsModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
@@ -513,37 +512,7 @@ func _setup_match_end() -> void:
 
 
 func _setup_opponent_economy() -> void:
-	var owner := 1 if local_player == 0 else 0
-	if _session == null or not _session.stocks.has(owner) or has_node("OpponentEconomy"):
-		return
-	var commands := CommandRouter.new()
-	commands.configure(_path_query, _crowd_query, _ensure_navigator, _ensure_harvest_controller, _ensure_build_controller, _session, _find_build_site, _find_build_site_by_node, _ensure_attack_controller, owner)
-	commands.production_queue_ready.connect(_wire_train_queue)
-	var economy := PlayerEconomyAIScript.new()
-	economy.name = "OpponentEconomy"
-	economy.configure(commands, map_root.get_unit_layer(), _tree_registry, owner)
-	economy.stock = _stock_for_owner(owner)
-	economy.pathing = _pathing
-	economy.path_query = _path_query
-	add_child(economy)
-	if enable_opponent_army:
-		var army := PlayerArmyAIScript.new()
-		army.name = "OpponentArmy"
-		army.router = commands
-		army.unit_host = map_root.get_unit_layer()
-		army.observe_enemies = _observe_player_enemies.bind(owner)
-		army.item_service = _ensure_items_module().item_service
-		add_child(army)
-
-## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。
-func _observe_player_enemies(owner: int) -> Array[Node3D]:
-	var out: Array[Node3D] = []
-	for unit in map_root.get_unit_layer().get_children():
-		if unit is Node3D and CombatQuery.is_alive_in_world(unit):
-			var other := CombatQuery.owner_of(unit)
-			if other != owner and not CombatQuery.is_neutral_owner(other):
-				out.append(unit)
-	return out
+	_ensure_opponent_ai_module().setup(local_player, enable_opponent_army)
 
 
 func _setup_health_bars() -> void:
@@ -3125,6 +3094,33 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 			return _ensure_units_module().spawn_near(near, type_id, owner_id, offset, opts),
 	})
 	return _debug_tools
+
+
+## 装配对手电脑：经营 / 军队 AI 挂接。
+func _ensure_opponent_ai_module() -> OpponentAiModule:
+	if not is_instance_valid(_opponent_ai):
+		_opponent_ai = OpponentAiModule.new()
+		_opponent_ai.name = "OpponentAiModule"
+		add_child(_opponent_ai)
+	_opponent_ai.configure({
+		"host_parent": self,
+		"map_root": map_root,
+		"session": _session,
+		"path_query": _path_query,
+		"crowd_query": _crowd_query,
+		"pathing": _pathing,
+		"tree_registry": _tree_registry,
+		"item_service": _ensure_items_module().item_service,
+		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_harvest": Callable(self, "_ensure_harvest_controller"),
+		"ensure_build": Callable(self, "_ensure_build_controller"),
+		"ensure_attack": Callable(self, "_ensure_attack_controller"),
+		"find_build_site": Callable(self, "_find_build_site"),
+		"find_build_site_by_node": Callable(self, "_find_build_site_by_node"),
+		"wire_train_queue": Callable(self, "_wire_train_queue"),
+		"stock_for_owner": Callable(self, "_stock_for_owner"),
+	})
+	return _opponent_ai
 
 
 ## 装配对局生命周期：胜负接线、结算屏、重开。

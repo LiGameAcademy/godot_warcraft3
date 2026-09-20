@@ -32,6 +32,7 @@ game/features/
   match/
     match_bootstrap_module.gd      对局开局会话、本地/对手基地、镜头
     match_lifecycle_module.gd      胜负接线、结算屏、重开
+    opponent_ai_module.gd          对手经营 / 军队 AI 挂接
   debug/
     path_debug_module.gd           选中单位寻路折线调试
     debug_tools_module.gd          GM 面板 / 性能叠层 / GM 动作
