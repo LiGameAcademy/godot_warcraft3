@@ -27,6 +27,8 @@ game/features/
     interaction_module.gd          互斥瞄准状态机 + 光标同步
   command_card/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
+  selection_hud/
+    selection_hud_module.gd        肖像 vitals / buff / 选中详情
 ```
 
 ## 依赖约定

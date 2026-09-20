@@ -246,9 +246,32 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
 ```
 
+## 第八批：选中 HUD 模块（已实现）
+
+目录：`game/features/selection_hud/selection_hud_module.gd`。
+
+### 职责
+
+- 肖像：`setup_portrait` / `refresh_portrait_vitals` / `refresh_portrait_timed_life_bar`
+- Buff / 攻甲芯片：`refresh_buff_strip`
+- 选中详情：`apply_selection_info` / `sync_panel` / `bind_inventory_for`
+- 帧 tick：保留轮询（TODO：改信号驱动）
+
+### 刻意未迁
+
+- `_sync_build_hud_for_selection` / 训练队列 HUD 仍在总管（经 Callable 注入 sync）
+- `path_debug`、GM 面板
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_selection_hud_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_command_card_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **选中 HUD 面板收敛**：肖像 / buff / 选中详情仍在总管；本批只抽命令卡。
-2. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+1. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
+2. **调试表现抽离**（可选）：`path_debug` 等。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

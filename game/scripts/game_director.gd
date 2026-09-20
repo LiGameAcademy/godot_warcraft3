@@ -90,6 +90,7 @@ var _abilities: AbilitiesModule
 var _items: ItemsModule
 var _interaction: InteractionModule
 var _command_card: CommandCardModule
+var _selection_hud: SelectionHudModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
@@ -345,13 +346,7 @@ func _wire_hud() -> void:
 
 
 func _setup_portrait_hud() -> void:
-	if game_hud == null or map_root == null:
-		return
-	if not game_hud.has_method("configure_portrait"):
-		return
-	var cache = map_root.get_model_cache() if map_root.has_method("get_model_cache") else null
-	var catalog = map_root.get_id_catalog() if map_root.has_method("get_id_catalog") else null
-	game_hud.configure_portrait(cache, catalog)
+	_ensure_selection_hud_module().setup_portrait()
 
 
 func _on_multi_select_clicked(instance_id: int) -> void:
@@ -688,6 +683,7 @@ func _setup_pathing() -> void:
 	_ensure_units_module()
 	_ensure_interaction_module()
 	_ensure_command_card_module()
+	_ensure_selection_hud_module()
 
 
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
@@ -821,9 +817,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(_abilities):
 		_abilities.tick(delta)
 	_refresh_move_executing_ui()
-	_refresh_portrait_vitals()
-	_refresh_portrait_timed_life_bar()
-	_refresh_buff_strip()
+	_ensure_selection_hud_module().tick(delta)
 	_refresh_path_debug()
 	_ensure_command_card_module().tick_cooldown_hud(delta)
 
@@ -3348,8 +3342,7 @@ func _clear_command_card_hotkeys() -> void:
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
-	if game_hud != null:
-		game_hud.bind_inventory(Inventory.of(primary) if _is_controllable(primary) else null)
+	_ensure_selection_hud_module().bind_inventory_for(primary)
 	_ensure_interaction_module().on_selection_changed(primary, selected)
 	_sync_aim_flags_from_interaction()
 	if health_bar_manager:
@@ -3358,7 +3351,7 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 		_sync_rally_flag_for_selection()
 		return
 	if primary != null and not selected.is_empty():
-		_apply_selection_info_to_hud(primary, selected)
+		_ensure_selection_hud_module().apply_selection_info(primary, selected)
 	_ensure_command_card_module().on_selection_changed(primary, selected)
 	if (
 		primary != null
@@ -3372,38 +3365,11 @@ func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 
 
 func _apply_selection_info_to_hud(primary: Node3D, selected: Array) -> void:
-	if game_hud == null:
-		return
-	if not game_hud.has_method("set_selection_info"):
-		_apply_unit_info_to_hud(primary, "")
-		return
-	game_hud.set_selection_info(SelectionInfoBuilder.build(primary, selected))
-
-
-func _apply_unit_info_to_hud(unit: Node3D, label: String) -> void:
-	if game_hud == null or unit == null:
-		return
-	UnitLife.ensure(unit)
-	var hp := int(round(UnitLife.get_life(unit)))
-	var hp_max := int(round(UnitLife.get_max_life(unit)))
-	var name_s := label
-	if name_s.is_empty():
-		var d: Dictionary = unit.get_meta("unit_data", {})
-		name_s = str(d.get("typeId", "—"))
-	game_hud.set_unit_info(name_s, hp, hp_max)
+	_ensure_selection_hud_module().apply_selection_info(primary, selected)
 
 
 func _sync_selection_info_panel() -> void:
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	var selected: Array = []
-	if unit_selector.has_method("get_selected"):
-		selected = unit_selector.call("get_selected")
-	if primary == null or game_hud == null:
-		return
-	_apply_selection_info_to_hud(primary, selected)
-	_sync_build_hud_for_selection()
+	_ensure_selection_hud_module().sync_panel()
 
 
 func _sync_build_hud_for_selection() -> void:
@@ -3436,72 +3402,6 @@ func _unbind_hud_build_site() -> void:
 	if not is_instance_valid(_build):
 		return
 	_build.unbind_hud_site()
-
-
-func _on_hud_build_site_progress(_elapsed: float, _total: float, _ratio: float) -> void:
-	# BuildModule 内部刷新 HUD；这里保留以便日后扩展
-	pass
-
-
-func _sync_selection_info_panel_hp_only() -> void:
-	## 建造进度等场景：只刷肖像生命/魔法，避免整栏重建。
-	_refresh_portrait_vitals()
-
-
-func _refresh_portrait_vitals() -> void:
-	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	if not game_hud.has_method("update_portrait_vitals"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		return
-	var vit := SelectionInfoBuilder.vitals(primary)
-	game_hud.update_portrait_vitals(
-		int(vit.get("hp", 0)),
-		int(vit.get("hp_max", 0)),
-		int(vit.get("mana", 0)),
-		int(vit.get("mana_max", 0))
-	)
-
-
-func _refresh_portrait_timed_life_bar() -> void:
-	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null:
-		return
-	var timed := SelectionInfoBuilder.timed_life_progress(primary)
-	if not bool(timed.get("show", false)):
-		return
-	if game_hud.has_method("update_portrait_timed_life"):
-		game_hud.update_portrait_timed_life(
-			float(timed.get("left", 0.0)), float(timed.get("total", 1.0))
-		)
-
-
-func _refresh_buff_strip() -> void:
-	if game_hud == null or unit_selector == null or not unit_selector.has_method("get_primary"):
-		return
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		if game_hud.has_method("update_buff_strip"):
-			game_hud.update_buff_strip([])
-		return
-	if game_hud.has_method("update_buff_strip"):
-		game_hud.update_buff_strip(BuffQuery.hud_entries(primary))
-	# Buff 改攻/甲时同步芯片（心灵之火等）
-	if game_hud.has_method("update_combat_stat_chips"):
-		var stats := SelectionInfoBuilder.combat_stats(primary)
-		game_hud.update_combat_stat_chips(
-			stats.get("attack", {}) as Dictionary,
-			stats.get("armor", {}) as Dictionary
-		)
-
-
-func _update_build_hud_if_relevant(_key: String, _ratio: float, _elapsed: float, _total: float) -> void:
-	# 由 BuildModule 内部 update_hud_if_relevant 负责
-	pass
 
 
 func _refresh_command_card() -> void:
@@ -3585,6 +3485,24 @@ func gm_item_test_creep() -> void:
 		if health_bar_manager != null:
 			health_bar_manager.resync()
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
+
+
+## 装配选中 HUD：肖像 vitals / buff / 选中详情。
+func _ensure_selection_hud_module() -> SelectionHudModule:
+	if not is_instance_valid(_selection_hud):
+		_selection_hud = SelectionHudModule.new()
+		_selection_hud.name = "SelectionHudModule"
+		add_child(_selection_hud)
+	if game_hud == null or unit_selector == null:
+		_resolve_exports()
+	_selection_hud.configure({
+		"game_hud": game_hud,
+		"unit_selector": unit_selector,
+		"map_root": map_root,
+		"sync_build_hud": Callable(self, "_sync_build_hud_for_selection"),
+		"is_controllable": Callable(self, "_is_controllable"),
+	})
+	return _selection_hud
 
 
 ## 装配命令卡模块：刷卡、热键、二级菜单、action 分发。
