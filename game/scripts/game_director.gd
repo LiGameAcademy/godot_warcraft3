@@ -91,6 +91,7 @@ var _interaction: InteractionModule
 var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
+var _match_bootstrap: MatchBootstrapModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
@@ -832,100 +833,23 @@ func _hide_start_locations() -> void:
 
 
 func _bootstrap_melee() -> void:
-	var race := MeleeRacePreview.race_from_string(preview_race)
-	var preview := MeleeRacePreview.preview_dict(race)
-	var worker_n: int = int(preview.get("worker_count", 5))
-	_session = GameSession.from_melee_bootstrap(
-		map_dir,
-		local_player,
-		str(preview.get("race", "human")),
-		worker_n,
-		PlayerStock.MELEE_TOWN_HALL_FOOD
-	)
-	_apply_cursor_race(str(preview.get("race", "human")))
-	if game_hud:
-		game_hud.bind_stock(_session.local_stock())
-
-	var slocs := MeleeBootstrap.collect_slocs(map_dir)
-	if slocs.is_empty():
-		if game_hud:
-			game_hud.set_status("%s · 无 sloc，跳过开局刷兵" % str(preview.get("display_name", "")))
-		return
-
-	var sloc: Dictionary
-	if random_start_location:
-		sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
-	else:
-		sloc = _find_sloc_for_owner(slocs, local_player)
-		if sloc.is_empty():
-			sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
-
-	var hall_world := Vector3.ZERO
-	if spawn_melee_base:
-		var hf := map_root.get_heightfield_dict()
-		var result := MeleeBootstrap.spawn_at_sloc(map_root, sloc, race, local_player, hf)
-		if result.get("ok", false):
-			hall_world = result.get("hall_world", Vector3.ZERO) as Vector3
-			if game_hud:
-				game_hud.set_status(
-					"%s · %s @ sloc owner=%s · 刷 %d · 金%d 木%d"
-					% [
-						_map_display_name(),
-						str(preview.get("display_name", "")),
-						str(sloc.get("owner", "?")),
-						int(result.get("spawned", 0)),
-						_session.local_stock().gold,
-						_session.local_stock().lumber,
-					]
-				)
-		else:
-			if game_hud:
-				game_hud.set_status("%s · 开局刷兵失败" % str(preview.get("display_name", "")))
-	else:
-		var pos: Dictionary = sloc.get("position", {})
-		hall_world = Wc3Coords.wc3_xy_to_godot(
-			float(pos.get("x", 0.0)),
-			float(pos.get("y", 0.0)),
-			float(pos.get("z", 0.0))
-		)
-
-	if rts_camera and hall_world != Vector3.ZERO:
-		rts_camera.snap_to(hall_world)
-		rts_camera.focus_on_position(hall_world, 0.35)
-	if spawn_melee_base and spawn_opponent_base:
-		_spawn_opponent_base(slocs, sloc)
-
-	# 开局刷兵后立刻同步动态 pathing（与叠层一致），避免瞄准时漏检脚印
-	_pathing = map_root.get_pathing_map() if map_root != null else null
-	_refresh_dynamic_pathing()
+	var result := _ensure_match_bootstrap_module().bootstrap_melee({
+		"preview_race": preview_race,
+		"local_player": local_player,
+		"random_start_location": random_start_location,
+		"spawn_melee_base": spawn_melee_base,
+		"spawn_opponent_base": spawn_opponent_base,
+	})
+	_session = result.get("session") as GameSession
 
 
+## 兼容测试入口：重复刷对手基地应返回 false。
 func _spawn_opponent_base(slocs: Array[Dictionary], local_sloc: Dictionary) -> bool:
-	if _session == null or map_root == null:
+	if _session == null:
 		return false
-	var available := MeleeBootstrap.available_slocs(slocs, [local_sloc])
-	if available.is_empty():
-		push_warning("双玩家开局：没有独立的对手出生点")
-		return false
-	var owner := 1 if local_player == 0 else 0
-	if _session.stocks.has(owner):
-		return false
-	var sloc := MeleeBootstrap.pick_random_sloc(available, _rng)
-	var race := MeleeRacePreview.race_from_string("human")
-	var result := MeleeBootstrap.spawn_at_sloc(map_root, sloc, race, owner, map_root.get_heightfield_dict())
-	if not bool(result.get("ok", false)):
-		return false
-	var workers := maxi(int(result.get("spawned", 1)) - 1, 0)
-	var cap := BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
-	_session.set_stock(owner, PlayerStock.melee_start(workers, cap))
-	return true
-
-
-func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary:
-	for s in slocs:
-		if int(s.get("owner", -1)) == owner_id:
-			return s
-	return {}
+	return _ensure_match_bootstrap_module().spawn_opponent_base(
+		_session, slocs, local_sloc, local_player
+	)
 
 
 ## TODO(临时)：开局在己方主城旁刷 Hamg，便于测技能/暴风雪；验收后整段删除。
@@ -3372,6 +3296,29 @@ func gm_item_test_creep() -> void:
 	)
 	if creep != null:
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
+
+
+## 装配对局开局：会话、本地/对手基地、镜头落点。
+func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
+	if not is_instance_valid(_match_bootstrap):
+		_match_bootstrap = MatchBootstrapModule.new()
+		_match_bootstrap.name = "MatchBootstrapModule"
+		add_child(_match_bootstrap)
+	if game_hud == null or rts_camera == null:
+		_resolve_exports()
+	_match_bootstrap.configure({
+		"map_root": map_root,
+		"map_dir": map_dir,
+		"game_hud": game_hud,
+		"rts_camera": rts_camera,
+		"rng": _rng,
+		"apply_cursor_race": Callable(self, "_apply_cursor_race"),
+		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"map_display_name": Callable(self, "_map_display_name"),
+		"on_pathing_map": func(pm) -> void:
+			_pathing = pm,
+	})
+	return _match_bootstrap
 
 
 ## 装配路径调试：选中单位寻路折线。

@@ -282,7 +282,7 @@
 ### 刻意未迁
 
 - ~~`EffectSpawnSummon` 仍直接 `add_unit_instance`~~ → 第十批已接入 `spawn_summon`
-- `_bootstrap_melee` / `_spawn_opponent_base` 仍属会话开局
+- ~~`_bootstrap_melee` / `_spawn_opponent_base` 仍属会话开局~~ → 第十一批已迁入 MatchBootstrapModule
 
 ### 验收入口
 
@@ -314,9 +314,31 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
 ```
 
+## 第十一批：对局开局（已实现）
+
+目录：`game/features/match/match_bootstrap_module.gd`。
+
+### 职责
+
+- `bootstrap_melee`：创建 `GameSession`、选 sloc、本地基地刷兵、镜头落点、对手基地、动态 pathing 刷新
+- `spawn_opponent_base`：双人开局对手库存注册（总管保留薄兼容入口供集成测试）
+
+### 刻意未迁
+
+- `_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管
+- GM / Perf 面板装配仍在总管
+- `MeleeBootstrap` / `MeleeRacePreview` 静态规则类位置不变
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_match_bootstrap_module.tscn
+& $env:GODOT --headless --path . res://tests/integration/selftest_two_player_start.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **会话开局收敛**（可选）：`_bootstrap_melee` / `_spawn_opponent_base` → MatchBootstrap 模块。
-2. **GM / Perf 面板装配**（可选）：从总管挪出调试 UI 挂接。
+1. **GM / Perf 面板装配**（可选）：从总管挪出调试 UI 挂接。
+2. **对局结束 / 重开**（可选）：`_setup_match_end` / `_restart_match` 收敛。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

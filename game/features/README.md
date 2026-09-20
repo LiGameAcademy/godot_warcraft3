@@ -29,6 +29,8 @@ game/features/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
   selection_hud/
     selection_hud_module.gd        肖像 vitals / buff / 选中详情
+  match/
+    match_bootstrap_module.gd      对局开局会话、本地/对手基地、镜头
   debug/
     path_debug_module.gd           选中单位寻路折线调试
 ```
