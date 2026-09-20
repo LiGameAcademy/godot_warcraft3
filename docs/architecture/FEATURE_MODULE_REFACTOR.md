@@ -325,7 +325,7 @@
 
 ### 刻意未迁
 
-- `_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管
+- ~~`_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管~~ → 第十三批已迁出结束/重开；OpponentEconomy 仍在总管
 - ~~GM / Perf 面板装配仍在总管~~ → 第十二批已迁入 DebugToolsModule
 - `MeleeBootstrap` / `MeleeRacePreview` 静态规则类位置不变
 
@@ -350,7 +350,7 @@
 ### 刻意未迁
 
 - `GmDebugPanel` / `PerfOverlay` 表现类仍在 `game/scripts/presentation/`
-- 对局结束 / 重开仍在总管
+- ~~对局结束 / 重开仍在总管~~ → 第十三批已迁出
 
 ### 验收入口
 
@@ -358,9 +358,29 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_debug_tools_module.tscn
 ```
 
+## 第十三批：对局结束 / 重开（已实现）
+
+目录：`game/features/match/match_lifecycle_module.gd`。
+
+### 职责
+
+- `setup_match_end`：武装 `GameSession.arm_match` 并连接 `match_finished`
+- 结算屏挂接与退出；`restart_match` 复制导出设置并排队 `MatchRestart`
+- `_process` 内 `evaluate_match` 仍由总管轮询（触发会话信号）
+
+### 刻意未迁
+
+- OpponentEconomy / OpponentArmy 装配仍在总管
+- `MatchResultScreen` / `match_restart.gd` 类位置不变
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_match_lifecycle_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **对局结束 / 重开**（可选）：`_setup_match_end` / `_restart_match` 收敛。
-2. **OpponentEconomy 装配**（可选）：电脑经营挂接从总管挪出。
+1. **OpponentEconomy 装配**（可选）：电脑经营/军队挂接从总管挪出。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

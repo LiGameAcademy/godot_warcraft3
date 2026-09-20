@@ -12,7 +12,6 @@ signal session_ready
 ## 场景实例仍需 preload；脚本类一律用 class_name。
 const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 const PlayerEconomyAIScript = preload("res://game/scripts/logic/ai/player_economy_ai.gd")
-const MatchResultScreenScript = preload("res://game/scripts/presentation/match_result_screen.gd")
 const PlayerArmyAIScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
 
 @export var map_root: MapLoader
@@ -92,6 +91,7 @@ var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
 var _match_bootstrap: MatchBootstrapModule
+var _match_lifecycle: MatchLifecycleModule
 var _debug_tools: DebugToolsModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
@@ -509,51 +509,7 @@ func _on_map_loaded() -> void:
 
 
 func _setup_match_end() -> void:
-	if _session == null or not spawn_opponent_base:
-		return
-	# 当前双人开局各自为队；后续房间/地图队伍配置需从正式槽位注入。
-	var teams: Dictionary = {}
-	for player in _session.stocks:
-		teams[player] = player
-	_session.arm_match(teams)
-	_session.match_finished.connect(_on_match_finished)
-
-
-func _on_match_finished(result: Dictionary) -> void:
-	# 只冻结本局节点，避免暂停编辑器宿主或外层测试场景。
-	var game := get_parent()
-	_disable_match_processing(game)
-	var screen := MatchResultScreenScript.new()
-	screen.name = "MatchResultScreen"
-	game.add_child(screen)
-	screen.show_result(result, _session.local_player)
-	screen.exit_requested.connect(func() -> void: get_tree().quit())
-	screen.restart_requested.connect(_restart_match, CONNECT_ONE_SHOT)
-
-
-func _restart_match() -> void:
-	var game := get_parent()
-	var packed := load(game.scene_file_path) as PackedScene
-	if packed == null:
-		push_error("无法重新加载对局场景")
-		return
-	var restart := preload("res://game/scripts/session/match_restart.gd").new()
-	restart.old_game = game
-	restart.packed = packed
-	restart.players = _session.stocks.keys()
-	# 复制导出的值配置，节点引用由新场景自行绑定，运行时状态不复制。
-	for property in get_property_list():
-		if int(property.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE and int(property.usage) & PROPERTY_USAGE_STORAGE:
-			var value: Variant = get(property.name)
-			if not value is Object and not value is NodePath:
-				restart.settings[property.name] = value
-	game.get_parent().add_child(restart)
-
-
-func _disable_match_processing(node: Node) -> void:
-	node.process_mode = Node.PROCESS_MODE_DISABLED
-	for child in node.get_children():
-		_disable_match_processing(child)
+	_ensure_match_lifecycle_module().setup_match_end(_session, spawn_opponent_base)
 
 
 func _setup_opponent_economy() -> void:
@@ -3169,6 +3125,19 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 			return _ensure_units_module().spawn_near(near, type_id, owner_id, offset, opts),
 	})
 	return _debug_tools
+
+
+## 装配对局生命周期：胜负接线、结算屏、重开。
+func _ensure_match_lifecycle_module() -> MatchLifecycleModule:
+	if not is_instance_valid(_match_lifecycle):
+		_match_lifecycle = MatchLifecycleModule.new()
+		_match_lifecycle.name = "MatchLifecycleModule"
+		add_child(_match_lifecycle)
+	_match_lifecycle.configure({
+		"game_root": get_parent(),
+		"settings_source": self,
+	})
+	return _match_lifecycle
 
 
 ## 装配对局开局：会话、本地/对手基地、镜头落点。
