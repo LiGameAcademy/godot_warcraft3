@@ -683,9 +683,10 @@ static func _bind_sequence_meta(p: GPUParticles3D, em: Dictionary) -> void:
 	p.emitting = false
 
 
-## 若 active_sequences 为空数组，用 visibility 脉冲帧重推断。
-## Blizzard 等只有 Birth 的 PE2：convert 偶尔把 active 留成空数组（vis 全程=1），
-## 应当**默认 = 全 Sequence** 而非关闸；否则「暴风雪只看见一闪，粒子全灭」。
+## 若 active_sequences 为空数组，用 visibility / rate 脉冲帧重推断。
+## Blizzard 等只有 Birth 的 PE2：convert 偶尔把 active 留成空数组（vis 全程≈1），
+## 推断失败时仍兜底走全程。但 vis 轨存在且峰值始终 <0.5（金矿塌陷烟等）时
+## **禁止**兜底全程——否则 Stand 会一直喷烟，看起来像燃烧。
 static func _ensure_active_sequences(em: Dictionary, sequences: Array) -> void:
 	var raw: Variant = em.get("active_sequences", null)
 	if raw == null:
@@ -696,16 +697,31 @@ static func _ensure_active_sequences(em: Dictionary, sequences: Array) -> void:
 	if not inferred.is_empty():
 		em["active_sequences"] = inferred
 		return
-	# 推断不到（如 vis 默认=1 的老转包）→ 兜底走全程
-	var all: Array = []
-	for s in sequences:
-		if typeof(s) != TYPE_DICTIONARY:
+	# 推断不到：仅当「可能是 vis 默认常开的老转包」才兜底全程
+	if not _vis_track_is_inert(em):
+		var all: Array = []
+		for s in sequences:
+			if typeof(s) != TYPE_DICTIONARY:
+				continue
+			var nm := str((s as Dictionary).get("name", "")).strip_edges()
+			if not nm.is_empty():
+				all.append(nm)
+		if not all.is_empty():
+			em["active_sequences"] = all
+	# else：保留空数组 → 永不按 Sequence 常开（塌陷烟等靠 Death 轨 / 重转）
+
+
+## Visibility 轨是否「从未真正打开」（峰值 < 0.5）。无 vis 轨则不算 inert。
+static func _vis_track_is_inert(em: Dictionary) -> bool:
+	var vis_keys: Array = em.get("visibility_keys", []) as Array
+	if vis_keys.is_empty():
+		return false
+	var peak := 0.0
+	for k in vis_keys:
+		if typeof(k) != TYPE_DICTIONARY:
 			continue
-		var nm := str((s as Dictionary).get("name", "")).strip_edges()
-		if not nm.is_empty():
-			all.append(nm)
-	if not all.is_empty():
-		em["active_sequences"] = all
+		peak = maxf(peak, float((k as Dictionary).get("value", 0.0)))
+	return peak < 0.5
 
 
 static func _sync_active_seqs_from_payload(pe2_root: Node, data: Dictionary) -> void:
@@ -737,12 +753,14 @@ static func _sync_active_seqs_node(n: Node, by_name: Dictionary) -> void:
 
 
 ## 与 convert-mdx activeSequencesForEmitter 对齐：采 vis 脉冲帧，勿只采 Sequence 中点。
+## vis 轨峰值始终 <0.5 且有 rate 动画时：只按 rate>0 判定（死亡 squirt 烟常见）。
 static func _infer_active_sequences(em: Dictionary, sequences: Array) -> Array:
 	var out: Array = []
 	var vis_keys: Array = em.get("visibility_keys", []) as Array
 	var rate_keys: Array = em.get("emission_rate_keys", []) as Array
 	var static_rate := float(em.get("emission_rate", 0.0))
 	var has_anim_rate := not rate_keys.is_empty()
+	var rate_only := _vis_track_is_inert(em) and has_anim_rate
 	for s in sequences:
 		if typeof(s) != TYPE_DICTIONARY:
 			continue
@@ -771,7 +789,11 @@ static func _infer_active_sequences(em: Dictionary, sequences: Array) -> Array:
 				if has_anim_rate
 				else static_rate
 			)
-			if vis >= 0.5 and rate > 0.01:
+			if rate_only:
+				if rate > 0.01:
+					hit = true
+					break
+			elif vis >= 0.5 and rate > 0.01:
 				hit = true
 				break
 		if hit:

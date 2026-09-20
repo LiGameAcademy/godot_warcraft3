@@ -185,6 +185,12 @@ function _emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end) {
     if (k.frame >= start && k.frame <= end) sampleFrames.add(k.frame);
   }
   const hasAnimRate = Array.isArray(rateKeys) && rateKeys.length > 0;
+  // vis 轨峰值始终 <0.5（金矿塌陷烟等）：只按 rate 判定，避免 empty active → 运行时误开 Stand。
+  const visInert =
+    Array.isArray(visKeys) &&
+    visKeys.length > 0 &&
+    Math.max(0, ...visKeys.map((k) => Number(k.value) || 0)) < 0.5;
+  const rateOnly = visInert && hasAnimRate;
   for (const frame of sampleFrames) {
     const vis = sampleTrackInSequence(visKeys, frame, start, end, 1);
     const rate = hasAnimRate
@@ -192,7 +198,11 @@ function _emitterActiveInSequence(visKeys, rateKeys, staticRate, start, end) {
       : staticRate != null
         ? staticRate
         : sampleTrackInSequence(rateKeys, frame, start, end, 0);
-    if (vis >= 0.5 && rate > 0.01) return true;
+    if (rateOnly) {
+      if (rate > 0.01) return true;
+    } else if (vis >= 0.5 && rate > 0.01) {
+      return true;
+    }
   }
   return false;
 }
