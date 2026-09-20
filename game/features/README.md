@@ -23,6 +23,10 @@ game/features/
     abilities_module.gd            对局内技能 ctx / runtime / 瞄准 / 预览
   items/
     items_module.gd                对局内地面物品、背包操作与死亡掉落
+  interaction/
+    interaction_module.gd          互斥瞄准状态机 + 光标同步
+  command_card/
+    command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
 ```
 
 ## 依赖约定

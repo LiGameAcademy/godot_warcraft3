@@ -90,11 +90,6 @@
 & $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
 ```
 
-## 后续批次（尚未实施）
-
-1. **交互与 HUD 装配**：统一互斥瞄准模式、选择订阅及命令卡协调，清理第一批留下的转发入口。
-2. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
-
 ## 第三批：建造模块（已实现）
 
 目录：`game/features/build/build_module.gd`。
@@ -183,7 +178,7 @@
 ### 刻意未迁
 
 - `logic/ability/*`、`logic/item/*` 脚本仍留在原目录（本批只抽装配协调）。
-- SmartTarget 拾取射线、命令卡总调度仍在总管（下一批交互/HUD）。
+- SmartTarget 拾取射线、命令卡总调度仍在总管（交互瞄准已抽到 InteractionModule；命令卡仍待收敛）。
 
 ### 验收入口
 
@@ -194,5 +189,66 @@
 & $env:GODOT --headless --path . res://tests/integration/selftest_hero_life_game.tscn
 & $env:GODOT --headless --path . res://tests/integration/selftest_player_army_game.tscn
 ```
+
+## 第六批：交互模块（已实现）
+
+目录：`game/features/interaction/interaction_module.gd`。
+
+### 职责
+
+- 互斥瞄准状态机：`MOVE / ATTACK / PATROL / HARVEST / RALLY / ABILITY / BUILD`。
+- 光标同步：`apply_aim_cursor` / `end_aim_cursor`；友方技能 → `ALLY`，集结/建造 → `SELECT`。
+- `flash_move_confirm`：先退出瞄准再闪箭头，避免 `set_move_targeting(false)` 掐死 flash。
+- `adopt_external_aim` / `acknowledge_external_end`：对接 Abilities/Build 模块的自管瞄准生命周期。
+- 选中变化 / Esc：`cancel_aim` 统一清态（含 ability↔build 互斥）。
+
+### 光标修复要点
+
+- `Wc3GameCursor` 增加 `apply_aim_cursor` / `end_aim_cursor` / `set_ally_targeting` / `set_select_targeting`。
+- 退出 MOVE sticky 时不误杀紧随其后的 `flash_move`。
+- 建造 commit 后用 `acknowledge_external_end`，避免再 `cancel_placement` 清掉钉住幽灵。
+
+### 刻意未迁
+
+- 命令卡按钮生成、热键绑定、二级建造/英雄技能菜单仍在 `GameDirector`。
+- 悬停 INVALID 光标本批不做。
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_interaction_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_build_module.tscn
+```
+
+## 第七批：命令卡模块（已实现）
+
+目录：`game/features/command_card/command_card_module.gd`。
+
+### 职责
+
+- 刷卡：`refresh` / `refresh_move_executing_ui` / `apply_building_train_card`
+- 热键表 + `try_hotkey`；二级建造/英雄菜单 + `handle_submenu_escape`
+- Action 分发：`dispatch_action` / `dispatch_action_rclick`（执行经 Callable）
+- 选中命令卡分支：`on_selection_changed`（金矿/敌方/训练/移动者）
+
+### 刻意未迁
+
+- `CommandCard` 数据组装仍在 `game/scripts/logic/command/`
+- 选中详情 / 肖像 / buff 条仍在总管
+- `_issue_*` / `_begin_*_targeting` 命令执行仍在总管
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_command_card_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_interaction_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
+```
+
+## 后续批次（尚未实施）
+
+1. **选中 HUD 面板收敛**：肖像 / buff / 选中详情仍在总管；本批只抽命令卡。
+2. **单位出生来源补齐**：召唤、建造、复活统一走 `UnitsModule`，保留各来源差异配置。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

@@ -125,7 +125,9 @@ func set_move_targeting(active: bool) -> void:
 	if active:
 		set_mode(Mode.MOVE)
 	else:
-		set_mode(Mode.IDLE)
+		# 仅在当前仍是 MOVE sticky 时回 IDLE；避免掐死紧随其后的 flash_move。
+		if _mode == Mode.MOVE:
+			set_mode(Mode.IDLE)
 
 
 ## 攻击 / 技能瞄准：白圈，直到 cancel。
@@ -134,6 +136,40 @@ func set_attack_targeting(active: bool) -> void:
 	if active:
 		set_mode(Mode.TARGET)
 	else:
+		if _mode == Mode.TARGET or _mode == Mode.ALLY:
+			set_mode(Mode.IDLE)
+
+
+## 友方技能瞄准：青圈。
+func set_ally_targeting(active: bool) -> void:
+	_move_sticky = false
+	if active:
+		set_mode(Mode.ALLY)
+	else:
+		if _mode == Mode.ALLY or _mode == Mode.TARGET:
+			set_mode(Mode.IDLE)
+
+
+## 集结等：静态选择手。
+func set_select_targeting(active: bool) -> void:
+	_move_sticky = false
+	if active:
+		set_mode(Mode.SELECT)
+	else:
+		if _mode == Mode.SELECT:
+			set_mode(Mode.IDLE)
+
+
+## 统一瞄准光标（InteractionModule 用）。退出时不清 sticky 以外的 flash。
+func apply_aim_cursor(mode: int) -> void:
+	_move_sticky = mode == Mode.MOVE
+	set_mode(mode)
+
+
+## 退出瞄准：清 sticky；若要闪移动确认请随后调用 flash_move()。
+func end_aim_cursor() -> void:
+	_move_sticky = false
+	if _mode == Mode.MOVE or _mode == Mode.TARGET or _mode == Mode.ALLY or _mode == Mode.SELECT:
 		set_mode(Mode.IDLE)
 
 
