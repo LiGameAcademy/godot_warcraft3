@@ -149,17 +149,28 @@ func request_research(upgrade_id: String) -> void:
 			game_hud.set_status("%s 不能研究 %s" % [building_id, uid])
 		return
 	var stock := _local_stock()
-	if stock != null and stock.has_upgrade(uid):
+	var cur_lv := stock.upgrade_level(uid) if stock != null else 0
+	var next_lv := TechPresence.upgrade_next_level(uid, cur_lv)
+	if next_lv <= 0:
 		if game_hud:
-			game_hud.set_status("已研究：%s" % TechPresence.display_name(uid))
+			game_hud.set_status("已研究满级：%s" % TechPresence.display_name(uid))
 		return
 	var owner_id := int(d.get("owner", 0))
+	var owned := TechPresence.collect_owned_buildings(_unit_host(), owner_id)
+	var researched := stock.upgrade_map() if stock != null else {}
+	var missing := TechPresence.missing_requires(
+		owned, TechPresence.upgrade_requires_for_level(uid, next_lv), researched
+	)
+	if not missing.is_empty():
+		if game_hud:
+			game_hud.set_status(TechPresence.requires_tip(missing))
+		return
 	if TechPresence.is_upgrade_queued(_unit_host(), owner_id, uid):
 		if game_hud:
 			game_hud.set_status("已在研究：%s" % TechPresence.display_name(uid))
 		return
-	var gold := TechPresence.upgrade_gold(uid)
-	var lumber := TechPresence.upgrade_lumber(uid)
+	var gold := TechPresence.upgrade_gold_at_level(uid, next_lv)
+	var lumber := TechPresence.upgrade_lumber_at_level(uid, next_lv)
 	if stock != null and (stock.gold < gold or stock.lumber < lumber):
 		if game_hud:
 			var msg := "资源不够（需 %d金" % gold

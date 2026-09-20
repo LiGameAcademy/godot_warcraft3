@@ -22,6 +22,7 @@ func run() -> void:
 	var director := GameDirector.new()
 	var session := GameSession.new()
 	director._session = session
+	TechPresence.bind_session(session)
 	var human := session.ensure_stock(0)
 	var computer := session.ensure_stock(1)
 	human.set_all(500, 150, 10, 30)

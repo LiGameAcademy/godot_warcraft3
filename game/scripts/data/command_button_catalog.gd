@@ -259,6 +259,9 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 		var research_art := str(row.get("researchart", "")).strip_edges()
 		if not research_art.is_empty():
 			art = research_art
+	var upgrade_level := int(opts.get("upgrade_level", 0))
+	if upgrade_level > 0 and art.contains(","):
+		art = _pick_csv_level(art, upgrade_level)
 	if art.is_empty():
 		art = str(row.get("art", ""))
 	var tip := str(row.get("untip" if use_un else "tip", ""))
@@ -288,6 +291,8 @@ func make_hud_entry(row: Dictionary, action_id: String, opts: Dictionary = {}) -
 	var pos := parse_buttonpos(pos_raw)
 	var slot := int(opts.get("slot_override", slot_of(pos)))
 	var abil_level := int(opts.get("ability_level", 0))
+	if abil_level <= 0 and upgrade_level > 0:
+		abil_level = upgrade_level
 	var pick_level := not bool(opts.get("tooltip_all_levels", false))
 	# Tip / Ubertip 必须分别做多等级截取再拼接。
 	# 若先合并再 format：Ubertip 的 `","` 会把整段误判为 CSV，Tip 被吞掉（辉煌光环等被动表现为「无描述」）。
@@ -490,3 +495,16 @@ func _split_csv(raw: String) -> PackedStringArray:
 		seen[s] = true
 		out.append(s)
 	return out
+
+
+## Art CSV：第 level 级图标（1-based）；越界取末项。
+func _pick_csv_level(raw: String, level: int) -> String:
+	var parts := PackedStringArray()
+	for piece in raw.split(","):
+		var s := String(piece).strip_edges()
+		if not s.is_empty():
+			parts.append(s)
+	if parts.is_empty():
+		return raw.strip_edges()
+	var idx := clampi(level - 1, 0, parts.size() - 1)
+	return parts[idx]

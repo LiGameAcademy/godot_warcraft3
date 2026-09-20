@@ -15,10 +15,14 @@ func _run() -> void:
 	_test_vertical_trains()
 	_test_vertical_researches()
 	_test_hbar_researches_csv()
+	_test_hbla_researches_csv()
 	_test_hrif_needs_hbla()
 	_test_upgrade_stock()
+	_test_upgrade_effects()
+	_test_upgrade_level_costs()
 	_test_adef_requires_rhde()
 	_test_command_card_defend_and_research()
+	_test_command_card_blacksmith()
 	if failed == 0:
 		print("selftest_tech_presence: PASS")
 		quit(0)
@@ -68,8 +72,8 @@ func _test_equiv_htow() -> void:
 func _test_vertical_trains() -> void:
 	var raw := PackedStringArray(["Hamg", "Hmkg", "Hpal", "Hblm"])
 	var filtered := TechPresence.filter_vertical_trains("halt", raw)
-	if filtered.size() != 1 or str(filtered[0]) != "Hamg":
-		_fail("祭坛竖切应只留 Hamg，实际 %s" % str(filtered))
+	if filtered.size() != 4:
+		_fail("祭坛竖切应保留四人族英雄，实际 %s" % str(filtered))
 		return
 	var bar := TechPresence.filter_vertical_trains(
 		"hbar", PackedStringArray(["hfoo", "hrif", "hkni"])
@@ -86,6 +90,15 @@ func _test_vertical_researches() -> void:
 	if filtered.size() != 1 or str(filtered[0]) != "Rhde":
 		_fail("兵营竖切研究应只留 Rhde，实际 %s" % str(filtered))
 		return
+	var bla := TechPresence.filter_vertical_researches(
+		"hbla", PackedStringArray(["Rhme", "Rhar", "Rhla", "Rhra", "Rhac"])
+	)
+	if bla.size() != 4:
+		_fail("铁匠竖切应留 Rhme/Rhar/Rhla/Rhra，实际 %s" % str(bla))
+		return
+	if str(bla[0]) != "Rhme" or str(bla[1]) != "Rhar" or str(bla[2]) != "Rhla" or str(bla[3]) != "Rhra":
+		_fail("铁匠竖切顺序应为 Rhme,Rhar,Rhla,Rhra，实际 %s" % str(bla))
+		return
 	print("  vertical_researches OK")
 
 
@@ -95,6 +108,15 @@ func _test_hbar_researches_csv() -> void:
 		_fail("hbar Researches 应含 Rhde，实际 %s" % str(rs))
 		return
 	print("  hbar_researches_csv OK")
+
+
+func _test_hbla_researches_csv() -> void:
+	var rs := CommandButtonCatalog.get_shared().get_researches("hbla")
+	for want in ["Rhme", "Rhar", "Rhla", "Rhra"]:
+		if rs.find(want) < 0:
+			_fail("hbla Researches 应含 %s，实际 %s" % [want, str(rs)])
+			return
+	print("  hbla_researches_csv OK")
 
 
 func _test_upgrade_stock() -> void:
@@ -111,6 +133,60 @@ func _test_upgrade_stock() -> void:
 		_fail("已研究 Rhde 后 missing 应空，实际 %s" % str(missing))
 		return
 	print("  upgrade_stock OK")
+
+
+func _test_upgrade_effects() -> void:
+	var fx1 := TechPresence.upgrade_effect_bonus("Rhme", 1)
+	if str(fx1.get("effect", "")) != "ratd" or absf(float(fx1.get("amount", 0.0)) - 1.0) > 0.01:
+		_fail("Rhme L1 应为 ratd+1，实际 %s" % str(fx1))
+		return
+	var fx3 := TechPresence.upgrade_effect_bonus("Rhme", 3)
+	if absf(float(fx3.get("amount", 0.0)) - 3.0) > 0.01:
+		_fail("Rhme L3 应为 ratd+3，实际 %s" % str(fx3))
+		return
+	var arm := TechPresence.upgrade_effect_bonus("Rhar", 2)
+	if str(arm.get("effect", "")) != "rarm" or absf(float(arm.get("amount", 0.0)) - 4.0) > 0.01:
+		_fail("Rhar L2 应为 rarm+4，实际 %s" % str(arm))
+		return
+	var session := GameSession.new()
+	TechPresence.bind_session(session)
+	var stock := session.ensure_stock(0)
+	stock.grant_upgrade("Rhme", 2)
+	stock.grant_upgrade("Rhar", 1)
+	var unit := Node3D.new()
+	unit.set_meta("unit_data", {"typeId": "hfoo", "owner": 0})
+	# 不入树也可读 balance / stock
+	var atk := TechPresence.unit_attack_bonus(unit)
+	var def := TechPresence.unit_armor_bonus(unit)
+	unit.free()
+	TechPresence.bind_session(null)
+	if absf(atk - 2.0) > 0.01:
+		_fail("步兵 Rhme L2 攻击加成应为 2，实际 %s" % atk)
+		return
+	if absf(def - 2.0) > 0.01:
+		_fail("步兵 Rhar L1 护甲加成应为 2，实际 %s" % def)
+		return
+	print("  upgrade_effects OK")
+
+
+func _test_upgrade_level_costs() -> void:
+	var g1 := TechPresence.upgrade_gold_at_level("Rhme", 1)
+	var g2 := TechPresence.upgrade_gold_at_level("Rhme", 2)
+	if g1 != 100:
+		_fail("Rhme L1 金价应为 100，实际 %d" % g1)
+		return
+	if g2 != 175:
+		_fail("Rhme L2 金价应为 175，实际 %d" % g2)
+		return
+	var req2 := TechPresence.upgrade_requires_for_level("Rhme", 2)
+	if req2.size() != 1 or str(req2[0]) != "hkee":
+		_fail("Rhme L2 应需 hkee，实际 %s" % str(req2))
+		return
+	var next := TechPresence.upgrade_next_level("Rhme", 3)
+	if next != 0:
+		_fail("Rhme 满级后 next 应为 0，实际 %d" % next)
+		return
+	print("  upgrade_level_costs OK")
 
 
 func _test_hrif_needs_hbla() -> void:
@@ -190,3 +266,36 @@ func _test_command_card_defend_and_research() -> void:
 		_fail("研究完成后兵营 Rhde 按钮应消失")
 		return
 	print("  command_card_defend_and_research OK")
+
+
+func _test_command_card_blacksmith() -> void:
+	var card := CommandCard.for_unit("hbla", {"include_locomotion": false, "researched": {}})
+	for rid in ["Rhme", "Rhar", "Rhla", "Rhra"]:
+		if _card_entry(card, "research:" + rid).is_empty():
+			_fail("铁匠未研究时应有 %s 按钮" % rid)
+			return
+	var partial := CommandCard.for_unit(
+		"hbla", {"include_locomotion": false, "researched": {"Rhme": 1}, "owned_buildings": {}}
+	)
+	var rhme := _card_entry(partial, "research:Rhme")
+	if rhme.is_empty():
+		_fail("Rhme L1 后应仍显示 L2 按钮")
+		return
+	if bool(rhme.get("enabled", true)):
+		_fail("无 Keep 时 Rhme L2 应置灰")
+		return
+	var with_keep := CommandCard.for_unit(
+		"hbla",
+		{"include_locomotion": false, "researched": {"Rhme": 1}, "owned_buildings": {"hkee": 1}}
+	)
+	rhme = _card_entry(with_keep, "research:Rhme")
+	if rhme.is_empty() or not bool(rhme.get("enabled", false)):
+		_fail("有 Keep 时 Rhme L2 应可点")
+		return
+	var full := CommandCard.for_unit(
+		"hbla", {"include_locomotion": false, "researched": {"Rhme": 3}}
+	)
+	if not _card_entry(full, "research:Rhme").is_empty():
+		_fail("Rhme 满级后按钮应消失")
+		return
+	print("  command_card_blacksmith OK")

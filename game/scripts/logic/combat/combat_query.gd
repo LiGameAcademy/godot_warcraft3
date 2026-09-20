@@ -156,7 +156,16 @@ static func armor_wc3(node: Node) -> float:
 	if TechPresence.is_hero_id(type_id_of(node)):
 		# realdef 是一级派生护甲，不能再次叠加全部基础敏捷。
 		armor += (hero_attribute_value(node, "AGI") - float(bal.agi_base)) * 0.3
+	else:
+		armor += TechPresence.unit_armor_bonus(node)
 	return armor
+
+
+## 武器固定伤加成（科技 ratd + 英雄主属性由 DamagePipeline 另加）。
+static func weapon_dmgplus_bonus(node: Node) -> float:
+	if TechPresence.is_hero_id(type_id_of(node)):
+		return 0.0
+	return TechPresence.unit_attack_bonus(node)
 
 ## 基础武器间隔除以英雄敏捷攻速；临时效果仍由控制器处理。
 static func cooldown_sec(node: Node) -> float:

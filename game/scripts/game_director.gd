@@ -3278,6 +3278,8 @@ func _ensure_production_module() -> ProductionModule:
 		_production.progress_changed.connect(_production_panel.on_progress)
 		_production.feedback.connect(_production_panel.show_feedback)
 		_production.research_completed.connect(_production_panel.on_research_completed)
+		_production.queue_changed.connect(_on_production_activity_changed)
+		_production.progress_changed.connect(_on_production_activity_changed)
 		_production_panel.command_card_requested.connect(_apply_building_train_card)
 		_production_panel.selection_refresh_requested.connect(_sync_build_hud_for_selection)
 		_production_panel.command_refresh_requested.connect(_refresh_command_card)
@@ -3286,3 +3288,11 @@ func _ensure_production_module() -> ProductionModule:
 	_production_panel.configure(_session, _command_router, unit_selector, game_hud,
 		_unit_host(), map_root.get_model_cache() if map_root != null else null)
 	return _production
+
+
+func _on_production_activity_changed(_queue: TrainQueue = null) -> void:
+	if game_hud == null or not is_instance_valid(_production) or _session == null:
+		return
+	if not game_hud.has_method("set_activity_feed"):
+		return
+	game_hud.set_activity_feed(_production.collect_owner_activities(_session.local_player))

@@ -109,18 +109,25 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 		stock = _command_stock()
 	if stock == null:
 		return false
-	if stock != null and stock.has_upgrade(uid):
+	var cur_lv := stock.upgrade_level(uid)
+	var next_lv := TechPresence.upgrade_next_level(uid, cur_lv)
+	if next_lv <= 0:
+		return false
+	var owned := TechPresence.collect_owned_buildings(unit_host, owner)
+	var missing := TechPresence.missing_requires(
+		owned, TechPresence.upgrade_requires_for_level(uid, next_lv), stock.upgrade_map()
+	)
+	if not missing.is_empty():
 		return false
 	if TechPresence.is_upgrade_queued(unit_host, owner, uid):
 		return false
-	var time_sec := TechPresence.upgrade_time(uid)
-	var gold := TechPresence.upgrade_gold(uid)
-	var lumber := TechPresence.upgrade_lumber(uid)
+	var time_sec := TechPresence.upgrade_time_at_level(uid, next_lv)
+	var gold := TechPresence.upgrade_gold_at_level(uid, next_lv)
+	var lumber := TechPresence.upgrade_lumber_at_level(uid, next_lv)
 	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
 		return false
-	if stock != null:
-		if not stock.try_spend(gold, lumber):
-			return false
+	if not stock.try_spend(gold, lumber):
+		return false
 	var pos: Dictionary = d.get("position", {})
 	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
 	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue

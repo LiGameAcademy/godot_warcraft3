@@ -170,6 +170,7 @@ func _build_one(workers: Array[Node3D], building_id: String) -> void:
 func _develop_army(workers: Array[Node3D]) -> void:
 	var barracks: Node3D = null
 	var altar: Node3D = null
+	var blacksmith: Node3D = null
 	var counts := {"hfoo": 0, "Hamg": 0}
 	for unit in router.filter_controllable(unit_host.get_children()):
 		var id := str(unit.get_meta("unit_data", {}).get("typeId", ""))
@@ -177,6 +178,8 @@ func _develop_army(workers: Array[Node3D]) -> void:
 			barracks = unit
 		elif id == "halt":
 			altar = unit
+		elif id == "hbla":
+			blacksmith = unit
 		if counts.has(id):
 			counts[id] += 1
 		var queue := unit.get_node_or_null("TrainQueue") as TrainQueue
@@ -191,13 +194,52 @@ func _develop_army(workers: Array[Node3D]) -> void:
 	if altar == null:
 		_build_one(workers, "halt")
 		return
-	if UnitLife.is_under_construction(barracks) or UnitLife.is_under_construction(altar):
+	if blacksmith == null:
+		_build_one(workers, "hbla")
+		return
+	if (
+		UnitLife.is_under_construction(barracks)
+		or UnitLife.is_under_construction(altar)
+		or UnitLife.is_under_construction(blacksmith)
+	):
 		return
 	if counts.Hamg == 0 and HeroDeathRegistry.dead_count(player_owner_id) == 0:
 		router.issue_train(altar, "Hamg")
 		return
+	# 科技：兵营顶盾 → 铁匠近战攻/甲（各升一级即可）
+	if _try_research(barracks, "Rhde"):
+		return
+	if _try_research(blacksmith, "Rhme"):
+		return
+	if _try_research(blacksmith, "Rhar"):
+		return
 	if counts.hfoo < desired_footmen:
 		router.issue_train(barracks, "hfoo")
+
+
+func _try_research(building: Node3D, upgrade_id: String) -> bool:
+	if building == null or stock == null or router == null:
+		return false
+	var uid := upgrade_id.strip_edges()
+	if uid.is_empty():
+		return false
+	var cur := stock.upgrade_level(uid)
+	var next_lv := TechPresence.upgrade_next_level(uid, cur)
+	if next_lv <= 0:
+		return false
+	if TechPresence.is_upgrade_queued(unit_host, player_owner_id, uid):
+		return false
+	var owned := TechPresence.collect_owned_buildings(unit_host, player_owner_id)
+	var missing := TechPresence.missing_requires(
+		owned, TechPresence.upgrade_requires_for_level(uid, next_lv), stock.upgrade_map()
+	)
+	if not missing.is_empty():
+		return false
+	var gold := TechPresence.upgrade_gold_at_level(uid, next_lv)
+	var lumber := TechPresence.upgrade_lumber_at_level(uid, next_lv)
+	if stock.gold < gold or stock.lumber < lumber:
+		return false
+	return router.issue_research(building, uid)
 
 func _nearest_mine(worker: Node3D) -> Node3D:
 	var best: Node3D = null

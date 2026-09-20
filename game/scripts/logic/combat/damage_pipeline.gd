@@ -68,6 +68,8 @@ func apply(req: Dictionary) -> Dictionary:
 		roll += float(rng.randi_range(1, maxi(sides, 1)))
 	if use_primary_attribute:
 		roll += CombatQuery.hero_primary_damage(attacker)
+	elif source_kind == "weapon" and attacker is Node3D:
+		roll += CombatQuery.weapon_dmgplus_bonus(attacker as Node3D)
 	if source_kind == "weapon" and attacker is Node3D:
 		roll *= UnitStatusEffects.damage_mul(attacker as Node3D)
 

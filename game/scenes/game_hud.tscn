@@ -95,6 +95,20 @@ theme_override_font_sizes/font_size = 12
 mouse_filter = 2
 text = ""
 
+[node name="ActivityFeed" type="VBoxContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -420.0
+offset_right = 220.0
+offset_bottom = -208.0
+grow_vertical = 0
+theme_override_constants/separation = 4
+mouse_filter = 2
+
 [node name="MarginContainer" type="MarginContainer" parent="Root" unique_id=709350863]
 custom_minimum_size = Vector2(192, 192)
 layout_mode = 1

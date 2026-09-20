@@ -287,10 +287,15 @@ static func _attack_stat(type_id: String, unit: Node3D = null) -> Dictionary:
 		return {}
 	var at := str(w.atk_type1).strip_edges().to_lower()
 	var at_cn := str(_ATK_TYPE_CN.get(at, at if not at.is_empty() else "—"))
+	var tech_bonus := 0.0
+	if unit != null and not TechPresence.is_hero_id(type_id):
+		tech_bonus = TechPresence.unit_attack_bonus(unit)
 	var dmg := _damage_text(w)
 	if unit != null and TechPresence.is_hero_id(type_id):
 		var primary_bonus := CombatQuery.hero_primary_damage(unit)
 		dmg = "%d–%d" % [roundi(w.dmgplus1 + w.dice1 + primary_bonus), roundi(w.dmgplus1 + w.dice1 * w.sides1 + primary_bonus)]
+	elif tech_bonus > 0.05:
+		dmg = _damage_text_with_bonus(w, tech_bonus)
 	var dmg_mul := 1.0
 	if unit != null:
 		dmg_mul = BuffQuery.damage_mul(unit)
@@ -298,8 +303,9 @@ static func _attack_stat(type_id: String, unit: Node3D = null) -> Dictionary:
 		dmg = _scale_damage_text(dmg, dmg_mul)
 	var bal := _balance(type_id)
 	var upgradeable := _has_upgrade(bal, _ATK_UPGRADE_IDS) and not is_hero_balance(bal)
-	# 铁匠实际等级后接 PlayerStock / Tech；此处先 0
 	var upgrade_lv := 0
+	if upgradeable and unit != null:
+		upgrade_lv = TechPresence.unit_upgrade_level(unit, _ATK_UPGRADE_IDS)
 	var tip := "攻击 · %s %s" % [at_cn, dmg]
 	if dmg_mul > 1.001:
 		tip += " · 伤害 x%.0f%%" % int(round(dmg_mul * 100.0))
@@ -346,6 +352,8 @@ static func _armor_stat(bal: UnitBalanceDef, unit: Node3D = null) -> Dictionary:
 	)
 	var upgradeable := _has_upgrade(bal, _ARM_UPGRADE_IDS) and not is_hero_balance(bal)
 	var upgrade_lv := 0
+	if upgradeable and unit != null:
+		upgrade_lv = TechPresence.unit_upgrade_level(unit, _ARM_UPGRADE_IDS)
 	var tip := "护甲 · %s %s" % [dt_cn, def_s]
 	if bonus > 0.05:
 		tip += " · 加成 +%.0f" % bonus
@@ -387,6 +395,21 @@ static func _damage_text(w: UnitWeaponsDef) -> String:
 		return str(int(round(w.avgdmg1)))
 	if w.dmgplus1 > 0.0:
 		return str(int(round(w.dmgplus1)))
+	return "—"
+
+
+static func _damage_text_with_bonus(w: UnitWeaponsDef, bonus: float) -> String:
+	var b := int(round(bonus))
+	if w.dice1 > 0 and w.sides1 > 0:
+		var lo := w.dice1 + int(w.dmgplus1) + b
+		var hi := w.dice1 * w.sides1 + int(w.dmgplus1) + b
+		return "%d–%d" % [lo, hi]
+	if w.mindmg1 > 0.0 and w.maxdmg1 > 0.0:
+		return "%d–%d" % [int(round(w.mindmg1 + bonus)), int(round(w.maxdmg1 + bonus))]
+	if w.avgdmg1 > 0.0:
+		return str(int(round(w.avgdmg1 + bonus)))
+	if w.dmgplus1 > 0.0 or bonus > 0.0:
+		return str(int(round(w.dmgplus1 + bonus)))
 	return "—"
 
 

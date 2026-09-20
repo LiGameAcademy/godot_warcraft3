@@ -64,6 +64,7 @@ func bootstrap_melee(options: Dictionary) -> Dictionary:
 		worker_n,
 		PlayerStock.MELEE_TOWN_HALL_FOOD
 	)
+	TechPresence.bind_session(session)
 	if _apply_cursor_race.is_valid():
 		_apply_cursor_race.call(str(preview.get("race", "human")))
 	if _game_hud != null and _game_hud.has_method("bind_stock"):

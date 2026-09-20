@@ -187,15 +187,24 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			_place(card, cat.unit_hud_entry(tid, ACTION_TRAIN_PREFIX + tid, opts))
 		var researches := TechPresence.filter_vertical_researches(uid, cat.get_researches(uid))
 		for rid in researches:
-			# 原作：研究完成后按钮消失（不是置灰留在卡上）
-			if int(researched.get(rid, 0)) > 0:
+			var cur_lv := int(researched.get(rid, 0))
+			var next_lv := TechPresence.upgrade_next_level(rid, cur_lv)
+			# 原作：满级后按钮消失；未满级继续显示下一级
+			if next_lv <= 0:
 				continue
+			var missing_up := TechPresence.missing_requires(
+				owned, TechPresence.upgrade_requires_for_level(rid, next_lv), researched
+			)
 			var exec := training_unit == rid or queued.has(rid)
 			var opts := {
-				"enabled": true,
+				"enabled": missing_up.is_empty(),
 				"executing": exec,
-				"cost_line": _upgrade_cost_line(rid),
+				"cost_line": _upgrade_cost_line(rid, next_lv),
+				"upgrade_level": next_lv,
+				"tooltip_all_levels": false,
 			}
+			if not missing_up.is_empty():
+				opts["disabled_reason"] = TechPresence.requires_tip(missing_up)
 			_place(card, cat.upgrade_hud_entry(rid, ACTION_RESEARCH_PREFIX + rid, opts))
 
 	var carrying := bool(state.get("carrying", false))
@@ -700,15 +709,18 @@ static func _building_cost_line(building_id: String) -> String:
 	return cost + "。"
 
 
-static func _upgrade_cost_line(upgrade_id: String) -> String:
-	var g := TechPresence.upgrade_gold(upgrade_id)
-	var l := TechPresence.upgrade_lumber(upgrade_id)
-	var t := TechPresence.upgrade_time(upgrade_id)
+static func _upgrade_cost_line(upgrade_id: String, target_level: int = 1) -> String:
+	var g := TechPresence.upgrade_gold_at_level(upgrade_id, target_level)
+	var l := TechPresence.upgrade_lumber_at_level(upgrade_id, target_level)
+	var t := TechPresence.upgrade_time_at_level(upgrade_id, target_level)
 	var cost := "造价 %d 金" % g
 	if l > 0:
 		cost += " · %d 木" % l
 	if t > 0.0:
 		cost += " · %.0f秒" % t
+	var max_lv := TechPresence.upgrade_max_level(upgrade_id)
+	if max_lv > 1:
+		cost += " · 等级 %d/%d" % [target_level, max_lv]
 	return cost + "。"
 
 

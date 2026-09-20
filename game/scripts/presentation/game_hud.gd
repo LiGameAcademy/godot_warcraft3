@@ -53,6 +53,7 @@ var inventory_panel: InventoryPanel
 @onready var _train_strip: HBoxContainer = %TrainQueueStrip
 @onready var _train_hint: Label = %TrainQueueHint
 @onready var _buff_strip: UnitBuffStrip = %UnitBuffStrip
+@onready var _activity_feed: VBoxContainer = %ActivityFeed
 @onready var _minimap: GameMinimap = %Minimap
 @onready var _command_grid: GridContainer = %CommandGrid
 @onready var _command_panel: Control = $Root/MarginContainer3/CommandPanel
@@ -69,6 +70,9 @@ const _TRAIN_SLOT_SIZE := 40
 const _TRAIN_MAX_SLOTS := 7
 ## 上次建槽用的 unit_id 序列；组成未变时只刷进度，避免每帧重建导致点不中
 var _train_slot_sig: String = ""
+## 上次活动条签名；未变时只刷进度，避免每帧重建。
+var _activity_sig: String = ""
+const _ACTIVITY_ICON := 28
 ## portrait_bar_mode：none / hero_xp / timed_life（与 SelectionInfoBuilder 一致）
 var _portrait_bar_mode: String = "none"
 const _HERO_LEVEL_BORDER := "UI/Buttons/HeroLevel/HeroLevel-Border.png"
@@ -93,6 +97,7 @@ func _ready() -> void:
 	set_selection_info(SelectionInfoBuilder.build_empty())
 	clear_build_progress()
 	clear_train_queue()
+	clear_activity_feed()
 	_apply_bottom_height()
 	get_viewport().size_changed.connect(_apply_bottom_height)
 	if not map_dir.is_empty():
@@ -476,6 +481,96 @@ func set_build_progress(visible_on: bool, ratio: float = 0.0, caption: String = 
 
 func clear_build_progress() -> void:
 	set_build_progress(false)
+
+
+## 左下角全局活动条：当前正在训练/研发的项目（不依赖选中）。
+## entries=[{kind, id, name, icon, progress, remaining_sec}, ...]
+func set_activity_feed(entries: Array) -> void:
+	if _activity_feed == null:
+		return
+	if entries.is_empty():
+		clear_activity_feed()
+		return
+	_activity_feed.visible = true
+	var sig := ""
+	for e in entries:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d := e as Dictionary
+		sig += "%s:%s;" % [str(d.get("kind", "")), str(d.get("id", ""))]
+	if sig != _activity_sig or _activity_feed.get_child_count() != entries.size():
+		_activity_sig = sig
+		_rebuild_activity_feed(entries)
+	else:
+		_refresh_activity_feed(entries)
+
+
+func clear_activity_feed() -> void:
+	_activity_sig = ""
+	if _activity_feed == null:
+		return
+	for c in _activity_feed.get_children():
+		c.queue_free()
+	_activity_feed.visible = false
+
+
+func _rebuild_activity_feed(entries: Array) -> void:
+	for c in _activity_feed.get_children():
+		c.queue_free()
+	for e in entries:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var d := e as Dictionary
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(_ACTIVITY_ICON, _ACTIVITY_ICON)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tex_path := str(d.get("icon", ""))
+		if not tex_path.is_empty():
+			icon.texture = _load_icon(tex_path)
+		row.add_child(icon)
+		var col := VBoxContainer.new()
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_theme_constant_override("separation", 1)
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var title := Label.new()
+		var kind := str(d.get("kind", ""))
+		var prefix := "研发" if kind == "research" else "训练"
+		title.text = "%s · %s" % [prefix, str(d.get("name", d.get("id", "")))]
+		title.add_theme_font_size_override("font_size", 12)
+		title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(title)
+		var bar := ProgressBar.new()
+		bar.custom_minimum_size = Vector2(0, 10)
+		bar.max_value = 100.0
+		bar.value = clampf(float(d.get("progress", 0.0)), 0.0, 1.0) * 100.0
+		bar.show_percentage = false
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(bar)
+		row.add_child(col)
+		_activity_feed.add_child(row)
+
+
+func _refresh_activity_feed(entries: Array) -> void:
+	var i := 0
+	for c in _activity_feed.get_children():
+		if i >= entries.size():
+			break
+		if typeof(entries[i]) != TYPE_DICTIONARY:
+			i += 1
+			continue
+		var d: Dictionary = entries[i]
+		if c is HBoxContainer and c.get_child_count() >= 2:
+			var col := c.get_child(1)
+			if col is VBoxContainer and col.get_child_count() >= 2:
+				var bar := col.get_child(1) as ProgressBar
+				if bar != null:
+					bar.value = clampf(float(d.get("progress", 0.0)), 0.0, 1.0) * 100.0
+		i += 1
 
 
 ## 训练队列：

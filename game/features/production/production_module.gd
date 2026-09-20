@@ -88,13 +88,54 @@ func terminate(building: Node3D) -> void:
 		watch(queue)
 		queue.terminate()
 
+
+## 本地玩家全局生产/研发活动（每建筑当前在训一项）。
+## 返回 [{kind, id, name, icon, progress, remaining_sec, building_id}, ...]
+func collect_owner_activities(owner_id: int) -> Array:
+	var out: Array = []
+	var cat := CommandButtonCatalog.get_shared()
+	for id in _queues.keys():
+		var record: Dictionary = _queues[id]
+		var queue: TrainQueue = record.queue.get_ref() as TrainQueue
+		if queue == null or not is_instance_valid(queue) or not queue.is_training():
+			continue
+		var building := queue.get_parent() as Node3D
+		if building == null or not is_instance_valid(building):
+			continue
+		var ud: Dictionary = building.get_meta("unit_data", {})
+		if int(ud.get("owner", -1)) != owner_id:
+			continue
+		var snap := queue.snapshot()
+		if snap.is_empty():
+			continue
+		var active: Dictionary = snap[0]
+		var uid := str(active.get("unit_id", "")).strip_edges()
+		if uid.is_empty():
+			continue
+		var is_research := TechPresence.is_upgrade_id(uid)
+		var entry := cat.upgrade_hud_entry(uid, "activity:" + uid, {}) if is_research else cat.unit_hud_entry(uid, "activity:" + uid, {})
+		out.append({
+			"kind": "research" if is_research else "train",
+			"id": uid,
+			"name": TechPresence.display_name(uid),
+			"icon": str(entry.get("icon", "")),
+			"progress": float(active.get("progress", 0.0)),
+			"remaining_sec": float(active.get("remaining_sec", 0.0)),
+			"building_id": str(ud.get("typeId", "")),
+		})
+	return out
+
 func _on_training_completed(unit_id: String, site: Vector2, owner: int, queue: TrainQueue) -> void:
 	var completed := queue.take_last_completed()
 	var building := queue.get_parent() as Node3D
 	if TechPresence.is_upgrade_id(unit_id):
 		var stock := _stock_for_owner(owner)
 		if stock != null:
-			stock.grant_upgrade(unit_id)
+			var next_lv := TechPresence.upgrade_next_level(unit_id, stock.upgrade_level(unit_id))
+			if next_lv > 0:
+				stock.grant_upgrade(unit_id, next_lv)
+			else:
+				stock.grant_upgrade(unit_id)
 		research_completed.emit(unit_id, owner)
 		feedback.emit("研究完成：%s" % TechPresence.display_name(unit_id))
 		queue_changed.emit(queue)

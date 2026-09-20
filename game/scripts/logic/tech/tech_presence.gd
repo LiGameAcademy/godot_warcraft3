@@ -13,10 +13,17 @@ const VERTICAL_TRAINS := {
 	"hcas": ["hpea"],
 }
 
-## 人族竖切：兵营只研究顶盾。
+## 人族竖切：兵营顶盾；铁匠武器/护甲（近战+远程各一条）。
 const VERTICAL_RESEARCHES := {
 	"hbar": ["Rhde"],
+	"hbla": ["Rhme", "Rhar", "Rhla", "Rhra"],
 }
+
+## rarm 在 UpgradeData 里常为 "-"；经典人族护甲升级每级 +2。
+const DEFAULT_RARM_PER_LEVEL := 2.0
+
+## 对局会话弱引用：战斗/HUD 按 owner 查 PlayerStock 升级等级。
+static var _session_ref: WeakRef = null
 
 ## Melee 简化：每位玩家同时场上英雄上限。
 const MAX_HEROES_PER_PLAYER := 1
@@ -38,6 +45,30 @@ const _EQUIV := {
 
 static func is_hero_id(unit_id: String) -> bool:
 	return bool(_HERO_IDS.get(unit_id.strip_edges(), false))
+
+
+## MatchBootstrap / Director 开局后绑定；对局结束可传 null。
+static func bind_session(session: GameSession) -> void:
+	_session_ref = weakref(session) if session != null else null
+
+
+static func bound_session() -> GameSession:
+	if _session_ref == null:
+		return null
+	return _session_ref.get_ref() as GameSession
+
+
+static func stock_for_owner(owner_id: int) -> PlayerStock:
+	var session := bound_session()
+	if session == null:
+		return null
+	return session.stocks.get(owner_id) as PlayerStock
+
+
+static func stock_for_unit(unit: Node) -> PlayerStock:
+	if unit == null or not is_instance_valid(unit):
+		return null
+	return stock_for_owner(CombatQuery.owner_of(unit))
 
 
 ## unit_host 下、指定 owner、已完工建筑的 typeId → 数量。
@@ -219,19 +250,154 @@ static func is_upgrade_id(upgrade_id: String) -> bool:
 	return get_upgrade(upgrade_id) != null
 
 
-static func upgrade_gold(upgrade_id: String) -> int:
+static func upgrade_max_level(upgrade_id: String) -> int:
 	var d := get_upgrade(upgrade_id)
-	return int(round(d.goldbase)) if d != null else 0
+	return maxi(d.maxlevel, 1) if d != null else 1
+
+
+## 下一可研究等级；已满则 0。
+static func upgrade_next_level(upgrade_id: String, current_level: int) -> int:
+	var max_lv := upgrade_max_level(upgrade_id)
+	var cur := maxi(current_level, 0)
+	if cur >= max_lv:
+		return 0
+	return cur + 1
+
+
+## 研究第 target_level 级的金价（1-based）。
+static func upgrade_gold_at_level(upgrade_id: String, target_level: int) -> int:
+	var d := get_upgrade(upgrade_id)
+	if d == null:
+		return 0
+	var lv := maxi(target_level, 1)
+	return int(round(d.goldbase + d.goldmod * float(lv - 1)))
+
+
+static func upgrade_lumber_at_level(upgrade_id: String, target_level: int) -> int:
+	var d := get_upgrade(upgrade_id)
+	if d == null:
+		return 0
+	var lv := maxi(target_level, 1)
+	return int(round(d.lumberbase + d.lumbermod * float(lv - 1)))
+
+
+static func upgrade_time_at_level(upgrade_id: String, target_level: int) -> float:
+	var d := get_upgrade(upgrade_id)
+	if d == null:
+		return 0.0
+	var lv := maxi(target_level, 1)
+	return d.timebase + d.timemod * float(lv - 1)
+
+
+static func upgrade_gold(upgrade_id: String) -> int:
+	return upgrade_gold_at_level(upgrade_id, 1)
 
 
 static func upgrade_lumber(upgrade_id: String) -> int:
-	var d := get_upgrade(upgrade_id)
-	return int(round(d.lumberbase)) if d != null else 0
+	return upgrade_lumber_at_level(upgrade_id, 1)
 
 
 static func upgrade_time(upgrade_id: String) -> float:
+	return upgrade_time_at_level(upgrade_id, 1)
+
+
+## UpgradeFunc：Requires / Requires1 / Requires2 对应研究第 1/2/3 级的前置。
+static func upgrade_requires_for_level(upgrade_id: String, target_level: int) -> PackedStringArray:
+	var row := CommandButtonCatalog.get_shared().get_upgrade_ui(upgrade_id)
+	var key := "requires"
+	var lv := maxi(target_level, 1)
+	if lv >= 2:
+		key = "requires%d" % (lv - 1)
+	return _split_csv_ids(str(row.get(key, "")))
+
+
+## 单级效果值：inherit=0 时 total = base+(level-1)*mod；护甲缺省按每级 +2。
+static func upgrade_effect_bonus(upgrade_id: String, level: int) -> Dictionary:
+	## {effect: String, amount: float}
+	var empty := {"effect": "", "amount": 0.0}
 	var d := get_upgrade(upgrade_id)
-	return d.timebase if d != null else 0.0
+	if d == null or level <= 0:
+		return empty
+	var effect := str(d.effect1).strip_edges().to_lower()
+	if effect.is_empty() or effect == "_" or effect == "-":
+		return empty
+	var base := d.base1
+	var mod := d.mod1
+	# SLK 里 "-" 被 float() 成 0；rarm 用经典默认。
+	if effect == "rarm" and absf(base) < 0.0001 and absf(mod) < 0.0001:
+		base = DEFAULT_RARM_PER_LEVEL
+		mod = DEFAULT_RARM_PER_LEVEL
+	var amount := base + float(level - 1) * mod
+	if d.inherit:
+		# 累加各级：Σ(base+(i-1)*mod)
+		amount = 0.0
+		for i in range(1, level + 1):
+			var b := base
+			var m := mod
+			if effect == "rarm" and absf(d.base1) < 0.0001 and absf(d.mod1) < 0.0001:
+				b = DEFAULT_RARM_PER_LEVEL
+				m = DEFAULT_RARM_PER_LEVEL
+			amount += b + float(i - 1) * m
+	return {"effect": effect, "amount": amount}
+
+
+## 单位 UnitBalance.upgrades 中与 researched 匹配的攻击骰伤加成（ratd）。
+static func unit_attack_bonus(unit: Node) -> float:
+	return _unit_effect_bonus(unit, "ratd")
+
+
+## 单位护甲科技加成（rarm）。
+static func unit_armor_bonus(unit: Node) -> float:
+	return _unit_effect_bonus(unit, "rarm")
+
+
+## 单位当前适用的攻击/护甲科技等级（取匹配 id 中最高已研究等级；无则 0）。
+static func unit_upgrade_level(unit: Node, id_set: Dictionary) -> int:
+	var bal := CombatQuery.balance_of(unit)
+	var stock := stock_for_unit(unit)
+	if bal == null or stock == null:
+		return 0
+	var best := 0
+	for part in str(bal.upgrades).split(",", false):
+		var id := str(part).strip_edges()
+		if id.is_empty() or id == "_" or id == "-":
+			continue
+		if not id_set.has(id):
+			continue
+		best = maxi(best, stock.upgrade_level(id))
+	return best
+
+
+static func _unit_effect_bonus(unit: Node, want_effect: String) -> float:
+	var bal := CombatQuery.balance_of(unit)
+	var stock := stock_for_unit(unit)
+	if bal == null or stock == null:
+		return 0.0
+	var total := 0.0
+	var want := want_effect.strip_edges().to_lower()
+	for part in str(bal.upgrades).split(",", false):
+		var id := str(part).strip_edges()
+		if id.is_empty() or id == "_" or id == "-":
+			continue
+		var lv := stock.upgrade_level(id)
+		if lv <= 0:
+			continue
+		var fx := upgrade_effect_bonus(id, lv)
+		if str(fx.get("effect", "")) == want:
+			total += float(fx.get("amount", 0.0))
+	return total
+
+
+static func _split_csv_ids(raw: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var s := raw.strip_edges()
+	if s.is_empty() or s == "_" or s == "-":
+		return out
+	for part in s.split(",", false):
+		var id := str(part).strip_edges()
+		if not id.is_empty() and id != "_" and id != "-":
+			out.append(id)
+	return out
 
 
 static func _def_store() -> Node:
