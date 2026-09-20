@@ -260,7 +260,7 @@
 ### 刻意未迁
 
 - `_sync_build_hud_for_selection` / 训练队列 HUD 仍在总管（经 Callable 注入 sync）
-- `path_debug`、GM 面板
+- ~~`path_debug`、GM 面板~~ → 第十 / 十二批已迁出
 
 ### 验收入口
 
@@ -326,7 +326,7 @@
 ### 刻意未迁
 
 - `_setup_match_end` / `_restart_match` / OpponentEconomy 装配仍在总管
-- GM / Perf 面板装配仍在总管
+- ~~GM / Perf 面板装配仍在总管~~ → 第十二批已迁入 DebugToolsModule
 - `MeleeBootstrap` / `MeleeRacePreview` 静态规则类位置不变
 
 ### 验收入口
@@ -336,9 +336,31 @@
 & $env:GODOT --headless --path . res://tests/integration/selftest_two_player_start.tscn
 ```
 
+## 第十二批：调试工具（已实现）
+
+目录：`game/features/debug/debug_tools_module.gd`。
+
+### 职责
+
+- GM 面板 / 性能叠层：`ensure_gm_panel` / `toggle_gm_panel` / `ensure_perf_overlay` / `toggle_perf_overlay`
+- 英雄 GM：`hero_level_up` / `hero_max_level` / `hero_learn_one_point` / `hero_unlock_all_skills`
+- 物品 GM：`item_test_kit` / `item_test_vitals` / `item_test_death` / `item_test_creep`
+- 总管保留 `gm_*` 公开薄转发（`GmDebugPanel` 与集成测试仍调总管）
+
+### 刻意未迁
+
+- `GmDebugPanel` / `PerfOverlay` 表现类仍在 `game/scripts/presentation/`
+- 对局结束 / 重开仍在总管
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_debug_tools_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **GM / Perf 面板装配**（可选）：从总管挪出调试 UI 挂接。
-2. **对局结束 / 重开**（可选）：`_setup_match_end` / `_restart_match` 收敛。
+1. **对局结束 / 重开**（可选）：`_setup_match_end` / `_restart_match` 收敛。
+2. **OpponentEconomy 装配**（可选）：电脑经营挂接从总管挪出。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

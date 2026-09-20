@@ -33,6 +33,7 @@ game/features/
     match_bootstrap_module.gd      对局开局会话、本地/对手基地、镜头
   debug/
     path_debug_module.gd           选中单位寻路折线调试
+    debug_tools_module.gd          GM 面板 / 性能叠层 / GM 动作
 ```
 
 ## 依赖约定

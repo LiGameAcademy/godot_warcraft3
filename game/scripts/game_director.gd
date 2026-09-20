@@ -92,6 +92,7 @@ var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
 var _match_bootstrap: MatchBootstrapModule
+var _debug_tools: DebugToolsModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
@@ -152,8 +153,9 @@ func _ready() -> void:
 		push_error("GameDirector: 未绑定 map_root")
 		return
 	_configure_map_root()
-	_ensure_gm_panel()
-	_ensure_perf_overlay()
+	var debug := _ensure_debug_tools_module()
+	debug.ensure_gm_panel()
+	debug.ensure_perf_overlay()
 	_wire_hud()
 	_load_camera_bounds()
 	_configure_camera()
@@ -163,51 +165,8 @@ func _ready() -> void:
 		_on_map_loaded()
 
 
-var _gm_panel: CanvasLayer = null
-var _perf_overlay: PerfOverlay = null
-
-
-func _ensure_gm_panel() -> void:
-	var parent_n := get_parent()
-	if parent_n == null:
-		return
-	if _gm_panel != null and is_instance_valid(_gm_panel):
-		return
-	var existing := parent_n.get_node_or_null("GmDebugPanel") as CanvasLayer
-	if existing != null:
-		_gm_panel = existing
-		return
-	var gm: CanvasLayer = GmDebugPanel.new()
-	gm.name = "GmDebugPanel"
-	_gm_panel = gm
-	# _ready 期间父节点 blocked，必须延迟挂接
-	parent_n.add_child.call_deferred(gm)
-
-
-func _ensure_perf_overlay() -> void:
-	var parent_n := get_parent()
-	if parent_n == null:
-		return
-	if _perf_overlay != null and is_instance_valid(_perf_overlay):
-		return
-	var existing := parent_n.get_node_or_null(PerfOverlay.NODE_NAME) as PerfOverlay
-	if existing != null:
-		_perf_overlay = existing
-		return
-	_perf_overlay = PerfOverlay.ensure_on(parent_n)
-
-
 func _toggle_gm_panel() -> void:
-	_ensure_gm_panel()
-	if _gm_panel == null or not is_instance_valid(_gm_panel):
-		return
-	if not _gm_panel.is_inside_tree():
-		# 仍在 deferred 队列：进树后再开
-		_gm_panel.call_deferred("set_open", true)
-	elif _gm_panel.has_method("toggle"):
-		_gm_panel.call("toggle")
-	if game_hud != null and _gm_panel.is_inside_tree():
-		game_hud.set_status("GM 面板：%s（` / F4）" % ("开" if _gm_panel.visible else "关"))
+	_ensure_debug_tools_module().toggle_gm_panel()
 
 
 func _apply_path_debug_visibility() -> void:
@@ -980,14 +939,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if key == KEY_F3 or phys == KEY_F3:
-			_ensure_perf_overlay()
-			if _perf_overlay != null and is_instance_valid(_perf_overlay):
-				_perf_overlay.toggle()
-				if game_hud:
-					game_hud.set_status(
-						"性能叠层：%s（F3）"
-						% ("开" if _perf_overlay.is_overlay_enabled() else "关")
-					)
+			_ensure_debug_tools_module().toggle_perf_overlay()
 			get_viewport().set_input_as_handled()
 			return
 		if not debug_building_fx_hotkeys:
@@ -2436,111 +2388,25 @@ func _try_learn_hero_skill(abil_id: String) -> void:
 	_ensure_command_card_module().try_learn_hero_skill(abil_id)
 
 
-## —— GM：英雄等级 / 技能 ——
-
-
-func _gm_primary_hero() -> Node3D:
-	if unit_selector == null or not unit_selector.has_method("get_primary"):
-		return null
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not is_instance_valid(primary):
-		return null
-	var tid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	if not TechPresence.is_hero_id(tid):
-		if game_hud:
-			game_hud.set_status("GM：请先选中英雄")
-		return null
-	_ensure_caster_runtime(primary)
-	return primary
+## —— GM：英雄等级 / 技能（转发 DebugToolsModule）——
 
 
 func gm_hero_level_up() -> void:
-	var hero := _gm_primary_hero()
-	if hero == null:
-		return
-	var lv := AbilityCatalog.hero_level_of(hero)
-	if lv >= HeroProgression.MAX_HERO_LEVEL:
-		if game_hud:
-			game_hud.set_status("GM：已满级 %d" % lv)
-		return
-	HeroProgression.set_level(hero, lv + 1)
-	UnitMana.sync_hero_max(hero)
-	_refresh_command_card()
-	_sync_selection_info_panel()
-	if game_hud:
-		game_hud.set_status("GM：英雄等级 → %d（技能点 %d）" % [
-			AbilityCatalog.hero_level_of(hero),
-			HeroSkill.points_available(hero),
-		])
+	_ensure_debug_tools_module().hero_level_up()
 
 
 func gm_hero_max_level() -> void:
-	var hero := _gm_primary_hero()
-	if hero == null:
-		return
-	HeroProgression.set_level(hero, HeroProgression.MAX_HERO_LEVEL)
-	UnitMana.sync_hero_max(hero)
-	_refresh_command_card()
-	_sync_selection_info_panel()
-	if game_hud:
-		game_hud.set_status("GM：英雄等级 → %d（技能点 %d）" % [
-			HeroProgression.MAX_HERO_LEVEL,
-			HeroSkill.points_available(hero),
-		])
+	_ensure_debug_tools_module().hero_max_level()
 
 
 ## 用 1 点自动学第一个可学技能（或升级已有）。
 func gm_hero_learn_one_point() -> void:
-	var hero := _gm_primary_hero()
-	if hero == null:
-		return
-	if HeroSkill.points_available(hero) <= 0:
-		if game_hud:
-			game_hud.set_status("GM：无技能点（先升级）")
-		return
-	var tid := str(hero.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	for aid_v in AbilityCatalog.hero_ability_ids_for_unit(tid):
-		var aid := str(aid_v).strip_edges()
-		var check := HeroSkill.can_learn(hero, aid)
-		if bool(check.get("ok", false)):
-			var result := HeroSkill.learn(hero, aid)
-			_ensure_caster_runtime(hero)
-			_refresh_command_card()
-			_sync_selection_info_panel()
-			if game_hud:
-				var row := CommandButtonCatalog.get_shared().get_ability(aid)
-				var name_s := str(row.get("name", aid)).strip_edges()
-				game_hud.set_status("GM：学习 · %s Lv%d" % [name_s, int(result.get("level", 1))])
-			return
-	if game_hud:
-		game_hud.set_status("GM：没有可学技能（等级门槛？）")
+	_ensure_debug_tools_module().hero_learn_one_point()
 
 
 ## 满级 + 该英雄全部技能升到最高。
 func gm_hero_unlock_all_skills() -> void:
-	var hero := _gm_primary_hero()
-	if hero == null:
-		return
-	HeroProgression.set_level(hero, HeroProgression.MAX_HERO_LEVEL)
-	UnitMana.sync_hero_max(hero)
-	var tid := str(hero.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
-	HeroSkill.ensure_levels_meta(hero)
-	var levels: Dictionary = {}
-	for aid_v in AbilityCatalog.hero_ability_ids_for_unit(tid):
-		var aid := str(aid_v).strip_edges()
-		if aid.is_empty():
-			continue
-		var ab := AbilityCatalog.data(aid)
-		var max_lv := 3
-		if ab != null:
-			max_lv = ab.clamp_level(ab.levels)
-		levels[aid] = max_lv
-	hero.set_meta(AbilityCatalog.META_ABILITY_LEVELS, levels)
-	_ensure_caster_runtime(hero)
-	_refresh_command_card()
-	_sync_selection_info_panel()
-	if game_hud:
-		game_hud.set_status("GM：满级 + 全技能解锁（%d 个）" % levels.size())
+	_ensure_debug_tools_module().hero_unlock_all_skills()
 
 
 func _clear_ability_preview() -> void:
@@ -3260,42 +3126,49 @@ func _on_item_swap(a: int, b: int) -> void:
 
 ## GM：只生成测试物品，不修改地图掉落或普通开局。
 func gm_item_test_kit() -> void:
-	_ensure_items_module().spawn_test_kit_around_primary()
+	_ensure_debug_tools_module().item_test_kit()
 
 
 func gm_item_test_vitals() -> void:
-	var unit := _ability_get_primary()
-	if not _is_controllable(unit) or Inventory.of(unit) == null:
-		_ability_set_status("请先选中己方英雄")
-		return
-	UnitLife.set_life(unit, maxf(1.0, UnitLife.get_max_life(unit) * 0.3))
-	UnitMana.spend(unit, UnitMana.get_mana(unit) * 0.7)
-	_on_inventory_changed()
-	_ability_set_status("测试：英雄生命与魔法降至约 30%")
+	_ensure_debug_tools_module().item_test_vitals()
 
 
 func gm_item_test_death() -> void:
-	var unit := _ability_get_primary()
-	if _is_controllable(unit) and Inventory.of(unit) != null:
-		_kill_unit(unit)
-		_ability_set_status("测试：英雄阵亡，请在祭坛复活后检查背包")
+	_ensure_debug_tools_module().item_test_death()
 
 
 func gm_item_test_creep() -> void:
-	var unit := _ability_get_primary()
-	if not _is_controllable(unit):
-		return
-	var creep := _ensure_units_module().spawn_near(
-		unit, "nogr", 12, Vector2(280.0, 0.0),
-		{
-			"life_override": 20.0,
-			"entry_extras": {
-				"droppedItemSets": [[{"id": "phea", "chance": 100}], [{"id": "rde1", "chance": 100}]],
-			},
-		}
-	)
-	if creep != null:
-		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
+	_ensure_debug_tools_module().item_test_creep()
+
+
+## 装配调试工具：GM 面板 / 性能叠层 / GM 动作。
+func _ensure_debug_tools_module() -> DebugToolsModule:
+	if not is_instance_valid(_debug_tools):
+		_debug_tools = DebugToolsModule.new()
+		_debug_tools.name = "DebugToolsModule"
+		add_child(_debug_tools)
+	if game_hud == null or unit_selector == null:
+		_resolve_exports()
+	_debug_tools.configure({
+		"host_parent": get_parent(),
+		"game_hud": game_hud,
+		"unit_selector": unit_selector,
+		"ensure_caster": Callable(self, "_ensure_caster_runtime"),
+		"refresh_command_card": Callable(self, "_refresh_command_card"),
+		"sync_selection_info": Callable(self, "_sync_selection_info_panel"),
+		"get_primary": Callable(self, "_ability_get_primary"),
+		"is_controllable": Callable(self, "_is_controllable"),
+		"set_status": Callable(self, "_ability_set_status"),
+		"spawn_test_kit": func() -> void:
+			_ensure_items_module().spawn_test_kit_around_primary(),
+		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
+		"kill_unit": Callable(self, "_kill_unit"),
+		"spawn_near": func(
+			near: Node3D, type_id: String, owner_id: int, offset: Vector2, opts: Dictionary
+		) -> Node3D:
+			return _ensure_units_module().spawn_near(near, type_id, owner_id, offset, opts),
+	})
+	return _debug_tools
 
 
 ## 装配对局开局：会话、本地/对手基地、镜头落点。
