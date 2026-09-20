@@ -19,6 +19,7 @@ var _projectile_service: ProjectileService
 
 var _alloc_creation_number: Callable
 var _ensure_unit_ai: Callable
+var _spawn_summon: Callable
 var _unit_host: Callable
 var _teleport_unit_wc3: Callable
 var _kill_unit: Callable
@@ -52,6 +53,7 @@ func configure(deps: Dictionary) -> void:
 	_projectile_service = deps.get("projectile_service") as ProjectileService
 	_alloc_creation_number = deps.get("alloc_creation_number", Callable()) as Callable
 	_ensure_unit_ai = deps.get("ensure_unit_ai", Callable()) as Callable
+	_spawn_summon = deps.get("spawn_summon", Callable()) as Callable
 	_unit_host = deps.get("unit_host", Callable()) as Callable
 	_teleport_unit_wc3 = deps.get("teleport_unit_wc3", Callable()) as Callable
 	_kill_unit = deps.get("kill_unit", Callable()) as Callable
@@ -84,6 +86,7 @@ func shutdown() -> void:
 	_projectile_service = null
 	_alloc_creation_number = Callable()
 	_ensure_unit_ai = Callable()
+	_spawn_summon = Callable()
 	_unit_host = Callable()
 	_teleport_unit_wc3 = Callable()
 	_kill_unit = Callable()
@@ -290,6 +293,7 @@ func _ensure_services() -> void:
 		"crowd_query": _crowd_query,
 		"alloc_creation_number": _alloc_creation_number,
 		"ensure_unit_ai": _ensure_unit_ai,
+		"spawn_summon": _spawn_summon,
 		"unit_host": _unit_host,
 		"channel_interrupt_check": Callable(self, "channel_interrupt_check"),
 		"teleport_unit_wc3": _teleport_unit_wc3,

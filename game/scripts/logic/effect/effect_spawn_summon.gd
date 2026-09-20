@@ -1,7 +1,7 @@
 class_name EffectSpawnSummon
 extends RefCounted
 
-## 召唤原子：在 goal 处 add_unit_instance + 可选寿命。
+## 召唤原子：优先经 UnitsModule.spawn_summon；无注入时回退直刷。
 
 
 static func run(ec: EffectContext, goal_wc3: Vector2) -> Node3D:
@@ -12,10 +12,6 @@ static func run(ec: EffectContext, goal_wc3: Vector2) -> Node3D:
 		return null
 	var unit_id := ab.summon_unit_id_at(ec.level)
 	if unit_id.is_empty():
-		return null
-	var map_root: Node = ec.ctx.get("map_root")
-	var hf: Variant = ec.ctx.get("heightfield")
-	if map_root == null or hf == null or not map_root.has_method("add_unit_instance"):
 		return null
 	var owner := int(ec.caster.get_meta("unit_data", {}).get("owner", 0))
 	var entry := {
@@ -29,6 +25,27 @@ static func run(ec: EffectContext, goal_wc3: Vector2) -> Node3D:
 		"variation": 0,
 		"spawn_anim": "Birth",
 	}
+	var dur := ab.duration_at(ec.level)
+	var kill_cb: Callable = ec.ctx.get("kill_unit", Callable())
+	var spawn_summon: Callable = ec.ctx.get("spawn_summon", Callable())
+	var node: Node3D = null
+	if spawn_summon.is_valid():
+		node = spawn_summon.call(entry, dur, kill_cb, ec.caster) as Node3D
+	else:
+		node = _spawn_fallback(ec, entry, dur, kill_cb)
+	if node == null:
+		return null
+	ec.result["unit"] = node
+	return node
+
+
+static func _spawn_fallback(
+	ec: EffectContext, entry: Dictionary, duration: float, kill_cb: Callable
+) -> Node3D:
+	var map_root: Node = ec.ctx.get("map_root")
+	var hf: Variant = ec.ctx.get("heightfield")
+	if map_root == null or hf == null or not map_root.has_method("add_unit_instance"):
+		return null
 	var hf_dict: Dictionary = {}
 	if hf is Dictionary:
 		hf_dict = hf as Dictionary
@@ -45,15 +62,13 @@ static func run(ec: EffectContext, goal_wc3: Vector2) -> Node3D:
 	if ensure_ai.is_valid():
 		ensure_ai.call(node)
 	InteractionSetup.attach(node)
-	var dur := ab.duration_at(ec.level)
-	if dur > 0.0:
+	if duration > 0.0:
 		var life := SummonLifetime.new()
 		life.name = "SummonLifetime"
 		node.add_child(life)
-		var kill_cb: Callable = ec.ctx.get("kill_unit", Callable())
-		life.configure(dur, kill_cb)
-	node.set_meta("summon_caster_id", ec.caster.get_instance_id())
-	ec.result["unit"] = node
+		life.configure(duration, kill_cb)
+	if ec.caster != null and is_instance_valid(ec.caster):
+		node.set_meta("summon_caster_id", ec.caster.get_instance_id())
 	return node
 
 

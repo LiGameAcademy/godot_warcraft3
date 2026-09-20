@@ -11,6 +11,7 @@ var _path_query: PathQuery = null
 var _crowd_query: UnitCrowdQuery = null
 var _alloc_creation_number: Callable = Callable()
 var _ensure_unit_ai: Callable = Callable()
+var _spawn_summon: Callable = Callable()
 var _unit_host: Callable = Callable()
 var _channel_interrupt_check: Callable = Callable()
 var _teleport_unit_wc3: Callable = Callable()
@@ -27,6 +28,7 @@ func configure(deps: Dictionary) -> void:
 	_crowd_query = deps.get("crowd_query") as UnitCrowdQuery
 	_alloc_creation_number = deps.get("alloc_creation_number", Callable()) as Callable
 	_ensure_unit_ai = deps.get("ensure_unit_ai", Callable()) as Callable
+	_spawn_summon = deps.get("spawn_summon", Callable()) as Callable
 	_unit_host = deps.get("unit_host", Callable()) as Callable
 	_channel_interrupt_check = deps.get("channel_interrupt_check", Callable()) as Callable
 	_teleport_unit_wc3 = deps.get("teleport_unit_wc3", Callable()) as Callable
@@ -46,6 +48,7 @@ func build() -> Dictionary:
 		"heightfield": _heightfield,
 		"creation_number": cn,
 		"ensure_unit_ai": _ensure_unit_ai,
+		"spawn_summon": _spawn_summon,
 		"damage_pipeline": _damage_pipeline,
 		"projectile_service": _projectile_service,
 		"unit_host": _unit_host,

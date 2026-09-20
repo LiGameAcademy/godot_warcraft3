@@ -77,7 +77,6 @@ var _heightfield: Wc3Heightfield = null
 ## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
 var _crowd_query: UnitCrowdQuery = null
 var _cell_reservation: PathCellReservation = null
-var _path_debug: PathDebugDraw = null
 var _command_router: CommandRouter = null
 var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
@@ -91,6 +90,7 @@ var _items: ItemsModule
 var _interaction: InteractionModule
 var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
+var _path_debug_mod: PathDebugModule
 var _projectile_service: ProjectileService = null
 var _tree_registry: TreeRegistry = null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
@@ -210,8 +210,8 @@ func _toggle_gm_panel() -> void:
 
 
 func _apply_path_debug_visibility() -> void:
-	if _path_debug != null:
-		_path_debug.set_enabled(show_path_debug)
+	if is_instance_valid(_path_debug_mod):
+		_path_debug_mod.set_enabled(show_path_debug)
 
 
 func get_session() -> GameSession:
@@ -794,17 +794,7 @@ func _tree_registry_ref() -> TreeRegistry:
 
 
 func _ensure_path_debug() -> void:
-	if map_root == null:
-		return
-	if _path_debug != null and is_instance_valid(_path_debug):
-		_path_debug.setup(_heightfield)
-		_path_debug.set_enabled(show_path_debug)
-		return
-	_path_debug = PathDebugDraw.new()
-	_path_debug.name = "PathDebugDraw"
-	map_root.add_child(_path_debug)
-	_path_debug.setup(_heightfield)
-	_path_debug.set_enabled(show_path_debug)
+	_ensure_path_debug_module().ensure_draw()
 
 
 func _process(delta: float) -> void:
@@ -818,44 +808,14 @@ func _process(delta: float) -> void:
 		_abilities.tick(delta)
 	_refresh_move_executing_ui()
 	_ensure_selection_hud_module().tick(delta)
-	_refresh_path_debug()
+	if is_instance_valid(_path_debug_mod):
+		_path_debug_mod.tick(delta)
 	_ensure_command_card_module().tick_cooldown_hud(delta)
 
 
 ## 技能 CD 进行中时低频刷命令卡，驱动扇形遮罩进度（否则只在施法瞬间刷一次会「卡住」）。
 func _tick_command_card_cooldown_hud(delta: float) -> void:
 	_ensure_command_card_module().tick_cooldown_hud(delta)
-
-
-func _refresh_path_debug() -> void:
-	if _path_debug == null or not show_path_debug:
-		return
-	if unit_selector == null or not unit_selector.has_method("get_selected"):
-		return
-	if not _path_debug.has_method("redraw"):
-		return
-	var paths: Array = []
-	var selected: Array = unit_selector.call("get_selected")
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var nav := (n as Node3D).get_node_or_null("UnitNavigator")
-		if nav == null or not nav.has_method("get_remaining_waypoints_wc3"):
-			continue
-		if not bool(nav.call("is_moving")):
-			continue
-		var pts: Array = nav.call("get_remaining_waypoints_wc3")
-		if pts.is_empty():
-			continue
-		# 加上当前位置，线从脚下出发
-		var inv := 1.0 / Wc3Coords.WORLD_SCALE
-		var body := n as Node3D
-		var cur := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
-		var full: Array = [cur]
-		for p in pts:
-			full.append(p)
-		paths.append({"points": full})
-	_path_debug.call("redraw", paths)
 
 
 ## 游戏内移除已放置的 sloc（防 MapRoot 早于 Director 配置时漏网）。
@@ -1090,8 +1050,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key == KEY_F9:
 			show_path_debug = not show_path_debug
 			_ensure_path_debug()
-			if _path_debug != null:
-				_path_debug.set_enabled(show_path_debug)
+			_apply_path_debug_visibility()
 			if game_hud:
 				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
 			get_viewport().set_input_as_handled()
@@ -3415,6 +3374,23 @@ func gm_item_test_creep() -> void:
 		_ability_set_status("测试野怪已生成：击杀应掉落生命药水和守护指环")
 
 
+## 装配路径调试：选中单位寻路折线。
+func _ensure_path_debug_module() -> PathDebugModule:
+	if not is_instance_valid(_path_debug_mod):
+		_path_debug_mod = PathDebugModule.new()
+		_path_debug_mod.name = "PathDebugModule"
+		add_child(_path_debug_mod)
+	if unit_selector == null:
+		_resolve_exports()
+	_path_debug_mod.configure({
+		"map_root": map_root,
+		"heightfield": _heightfield,
+		"unit_selector": unit_selector,
+		"enabled": show_path_debug,
+	})
+	return _path_debug_mod
+
+
 ## 装配选中 HUD：肖像 vitals / buff / 选中详情。
 func _ensure_selection_hud_module() -> SelectionHudModule:
 	if not is_instance_valid(_selection_hud):
@@ -3644,6 +3620,10 @@ func _ensure_abilities_module() -> AbilitiesModule:
 		"projectile_service": _projectile_service,
 		"alloc_creation_number": Callable(self, "_alloc_runtime_cn"),
 		"ensure_unit_ai": Callable(self, "_ensure_unit_ai"),
+		"spawn_summon": func(
+			entry: Dictionary, duration: float, kill_cb: Callable, caster: Node3D
+		) -> Node3D:
+			return _ensure_units_module().spawn_summon(entry, duration, kill_cb, caster),
 		"unit_host": Callable(self, "_unit_host"),
 		"teleport_unit_wc3": Callable(self, "_teleport_unit_wc3"),
 		"kill_unit": Callable(self, "_kill_unit"),

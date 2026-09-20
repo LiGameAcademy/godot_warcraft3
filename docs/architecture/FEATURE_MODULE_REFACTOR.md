@@ -281,7 +281,7 @@
 
 ### 刻意未迁
 
-- `EffectSpawnSummon` 仍直接 `add_unit_instance`（下一批接入 `spawn_entry`）
+- ~~`EffectSpawnSummon` 仍直接 `add_unit_instance`~~ → 第十批已接入 `spawn_summon`
 - `_bootstrap_melee` / `_spawn_opponent_base` 仍属会话开局
 
 ### 验收入口
@@ -291,9 +291,32 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_build_module.tscn
 ```
 
+## 第十批：召唤接入 + 路径调试（已实现）
+
+### 召唤
+
+- `UnitsModule.spawn_summon`：Birth / InteractionSetup / SummonLifetime
+- `EffectSpawnSummon` 优先 `ctx.spawn_summon`；无注入时回退直刷
+- Abilities ctx 工厂注入 `spawn_summon`
+
+### 路径调试
+
+目录：`game/features/debug/path_debug_module.gd`。
+
+- 持有 `PathDebugDraw`；`ensure_draw` / `tick` / `set_enabled`
+- 总管 F9 与 `_process` 只转发
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_units_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_path_debug_module.tscn
+& $env:GODOT --headless --path . res://tests/unit/selftest_abilities_module.tscn
+```
+
 ## 后续批次（尚未实施）
 
-1. **召唤原子接入 UnitsModule**：`EffectSpawnSummon` 改为走 `spawn_entry`（保留 Birth / SummonLifetime 差异）。
-2. **调试表现抽离**（可选）：`path_debug` 等。
+1. **会话开局收敛**（可选）：`_bootstrap_melee` / `_spawn_opponent_base` → MatchBootstrap 模块。
+2. **GM / Perf 面板装配**（可选）：从总管挪出调试 UI 挂接。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

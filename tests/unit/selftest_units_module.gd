@@ -74,6 +74,11 @@ func _ready() -> void:
 	var found := module.find_owned_unit_by_types(0, PackedStringArray(["htow", "hkee"]))
 	check(found == hall, "find_owned_unit_by_types 找到主城")
 
+	var sentry_entry := module.build_unit_entry("hfoo", Vector2(3.0, 4.0), 0, {"spawn_anim": "Birth"})
+	# 无 map_root 时 spawn_summon 返回 null（契约：不崩）
+	var summoned := module.spawn_summon(sentry_entry, 1.0, Callable(), hero)
+	check(summoned == null, "无地图时 spawn_summon 返回 null")
+
 	module.shutdown()
 	check(not module._on_inventory_changed.is_valid(), "shutdown 清空注入 Callable")
 	module.free()

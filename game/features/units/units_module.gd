@@ -180,6 +180,29 @@ func spawn_near(
 	return spawn_entry(entry, opts)
 
 
+## 召唤：Birth 动画 + InteractionSetup + 可选 SummonLifetime。
+## entry 需已含 typeId/position/owner/creationNumber/spawn_anim 等。
+func spawn_summon(
+	entry: Dictionary, duration: float = 0.0, kill_cb: Callable = Callable(), caster: Node3D = null
+) -> Node3D:
+	if not entry.has("spawn_anim"):
+		entry = entry.duplicate(true)
+		entry["spawn_anim"] = "Birth"
+	var node := spawn_entry(entry, {"refresh_pathing": true})
+	if node == null:
+		return null
+	UnitMana.ensure(node)
+	InteractionSetup.attach(node)
+	if duration > 0.0:
+		var life := SummonLifetime.new()
+		life.name = "SummonLifetime"
+		node.add_child(life)
+		life.configure(duration, kill_cb)
+	if caster != null and is_instance_valid(caster):
+		node.set_meta("summon_caster_id", caster.get_instance_id())
+	return node
+
+
 func find_owned_unit_by_types(owner_id: int, type_ids: PackedStringArray) -> Node3D:
 	var host: Node = _unit_host.call() if _unit_host.is_valid() else null
 	if host == null:
