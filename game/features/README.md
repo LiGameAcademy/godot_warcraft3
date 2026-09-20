@@ -25,6 +25,7 @@ game/features/
     items_module.gd                对局内地面物品、背包操作与死亡掉落
   interaction/
     interaction_module.gd          互斥瞄准状态机 + 光标同步
+    smart_command_module.gd        右键智能目标解析 / 闪选 / 文案
   command_card/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
   selection_hud/

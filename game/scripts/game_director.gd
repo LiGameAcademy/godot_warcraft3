@@ -85,6 +85,7 @@ var _combat: CombatModule
 var _abilities: AbilitiesModule
 var _items: ItemsModule
 var _interaction: InteractionModule
+var _smart_command: SmartCommandModule
 var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
@@ -567,6 +568,7 @@ func _setup_pathing() -> void:
 	_ensure_items_module()
 	_ensure_units_module()
 	_ensure_interaction_module()
+	_ensure_smart_command_module()
 	_ensure_command_card_module()
 	_ensure_selection_hud_module()
 
@@ -1094,243 +1096,19 @@ func _apply_rally_from_smart(building: Node3D, target: SmartTarget) -> void:
 
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
 ## 拾取走 UnitSelector 脚底 2D 圆；送回点 / 工地另加脚底像素近距门槛。
-const SMART_BUILDING_FOOT_PX := 40.0
+const SMART_BUILDING_FOOT_PX := 40.0 ## 保留常量别名；实际阈值在 SmartCommandModule
 
 
 func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
-	var ground_goal := _screen_to_goal_wc3(screen_pos)
-	if _ground_items != null and rts_camera != null:
-		var item := GroundItemVisual.pick_at(_ground_items, rts_camera.get_camera(), screen_pos)
-		if item != null:
-			var target := SmartTarget.new()
-			target.kind = SmartTarget.Kind.ITEM
-			target.node = item
-			target.goal_wc3 = Wc3Coords.godot_to_wc3_xy(item.global_position)
-			return target
-	var best: SmartTarget = null
-	var best_score := INF
-
-	var picked: Node3D = null
-	if unit_selector != null and unit_selector.has_method("pick_at"):
-		picked = unit_selector.call("pick_at", screen_pos) as Node3D
-
-	if picked != null and _is_gold_mine(picked):
-		var s := _screen_score_node(picked, screen_pos)
-		if s < best_score:
-			best_score = s
-			best = SmartTarget.gold_mine(picked, _node_goal_wc3(picked, ground_goal))
-
-	if _tree_registry != null:
-		var cn := _tree_registry.pick_cn_at_screen(screen_pos)
-		if cn >= 0:
-			var tree_goal := _tree_registry.get_pos_wc3(cn)
-			if tree_goal == Vector2.INF:
-				tree_goal = ground_goal
-			var s2 := _screen_score_tree(cn, screen_pos)
-			if s2 < best_score:
-				best_score = s2
-				best = SmartTarget.tree(cn, tree_goal)
-
-	if (
-		picked != null
-		and _is_own_dropoff_building(picked, selected)
-		and _selection_any_carrying(selected)
-	):
-		var foot_drop := _screen_score_node(picked, screen_pos)
-		# 须点得够近，避免主城大胶囊抢走「点附近地面移动」
-		if foot_drop <= SMART_BUILDING_FOOT_PX:
-			var s3 := foot_drop + 18.0
-			if s3 < best_score:
-				best_score = s3
-				best = SmartTarget.dropoff(picked, _node_goal_wc3(picked, ground_goal))
-
-	# 未完工建筑 → 增派建造（也须脚底够近）
-	if picked != null and UnitLife.is_under_construction(picked):
-		var foot_site := _screen_score_node(picked, screen_pos)
-		if foot_site <= SMART_BUILDING_FOOT_PX:
-			var s4 := foot_site - 8.0
-			if s4 < best_score:
-				best_score = s4
-				best = SmartTarget.build_site(picked, _node_goal_wc3(picked, ground_goal))
-
-	# 敌对单位 → Attack（优先于纯地面，低于矿/树/交货/工地）；友军不走智能攻击
-	if picked != null and CombatQuery.any_can_auto_attack(selected, picked):
-		var s5 := _screen_score_node(picked, screen_pos)
-		if s5 < best_score:
-			best_score = s5
-			best = SmartTarget.enemy_unit(picked, _node_goal_wc3(picked, ground_goal))
-
-	if best != null:
-		_flash_smart_interact_target(best)
-		return best
-	if ground_goal == Vector2.INF:
-		return null
-	return SmartTarget.ground(ground_goal)
-
-
-## 右键交互反馈：金矿 / 建筑 / 树木统一闪选中环（不改左键选中集合）。
-func _flash_smart_interact_target(target: SmartTarget) -> void:
-	if target == null:
-		return
-	match target.kind:
-		SmartTarget.Kind.TREE:
-			_flash_tree_target(target.tree_cn)
-		SmartTarget.Kind.GOLD_MINE:
-			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.GOLD_MINE, false)
-		SmartTarget.Kind.DROPOFF:
-			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.DROPOFF, false)
-		SmartTarget.Kind.BUILD_SITE:
-			_flash_unit_interact_ring(target.node, InteractableComponent.SmartKind.BUILD_SITE, false)
-		_:
-			pass
-
-
-func _flash_unit_interact_ring(node: Node3D, kind: int, flash_model: bool) -> void:
-	if node == null or not is_instance_valid(node):
-		return
-	InteractionSetup.attach(node, kind)
-	var ic := InteractionSetup.get_interactable(node)
-	if ic != null:
-		ic.flash(0.65, flash_model)
+	return _ensure_smart_command_module().resolve_smart_target(screen_pos, selected)
 
 
 func _flash_tree_target(creation_number: int) -> void:
-	if _tree_registry == null or creation_number < 0:
-		return
-	var node := _tree_registry.ensure_promoted(creation_number)
-	if node != null:
-		_flash_unit_interact_ring(node, InteractableComponent.SmartKind.TREE, true)
-
-
-func _screen_score_node(node: Node3D, screen_pos: Vector2) -> float:
-	if unit_selector != null and unit_selector.has_method("screen_foot_distance"):
-		return float(unit_selector.call("screen_foot_distance", node, screen_pos))
-	if rts_camera == null:
-		return INF
-	var cam := rts_camera.get_camera() if rts_camera.has_method("get_camera") else null
-	if cam == null or node == null:
-		return INF
-	if cam.is_position_behind(node.global_position):
-		return INF
-	return cam.unproject_position(node.global_position).distance_to(screen_pos)
-
-
-func _screen_score_tree(creation_number: int, screen_pos: Vector2) -> float:
-	if _tree_registry == null:
-		return INF
-	var pos_wc3 := _tree_registry.get_pos_wc3(creation_number)
-	if pos_wc3 == Vector2.INF:
-		return INF
-	var gpos := Wc3Coords.wc3_xy_to_godot(pos_wc3.x, pos_wc3.y, 0.0)
-	# 尽量用条目高度
-	var entry: Dictionary = _tree_registry.get_entry(creation_number)
-	var p: Dictionary = entry.get("position", {})
-	if not p.is_empty():
-		gpos = Wc3Coords.wc3_xy_to_godot(
-			float(p.get("x", pos_wc3.x)),
-			float(p.get("y", pos_wc3.y)),
-			float(p.get("z", 0.0))
-		)
-	var cam: Camera3D = null
-	if unit_selector != null and unit_selector.get("camera") != null:
-		cam = unit_selector.get("camera") as Camera3D
-	elif rts_camera != null and rts_camera.has_method("get_camera"):
-		cam = rts_camera.call("get_camera") as Camera3D
-	if cam == null:
-		return INF
-	if cam.is_position_behind(gpos):
-		return INF
-	return cam.unproject_position(gpos).distance_to(screen_pos)
-
-
-func _screen_to_goal_wc3(screen_pos: Vector2) -> Vector2:
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		return Vector2.INF
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	return Vector2(hit.x * inv, -hit.z * inv)
-
-
-func _node_goal_wc3(node: Node3D, fallback: Vector2) -> Vector2:
-	if node == null or not is_instance_valid(node):
-		return fallback
-	return Wc3Coords.godot_to_wc3_xy(node.global_position)
-
-
-func _is_own_dropoff_building(building: Node3D, selected: Array) -> bool:
-	if building == null or not is_instance_valid(building):
-		return false
-	if UnitLife.is_under_construction(building):
-		return false
-	var bd: Dictionary = building.get_meta("unit_data", {})
-	var tid := str(bd.get("typeId", "")).strip_edges()
-	if ReceiveResources.capability_for_type(tid) == int(ReceiveResources.Kind.NONE):
-		return false
-	var b_owner := int(bd.get("owner", -1))
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var ud: Dictionary = (n as Node).get_meta("unit_data", {})
-		if int(ud.get("owner", -2)) == b_owner:
-			return true
-	return false
-
-
-## 选中单位里是否有人负重（空闲农民点主城不当送回）。
-func _selection_any_carrying(selected: Array) -> bool:
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var hc := (n as Node).get_node_or_null("HarvestController") as HarvestController
-		if hc != null and hc.is_carrying():
-			return true
-	return false
+	_ensure_smart_command_module().flash_tree_target(creation_number)
 
 
 func _format_smart_status(result: Dictionary) -> String:
-	var harvested := int(result.get("harvested", 0))
-	var returned := int(result.get("returned", 0))
-	var moved := int(result.get("moved", 0))
-	var rallied := int(result.get("rallied", 0))
-	var kind := str(result.get("kind", ""))
-	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
-	match kind:
-		"Item":
-			return "前往拾取道具" if moved > 0 else "请选择有空位的己方英雄拾取"
-		"GoldMine":
-			if harvested > 0 and moved > 0:
-				return "智能 · 采金 %d · 移动 %d" % [harvested, moved]
-			if harvested > 0:
-				return "采集金币 · %d 单位" % harvested
-		"Tree":
-			if harvested > 0 and moved > 0:
-				return "智能 · 伐木 %d · 移动 %d" % [harvested, moved]
-			if harvested > 0:
-				return "采集木材 · %d 单位" % harvested
-		"Dropoff":
-			if returned > 0 and moved > 0:
-				return "智能 · 送回 %d · 移动 %d" % [returned, moved]
-			if returned > 0:
-				return "送回资源 · %d 单位" % returned
-		"BuildSite":
-			var built := int(result.get("built", 0))
-			if built > 0:
-				return "加入建造 · %d 单位" % built
-	if rallied > 0 and moved > 0 and goal != Vector2.INF:
-		return "智能 · 集结 %d · 移动 %d → (%.0f, %.0f)" % [rallied, moved, goal.x, goal.y]
-	if rallied > 0 and goal != Vector2.INF:
-		match kind:
-			"GoldMine":
-				return "集结点 → 金矿 · %d 建筑" % rallied
-			"Tree":
-				return "集结点 → 树木 · %d 建筑" % rallied
-			_:
-				return "集结点 → (%.0f, %.0f) · %d 建筑" % [goal.x, goal.y, rallied]
-	if moved > 0 and goal != Vector2.INF:
-		return "移动 → (%.0f, %.0f) · %d 单位" % [goal.x, goal.y, moved]
-	if int(result.get("failed", 0)) > 0 and goal != Vector2.INF:
-		return "无法到达 (%.0f, %.0f)" % [goal.x, goal.y]
-	return "智能 · %s" % kind
+	return _ensure_smart_command_module().format_smart_status(result)
 
 
 ## 对当前选中可移动单位下发移动（经 CommandRouter）。
@@ -3267,6 +3045,28 @@ func _ensure_interaction_module() -> InteractionModule:
 		"is_build_targeting": Callable(self, "_is_build_targeting"),
 	})
 	return _interaction
+
+
+## 装配智能右键：目标解析、闪选、状态文案。
+func _ensure_smart_command_module() -> SmartCommandModule:
+	if not is_instance_valid(_smart_command):
+		_smart_command = SmartCommandModule.new()
+		_smart_command.name = "SmartCommandModule"
+		add_child(_smart_command)
+	if unit_selector == null or rts_camera == null:
+		_resolve_exports()
+	# ground_items 可能在 ItemsModule 之后才就绪
+	if _ground_items == null and is_instance_valid(_items):
+		_ground_items = _items.ground_host()
+	_smart_command.configure({
+		"unit_selector": unit_selector,
+		"rts_camera": rts_camera,
+		"tree_registry": _tree_registry,
+		"ground_items": _ground_items,
+		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"is_gold_mine": Callable(self, "_is_gold_mine"),
+	})
+	return _smart_command
 
 
 ## 装配战斗模块：伤害管线、投射物、死亡/尸体、AttackController。
