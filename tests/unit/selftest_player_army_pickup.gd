@@ -89,19 +89,37 @@ func run() -> void:
 			targeted_full = true
 	check(not targeted_full and near_full != null, "满包英雄不发拾取")
 
-	# 进攻态不绕路
+	# 进攻态：远处道具不绕路（先清掉先前贴身残留）
 	commands.pickups.clear()
+	if near_full != null and is_instance_valid(near_full):
+		near_full.claimed = true
+	if ground != null and is_instance_valid(ground):
+		ground.claimed = true
 	for _i in range(3):
 		unit(host, "hfoo", 1, Vector2.ZERO)
 	enemies.append(unit(host, "htow", 0, Vector2(8000, 0)))
+	var far := service.spawn(ItemInstance.create("phea"), Vector2(400, 0))
 	army.decide()
 	check(army.state == ArmyScript.State.ATTACK, "达到门槛进攻")
-	check(commands.pickups.is_empty(), "进攻时不绕路拾取")
+	var far_hit := false
+	for p in commands.pickups:
+		if p.ground == far:
+			far_hit = true
+	check(not far_hit and far != null, "进攻时不绕路拾取远处道具")
+
+	# 进攻态：贴身白名单道具仍拾取（不绕路）
+	commands.pickups.clear()
+	var at_feet := service.spawn(ItemInstance.create("rde1"), Vector2(40, 0))
+	army.decide()
+	check(at_feet != null and commands.pickups.size() == 1, "进攻时贴身道具仍拾取")
+	check(commands.pickups[0].ground == at_feet, "贴身拾取目标正确")
 
 	# 已认领不拾取
 	commands.pickups.clear()
 	enemies.clear()
 	army.state = ArmyScript.State.ASSEMBLE
+	if at_feet != null and is_instance_valid(at_feet):
+		at_feet.claimed = true
 	ground.claimed = true
 	army.decide()
 	var claimed_hit := false

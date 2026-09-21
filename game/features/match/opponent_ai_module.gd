@@ -69,52 +69,62 @@ func _exit_tree() -> void:
 	shutdown()
 
 
-## 挂接对手经营（及可选军队）。已存在 OpponentEconomy 时跳过。
+## 挂接对手经营（及可选军队）。经营已存在时复用；军队可补挂并刷新 item_service。
 func setup(local_player: int, enable_army: bool = false) -> Node:
 	if _host_parent == null or _session == null or _map_root == null:
 		return null
 	var owner := 1 if local_player == 0 else 0
 	if not _session.stocks.has(owner):
 		return null
-	if _host_parent.has_node("OpponentEconomy"):
-		return _host_parent.get_node("OpponentEconomy")
 
 	var unit_layer: Node = _map_root.get_unit_layer()
-	var commands := CommandRouter.new()
-	commands.configure(
-		_path_query,
-		_crowd_query,
-		_ensure_navigator,
-		_ensure_harvest,
-		_ensure_build,
-		_session,
-		_find_build_site,
-		_find_build_site_by_node,
-		_ensure_attack,
-		owner
-	)
-	if _wire_train_queue.is_valid():
-		commands.production_queue_ready.connect(_wire_train_queue)
+	var economy: Node = _host_parent.get_node_or_null("OpponentEconomy")
+	var commands: CommandRouter = null
+	if economy != null:
+		commands = economy.get("router") as CommandRouter
+	else:
+		commands = CommandRouter.new()
+		commands.configure(
+			_path_query,
+			_crowd_query,
+			_ensure_navigator,
+			_ensure_harvest,
+			_ensure_build,
+			_session,
+			_find_build_site,
+			_find_build_site_by_node,
+			_ensure_attack,
+			owner
+		)
+		if _wire_train_queue.is_valid():
+			commands.production_queue_ready.connect(_wire_train_queue)
 
-	var economy := PlayerEconomyAIScript.new()
-	economy.name = "OpponentEconomy"
-	economy.configure(commands, unit_layer, _tree_registry, owner)
-	if _stock_for_owner.is_valid():
-		economy.stock = _stock_for_owner.call(owner)
-	economy.pathing = _pathing
-	economy.path_query = _path_query
-	_host_parent.add_child(economy)
+		economy = PlayerEconomyAIScript.new()
+		economy.name = "OpponentEconomy"
+		economy.configure(commands, unit_layer, _tree_registry, owner)
+		if _stock_for_owner.is_valid():
+			economy.stock = _stock_for_owner.call(owner)
+		economy.pathing = _pathing
+		economy.path_query = _path_query
+		_host_parent.add_child(economy)
 
-	if enable_army:
-		var army := PlayerArmyAIScript.new()
-		army.name = "OpponentArmy"
-		army.router = commands
-		army.unit_host = unit_layer
-		army.observe_enemies = Callable(self, "observe_enemies").bind(owner)
-		army.item_service = _item_service
-		_host_parent.add_child(army)
+	if enable_army and commands != null:
+		_ensure_army(commands, unit_layer, owner)
 
 	return economy
+
+
+func _ensure_army(commands: CommandRouter, unit_layer: Node, owner: int) -> void:
+	var army: Node = _host_parent.get_node_or_null("OpponentArmy")
+	if army == null:
+		army = PlayerArmyAIScript.new()
+		army.name = "OpponentArmy"
+		_host_parent.add_child(army)
+	army.router = commands
+	army.unit_host = unit_layer
+	army.observe_enemies = Callable(self, "observe_enemies").bind(owner)
+	# ItemsModule 可能晚于首次挂接；每次 setup 刷新引用。
+	army.item_service = _item_service
 
 
 ## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。

@@ -1,6 +1,7 @@
 extends Node
 
 ## 人族电脑军队调度：集结 / 进攻 / 回防 / 撤退，以及英雄拾取与阈值用药。
+## 拾取：集结/撤退可绕路（480）；进攻/回防仅贴身（ItemPickupController.PICKUP_RANGE）。
 
 enum State { ASSEMBLE, ATTACK, DEFEND, RETREAT }
 
@@ -45,7 +46,7 @@ func decide() -> void:
 	if army.is_empty():
 		_sent.clear()
 		state = State.ASSEMBLE
-		_consider_pickup()
+		_consider_pickup(true)
 		return
 	var home := Wc3Coords.godot_to_wc3_xy(base.global_position if base != null else army[0].global_position)
 	var threat: Node3D = null
@@ -100,9 +101,9 @@ func decide() -> void:
 		if int(result.get("moved", 0)) == pending.size():
 			for unit in pending:
 				_sent[unit.get_instance_id()] = key
-	# 进攻/回防不绕路捡物；集结与撤退时顺路拾取。
-	if state == State.ASSEMBLE or state == State.RETREAT:
-		_consider_pickup()
+	# 集结/撤退可绕路捡；进攻/回防只捡贴身（PICKUP_RANGE 内，不绕路）。
+	var allow_detour := state == State.ASSEMBLE or state == State.RETREAT
+	_consider_pickup(allow_detour)
 	last_status = "%s：%d 单位" % [State.keys()[state], army.size()]
 
 
@@ -123,9 +124,10 @@ func _consider_use() -> void:
 		inv.try_use(slot)
 
 
-func _consider_pickup() -> void:
+func _consider_pickup(allow_detour: bool = true) -> void:
 	if router == null or item_service == null or not is_instance_valid(unit_host):
 		return
+	var max_r := PICKUP_SCAN_RADIUS_WC3 if allow_detour else ItemPickupController.PICKUP_RANGE
 	for unit in router.filter_controllable(unit_host.get_children()):
 		if not _is_hero(unit) or not CombatQuery.is_alive_in_world(unit):
 			continue
@@ -137,7 +139,7 @@ func _consider_pickup() -> void:
 		var xy := Wc3Coords.godot_to_wc3_xy(unit.global_position)
 		var best: GroundItem = null
 		var best_d2 := INF
-		for ground in item_service.get_ground_items_in_radius(xy, PICKUP_SCAN_RADIUS_WC3):
+		for ground in item_service.get_ground_items_in_radius(xy, max_r):
 			if ground.claimed or ground.item == null:
 				continue
 			if not ItemCatalog.is_ai_pickup_worth(ground.item.type_id):
