@@ -152,9 +152,9 @@ func set_resources(gold: int, lumber: int, food: int, food_max: int) -> void:
 		_food_label.text = "%d/%d" % [food, food_max]
 
 
-func bind_inventory(inv: Inventory) -> void:
+func bind_inventory(inv: Inventory, is_read_only: bool = false) -> void:
 	if inventory_panel != null:
-		inventory_panel.bind_inventory(inv)
+		inventory_panel.bind_inventory(inv, is_read_only)
 		call_deferred("_layout_inventory_panel")
 
 
