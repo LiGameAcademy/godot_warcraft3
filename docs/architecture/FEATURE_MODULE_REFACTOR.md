@@ -410,11 +410,9 @@
 - `resolve_smart_target`：道具 / 矿 / 树 / 交货 / 工地 / 敌方 / 地面优先级解析
 - 交互闪选：`flash_smart_interact_target` / `flash_tree_target`
 - `format_smart_status`：HUD 状态文案
-- 总管 `_issue_smart_at_screen` 仍编排下发与移动反馈
 
 ### 刻意未迁
 
-- 各 `issue_*_at_screen` 命令下发仍在总管
 - `_ground_at_screen` 拾取仍在总管（经 Callable 注入）
 
 ### 验收入口
@@ -423,8 +421,31 @@
 & $env:GODOT --headless --path . res://tests/unit/selftest_smart_command_module.tscn
 ```
 
+## 第十六批：命令输入下发（已实现）
+
+目录：`game/features/interaction/command_input_module.gd`。
+
+### 职责
+
+- `issue_*` / `begin_*`：停步、保持、攻击、巡逻、智能右键、集结、移动、队形、采集、送回、顶盾
+- `try_handle_aim_input`：移动/攻击/巡逻/采集/集结瞄准态的鼠标确认与取消
+- `try_handle_smart_rmb`：右键智能 / Shift+RMB 队形
+- 瞄准态仍由 `InteractionModule` 持有；`SmartTarget` 仍由 `SmartCommandModule` 解析
+
+### 刻意未迁
+
+- `_ground_at_screen` / 光标闪选 / 移动确认特效仍在总管（Callable 注入）
+- 技能瞄准、建造瞄准、命令卡 action 分发仍在各自模块 / 总管薄转发
+
+### 验收入口
+
+```powershell
+& $env:GODOT --headless --path . res://tests/unit/selftest_command_input_module.tscn
+# 再跑 game_main 冒烟：移动 / A / 右键智能 / Shift+RMB
+```
+
 ## 后续批次（尚未实施）
 
-总管装配面已明显变薄。后续可按需收敛：输入路由大块、建造瞄准细节、或继续把仍留在总管的薄转发改为测试直调模块。
+总管装配面已明显变薄。后续可按需收敛：建造瞄准细节、或继续把仍留在总管的薄转发改为测试直调模块。
 
 每批先确认工作区状态，再迁移一个可独立验收的功能；通过相关回归后单独提交。目录移动、类型变化和行为变化尽量避免在同一批同时扩大范围。

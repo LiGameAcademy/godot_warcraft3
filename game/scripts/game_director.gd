@@ -86,6 +86,7 @@ var _abilities: AbilitiesModule
 var _items: ItemsModule
 var _interaction: InteractionModule
 var _smart_command: SmartCommandModule
+var _command_input: CommandInputModule
 var _command_card: CommandCardModule
 var _selection_hud: SelectionHudModule
 var _path_debug_mod: PathDebugModule
@@ -115,25 +116,11 @@ var _ability_targeting: bool = false
 var _pending_ability_id: String = ""
 ## 选中可训建筑时显示的集结旗（长驻，复用）
 var _rally_flag: RallyFlagFx = null
-var _ability_preview_decal: BlizzardAreaDecal = null
 ## 瞄准期内被霜蓝染色的单位/建筑（Present）。
-var _ability_preview_tinted: Array = []
-var _ability_preview_tint_goal := Vector2.INF
-var _ability_preview_tint_radius: float = 0.0
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
-var _build_placement: BuildPlacementController = null
-var _build_ghost: BuildPlacementGhost = null
-## 确认落点后、开工前：工地半透明幽灵仍钉在地上（农民走动期间）。
-var _site_ghost_pinned: bool = false
-## 进入瞄准后须先移动鼠标再左键确认，避免点面板同一帧误提交。
-var _build_confirm_armed: bool = false
-## 鼠标 → godot 拾取（暴露给 Placement 控制器，避开循环引用）。
+## 鼠标 → godot 拾取（暴露给 placement 控制器，避开循环引用）。
 var _last_screen_pos: Vector2 = Vector2.ZERO
-## construction_key → { cn, node, building_id, site }
-var _active_construction: Dictionary = {}
-## 当前 HUD 绑定的工地 progress（避免重复 connect）。
-var _hud_build_site: BuildSite = null
 ## 工地宿主（农民离开后 BuildSite 挂于此）
 var _build_sites_host: Node = null
 ## building Node3D instance_id → BuildSite
@@ -350,71 +337,10 @@ func _input(event: InputEvent) -> void:
 	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
 	if unit_selector == null:
 		_resolve_exports()
-	# 移动瞄准：左键必须在 _input 里下发并 marked handled。
-	# UnitSelector 自带 _input / 全屏 gui 层，若不在此拦截，落点永远进不了 _unhandled_input。
-	if _move_targeting and event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			# 瞄准态左键：必须在此下发（UnitSelector 会吃掉 _unhandled）。点完即退出瞄准。
-			if _issue_move_at_screen(mb.position, UnitOrder.Source.TARGETING):
-				_flash_cursor_move()
-			else:
-				_set_move_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
-			# 瞄准态右键：取消瞄准（不另下智能指令，避免与「点一下取消」预期冲突）
-			_set_move_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-	if _attack_targeting and event is InputEventMouseButton:
-		var mb_a := event as InputEventMouseButton
-		if mb_a.pressed and mb_a.button_index == MOUSE_BUTTON_LEFT:
-			_issue_attack_at_screen(mb_a.position, UnitOrder.Source.TARGETING)
-			_set_attack_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-		if mb_a.pressed and mb_a.button_index == MOUSE_BUTTON_RIGHT:
-			_set_attack_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-	if _patrol_targeting and event is InputEventMouseButton:
-		var mb_p := event as InputEventMouseButton
-		if mb_p.pressed and mb_p.button_index == MOUSE_BUTTON_LEFT:
-			if _issue_patrol_at_screen(mb_p.position, UnitOrder.Source.TARGETING):
-				_flash_cursor_move()
-			else:
-				_set_patrol_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-		if mb_p.pressed and mb_p.button_index == MOUSE_BUTTON_RIGHT:
-			_set_patrol_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-	# 采集瞄准：左键点金矿
-	if _harvest_targeting and event is InputEventMouseButton:
-		var mb_h := event as InputEventMouseButton
-		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_LEFT:
-			_issue_harvest_at_screen(mb_h.position, UnitOrder.Source.TARGETING)
-			_set_harvest_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-		if mb_h.pressed and mb_h.button_index == MOUSE_BUTTON_RIGHT:
-			_set_harvest_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-	# 集结瞄准：左键设点（地面/金矿/树）
-	if _rally_targeting and event is InputEventMouseButton:
-		var mb_r := event as InputEventMouseButton
-		if mb_r.pressed and mb_r.button_index == MOUSE_BUTTON_LEFT:
-			_issue_set_rally_at_screen(mb_r.position, UnitOrder.Source.TARGETING)
-			_set_rally_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
-		if mb_r.pressed and mb_r.button_index == MOUSE_BUTTON_RIGHT:
-			_set_rally_targeting(false)
-			get_viewport().set_input_as_handled()
-			return
+	# 移动/攻击/巡逻/采集/集结瞄准：左键下发、右键取消（须在 UnitSelector 之前拦截）
+	if _ensure_command_input_module().try_handle_aim_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	# 技能瞄准：左键点地/点单位施法
 	if _ability_targeting and event is InputEventMouseButton and _ability_targeting_svc != null:
 		var mb_ab := event as InputEventMouseButton
@@ -569,6 +495,7 @@ func _setup_pathing() -> void:
 	_ensure_units_module()
 	_ensure_interaction_module()
 	_ensure_smart_command_module()
+	_ensure_command_input_module()
 	_ensure_command_card_module()
 	_ensure_selection_hud_module()
 
@@ -798,11 +725,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
 	if (
 		(
-			_move_targeting
-			or _attack_targeting
-			or _patrol_targeting
-			or _harvest_targeting
-			or _rally_targeting
+			_ensure_command_input_module().is_basic_aiming()
 			or _ability_targeting
 			or _is_build_targeting()
 		)
@@ -821,17 +744,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _ensure_command_card_module().handle_submenu_escape():
 				get_viewport().set_input_as_handled()
 				return
-	# 右键智能：解析目标 → CommandRouter.issue_smart（能力优先级：采集/送回/建造 → 集结 → 移动）。
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			if mb.shift_pressed and enable_move_command:
-				if _issue_group_move_command(mb.position, FormationFollow.FORMATION_RECT):
-					get_viewport().set_input_as_handled()
-					return
-			if _issue_smart_at_screen(mb.position, UnitOrder.Source.SMART_RMB):
-				get_viewport().set_input_as_handled()
-				return
+	# 右键智能 / Shift+RMB 队形
+	if _ensure_command_input_module().try_handle_smart_rmb(event, enable_move_command):
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var ek := event as InputEventKey
 		var key := ek.keycode
@@ -891,207 +807,39 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
+## —— 命令输入：薄转发至 CommandInputModule ——
+
 ## 选中单位立即停步并回 Stand。
 func _issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
-	if _command_router == null or unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	_interrupt_channels_for_units(selected)
-	var n_stop := _command_router.issue_stop(selected, source)
-	if n_stop > 0 and game_hud:
-		game_hud.set_status("停止 · %d 单位" % n_stop)
-	_refresh_command_card()
-	return n_stop > 0
+	return _ensure_command_input_module().issue_stop(source)
 
 
 func _issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
-	if _command_router == null or unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	_interrupt_channels_for_units(selected)
-	var n := _command_router.issue_hold(selected, source)
-	if n > 0 and game_hud:
-		game_hud.set_status("保持原位 · %d 单位" % n)
-	elif game_hud:
-		game_hud.set_status("保持原位：无可用单位")
-	_refresh_command_card()
-	return n > 0
+	return _ensure_command_input_module().issue_hold(source)
 
 
-func _try_toggle_defend(_source: int = UnitOrder.Source.UNKNOWN) -> void:
-	if _command_router == null:
-		return
-	var stock := _local_stock()
-	if stock == null or not stock.has_upgrade(DefendController.UPGRADE_ID):
-		if game_hud:
-			game_hud.set_status("需要研究：%s" % TechPresence.display_name(DefendController.UPGRADE_ID))
-		return
-	var selected := _get_selected_safe()
-	if selected.is_empty():
-		return
-	var primary: Node3D = null
-	if unit_selector != null and unit_selector.has_method("get_primary"):
-		primary = unit_selector.call("get_primary") as Node3D
-	var want := not DefendController.is_defending(primary)
-	var n := _command_router.issue_defend(selected, want)
-	if game_hud:
-		if n <= 0:
-			game_hud.set_status("顶盾：无可用步兵")
-		elif want:
-			game_hud.set_status("顶盾开启 · %d 单位" % n)
-		else:
-			game_hud.set_status("停止顶盾 · %d 单位" % n)
-	_refresh_command_card()
+func _try_toggle_defend(source: int = UnitOrder.Source.UNKNOWN) -> void:
+	_ensure_command_input_module().try_toggle_defend(source)
 
 
-## 攻击瞄准落点：单位 → Attack（P0 追击）；地面 → Attack-Move。
 func _issue_attack_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if _command_router == null or unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	if selected.is_empty():
-		return false
-	var picked: Node3D = null
-	if unit_selector.has_method("pick_at"):
-		picked = unit_selector.call("pick_at", screen_pos) as Node3D
-	if picked != null and CombatQuery.any_can_attack(selected, picked):
-		var n := _command_router.issue_attack_target(selected, picked, source)
-		if game_hud:
-			if n > 0:
-				game_hud.set_status("攻击 · %d 单位" % n)
-			else:
-				game_hud.set_status("攻击：无合法目标")
-		_refresh_command_card()
-		return n > 0
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		if game_hud:
-			game_hud.set_status("攻击：未点到地面或目标")
-		return false
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var result := _command_router.issue_attack_move(selected, goal_center, source)
-	var moved: int = int(result.get("moved", 0))
-	if moved > 0:
-		_spawn_move_confirm(goal_center, MoveConfirmFx.Kind.ATTACK)
-	if game_hud:
-		if moved > 0:
-			game_hud.set_status(
-				"攻击移动 → (%.0f, %.0f) · %d 单位" % [goal_center.x, goal_center.y, moved]
-			)
-		else:
-			game_hud.set_status("攻击移动：无法到达")
-	_refresh_command_card()
-	return moved > 0
+	return _ensure_command_input_module().issue_attack_at_screen(screen_pos, source)
 
 
 func _issue_patrol_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if _command_router == null or unit_selector == null or _path_query == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	if selected.is_empty():
-		return false
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		if game_hud:
-			game_hud.set_status("巡逻：未点到地面")
-		return false
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var result := _command_router.issue_patrol(selected, goal_center, source)
-	var moved: int = int(result.get("moved", 0))
-	if moved > 0:
-		_spawn_move_confirm(goal_center)
-	if game_hud:
-		if moved > 0:
-			game_hud.set_status(
-				"巡逻 ↔ (%.0f, %.0f) · %d 单位" % [goal_center.x, goal_center.y, moved]
-			)
-		else:
-			game_hud.set_status("巡逻：无法开始")
-	_refresh_command_card()
-	return moved > 0
+	return _ensure_command_input_module().issue_patrol_at_screen(screen_pos, source)
 
 
-## 右键智能：屏幕点 → SmartTarget → CommandRouter.issue_smart。
-## 能力优先级在 Router 内：特殊交互 → 移动 → 集结（可并行）。
 func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if unit_selector == null or _command_router == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	if selected.is_empty():
-		return false
-	var target := _resolve_smart_target(screen_pos, selected)
-	if target == null or target.goal_wc3 == Vector2.INF:
-		if game_hud:
-			game_hud.set_status("命令：未点到有效目标")
-		return false
-	var result := _command_router.issue_smart(selected, target, source)
-	if not bool(result.get("ok", false)):
-		# 仅选可训建筑却未写出集结时给明确提示（避免「右键无反应」）
-		if _command_router != null and not _command_router.filter_rally_buildings(selected).is_empty():
-			if game_hud:
-				game_hud.set_status("集结点：未能设置（目标无效？）")
-		return false
-	var goal: Vector2 = result.get("goal_wc3", Vector2.INF)
-	var moved := int(result.get("moved", 0))
-	var rallied := int(result.get("rallied", 0))
-	# 移动反馈与集结反馈分离：纯集结只出旗，不播移动确认箭/光标
-	if moved > 0:
-		_flash_cursor_move()
-		if goal != Vector2.INF:
-			_spawn_move_confirm(goal)
-	if rallied > 0:
-		_sync_rally_flag_for_selection()
-	if game_hud:
-		game_hud.set_status(_format_smart_status(result))
-	_refresh_command_card()
-	return true
+	return _ensure_command_input_module().issue_smart_at_screen(screen_pos, source)
 
 
-## 对当前选中的可训建筑写入集结点。
 func _issue_set_rally_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	var buildings: Array[Node3D] = []
-	for n in selected:
-		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
-			buildings.append(n as Node3D)
-	if buildings.is_empty():
-		return false
-	var target := _resolve_smart_target(screen_pos, selected)
-	if target == null or target.goal_wc3 == Vector2.INF:
-		if game_hud:
-			game_hud.set_status("集结点：未点到有效地点")
-		return false
-	for b in buildings:
-		_apply_rally_from_smart(b, target)
-	_sync_rally_flag_for_selection()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL or source == UnitOrder.Source.TARGETING else "右键"
-		match target.kind:
-			SmartTarget.Kind.GOLD_MINE:
-				game_hud.set_status("集结点 → 金矿（%s）" % src)
-			SmartTarget.Kind.TREE:
-				game_hud.set_status("集结点 → 树木（%s）" % src)
-			_:
-				game_hud.set_status(
-					"集结点 → (%.0f, %.0f)（%s）" % [target.goal_wc3.x, target.goal_wc3.y, src]
-				)
-	return true
+	return _ensure_command_input_module().issue_set_rally_at_screen(screen_pos, source)
 
 
 func _apply_rally_from_smart(building: Node3D, target: SmartTarget) -> void:
-	if building == null or target == null:
-		return
-	match target.kind:
-		SmartTarget.Kind.GOLD_MINE:
-			BuildingRally.set_gold_mine(building, target.node, target.goal_wc3)
-		SmartTarget.Kind.TREE:
-			BuildingRally.set_tree(building, target.tree_cn, target.goal_wc3)
-		_:
-			BuildingRally.set_ground(building, target.goal_wc3)
+	_ensure_command_input_module().apply_rally_from_smart(building, target)
 
 
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
@@ -1111,242 +859,45 @@ func _format_smart_status(result: Dictionary) -> String:
 	return _ensure_smart_command_module().format_smart_status(result)
 
 
-## 对当前选中可移动单位下发移动（经 CommandRouter）。
 func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if _command_router == null or unit_selector == null or _path_query == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	if selected.is_empty():
-		return false
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		if game_hud:
-			game_hud.set_status("移动：未点到地面")
-		return true
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var result := _command_router.issue_move_to_wc3(selected, goal_center, source)
-	var moved: int = int(result.get("moved", 0))
-	var failed: int = int(result.get("failed", 0))
-	if moved > 0:
-		_spawn_move_confirm(goal_center)
-	if game_hud:
-		if moved > 0:
-			game_hud.set_status(
-				"移动 → (%.0f, %.0f) · %d 单位（已散开落点）" % [goal_center.x, goal_center.y, moved]
-			)
-		elif failed > 0:
-			game_hud.set_status("无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
-		elif _command_router.filter_movers(selected).is_empty():
-			game_hud.set_status("选中无可用移动单位（建筑？）")
-	_refresh_command_card()
-	return moved > 0 or failed > 0
+	return _ensure_command_input_module().issue_move_at_screen(screen_pos, source)
 
 
 ## F3-2: Shift+RMB 队形排开群体移动（FormationFollow）。
-## 行为：leader = primary selected；follower = selected[1:]；
-## 头一回算 slot（leader_heading=0 硬编码），各 follower 各自 A* 到 slot 目标。
-## WC3 复刻：不做 leader 边走 follower 边跟（见 docs/game/GROUP_MOVE.md §3.5）。
 func _issue_group_move_command(
 	screen_pos: Vector2,
 	formation: String,
 	spacing: float = 64.0
 ) -> bool:
-	if unit_selector == null or _path_query == null:
-		return false
-	if not unit_selector.has_method("get_primary"):
-		return false
-	var selected: Array = _get_selected_safe()
-	if selected.is_empty():
-		return false
-	var primary: Node3D = unit_selector.call("get_primary") as Node3D
-	if primary == null or not _is_controllable(primary) or not selected.has(primary):
-		primary = selected[0] as Node3D
-	var hit := _ground_at_screen(screen_pos)
-	if hit == Vector3.INF:
-		if game_hud:
-			game_hud.set_status("队形移动：未点到地面")
-		return true
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	# 过滤建筑（不可移动）
-	var movers: Array = []
-	for n in selected:
-		if not (n is Node3D) or not is_instance_valid(n):
-			continue
-		var node := n as Node3D
-		var d: Dictionary = node.get_meta("unit_data", {})
-		var tid := str(d.get("typeId", ""))
-		if BuildingVisual.is_building(tid):
-			continue
-		movers.append(node)
-	if movers.is_empty():
-		if game_hud:
-			game_hud.set_status("选中无可用移动单位（建筑？）")
-		return true
-	# leader 位置（WC3 XY）
-	var leader: Node3D = primary
-	var leader_pos := Vector2(
-		leader.global_position.x * inv, -leader.global_position.z * inv
-	)
-	# 算 slot（F3 硬编码 heading=0，future 接 leader facing）
-	var slots: PackedVector2Array = FormationFollow.slot_positions(
-		leader_pos, 0.0, movers.size(), formation, spacing
-	)
-	# leader 走 goal_center（slot[0] = leader_pos + (0,0) = leader_pos，但要走到 goal）
-	# followers 走 slot[1..]
-	var moved := 0
-	var failed := 0
-	for i in range(movers.size()):
-		var node: Node3D = movers[i]
-		var nav := _ensure_navigator(node)
-		if nav == null:
-			continue
-		var goal: Vector2
-		if node == leader:
-			goal = goal_center  # leader 直接走落点
-		else:
-			# follower 走 slot 偏移（相对 leader 当前位置，offset 到 goal_center）
-			var offset: Vector2 = slots[i] - slots[0]  # slot 0 = leader_pos
-			goal = goal_center + offset
-		if nav.go_to_wc3(goal):
-			moved += 1
-		else:
-			failed += 1
-	if moved > 0:
-		_spawn_move_confirm(goal_center)
-	if game_hud:
-		if moved > 0:
-			game_hud.set_status(
-				"队形移动 [%s] → (%.0f, %.0f) · %d 单位" % [formation, goal_center.x, goal_center.y, moved]
-			)
-		elif failed > 0:
-			game_hud.set_status("队形移动：无法到达 (%.0f, %.0f)" % [goal_center.x, goal_center.y])
-	return moved > 0 or failed > 0
+	return _ensure_command_input_module().issue_group_move_command(screen_pos, formation, spacing)
 
 
 func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
-	if _command_router == null or unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	var peasants := _command_router.filter_peasants(selected)
-	if peasants.is_empty():
-		if game_hud:
-			game_hud.set_status("采集：无农民")
-		return false
-	if unit_selector.has_method("pick_at"):
-		var picked: Node3D = unit_selector.call("pick_at", screen_pos) as Node3D
-		if picked != null and _is_gold_mine(picked):
-			var n := _command_router.issue_harvest_gold(peasants, picked, source)
-			if n > 0 and game_hud:
-				game_hud.set_status("采集金币 · %d 农民" % n)
-			_refresh_command_card()
-			return n > 0
-		if picked != null and _is_harvestable_tree_node(picked):
-			var cn := _tree_cn_of(picked)
-			if cn >= 0:
-				_flash_tree_target(cn)
-				var nl := _command_router.issue_harvest_lumber(peasants, cn, source)
-				if nl > 0 and game_hud:
-					game_hud.set_status("采集木材 · %d 农民" % nl)
-				_refresh_command_card()
-				return nl > 0
-	if _tree_registry != null:
-		var cn2 := _tree_registry.pick_cn_at_screen(screen_pos)
-		if cn2 >= 0:
-			_flash_tree_target(cn2)
-			var nl2 := _command_router.issue_harvest_lumber(peasants, cn2, source)
-			if nl2 > 0 and game_hud:
-				game_hud.set_status("采集木材 · %d 农民" % nl2)
-			_refresh_command_card()
-			return nl2 > 0
-	if game_hud:
-		game_hud.set_status("采集：请点金矿或树木")
-	return false
+	return _ensure_command_input_module().issue_harvest_at_screen(screen_pos, source)
 
 
 func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
-	if _command_router == null or unit_selector == null:
-		return false
-	var selected: Array = _get_selected_safe()
-	var n := _command_router.issue_return_goods(selected, source)
-	if n > 0 and game_hud:
-		game_hud.set_status("送回资源 · %d 农民" % n)
-	elif game_hud:
-		game_hud.set_status("送回：无负重农民")
-	_refresh_command_card()
-	return n > 0
+	return _ensure_command_input_module().issue_return_goods(source)
 
 
 func _begin_move_targeting(source: int) -> void:
-	var selected: Array = _get_selected_safe()
-	if _command_router == null or _command_router.filter_movers(selected).is_empty():
-		if game_hud:
-			game_hud.set_status("移动：无可用单位")
-		return
-	_interrupt_channels_for_units(selected)
-	_ensure_interaction_module().begin_aim(InteractionModule.Aim.MOVE)
-	_sync_aim_flags_from_interaction()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
-		game_hud.set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
+	_ensure_command_input_module().begin_move_targeting(source)
 
 
 func _begin_attack_targeting(source: int) -> void:
-	var selected: Array = _get_selected_safe()
-	if _command_router == null or _command_router.filter_movers(selected).is_empty():
-		if game_hud:
-			game_hud.set_status("攻击：无可用单位")
-		return
-	_ensure_interaction_module().begin_aim(InteractionModule.Aim.ATTACK)
-	_sync_aim_flags_from_interaction()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 A"
-		game_hud.set_status("攻击瞄准（%s）· 左键单位/地面 · Esc 取消" % src)
+	_ensure_command_input_module().begin_attack_targeting(source)
 
 
 func _begin_patrol_targeting(source: int) -> void:
-	var selected: Array = _get_selected_safe()
-	if _command_router == null or _command_router.filter_movers(selected).is_empty():
-		if game_hud:
-			game_hud.set_status("巡逻：无可用单位")
-		return
-	_ensure_interaction_module().begin_aim(InteractionModule.Aim.PATROL)
-	_sync_aim_flags_from_interaction()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 P"
-		game_hud.set_status("巡逻瞄准（%s）· 左键指定另一端 · Esc 取消" % src)
+	_ensure_command_input_module().begin_patrol_targeting(source)
 
 
 func _begin_harvest_targeting(source: int) -> void:
-	var selected: Array = _get_selected_safe()
-	if _command_router == null or _command_router.filter_peasants(selected).is_empty():
-		if game_hud:
-			game_hud.set_status("采集：无农民")
-		return
-	_ensure_interaction_module().begin_aim(InteractionModule.Aim.HARVEST)
-	_sync_aim_flags_from_interaction()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
-		game_hud.set_status("采集瞄准（%s）· 左键点金矿 · Esc 取消" % src)
+	_ensure_command_input_module().begin_harvest_targeting(source)
 
 
 func _begin_rally_targeting(source: int) -> void:
-	var selected: Array = _get_selected_safe()
-	var any := false
-	for n in selected:
-		if n is Node3D and BuildingRally.can_set_rally(n as Node3D):
-			any = true
-			break
-	if not any:
-		if game_hud:
-			game_hud.set_status("集结点：请选中可训练建筑")
-		return
-	_ensure_interaction_module().begin_aim(InteractionModule.Aim.RALLY)
-	_sync_aim_flags_from_interaction()
-	if game_hud:
-		var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
-		game_hud.set_status("集结瞄准（%s）· 左键点地面/金矿/树 · Esc 取消" % src)
+	_ensure_command_input_module().begin_rally_targeting(source)
 
 
 func _setup_ability_services() -> void:
@@ -1892,7 +1443,7 @@ func _issue_town_bell_near_peasants(bells: Array[Node3D], source: int) -> int:
 	for bell in bells:
 		if bell == null or not is_instance_valid(bell):
 			continue
-		var owner := int(bell.get_meta("unit_data", {}).get("owner", 0))
+		var bell_owner := int(bell.get_meta("unit_data", {}).get("owner", 0))
 		var bell_xy := Wc3Coords.godot_to_wc3_xy(bell.global_position)
 		for c in host.get_children():
 			if not (c is Node3D):
@@ -1900,7 +1451,7 @@ func _issue_town_bell_near_peasants(bells: Array[Node3D], source: int) -> int:
 			var unit := c as Node3D
 			if not is_instance_valid(unit):
 				continue
-			if int(unit.get_meta("unit_data", {}).get("owner", -1)) != owner:
+			if int(unit.get_meta("unit_data", {}).get("owner", -1)) != bell_owner:
 				continue
 			var tid := CombatQuery.type_id_of(unit)
 			if tid != "hpea" and tid != "hmil":
@@ -2003,13 +1554,13 @@ func _release_unit_food(unit: Node3D) -> void:
 	if unit == null or bool(unit.get_meta("food_released", false)):
 		return
 	var d: Dictionary = unit.get_meta("unit_data", {})
-	var owner := int(d.get("owner", -1))
+	var unit_owner := int(d.get("owner", -1))
 	var tid := str(d.get("typeId", "")).strip_edges()
 	var food := BuildingCatalog.get_food_used(tid)
 	var capacity := BuildingCatalog.get_food_made(tid) if not UnitLife.is_under_construction(unit) else 0
 	if food <= 0 and capacity <= 0:
 		return
-	var stock := _stock_for_owner(owner)
+	var stock := _stock_for_owner(unit_owner)
 	if stock == null:
 		return
 	if food > 0:
@@ -2476,9 +2027,9 @@ func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
 
 ## 训练完工刷单位：脚印四角（集结最近 / 默认左下）→ 重叠则自建筑中心挤位 → 再跟集结。
 func _spawn_trained_unit(
-	unit_id: String, site_wc3: Vector2, owner: int, from_building: Node3D = null
+	unit_id: String, site_wc3: Vector2, owner_id: int, from_building: Node3D = null
 ) -> Node3D:
-	return _ensure_units_module().spawn_trained(unit_id, site_wc3, owner, from_building)
+	return _ensure_units_module().spawn_trained(unit_id, site_wc3, owner_id, from_building)
 
 
 ## 训练刷兵后改坐标（挤位）；同步 unit_data 与贴地。
@@ -2494,10 +2045,10 @@ func _stock_for_unit(unit: Node3D) -> PlayerStock:
 	return _stock_for_owner(int(data.get("owner", -1)))
 
 
-func _stock_for_owner(owner: int) -> PlayerStock:
+func _stock_for_owner(owner_id: int) -> PlayerStock:
 	if _session == null:
 		return null
-	return _session.stocks.get(owner) as PlayerStock
+	return _session.stocks.get(owner_id) as PlayerStock
 
 
 func _local_stock() -> PlayerStock:
@@ -3116,6 +2667,41 @@ func _ensure_smart_command_module() -> SmartCommandModule:
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
 	})
 	return _smart_command
+
+
+## 装配命令输入：issue_*/begin_*、瞄准点击与智能右键。
+## InteractionModule 持瞄准态；SmartCommandModule 解析 SmartTarget；本模块只下发。
+func _ensure_command_input_module() -> CommandInputModule:
+	if not is_instance_valid(_command_input):
+		_command_input = CommandInputModule.new()
+		_command_input.name = "CommandInputModule"
+		add_child(_command_input)
+	if unit_selector == null or rts_camera == null:
+		_resolve_exports()
+	_command_input.configure({
+		"command_router": _command_router,
+		"unit_selector": unit_selector,
+		"path_query": _path_query,
+		"tree_registry": _tree_registry,
+		"interaction": _ensure_interaction_module(),
+		"smart_command": _ensure_smart_command_module(),
+		"game_hud": game_hud,
+		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"get_selected": Callable(self, "_get_selected_safe"),
+		"interrupt_channels": Callable(self, "_interrupt_channels_for_units"),
+		"refresh_command_card": Callable(self, "_refresh_command_card"),
+		"spawn_move_confirm": Callable(self, "_spawn_move_confirm"),
+		"flash_cursor_move": Callable(self, "_flash_cursor_move"),
+		"sync_rally_flag": Callable(self, "_sync_rally_flag_for_selection"),
+		"sync_aim_flags": Callable(self, "_sync_aim_flags_from_interaction"),
+		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"is_gold_mine": Callable(self, "_is_gold_mine"),
+		"is_harvestable_tree": Callable(self, "_is_harvestable_tree_node"),
+		"tree_cn_of": Callable(self, "_tree_cn_of"),
+		"local_stock": Callable(self, "_local_stock"),
+		"is_controllable": Callable(self, "_is_controllable"),
+	})
+	return _command_input
 
 
 ## 装配战斗模块：伤害管线、投射物、死亡/尸体、AttackController。

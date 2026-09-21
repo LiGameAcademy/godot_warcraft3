@@ -26,6 +26,7 @@ game/features/
   interaction/
     interaction_module.gd          互斥瞄准状态机 + 光标同步
     smart_command_module.gd        右键智能目标解析 / 闪选 / 文案
+    command_input_module.gd        issue_*/begin_* 下发、瞄准点击与智能右键
   command_card/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
   selection_hud/
