@@ -16,7 +16,10 @@ static func matches(caster: Node, target: Node, abil_id: String) -> bool:
 	var ab := _ability_data(abil_id)
 	if ab == null:
 		return true
-	return matches_targs(caster, target, ab.targs)
+	var lv := 1
+	if caster is Node3D:
+		lv = maxi(AbilityCatalog.level_for(caster as Node3D, abil_id), 1)
+	return matches_targs(caster, target, ab.targs_at(lv))
 
 
 static func _ability_data(abil_id: String) -> AbilityDataDef:

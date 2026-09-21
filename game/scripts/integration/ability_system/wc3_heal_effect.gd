@@ -7,6 +7,9 @@ extends GameplayEffect
 func _apply_result(target: Node, _instigator: Node, _context: Dictionary) -> GameplayEffectResult:
 	if not target is Node3D or not CombatQuery.is_alive_in_world(target):
 		return GameplayEffectResult.make(GameplayEffectResult.Outcome.REJECTED, "无效治疗目标")
+	# 施工血量由建造进度驱动；治疗会浪费魔法并干扰血条表现。
+	if UnitLife.is_under_construction(target as Node3D):
+		return GameplayEffectResult.make(GameplayEffectResult.Outcome.REJECTED, "建造中不可治疗")
 	var before := UnitLife.get_life(target)
 	var actual := minf(maxf(amount, 0.0), maxf(UnitLife.get_max_life(target) - before, 0.0))
 	if actual <= 0.0:

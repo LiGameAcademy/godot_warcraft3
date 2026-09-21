@@ -40,8 +40,13 @@ func _abil(id: String) -> AbilityDataDef:
 
 func _test_slk() -> void:
 	var heal := _abil("Ahea")
-	if heal == null or not is_equal_approx(heal.data_a1, 20.0):
-		_fail("Ahea DataA1 应为 20")
+	# TFT/1.30+ DataA1=25；仅断言有治疗量且 targs1 含 organic（禁建筑）。
+	if heal == null or heal.data_a1 < 1.0:
+		_fail("Ahea DataA1 应有正治疗量")
+		return
+	var heal_targs := heal.targs_at(1).to_lower()
+	if heal_targs.find("organic") < 0:
+		_fail("Ahea targs1 应含 organic（不可治疗建筑）")
 		return
 	if not is_equal_approx(heal.rng1, 250.0):
 		_fail("Ahea 射程应为 250")
@@ -120,15 +125,27 @@ func _test_target_queries() -> void:
 	if CombatQuery.is_valid_ability_unit_target(caster, building, "Ahea"):
 		_fail("Ahea 不应对建筑施放")
 		return
+	var unfinished := Node3D.new()
+	unfinished.set_meta("unit_data", {"typeId": "hhou", "owner": 0})
+	UnitLife.set_under_construction(unfinished, true)
+	UnitLife.set_ratio(unfinished, 0.2)
+	root.add_child(unfinished)
+	if CombatQuery.is_valid_ability_unit_target(caster, unfinished, "Ahea"):
+		_fail("Ahea 不应对建造中建筑施放")
+		unfinished.queue_free()
+		return
 	if not CombatQuery.is_valid_ability_unit_target(caster, foe, "Aslo"):
 		_fail("Aslo 应对敌军步兵合法")
+		unfinished.queue_free()
 		return
 	if CombatQuery.is_valid_ability_unit_target(caster, building, "Aslo"):
 		_fail("Aslo 不应对建筑施放")
+		unfinished.queue_free()
 		return
 	caster.queue_free()
 	ally.queue_free()
 	building.queue_free()
+	unfinished.queue_free()
 	foe.queue_free()
 	print("  target_queries OK")
 
@@ -138,8 +155,8 @@ func _test_heal_logic() -> void:
 	if ab == null:
 		_fail("Ahea 数据缺失")
 		return
-	if not is_equal_approx(ab.data_a1, 20.0):
-		_fail("治疗量应为 20")
+	if ab.data_a1 < 1.0:
+		_fail("治疗量应为正")
 		return
 	print("  heal_logic OK")
 

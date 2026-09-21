@@ -25,7 +25,11 @@ const PRIMARY_KEY := "alias"
 @export var req_level: int = 0 ## 英雄学习所需英雄等级
 @export var level_skip: int = 0 ## 每升一级所需额外英雄等级间隔
 @export var priority: int = 0 ## AI/自动施法优先级
-@export var targs: String = "" ## 默认目标过滤器（可被等级覆盖）
+@export var targs: String = "" ## 兼容别名：等同 targs1（过滤器入口常用）
+@export var targs1: String = "" ## Lv1：目标过滤器（air,ground,friend,organic…）
+@export var targs2: String = "" ## Lv2：目标过滤器
+@export var targs3: String = "" ## Lv3：目标过滤器
+@export var targs4: String = "" ## Lv4：目标过滤器
 # —— 等级 1 ——
 @export var cast1: float = 0.0 ## Lv1：施法时间（秒）
 @export var dur1: float = 0.0 ## Lv1：普通单位上的持续时间
@@ -173,6 +177,30 @@ func area_at(level: int) -> float:
 		_: return area1
 
 
+## 等级对应的 targs；`_` / 空则回退到更低等级，再回退 `targs`。
+func targs_at(level: int) -> String:
+	var raw := ""
+	match clamp_level(level):
+		1:
+			raw = targs1
+		2:
+			raw = targs2
+		3:
+			raw = targs3
+		4:
+			raw = targs4
+		_:
+			raw = targs1
+	raw = raw.strip_edges()
+	if raw.is_empty() or raw == "_":
+		raw = targs1.strip_edges()
+	if raw.is_empty() or raw == "_":
+		raw = targs.strip_edges()
+	if raw == "_":
+		return ""
+	return raw
+
+
 func data_a_at(level: int) -> float:
 	match clamp_level(level):
 		1: return data_a1
@@ -233,7 +261,13 @@ static func from_slk_record(rec: Dictionary) -> AbilityDataDef:
 	d.req_level = int(rec.get("reqLevel", 0))
 	d.level_skip = int(rec.get("levelSkip", 0))
 	d.priority = int(rec.get("priority", 0))
-	d.targs = str(rec.get("targs", "")).strip_edges()
+	# SLK/JSON 权威字段是 targs1…4；旧键 `targs` 仅作兼容回退。
+	d.targs1 = str(rec.get("targs1", "")).strip_edges()
+	d.targs2 = str(rec.get("targs2", "")).strip_edges()
+	d.targs3 = str(rec.get("targs3", "")).strip_edges()
+	d.targs4 = str(rec.get("targs4", "")).strip_edges()
+	var legacy_targs := str(rec.get("targs", "")).strip_edges()
+	d.targs = d.targs1 if not d.targs1.is_empty() and d.targs1 != "_" else legacy_targs
 	d.cast1 = float(rec.get("Cast1", 0.0))
 	d.dur1 = float(rec.get("Dur1", 0.0))
 	d.hero_dur1 = float(rec.get("HeroDur1", 0.0))

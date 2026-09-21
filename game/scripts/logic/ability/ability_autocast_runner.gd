@@ -93,6 +93,9 @@ static func _pick_heal_target(caster: Node3D, abil_id: String, ctx: Dictionary) 
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var ally := n as Node3D
+		# 半成品建筑血条=进度，禁止被自动治疗选中。
+		if UnitLife.is_under_construction(ally):
+			continue
 		if not CombatQuery.is_valid_ability_unit_target(caster, ally, abil_id):
 			continue
 		UnitLife.ensure(ally)
@@ -125,6 +128,8 @@ static func _pick_inner_fire_target(caster: Node3D, abil_id: String, ctx: Dictio
 		if not (n is Node3D) or not is_instance_valid(n):
 			continue
 		var ally := n as Node3D
+		if UnitLife.is_under_construction(ally):
+			continue
 		if not CombatQuery.is_valid_ability_unit_target(caster, ally, abil_id):
 			continue
 		var ctrl := InnerFireController.of(ally)
