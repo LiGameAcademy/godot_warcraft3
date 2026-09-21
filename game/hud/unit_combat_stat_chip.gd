@@ -13,6 +13,10 @@ const ICON_SIZE := Vector2(28, 28)
 @onready var _value: Label = %ValueLabel
 @onready var _type: Label = %TypeLabel
 
+## 同一图标随数值更新复用纹理，避免每帧读盘、解码并上传图片。
+var _icon_path: String = ""
+var _icon_initialized: bool = false
+
 
 func _ready() -> void:
 	if _icon_slot:
@@ -46,6 +50,8 @@ func set_stat(info: Dictionary) -> void:
 
 
 func clear() -> void:
+	_icon_path = ""
+	_icon_initialized = false
 	visible = false
 	if _value:
 		_value.text = ""
@@ -84,6 +90,10 @@ func _style_level_badge() -> void:
 func _apply_icon(path: String) -> void:
 	if _icon == null:
 		return
+	if _icon_initialized and path == _icon_path:
+		return
+	_icon_path = path
+	_icon_initialized = true
 	if path.is_empty():
 		_icon.texture = null
 		_icon.visible = false

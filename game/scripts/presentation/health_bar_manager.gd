@@ -42,6 +42,10 @@ var _entries: Dictionary = {}
 var _selected: Dictionary = {}
 ## Alt 按住临时显示（always_show=false 时）
 var _alt_hold_show: bool = false
+var _resync_elapsed: float = 0.0
+const RESYNC_INTERVAL := 0.25
+## 缺少挂点的模型定期重试；不在每一帧递归遍历模型与网格。
+const ATTACH_RETRY_MSEC := 1000
 
 
 func _ready() -> void:
@@ -101,7 +105,7 @@ func resync() -> void:
 		if not _entries.has(id):
 			_entries[id] = _make_bar(n)
 		else:
-			_refresh_attach_entry(_entries[id], n)
+			_update_attach_if_needed(_entries[id], n)
 			_ensure_name_label(_entries[id], n)
 	var stale: Array = []
 	for id in _entries.keys():
@@ -111,11 +115,14 @@ func resync() -> void:
 		_free_entry(int(id))
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _camera == null or _unit_host == null or _root == null:
 		return
-	if Engine.get_process_frames() % 15 == 0:
+	_resync_elapsed += delta
+	if _resync_elapsed >= RESYNC_INTERVAL:
+		_resync_elapsed = fmod(_resync_elapsed, RESYNC_INTERVAL)
 		resync()
+	var screen_bounds := get_viewport().get_visible_rect().grow(64.0)
 	for id in _entries.keys():
 		var e: Dictionary = _entries[id]
 		var node := _safe_node3d(e.get("node"))
@@ -144,6 +151,11 @@ func _process(_delta: float) -> void:
 				name_lbl.visible = false
 			continue
 		var screen := _camera.unproject_position(world)
+		if not screen_bounds.has_point(screen):
+			bar.visible = false
+			if name_lbl != null:
+				name_lbl.visible = false
+			continue
 		bar.position = screen - Vector2(BAR_W * 0.5, BAR_H + 4.0)
 		_apply_fill(e, UnitLife.ratio(node))
 		_update_name_label(e, bar.position)
@@ -209,24 +221,37 @@ func _refresh_attach_entry(e: Dictionary, node: Node3D) -> void:
 	e["attach"] = resolved.get("attach")
 	e["skeleton"] = resolved.get("skeleton")
 	e["bone_idx"] = int(resolved.get("bone_idx", -1))
+	e["model"] = node.get_node_or_null("Model")
+	e["retry_at"] = Time.get_ticks_msec() + ATTACH_RETRY_MSEC
+	e["had_anchor"] = resolved.get("attach") != null or resolved.get("skeleton") != null
+	if not bool(e["had_anchor"]):
+		e["fallback_height"] = _estimate_height(node)
+
+
+func _update_attach_if_needed(e: Dictionary, node: Node3D) -> void:
+	var attach := _safe_node3d(e.get("attach"))
+	var sk := _safe_skeleton(e.get("skeleton"))
+	var model := node.get_node_or_null("Model")
+	var old_model: Variant = e.get("model")
+	var model_changed: bool = model != null and (not is_instance_valid(old_model) or model != old_model)
+	if model == null and is_instance_valid(old_model):
+		model_changed = true
+	var missing := attach == null and sk == null
+	if model_changed or (missing and (bool(e.get("had_anchor", false)) or Time.get_ticks_msec() >= int(e.get("retry_at", 0)))):
+		_refresh_attach_entry(e, node)
 
 
 func _bar_world_pos(e: Dictionary, node: Node3D) -> Vector3:
+	_update_attach_if_needed(e, node)
 	var sk := _safe_skeleton(e.get("skeleton"))
 	var bone_idx: int = int(e.get("bone_idx", -1))
 	var attach := _safe_node3d(e.get("attach"))
-	# 建条时模型可能未就绪；缺挂点则懒解析一次
-	if attach == null and sk == null:
-		_refresh_attach_entry(e, node)
-		attach = _safe_node3d(e.get("attach"))
-		sk = _safe_skeleton(e.get("skeleton"))
-		bone_idx = int(e.get("bone_idx", -1))
 	# OverHead Ref 优先于骨骼
 	if attach != null:
 		return attach.global_position + Vector3(0.0, Y_BIAS, 0.0)
 	if sk != null and bone_idx >= 0:
 		return sk.to_global(sk.get_bone_global_pose(bone_idx).origin) + Vector3(0.0, Y_BIAS, 0.0)
-	var h := _estimate_height(node)
+	var h := float(e.get("fallback_height", 1.4))
 	return node.global_position + Vector3(0.0, h + Y_BIAS, 0.0)
 
 
@@ -326,17 +351,15 @@ func _make_bar(node: Node3D) -> Dictionary:
 	name_lbl.add_theme_constant_override("outline_size", 4)
 	name_lbl.text = _unit_display_name(node)
 	_root.add_child(name_lbl)
-	var attach_info := _resolve_attach(node)
-	return {
+	var entry := {
 		"node": node,
 		"bar": bar,
 		"fill": fill,
 		"bg": bg,
 		"name": name_lbl,
-		"attach": attach_info.get("attach"),
-		"skeleton": attach_info.get("skeleton"),
-		"bone_idx": int(attach_info.get("bone_idx", -1)),
 	}
+	_refresh_attach_entry(entry, node)
+	return entry
 
 
 func _ensure_name_label(e: Dictionary, node: Node3D) -> void:

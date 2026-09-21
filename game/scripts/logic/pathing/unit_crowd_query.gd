@@ -62,6 +62,11 @@ func neighbors_of(
 		if c == self_unit or not (c is Node3D):
 			continue
 		var n := c as Node3D
+		# 先用位置剔除远处单位；类型/建筑查询只对附近候选执行。
+		# 保持实时读取位置，不引入同帧移动、出生或离场的缓存延迟。
+		var pos := Vector2(n.global_position.x * inv, -n.global_position.z * inv)
+		if self_pos_wc3.distance_squared_to(pos) > range_sq:
+			continue
 		# 离场单位（进矿 / 工地 / 训练中）不参与 soft 分离与网格占位
 		if not WorldMembership.is_in_world(n):
 			continue
@@ -74,9 +79,6 @@ func neighbors_of(
 		if tid.to_lower() == "sloc":
 			continue
 		if not include_buildings and BuildingVisual.is_building(tid):
-			continue
-		var pos := Vector2(n.global_position.x * inv, -n.global_position.z * inv)
-		if self_pos_wc3.distance_squared_to(pos) > range_sq:
 			continue
 		out.append({"pos": pos, "r": radius_for_type(tid), "id": n.get_instance_id()})
 	return out
