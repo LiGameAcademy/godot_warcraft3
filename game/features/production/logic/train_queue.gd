@@ -95,6 +95,7 @@ func snapshot() -> Array[Dictionary]:
 			"food": int(e.get("food", 0)),
 			"revive_level": int(e.get("revive_level", 0)),
 			"is_revive": bool(e.get("is_revive", false)),
+			"is_building_upgrade": bool(e.get("is_building_upgrade", false)),
 		})
 	return out
 

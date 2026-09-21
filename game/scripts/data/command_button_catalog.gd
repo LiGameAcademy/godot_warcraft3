@@ -469,6 +469,8 @@ func _normalize_key(key: String) -> String:
 			return "researches"
 		"builds":
 			return "builds"
+		"upgrade":
+			return "upgrade"
 		_:
 			return k.to_lower()
 

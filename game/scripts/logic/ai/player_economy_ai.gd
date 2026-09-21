@@ -206,15 +206,48 @@ func _develop_army(workers: Array[Node3D]) -> void:
 	if counts.Hamg == 0 and HeroDeathRegistry.dead_count(player_owner_id) == 0:
 		router.issue_train(altar, "Hamg")
 		return
-	# 科技：兵营顶盾 → 铁匠近战攻/甲（各升一级即可）
+	# 科技：兵营顶盾 → 铁匠近战攻/甲 → 主城升 Keep
 	if _try_research(barracks, "Rhde"):
 		return
 	if _try_research(blacksmith, "Rhme"):
 		return
 	if _try_research(blacksmith, "Rhar"):
 		return
+	if _try_hall_upgrade(workers):
+		return
 	if counts.hfoo < desired_footmen:
 		router.issue_train(barracks, "hfoo")
+
+
+func _try_hall_upgrade(_workers: Array[Node3D]) -> bool:
+	if stock == null or router == null or unit_host == null:
+		return false
+	var hall: Node3D = null
+	for unit in router.filter_controllable(unit_host.get_children()):
+		var id := CombatQuery.type_id_of(unit)
+		if id in ["htow", "hkee"] and not UnitLife.is_under_construction(unit):
+			hall = unit
+			break
+	if hall == null:
+		return false
+	var from_id := CombatQuery.type_id_of(hall)
+	var to_id := TechPresence.building_upgrade_target(from_id)
+	if to_id.is_empty():
+		return false
+	# 城堡需要祭坛；Keep 无额外建筑前置
+	var owned := TechPresence.collect_owned_buildings(unit_host, player_owner_id)
+	var missing := TechPresence.missing_requires(
+		owned, UnitRequiresCatalog.get_shared().get_requires(to_id), stock.upgrade_map()
+	)
+	if not missing.is_empty():
+		return false
+	if TechPresence.is_upgrade_queued(unit_host, player_owner_id, to_id):
+		return false
+	var gold := TechPresence.building_upgrade_gold(from_id, to_id)
+	var lumber := TechPresence.building_upgrade_lumber(from_id, to_id)
+	if stock.gold < gold or stock.lumber < lumber:
+		return false
+	return router.issue_building_upgrade(hall, to_id)
 
 
 func _try_research(building: Node3D, upgrade_id: String) -> bool:

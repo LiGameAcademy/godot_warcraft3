@@ -2412,6 +2412,52 @@ func _try_issue_research(upgrade_id: String) -> void:
 	_production_panel.request_research(upgrade_id)
 
 
+func _try_issue_building_upgrade(target_id: String) -> void:
+	_ensure_production_module()
+	_production_panel.request_building_upgrade(target_id)
+
+
+## 主城升本完工：改 typeId、按比例保留生命、切 TownHall 档位姿态（同模型）。
+func _apply_building_upgrade(building: Node3D, new_type_id: String) -> bool:
+	if building == null or not is_instance_valid(building) or new_type_id.is_empty():
+		return false
+	var d: Dictionary = building.get_meta("unit_data", {}).duplicate(true)
+	var old_tid := str(d.get("typeId", "")).strip_edges()
+	var want := TechPresence.filter_vertical_building_upgrade(old_tid, new_type_id)
+	if want.is_empty():
+		return false
+	var old_food := BuildingCatalog.get_food_made(old_tid)
+	var new_food := BuildingCatalog.get_food_made(want)
+	var life_ratio := UnitLife.ratio(building)
+	d["typeId"] = want
+	building.set_meta("unit_data", d)
+	if building.has_meta(UnitLife.META_LIFE):
+		building.remove_meta(UnitLife.META_LIFE)
+	if building.has_meta(UnitLife.META_MAX_LIFE):
+		building.remove_meta(UnitLife.META_MAX_LIFE)
+	UnitLife.ensure(building)
+	UnitLife.set_ratio(building, life_ratio)
+	var owner_id := int(d.get("owner", 0))
+	var stock := _stock_for_owner(owner_id)
+	if stock != null and new_food != old_food:
+		stock.add_food_cap(new_food - old_food)
+	var u := Unit.of(building)
+	if u != null:
+		u.set_stance(AnimSequenceResolver.stance_for_building_type(want), true)
+	var cache: MapModelCache = null
+	if map_root != null and map_root.has_method("get_model_cache"):
+		cache = map_root.get_model_cache()
+	if cache != null:
+		BuildingVisual.apply_phase(cache, building, want, BuildingVisual.Phase.IDLE)
+		if cache.has_method("snap_stand_geoset_visibility"):
+			cache.call("snap_stand_geoset_visibility", building)
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	if health_bar_manager != null:
+		health_bar_manager.resync()
+	return true
+
+
 func _wire_train_queue(queue: TrainQueue) -> void:
 	_ensure_production_module().watch(queue)
 
@@ -3015,6 +3061,7 @@ func _ensure_command_card_module() -> CommandCardModule:
 		"try_train": Callable(self, "_try_issue_train"),
 		"try_revive": Callable(self, "_try_issue_revive"),
 		"try_research": Callable(self, "_try_issue_research"),
+		"try_building_upgrade": Callable(self, "_try_issue_building_upgrade"),
 	})
 	return _command_card
 
@@ -3287,7 +3334,12 @@ func _ensure_production_module() -> ProductionModule:
 		_production_panel.selection_refresh_requested.connect(_sync_build_hud_for_selection)
 		_production_panel.command_refresh_requested.connect(_refresh_command_card)
 	var units := _ensure_units_module()
-	_production.configure(_session, units.spawn_trained, units.ensure_hero)
+	_production.configure(
+		_session,
+		units.spawn_trained,
+		units.ensure_hero,
+		Callable(self, "_apply_building_upgrade")
+	)
 	_production_panel.configure(_session, _command_router, unit_selector, game_hud,
 		_unit_host(), map_root.get_model_cache() if map_root != null else null)
 	return _production

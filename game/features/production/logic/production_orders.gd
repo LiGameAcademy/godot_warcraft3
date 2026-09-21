@@ -145,6 +145,60 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 	research_issued.emit(uid)
 	return true
 
+
+func issue_building_upgrade(building: Node3D, target_id: String) -> bool:
+	if building == null or not is_instance_valid(building):
+		return false
+	if UnitLife.is_under_construction(building):
+		return false
+	if not is_unit_controllable(building):
+		return false
+	var d: Dictionary = building.get_meta("unit_data", {})
+	var from_id := str(d.get("typeId", "")).strip_edges()
+	var want := target_id.strip_edges()
+	var to_id := TechPresence.building_upgrade_target(from_id)
+	if to_id.is_empty() or to_id != want:
+		return false
+	var owner: int = int(d.get("owner", 0))
+	var unit_host: Node = building.get_parent()
+	var stock: PlayerStock = null
+	if _session != null:
+		stock = _command_stock()
+	if stock == null:
+		return false
+	var owned := TechPresence.collect_owned_buildings(unit_host, owner)
+	var missing := TechPresence.missing_requires(
+		owned, UnitRequiresCatalog.get_shared().get_requires(to_id), stock.upgrade_map()
+	)
+	if not missing.is_empty():
+		return false
+	if TechPresence.is_upgrade_queued(unit_host, owner, to_id):
+		return false
+	var time_sec := TechPresence.building_upgrade_time(to_id)
+	var gold := TechPresence.building_upgrade_gold(from_id, to_id)
+	var lumber := TechPresence.building_upgrade_lumber(from_id, to_id)
+	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
+		return false
+	if not stock.try_spend(gold, lumber):
+		return false
+	var pos: Dictionary = d.get("position", {})
+	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
+	if queue == null:
+		queue = TrainQueue.new()
+		queue.name = "TrainQueue"
+		building.add_child(queue)
+	production_queue_ready.emit(queue)
+	if queue.is_full():
+		_refund_train_spend(stock, gold, lumber, 0)
+		return false
+	if not queue.enqueue(
+		to_id, time_sec, gold, lumber, 0, site_wc3, owner, {"is_building_upgrade": true}
+	):
+		_refund_train_spend(stock, gold, lumber, 0)
+		return false
+	return true
+
 func _refund_train_spend(stock: PlayerStock, gold: int, lumber: int, food: int) -> void:
 	if stock == null:
 		return

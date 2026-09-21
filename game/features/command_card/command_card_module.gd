@@ -36,6 +36,7 @@ var _begin_build: Callable
 var _try_train: Callable
 var _try_revive: Callable
 var _try_research: Callable
+var _try_building_upgrade: Callable
 
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
@@ -79,6 +80,7 @@ func configure(deps: Dictionary) -> void:
 	_try_train = deps.get("try_train", Callable()) as Callable
 	_try_revive = deps.get("try_revive", Callable()) as Callable
 	_try_research = deps.get("try_research", Callable()) as Callable
+	_try_building_upgrade = deps.get("try_building_upgrade", Callable()) as Callable
 
 
 func shutdown() -> void:
@@ -114,6 +116,7 @@ func shutdown() -> void:
 	_try_train = Callable()
 	_try_revive = Callable()
 	_try_research = Callable()
+	_try_building_upgrade = Callable()
 
 
 func _exit_tree() -> void:
@@ -552,6 +555,11 @@ func dispatch_action(action_id: String, source: int = UnitOrder.Source.PANEL) ->
 				var rid2 := action_id.substr(CommandCard.ACTION_RESEARCH_PREFIX.length())
 				if _try_research.is_valid():
 					_try_research.call(rid2)
+				return
+			if action_id.begins_with(CommandCard.ACTION_UPGRADE_PREFIX):
+				var tid_up := action_id.substr(CommandCard.ACTION_UPGRADE_PREFIX.length())
+				if _try_building_upgrade.is_valid():
+					_try_building_upgrade.call(tid_up)
 				return
 			if action_id.begins_with(CommandCard.ACTION_LEARN_PREFIX):
 				var lid := action_id.substr(CommandCard.ACTION_LEARN_PREFIX.length())

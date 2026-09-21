@@ -539,7 +539,11 @@ func _rebuild_activity_feed(entries: Array) -> void:
 		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var title := Label.new()
 		var kind := str(d.get("kind", ""))
-		var prefix := "研发" if kind == "research" else "训练"
+		var prefix := "训练"
+		if kind == "research":
+			prefix = "研发"
+		elif kind == "upgrade":
+			prefix = "升本"
 		title.text = "%s · %s" % [prefix, str(d.get("name", d.get("id", "")))]
 		title.add_theme_font_size_override("font_size", 12)
 		title.mouse_filter = Control.MOUSE_FILTER_IGNORE

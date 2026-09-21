@@ -858,6 +858,12 @@ func issue_research(building: Node3D, upgrade_id: String) -> bool:
 	return _production_orders.issue_research(building, upgrade_id)
 
 
+## F7：主城升本（htow→hkee→hcas）。差价扣费；完工变档不刷新单位。
+func issue_building_upgrade(building: Node3D, target_id: String) -> bool:
+	_production_orders.configure(_session, local_owner_id())
+	return _production_orders.issue_building_upgrade(building, target_id)
+
+
 
 
 ## F2-3：选中农民对工地 wc3_xy 发起 BUILD 令。

@@ -199,6 +199,77 @@ func request_research(upgrade_id: String) -> void:
 		var n := queue.queue_count() if queue != null else 1
 		game_hud.set_status("已加入研究队列：%s（%d/%d）" % [TechPresence.display_name(uid), n, TrainQueue.MAX_QUEUE])
 
+
+func request_building_upgrade(target_id: String) -> void:
+	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
+		return
+	var primary: Node3D = unit_selector.call("get_primary") as Node3D
+	if primary == null or not is_instance_valid(primary):
+		if game_hud:
+			game_hud.set_status("请先选中主城")
+		return
+	if not _is_controllable(primary):
+		if game_hud:
+			game_hud.set_status("无法控制该建筑")
+		return
+	var d: Dictionary = primary.get_meta("unit_data", {})
+	var building_id := str(d.get("typeId", "")).strip_edges()
+	if UnitLife.is_under_construction(primary):
+		if game_hud:
+			game_hud.set_status("建造中，无法升本")
+		return
+	var want := target_id.strip_edges()
+	var to_id := TechPresence.building_upgrade_target(building_id)
+	if to_id.is_empty() or to_id != want:
+		if game_hud:
+			game_hud.set_status("%s 不能升本为 %s" % [building_id, want])
+		return
+	var owner_id := int(d.get("owner", 0))
+	var stock := _local_stock()
+	var owned := TechPresence.collect_owned_buildings(_unit_host(), owner_id)
+	var researched := stock.upgrade_map() if stock != null else {}
+	var missing := TechPresence.missing_requires(
+		owned, UnitRequiresCatalog.get_shared().get_requires(to_id), researched
+	)
+	if not missing.is_empty():
+		if game_hud:
+			game_hud.set_status(TechPresence.requires_tip(missing))
+		return
+	if TechPresence.is_upgrade_queued(_unit_host(), owner_id, to_id):
+		if game_hud:
+			game_hud.set_status("已在升本：%s" % TechPresence.display_name(to_id))
+		return
+	var gold := TechPresence.building_upgrade_gold(building_id, to_id)
+	var lumber := TechPresence.building_upgrade_lumber(building_id, to_id)
+	if stock != null and (stock.gold < gold or stock.lumber < lumber):
+		if game_hud:
+			var msg := "资源不够（需 %d金" % gold
+			if lumber > 0:
+				msg += " %d木" % lumber
+			msg += "）"
+			if game_hud.has_method("show_command_tip"):
+				game_hud.show_command_tip(msg)
+			else:
+				game_hud.set_status(msg)
+		return
+	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
+	if existing != null and existing.is_full():
+		if game_hud:
+			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
+		return
+	if not _command_router.issue_building_upgrade(primary, to_id):
+		if game_hud:
+			game_hud.set_status("无法升本 %s" % to_id)
+		return
+	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
+	production.watch(queue)
+	command_card_requested.emit(primary, building_id)
+	selection_refresh_requested.emit()
+	if game_hud:
+		var n := queue.queue_count() if queue != null else 1
+		game_hud.set_status("已加入升本队列：%s（%d/%d）" % [TechPresence.display_name(to_id), n, TrainQueue.MAX_QUEUE])
+
+
 func _notify_cannot_afford_build(building_id: String) -> void:
 	if game_hud == null:
 		return
@@ -227,9 +298,13 @@ func _sync_building_train_visual(building: Node3D) -> void:
 	if cache == null:
 		return
 	var q := building.get_node_or_null("TrainQueue") as TrainQueue
-	var phase := (
-		BuildingVisual.Phase.WORK if q != null and q.is_training() else BuildingVisual.Phase.IDLE
-	)
+	var phase := BuildingVisual.Phase.IDLE
+	if q != null and q.is_training():
+		var snap := q.snapshot()
+		var is_up := false
+		if not snap.is_empty():
+			is_up = bool((snap[0] as Dictionary).get("is_building_upgrade", false))
+		phase = BuildingVisual.Phase.UPGRADE_BIRTH if is_up else BuildingVisual.Phase.WORK
 	BuildingVisual.apply_phase(cache, building, tid, phase)
 
 func on_queue_changed(queue: TrainQueue = null) -> void:

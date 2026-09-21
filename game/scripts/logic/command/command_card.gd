@@ -22,6 +22,7 @@ const ACTION_CLOSE_BUILD := "close_build" ## 退出建造二级面板
 const ACTION_TRAIN_PREFIX := "train:" ## 训练单位：train:hpea
 const ACTION_REVIVE_PREFIX := "revive:" ## 祭坛复活：revive:Hamg
 const ACTION_RESEARCH_PREFIX := "research:" ## 研究科技：research:Rhde
+const ACTION_UPGRADE_PREFIX := "upgrade:" ## 建筑升本：upgrade:hkee
 const ACTION_DEFEND := "defend"
 const ACTION_CALL_TO_ARMS := "call_to_arms"
 const ACTION_SET_RALLY := "set_rally"
@@ -206,6 +207,21 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			if not missing_up.is_empty():
 				opts["disabled_reason"] = TechPresence.requires_tip(missing_up)
 			_place(card, cat.upgrade_hud_entry(rid, ACTION_RESEARCH_PREFIX + rid, opts))
+
+		var up_to := TechPresence.building_upgrade_target(uid)
+		if not up_to.is_empty():
+			var missing_tier := TechPresence.missing_requires(
+				owned, UnitRequiresCatalog.get_shared().get_requires(up_to), researched
+			)
+			var exec_up := training_unit == up_to or queued.has(up_to)
+			var opts_up := {
+				"enabled": missing_tier.is_empty(),
+				"executing": exec_up,
+				"cost_line": _building_upgrade_cost_line(uid, up_to),
+			}
+			if not missing_tier.is_empty():
+				opts_up["disabled_reason"] = TechPresence.requires_tip(missing_tier)
+			_place(card, cat.unit_hud_entry(up_to, ACTION_UPGRADE_PREFIX + up_to, opts_up))
 
 	var carrying := bool(state.get("carrying", false))
 	var hl := maxi(int(state.get("hero_level", 1)), 1)
@@ -721,6 +737,18 @@ static func _upgrade_cost_line(upgrade_id: String, target_level: int = 1) -> Str
 	var max_lv := TechPresence.upgrade_max_level(upgrade_id)
 	if max_lv > 1:
 		cost += " · 等级 %d/%d" % [target_level, max_lv]
+	return cost + "。"
+
+
+static func _building_upgrade_cost_line(from_id: String, to_id: String) -> String:
+	var g := TechPresence.building_upgrade_gold(from_id, to_id)
+	var l := TechPresence.building_upgrade_lumber(from_id, to_id)
+	var t := TechPresence.building_upgrade_time(to_id)
+	var cost := "升本 %d 金" % g
+	if l > 0:
+		cost += " · %d 木" % l
+	if t > 0.0:
+		cost += " · %.0f秒" % t
 	return cost + "。"
 
 

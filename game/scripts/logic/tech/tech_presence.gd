@@ -13,6 +13,12 @@ const VERTICAL_TRAINS := {
 	"hcas": ["hpea"],
 }
 
+## 人族竖切：主城升本链。
+const VERTICAL_BUILDING_UPGRADES := {
+	"htow": "hkee",
+	"hkee": "hcas",
+}
+
 ## 人族竖切：兵营顶盾；铁匠武器/护甲（近战+远程各一条）。
 const VERTICAL_RESEARCHES := {
 	"hbar": ["Rhde"],
@@ -68,7 +74,8 @@ static func stock_for_owner(owner_id: int) -> PlayerStock:
 static func stock_for_unit(unit: Node) -> PlayerStock:
 	if unit == null or not is_instance_valid(unit):
 		return null
-	return stock_for_owner(CombatQuery.owner_of(unit))
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	return stock_for_owner(int(d.get("owner", -1)))
 
 
 ## unit_host 下、指定 owner、已完工建筑的 typeId → 数量。
@@ -182,6 +189,41 @@ static func missing_requires(
 			continue
 		out.append(rid)
 	return out
+
+
+## 竖切：建筑 Upgrade= ∩ 锁死表；无表则空（禁止非竖切升本）。
+static func filter_vertical_building_upgrade(building_id: String, target_id: String) -> String:
+	var from_id := building_id.strip_edges()
+	var want := target_id.strip_edges()
+	var allow = VERTICAL_BUILDING_UPGRADES.get(from_id, null)
+	if allow == null:
+		return ""
+	if str(allow) != want:
+		return ""
+	return want
+
+
+## UnitFunc Upgrade= 目标建筑 id（无则空）。
+static func building_upgrade_target(building_id: String) -> String:
+	var raw := str(CommandButtonCatalog.get_shared().get_unit_ui(building_id).get("upgrade", "")).strip_edges()
+	if raw.is_empty() or raw == "_" or raw == "-":
+		return ""
+	# 偶发 CSV，只取首项
+	var first := raw.split(",")[0].strip_edges()
+	return filter_vertical_building_upgrade(building_id, first)
+
+
+## 升本造价：目标总价 − 当前总价（对齐 Melee 差价；下限 0）。
+static func building_upgrade_gold(from_id: String, to_id: String) -> int:
+	return maxi(0, BuildingCatalog.get_gold_cost(to_id) - BuildingCatalog.get_gold_cost(from_id))
+
+
+static func building_upgrade_lumber(from_id: String, to_id: String) -> int:
+	return maxi(0, BuildingCatalog.get_lumber_cost(to_id) - BuildingCatalog.get_lumber_cost(from_id))
+
+
+static func building_upgrade_time(to_id: String) -> float:
+	return BuildingCatalog.get_build_time(to_id)
 
 
 ## 竖切：建筑 Trains ∩ 锁死表；无表则原样返回。
@@ -353,7 +395,7 @@ static func unit_armor_bonus(unit: Node) -> float:
 
 ## 单位当前适用的攻击/护甲科技等级（取匹配 id 中最高已研究等级；无则 0）。
 static func unit_upgrade_level(unit: Node, id_set: Dictionary) -> int:
-	var bal := CombatQuery.balance_of(unit)
+	var bal := _balance_of(unit)
 	var stock := stock_for_unit(unit)
 	if bal == null or stock == null:
 		return 0
@@ -369,7 +411,7 @@ static func unit_upgrade_level(unit: Node, id_set: Dictionary) -> int:
 
 
 static func _unit_effect_bonus(unit: Node, want_effect: String) -> float:
-	var bal := CombatQuery.balance_of(unit)
+	var bal := _balance_of(unit)
 	var stock := stock_for_unit(unit)
 	if bal == null or stock == null:
 		return 0.0
@@ -386,6 +428,21 @@ static func _unit_effect_bonus(unit: Node, want_effect: String) -> float:
 		if str(fx.get("effect", "")) == want:
 			total += float(fx.get("amount", 0.0))
 	return total
+
+
+## 避免 TechPresence ↔ CombatQuery 循环 class_name 依赖（会拖垮选中/建造等全图逻辑）。
+static func _balance_of(unit: Node) -> UnitBalanceDef:
+	if unit == null or not is_instance_valid(unit):
+		return null
+	var d: Dictionary = unit.get_meta("unit_data", {})
+	var tid := str(d.get("typeId", "")).strip_edges()
+	if tid.is_empty():
+		return null
+	var store := _def_store()
+	if store == null or not store.has_method("ensure_table") or not store.has_method("get_row"):
+		return null
+	store.ensure_table(UnitBalanceDef.TABLE_NAME)
+	return store.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
 
 
 static func _split_csv_ids(raw: String) -> PackedStringArray:

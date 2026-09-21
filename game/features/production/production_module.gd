@@ -8,16 +8,24 @@ signal queue_changed(queue: TrainQueue)
 signal progress_changed(queue: TrainQueue)
 signal feedback(message: String)
 signal research_completed(upgrade_id: String, owner: int)
+signal building_upgraded(building: Node3D, new_type_id: String, owner: int)
 
 var _session: GameSession
 var _spawn_unit: Callable
 var _ensure_hero: Callable
+var _apply_building_upgrade: Callable
 var _queues: Dictionary = {}
 
-func configure(session: GameSession, spawn_unit: Callable, ensure_hero: Callable) -> void:
+func configure(
+	session: GameSession,
+	spawn_unit: Callable,
+	ensure_hero: Callable,
+	apply_building_upgrade: Callable = Callable()
+) -> void:
 	_session = session
 	_spawn_unit = spawn_unit
 	_ensure_hero = ensure_hero
+	_apply_building_upgrade = apply_building_upgrade
 
 func watch(queue: TrainQueue) -> void:
 	if not is_instance_valid(queue) or _queues.has(queue.get_instance_id()):
@@ -50,6 +58,7 @@ func shutdown() -> void:
 		_forget_queue(id)
 	_spawn_unit = Callable()
 	_ensure_hero = Callable()
+	_apply_building_upgrade = Callable()
 	_session = null
 
 func _exit_tree() -> void:
@@ -113,9 +122,15 @@ func collect_owner_activities(owner_id: int) -> Array:
 		if uid.is_empty():
 			continue
 		var is_research := TechPresence.is_upgrade_id(uid)
+		var is_hall_up := bool(active.get("is_building_upgrade", false))
 		var entry := cat.upgrade_hud_entry(uid, "activity:" + uid, {}) if is_research else cat.unit_hud_entry(uid, "activity:" + uid, {})
+		var kind := "train"
+		if is_research:
+			kind = "research"
+		elif is_hall_up:
+			kind = "upgrade"
 		out.append({
-			"kind": "research" if is_research else "train",
+			"kind": kind,
 			"id": uid,
 			"name": TechPresence.display_name(uid),
 			"icon": str(entry.get("icon", "")),
@@ -128,6 +143,25 @@ func collect_owner_activities(owner_id: int) -> Array:
 func _on_training_completed(unit_id: String, site: Vector2, owner: int, queue: TrainQueue) -> void:
 	var completed := queue.take_last_completed()
 	var building := queue.get_parent() as Node3D
+	if bool(completed.get("is_building_upgrade", false)):
+		var ok := false
+		if _apply_building_upgrade.is_valid() and building != null:
+			ok = bool(_apply_building_upgrade.call(building, unit_id))
+		if ok:
+			building_upgraded.emit(building, unit_id, owner)
+			feedback.emit("升本完成：%s" % TechPresence.display_name(unit_id))
+		else:
+			var stock := _stock_for_owner(owner)
+			if stock != null:
+				var gold := int(completed.get("gold", 0))
+				var lumber := int(completed.get("lumber", 0))
+				if gold > 0:
+					stock.add_gold(gold)
+				if lumber > 0:
+					stock.add_lumber(lumber)
+			feedback.emit("升本失败：%s" % unit_id)
+		queue_changed.emit(queue)
+		return
 	if TechPresence.is_upgrade_id(unit_id):
 		var stock := _stock_for_owner(owner)
 		if stock != null:
@@ -178,6 +212,8 @@ func _on_training_cancelled(unit_id: String, gold: int, lumber: int, food: int, 
 		if used > 0:
 			stock.add_food_used(-used)
 	var kind := "研究" if TechPresence.is_upgrade_id(unit_id) else "训练"
+	if bool(cancelled.get("is_building_upgrade", false)):
+		kind = "升本"
 	feedback.emit("取消%s：%s（退 %d金 %d木）" % [kind, TechPresence.display_name(unit_id), gold, lumber])
 	queue_changed.emit(queue)
 

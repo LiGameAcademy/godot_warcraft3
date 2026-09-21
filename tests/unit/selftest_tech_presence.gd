@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_adef_requires_rhde()
 	_test_command_card_defend_and_research()
 	_test_command_card_blacksmith()
+	_test_building_upgrade_chain()
 	if failed == 0:
 		print("selftest_tech_presence: PASS")
 		quit(0)
@@ -299,3 +300,47 @@ func _test_command_card_blacksmith() -> void:
 		_fail("Rhme 满级后按钮应消失")
 		return
 	print("  command_card_blacksmith OK")
+
+
+func _test_building_upgrade_chain() -> void:
+	if TechPresence.building_upgrade_target("htow") != "hkee":
+		_fail("htow Upgrade 目标应为 hkee")
+		return
+	if TechPresence.building_upgrade_target("hkee") != "hcas":
+		_fail("hkee Upgrade 目标应为 hcas")
+		return
+	if not TechPresence.building_upgrade_target("hcas").is_empty():
+		_fail("hcas 不应再升本")
+		return
+	var g := TechPresence.building_upgrade_gold("htow", "hkee")
+	var l := TechPresence.building_upgrade_lumber("htow", "hkee")
+	if g != 320 or l != 210:
+		_fail("htow→hkee 差价应为 320金/210木，实际 %d/%d" % [g, l])
+		return
+	var t := TechPresence.building_upgrade_time("hkee")
+	if t < 100.0:
+		_fail("hkee 升本时间应约 140s，实际 %s" % t)
+		return
+	var card := CommandCard.for_unit("htow", {"include_locomotion": false, "researched": {}})
+	if _card_entry(card, "upgrade:hkee").is_empty():
+		_fail("主城命令卡应有升 Keep 按钮")
+		return
+	var keep_card := CommandCard.for_unit(
+		"hkee", {"include_locomotion": false, "owned_buildings": {"hkee": 1}}
+	)
+	var up_cas := _card_entry(keep_card, "upgrade:hcas")
+	if up_cas.is_empty():
+		_fail("Keep 命令卡应有升 Castle 按钮")
+		return
+	if bool(up_cas.get("enabled", true)):
+		_fail("无祭坛时升 Castle 应置灰")
+		return
+	var with_altar := CommandCard.for_unit(
+		"hkee",
+		{"include_locomotion": false, "owned_buildings": {"hkee": 1, "halt": 1}}
+	)
+	up_cas = _card_entry(with_altar, "upgrade:hcas")
+	if up_cas.is_empty() or not bool(up_cas.get("enabled", false)):
+		_fail("有祭坛时升 Castle 应可点")
+		return
+	print("  building_upgrade_chain OK")
