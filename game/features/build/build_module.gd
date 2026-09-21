@@ -33,6 +33,8 @@ var _issue_move: Callable
 var _ensure_navigator: Callable
 var _ensure_unit_visual: Callable
 var _resync_health_bars: Callable
+## (screen_pos: Vector2) -> Vector3；与 Director._ground_at_screen 同源（Heightfield 射线）。
+var _ground_at_screen: Callable
 
 ## 工地宿主（工人离开后 BuildSite 挂于此）。
 var _sites_host: Node = null
@@ -75,6 +77,7 @@ func configure(deps: Dictionary) -> void:
 	_ensure_navigator = deps.get("ensure_navigator", Callable()) as Callable
 	_ensure_unit_visual = deps.get("ensure_unit_visual", Callable()) as Callable
 	_resync_health_bars = deps.get("resync_health_bars", Callable()) as Callable
+	_ground_at_screen = deps.get("ground_at_screen", Callable()) as Callable
 	_ensure_sites_host()
 
 
@@ -98,6 +101,7 @@ func shutdown() -> void:
 	_ensure_navigator = Callable()
 	_ensure_unit_visual = Callable()
 	_resync_health_bars = Callable()
+	_ground_at_screen = Callable()
 
 
 func _exit_tree() -> void:
@@ -119,16 +123,12 @@ func _get_ground_hit_callable() -> Callable:
 
 
 func _ground_hit_at_screen(screen_pos: Vector2) -> Vector3:
-	if _map_root == null:
-		return Vector3.INF
 	_last_screen_pos = screen_pos
-	var hit = null
-	if _map_root.has_method("ground_at_screen"):
-		hit = _map_root.call("ground_at_screen", screen_pos)
-	elif _map_root.has_method("screen_to_world"):
-		hit = _map_root.call("screen_to_world", screen_pos)
-	if hit is Vector3:
-		return hit
+	# MapLoader 无地面拾取；必须走 Director 注入的 Heightfield 射线。
+	if _ground_at_screen.is_valid():
+		var hit: Variant = _ground_at_screen.call(screen_pos)
+		if hit is Vector3:
+			return hit as Vector3
 	return Vector3.INF
 
 

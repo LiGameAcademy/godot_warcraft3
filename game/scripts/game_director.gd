@@ -2218,9 +2218,11 @@ func _ensure_ghost_node(_building_id: String) -> void:
 
 
 ## HUD / 小地图等吃鼠标的 Control：建造确认与地面采样应避开。
+## 不用底栏粗条带兜底（见 UnitSelector._hud_blocks_screen include_edge_bands=false），
+## 否则屏幕下缘地图落点左键会被静默吞掉，表现为「建造点了没反应」。
 func _pointer_over_blocking_gui() -> bool:
 	if unit_selector != null and unit_selector.has_method("_hud_blocks_screen"):
-		return bool(unit_selector.call("_hud_blocks_screen", _last_screen_pos))
+		return bool(unit_selector.call("_hud_blocks_screen", _last_screen_pos, false))
 	var vp := get_viewport()
 	if vp == null:
 		return false
@@ -3142,6 +3144,7 @@ func _ensure_build_module() -> BuildModule:
 		"ensure_navigator": Callable(self, "_ensure_navigator"),
 		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
 		"resync_health_bars": Callable(self, "_resync_health_bars"),
+		"ground_at_screen": Callable(self, "_ground_at_screen"),
 	})
 	return _build
 

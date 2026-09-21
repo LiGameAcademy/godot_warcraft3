@@ -52,6 +52,7 @@ func _ready() -> void:
 
 	module.shutdown()
 	check(not module._alloc_creation_number.is_valid(), "shutdown 清空注入 Callable")
+	check(not module._ground_at_screen.is_valid(), "shutdown 清空 ground_at_screen")
 
 	print("selftest_build_module: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	get_tree().quit(0 if failures == 0 else 1)

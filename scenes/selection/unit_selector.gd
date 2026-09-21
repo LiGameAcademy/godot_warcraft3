@@ -303,7 +303,10 @@ func _process(_delta: float) -> void:
 		_on_release(get_viewport().get_mouse_position())
 
 
-func _hud_blocks_screen(screen_pos: Vector2) -> bool:
+## screen_pos 是否落在会吃世界点击的 HUD 上。
+## include_edge_bands：框选/点选用 true（hovered 偶发为空时兜底挡底栏/资源条）。
+## 建造落点确认须传 false——底栏上方仍有可点地图，粗条带会把确认左键静默吞掉。
+func _hud_blocks_screen(screen_pos: Vector2, include_edge_bands: bool = true) -> bool:
 	# _input 先于 GUI 更新悬停状态；动态背包可能位于底栏之外。
 	for panel in get_tree().get_nodes_in_group("world_input_blockers"):
 		if panel is Control and panel.is_visible_in_tree() and panel.get_global_rect().has_point(screen_pos):
@@ -317,6 +320,8 @@ func _hud_blocks_screen(screen_pos: Vector2) -> bool:
 	var hovered := viewport.gui_get_hovered_control()
 	if hovered != null and _is_ui_control_blocking(hovered):
 		return true
+	if not include_edge_bands:
+		return false
 	# 兜底：底栏 / 右上资源条（hovered 偶发为空时）
 	var vp := viewport.get_visible_rect().size
 	if vp.y <= 1.0:
