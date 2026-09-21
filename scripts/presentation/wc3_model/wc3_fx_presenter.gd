@@ -247,7 +247,7 @@ static func classify_mesh(mi: MeshInstance3D) -> int:
 	if mi == null or mi.mesh == null:
 		return MeshKind.KEEP
 	var faces := mi.mesh.get_faces()
-	var tri_count := faces.size() / 3
+	var tri_count := int(faces.size() / 3.0)
 	if tri_count <= 0:
 		return MeshKind.KEEP
 	var aabb := mi.get_aabb()
@@ -499,10 +499,10 @@ static func _approx_texture_tint(tex: Texture2D) -> Color:
 	var acc := Color(0, 0, 0, 0)
 	var n := 0
 	for sample in [
-		Vector2i(w / 2, h / 2),
-		Vector2i(w / 3, h / 3),
-		Vector2i(2 * w / 3, 2 * h / 3),
-		Vector2i(w / 2, h / 3),
+		Vector2i(int(float(w) / 2.0), int(float(h) / 2.0)),
+		Vector2i(int(float(w) / 3.0), int(float(h) / 3.0)),
+		Vector2i(int(float(2 * w) / 3.0), int(float(2 * h) / 3.0)),
+		Vector2i(int(float(w) / 2.0), int(float(h) / 3.0)),
 	]:
 		var c := img.get_pixelv(sample)
 		var lum := c.get_luminance()

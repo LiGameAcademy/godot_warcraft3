@@ -103,7 +103,7 @@ func _deactivate() -> void:
 	if host.has_meta(UnitLife.META_MAX_LIFE):
 		var mx := maxf(UnitLife.get_max_life(host) - _bonus_hp, 1.0)
 		host.set_meta(UnitLife.META_MAX_LIFE, mx)
-		UnitLife.set_life(host, mini(UnitLife.get_life(host), mx))
+		UnitLife.set_life(host, minf(UnitLife.get_life(host), mx))
 	_bonus_hp = 0.0
 	_bonus_armor = 0.0
 	var bh := BuffHost.of(host)

@@ -45,7 +45,7 @@ func update_texture_vertices(hf: Wc3Heightfield, vertices: Array) -> bool:
 	for value in vertices:
 		var index := int(value)
 		var x := index % hf.width
-		var y := index / hf.width
+		var y := index / float(hf.width)
 		for dy in [-1, 0]:
 			for dx in [-1, 0]:
 				var cell := Vector2i(x + dx, y + dy)

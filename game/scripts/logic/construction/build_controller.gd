@@ -369,11 +369,11 @@ func _validate_and_spend(order: BuildOrder) -> bool:
 	var l: int = BuildingCatalog.get_lumber_cost(order.building_id)
 	if not is_instance_valid(_peasant) or order.builder != _peasant:
 		return false
-	var owner := _owner_of_peasant()
-	var stock := _session.stocks.get(owner) as PlayerStock
+	var owner_id := _owner_of_peasant()
+	var stock := _session.stocks.get(owner_id) as PlayerStock
 	if stock == null or not stock.try_spend(g, l):
 		return false
-	order.owner = owner
+	order.owner = owner_id
 	order.gold_spent = g
 	order.lumber_spent = l
 	order.build_time_sec = BuildingCatalog.get_build_time(order.building_id)

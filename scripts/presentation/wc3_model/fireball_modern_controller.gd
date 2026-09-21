@@ -68,8 +68,8 @@ func set_impact_mode() -> void:
 	)
 
 
-func _set_mi_visible(fx: Node, name: String, on: bool) -> void:
-	var n := fx.get_node_or_null(name)
+func _set_mi_visible(fx: Node, node_path: String, on: bool) -> void:
+	var n := fx.get_node_or_null(node_path)
 	if n is MeshInstance3D:
 		(n as MeshInstance3D).visible = on
 
@@ -82,12 +82,12 @@ func _set_light(fx: Node, on: bool, energy: float) -> void:
 		L.light_energy = energy
 
 
-func _set_particles(fx: Node, name: String, emitting: bool, restart: bool) -> void:
-	var n := fx.get_node_or_null(name)
+func _set_particles(fx: Node, node_path: String, emitting: bool, restart: bool) -> void:
+	var n := fx.get_node_or_null(node_path)
 	if not (n is GPUParticles3D):
 		return
 	var p := n as GPUParticles3D
-	p.visible = emitting or name == "Burst"
+	p.visible = emitting or node_path == "Burst"
 	if restart:
 		p.restart()
 		p.emitting = true

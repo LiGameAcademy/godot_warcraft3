@@ -6,7 +6,7 @@ extends RefCounted
 const ABIL_WATER_ELEMENTAL := "AHwe"
 
 
-static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictionary:
+static func try_cast(caster: Node3D, abil_id: String, _goal_wc3: Vector2, ctx: Dictionary) -> Dictionary:
 	var id := abil_id.strip_edges()
 	if id == ABIL_WATER_ELEMENTAL:
 		return try_cast_instant(caster, id, ctx)

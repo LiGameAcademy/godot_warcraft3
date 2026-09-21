@@ -726,7 +726,7 @@ func clear_threat_for(target: Node3D) -> void:
 
 ## 取仇恨表里仇恨最高的「存活 + 敌对 + 未被忽略」的目标。无则 null。
 ## `host` 可为 null（仅做敌对 / 存活过滤，不做距离）。
-func top_threat(host: Node = null) -> Node3D:
+func top_threat(_host: Node = null) -> Node3D:
 	var body := _body()
 	if body == null or _threat.is_empty():
 		return null

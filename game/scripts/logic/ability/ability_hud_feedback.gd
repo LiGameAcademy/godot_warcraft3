@@ -6,8 +6,8 @@ extends RefCounted
 var _set_status: Callable = Callable()
 
 
-func configure(set_status: Callable) -> void:
-	_set_status = set_status
+func configure(set_status_cb: Callable) -> void:
+	_set_status = set_status_cb
 
 
 func set_status(text: String) -> void:

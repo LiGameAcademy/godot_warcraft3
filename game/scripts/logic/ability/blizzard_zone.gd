@@ -60,7 +60,7 @@ func configure(
 		_ctx["damage_pipeline"] = pipeline
 	if unit_host != null and not _ctx.has("unit_host"):
 		_ctx["unit_host"] = Callable(func() -> Node: return unit_host)
-	_timer = mini(_interval, 0.35)
+	_timer = minf(_interval, 0.35)
 	_wave_index = 0
 	var dur := float(_total_waves) * _interval + 0.75
 	_spawn_area_decal(dur)

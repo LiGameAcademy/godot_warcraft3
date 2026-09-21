@@ -25,21 +25,21 @@ static func clear(building: Node3D) -> void:
 	building.remove_meta(META_TREE_CN)
 
 
-static func set_ground(building: Node3D, goal_wc3: Vector2) -> void:
-	if building == null or not is_instance_valid(building) or goal_wc3 == Vector2.INF:
+static func set_ground(building: Node3D, ground_goal_wc3: Vector2) -> void:
+	if building == null or not is_instance_valid(building) or ground_goal_wc3 == Vector2.INF:
 		return
 	building.set_meta(META_KIND, KIND_GROUND)
-	building.set_meta(META_GOAL, goal_wc3)
+	building.set_meta(META_GOAL, ground_goal_wc3)
 	building.remove_meta(META_MINE_ID)
 	building.remove_meta(META_TREE_CN)
 
 
-static func set_gold_mine(building: Node3D, mine: Node3D, goal_wc3: Vector2 = Vector2.INF) -> void:
+static func set_gold_mine(building: Node3D, mine: Node3D, mine_goal_wc3: Vector2 = Vector2.INF) -> void:
 	if building == null or not is_instance_valid(building):
 		return
 	if mine == null or not is_instance_valid(mine):
 		return
-	var g := goal_wc3
+	var g := mine_goal_wc3
 	if g == Vector2.INF:
 		var d: Dictionary = mine.get_meta("unit_data", {})
 		var pos: Dictionary = d.get("position", {})
@@ -50,12 +50,12 @@ static func set_gold_mine(building: Node3D, mine: Node3D, goal_wc3: Vector2 = Ve
 	building.remove_meta(META_TREE_CN)
 
 
-static func set_tree(building: Node3D, tree_cn: int, goal_wc3: Vector2) -> void:
-	if building == null or not is_instance_valid(building) or tree_cn < 0:
+static func set_tree(building: Node3D, tree_node_id: int, tree_goal_wc3: Vector2) -> void:
+	if building == null or not is_instance_valid(building) or tree_node_id < 0:
 		return
 	building.set_meta(META_KIND, KIND_TREE)
-	building.set_meta(META_GOAL, goal_wc3)
-	building.set_meta(META_TREE_CN, tree_cn)
+	building.set_meta(META_GOAL, tree_goal_wc3)
+	building.set_meta(META_TREE_CN, tree_node_id)
 	building.remove_meta(META_MINE_ID)
 
 

@@ -767,7 +767,7 @@ static func _infer_active_sequences(em: Dictionary, sequences: Array) -> Array:
 		var interval: Array = (s as Dictionary).get("interval", [0, 0]) as Array
 		var start := int(interval[0]) if interval.size() > 0 else 0
 		var end := int(interval[1]) if interval.size() > 1 else start
-		var mid := int((start + end) / 2)
+		var mid := int((start + end) / 2.0)
 		var frames: Dictionary = {mid: true, start: true, end: true}
 		for k in vis_keys:
 			if typeof(k) != TYPE_DICTIONARY:

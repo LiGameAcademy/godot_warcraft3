@@ -1696,7 +1696,7 @@ func _split_team_glow_by_normal(mesh: Mesh) -> Dictionary:
 	var weights: PackedFloat32Array = (
 		arrays[Mesh.ARRAY_WEIGHTS] if arrays[Mesh.ARRAY_WEIGHTS] != null else PackedFloat32Array()
 	)
-	var tri_count := int((idx.size() if idx.size() > 0 else verts.size()) / 3)
+	var tri_count := int((idx.size() if idx.size() > 0 else verts.size()) / 3.0)
 	var foot_idx := PackedInt32Array()
 	var tip_idx := PackedInt32Array()
 	var tip_aabb := AABB()
@@ -1754,7 +1754,7 @@ func _rebuild_glow_surface(
 	if tri_idx.is_empty():
 		return null
 	# 紧凑重映射顶点
-	var remap: Dictionary = {}
+	var remap_: Dictionary = {}
 	var new_v := PackedVector3Array()
 	var new_n := PackedVector3Array()
 	var new_uv := PackedVector2Array()
@@ -1763,9 +1763,9 @@ func _rebuild_glow_surface(
 	var new_idx := PackedInt32Array()
 	var has_skin := bones.size() >= verts.size() * 4 and weights.size() >= verts.size() * 4
 	for i in tri_idx:
-		if not remap.has(i):
+		if not remap_.has(i):
 			var ni := new_v.size()
-			remap[i] = ni
+			remap_[i] = ni
 			new_v.append(verts[i])
 			if norms.size() > i:
 				new_n.append(norms[i])
@@ -1776,7 +1776,7 @@ func _rebuild_glow_surface(
 				for k in range(4):
 					new_bones.append(bones[b0 + k])
 					new_weights.append(weights[b0 + k])
-		new_idx.append(int(remap[i]))
+		new_idx.append(int(remap_[i]))
 	var out_arrays: Array = []
 	out_arrays.resize(Mesh.ARRAY_MAX)
 	out_arrays[Mesh.ARRAY_VERTEX] = new_v

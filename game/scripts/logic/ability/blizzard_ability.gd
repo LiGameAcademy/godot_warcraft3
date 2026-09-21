@@ -7,7 +7,7 @@ const ABIL_BLIZZARD := "AHbz"
 
 
 ## 即时 try_cast 不再用于暴风雪（走 begin_channel）。
-static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Dictionary) -> Dictionary:
+static func try_cast(_caster: Node3D, abil_id: String, _goal_wc3: Vector2, _ctx: Dictionary) -> Dictionary:
 	var out := {"ok": false, "reason": "暴风雪需引导施法", "unit": null}
 	if abil_id.strip_edges() != ABIL_BLIZZARD:
 		out["reason"] = "未实现的技能"

@@ -14,7 +14,7 @@ const TEX_FLAME := "abilities/Weapons/FireBallMissile/Dust6ColorRed.png"
 const TEX_FLAME_FALLBACK := "Textures/Dust6Color.png"
 
 
-static func wants(source_path: String, root: Node = null) -> bool:
+static func wants(_source_path: String, _root: Node = null) -> bool:
 	# 整包替换依赖路径名 = 白名单，无法甄别法杖/光环/实体武器 → 已否决为主线。
 	# 保留本类仅作 spike 对照；正式管线走 Wc3FxPresenter + soft_orb shader。
 	return false
@@ -83,7 +83,7 @@ static func _is_under_modern(n: Node) -> bool:
 	return false
 
 
-static func _build_modern_fx(root: Node3D) -> Node3D:
+static func _build_modern_fx(_root: Node3D) -> Node3D:
 	var fx := Node3D.new()
 	fx.name = NODE_ROOT
 

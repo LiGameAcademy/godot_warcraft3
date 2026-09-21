@@ -28,7 +28,6 @@ var inventory_panel: InventoryPanel
 @onready var _attack_chip: Node = %AttackChip
 @onready var _armor_chip: Node = %ArmorChip
 @onready var _special_lines: Label = %SpecialLines
-@onready var _portrait_host: Control = %PortraitHost
 @onready var _portrait: UnitPortraitView = %UnitPortraitView
 @onready var _portrait_hp: ProgressBar = %PortraitHpBar
 @onready var _portrait_mana: ProgressBar = %PortraitManaBar

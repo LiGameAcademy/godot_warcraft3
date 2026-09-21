@@ -77,8 +77,8 @@ func _on_progress_changed(_progress: float, _remaining: float, queue: TrainQueue
 func _on_training_started(_id: String, _time: float, queue: TrainQueue) -> void:
 	queue_changed.emit(queue)
 
-func _stock_for_owner(owner: int) -> PlayerStock:
-	return _session.stocks.get(owner) as PlayerStock if _session != null else null
+func _stock_for_owner(owner_id: int) -> PlayerStock:
+	return _session.stocks.get(owner_id) as PlayerStock if _session != null else null
 
 func cancel(building: Node3D, slot: int, command_owner: int) -> bool:
 	if not CombatQuery.is_alive_in_world(building) or not CombatQuery.is_controllable(building, command_owner):
@@ -140,7 +140,7 @@ func collect_owner_activities(owner_id: int) -> Array:
 		})
 	return out
 
-func _on_training_completed(unit_id: String, site: Vector2, owner: int, queue: TrainQueue) -> void:
+func _on_training_completed(unit_id: String, site: Vector2, owner_id: int, queue: TrainQueue) -> void:
 	var completed := queue.take_last_completed()
 	var building := queue.get_parent() as Node3D
 	if bool(completed.get("is_building_upgrade", false)):
@@ -148,10 +148,10 @@ func _on_training_completed(unit_id: String, site: Vector2, owner: int, queue: T
 		if _apply_building_upgrade.is_valid() and building != null:
 			ok = bool(_apply_building_upgrade.call(building, unit_id))
 		if ok:
-			building_upgraded.emit(building, unit_id, owner)
+			building_upgraded.emit(building, unit_id, owner_id)
 			feedback.emit("升本完成：%s" % TechPresence.display_name(unit_id))
 		else:
-			var stock := _stock_for_owner(owner)
+			var stock := _stock_for_owner(owner_id)
 			if stock != null:
 				var gold := int(completed.get("gold", 0))
 				var lumber := int(completed.get("lumber", 0))
@@ -163,22 +163,22 @@ func _on_training_completed(unit_id: String, site: Vector2, owner: int, queue: T
 		queue_changed.emit(queue)
 		return
 	if TechPresence.is_upgrade_id(unit_id):
-		var stock := _stock_for_owner(owner)
+		var stock := _stock_for_owner(owner_id)
 		if stock != null:
 			var next_lv := TechPresence.upgrade_next_level(unit_id, stock.upgrade_level(unit_id))
 			if next_lv > 0:
 				stock.grant_upgrade(unit_id, next_lv)
 			else:
 				stock.grant_upgrade(unit_id)
-		research_completed.emit(unit_id, owner)
+		research_completed.emit(unit_id, owner_id)
 		feedback.emit("研究完成：%s" % TechPresence.display_name(unit_id))
 		queue_changed.emit(queue)
 		return
-	var unit: Node3D = _spawn_unit.call(unit_id, site, owner, building) if _spawn_unit.is_valid() else null
+	var unit: Node3D = _spawn_unit.call(unit_id, site, owner_id, building) if _spawn_unit.is_valid() else null
 	if not is_instance_valid(unit):
 		if bool(completed.get("is_revive", false)):
 			_restore_dead(completed)
-		var stock := _stock_for_owner(owner)
+		var stock := _stock_for_owner(owner_id)
 		if stock != null:
 			var food := BuildingCatalog.get_food_used(unit_id)
 			if food > 0:
@@ -198,11 +198,11 @@ func _restore_dead(entry: Dictionary) -> void:
 	if revive is Dictionary and not revive.is_empty():
 		HeroDeathRegistry.restore_dead(revive)
 
-func _on_training_cancelled(unit_id: String, gold: int, lumber: int, food: int, owner: int, queue: TrainQueue) -> void:
+func _on_training_cancelled(unit_id: String, gold: int, lumber: int, food: int, owner_id: int, queue: TrainQueue) -> void:
 	var cancelled := queue.take_last_cancelled()
 	if bool(cancelled.get("is_revive", false)):
 		_restore_dead(cancelled)
-	var stock := _stock_for_owner(owner)
+	var stock := _stock_for_owner(owner_id)
 	if stock != null:
 		if gold > 0:
 			stock.add_gold(gold)

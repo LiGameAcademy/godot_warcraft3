@@ -148,19 +148,19 @@ func spawn_opponent_base(
 	if available.is_empty():
 		push_warning("双玩家开局：没有独立的对手出生点")
 		return false
-	var owner := 1 if local_player == 0 else 0
-	if session.stocks.has(owner):
+	var owner_id := 1 if local_player == 0 else 0
+	if session.stocks.has(owner_id):
 		return false
 	var sloc := MeleeBootstrap.pick_random_sloc(available, _rng)
 	var race := MeleeRacePreview.race_from_string("human")
 	var result := MeleeBootstrap.spawn_at_sloc(
-		_map_root, sloc, race, owner, _map_root.get_heightfield_dict()
+		_map_root, sloc, race, owner_id, _map_root.get_heightfield_dict()
 	)
 	if not bool(result.get("ok", false)):
 		return false
 	var workers := maxi(int(result.get("spawned", 1)) - 1, 0)
 	var cap := BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
-	session.set_stock(owner, PlayerStock.melee_start(workers, cap))
+	session.set_stock(owner_id, PlayerStock.melee_start(workers, cap))
 	return true
 
 

@@ -716,7 +716,7 @@ func _on_placement_cancelled() -> void:
 	placement_cancelled_notice.emit()
 
 
-func _on_placement_committed(bid: String, site: Vector2) -> void:
+func _on_placement_committed(_bid: String, _site: Vector2) -> void:
 	_confirm_armed = false
 
 

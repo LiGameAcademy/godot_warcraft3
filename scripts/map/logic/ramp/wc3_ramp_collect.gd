@@ -93,7 +93,7 @@ static func plan_dig_mask(
 
 
 static func plan_entrance_tiles(
-	hf: Wc3Heightfield, ramp_data: Wc3RampCollectResult = null
+	hf: Wc3Heightfield, _ramp_data: Wc3RampCollectResult = null
 ) -> Array[Vector2i]:
 	var tiles: Array[Vector2i] = []
 	if hf == null or not hf.is_valid():
@@ -184,7 +184,7 @@ static func placement_footprint_tiles(p: Wc3RampPlacement) -> Array[Vector2i]:
 static func should_hide_cliff_piece(
 	ix: int,
 	iy: int,
-	piece_base: int,
+	_piece_base: int,
 	hf: Wc3Heightfield,
 	ramp_data: Wc3RampCollectResult
 ) -> bool:

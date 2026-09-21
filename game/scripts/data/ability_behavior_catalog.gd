@@ -90,10 +90,10 @@ static func order_for(abil_id: String) -> String:
 
 
 static func entry_for_order(order: String) -> Dictionary:
-	var ord := order.strip_edges()
-	if ord.is_empty() or not ORDER_ENTRIES.has(ord):
+	var order_key := order.strip_edges()
+	if order_key.is_empty() or not ORDER_ENTRIES.has(order_key):
 		return {}
-	return ORDER_ENTRIES[ord] as Dictionary
+	return ORDER_ENTRIES[order_key] as Dictionary
 
 
 static func entry_for_abil(abil_id: String) -> Dictionary:

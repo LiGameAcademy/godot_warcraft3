@@ -31,15 +31,15 @@ func configure(
 	apply_form: Callable,
 	find_town_hall: Callable = Callable(),
 	order_move_to_hall: Callable = Callable(),
-	duration_sec: float = -1.0
+	duration_override_sec: float = -1.0
 ) -> void:
 	_apply_form = apply_form
 	if find_town_hall.is_valid():
 		_find_town_hall = find_town_hall
 	if order_move_to_hall.is_valid():
 		_order_move_to_hall = order_move_to_hall
-	if duration_sec > 0.0:
-		_duration_sec = duration_sec
+	if duration_override_sec > 0.0:
+		_duration_sec = duration_override_sec
 	else:
 		_duration_sec = _duration_from_def()
 

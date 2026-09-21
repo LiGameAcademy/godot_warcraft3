@@ -74,7 +74,7 @@ func alloc_creation_number() -> int:
 
 ## 训练完工刷单位：脚印四角 → 重叠挤位 → AI/英雄装配 → 集结。
 func spawn_trained(
-	unit_id: String, site_wc3: Vector2, owner: int, from_building: Node3D = null
+	unit_id: String, site_wc3: Vector2, owner_id: int, from_building: Node3D = null
 ) -> Node3D:
 	if _map_root == null or _heightfield == null:
 		return null
@@ -84,7 +84,7 @@ func spawn_trained(
 		"position": {"x": corner_xy.x, "y": corner_xy.y, "z": 0.0},
 		"angle": MeleeBootstrap.UNIT_FACING_RAD,
 		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"owner": owner,
+		"owner": owner_id,
 		"flags": 2,
 		"creationNumber": alloc_creation_number(),
 		"variation": 0,
@@ -127,14 +127,14 @@ func build_building_entry(
 ## 通用刷兵 entry：开发刷兵 / GM 野怪 / 其它来源共用。
 ## opts: ensure_hero, ensure_caster, charge_food, life_override, refresh_pathing
 func build_unit_entry(
-	type_id: String, site_wc3: Vector2, owner: int, extras: Dictionary = {}
+	type_id: String, site_wc3: Vector2, owner_id: int, extras: Dictionary = {}
 ) -> Dictionary:
 	var entry := {
 		"typeId": type_id,
 		"position": {"x": site_wc3.x, "y": site_wc3.y, "z": 0.0},
 		"angle": MeleeBootstrap.UNIT_FACING_RAD,
 		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
-		"owner": owner,
+		"owner": owner_id,
 		"flags": 2,
 		"creationNumber": alloc_creation_number(),
 		"variation": 0,
@@ -170,13 +170,13 @@ func spawn_entry(entry: Dictionary, opts: Dictionary = {}) -> Node3D:
 
 ## 在锚点单位附近刷（开发/GM）。
 func spawn_near(
-	anchor: Node3D, type_id: String, owner: int, offset_wc3: Vector2, opts: Dictionary = {}
+	anchor: Node3D, type_id: String, owner_id: int, offset_wc3: Vector2, opts: Dictionary = {}
 ) -> Node3D:
 	if anchor == null or not is_instance_valid(anchor):
 		return null
 	var xy := Wc3Coords.godot_to_wc3_xy(anchor.global_position) + offset_wc3
 	var extras: Dictionary = opts.get("entry_extras", {})
-	var entry := build_unit_entry(type_id, xy, owner, extras)
+	var entry := build_unit_entry(type_id, xy, owner_id, extras)
 	return spawn_entry(entry, opts)
 
 

@@ -112,16 +112,16 @@ static func snap_if_outlier(proto: Node3D, light: OmniLight3D) -> bool:
 	var center := aabb.get_center()
 	# 用「半边长」量级：光晕扁片已过滤，0.55×最长边足够抓偏移灯
 	var thresh := maxf(aabb.get_longest_axis_size() * 0.55, 0.2)
-	var snapped := false
+	var did_snap := false
 	if light.position.distance_to(center) > thresh:
 		light.set_meta("wc3_omni_pivot_raw", light.position)
 		light.position = center
 		light.set_meta("wc3_omni_pivot_snapped", true)
-		snapped = true
+		did_snap = true
 	var flash := light.find_child("Flash", false, false) as MeshInstance3D
 	if flash != null:
 		_resize_flash_to_core(flash, aabb)
-	return snapped
+	return did_snap
 
 
 static func snap_all(proto: Node3D) -> int:

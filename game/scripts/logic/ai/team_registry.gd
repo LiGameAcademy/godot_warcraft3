@@ -57,7 +57,7 @@ static func attach(session_root: Node) -> TeamRegistry:
 
 
 ## 从任意节点往上找已挂的 TeamRegistry。
-static func get_for(node: Node) -> TeamRegistry:
+static func get_for(_node: Node) -> TeamRegistry:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null:
 		return null

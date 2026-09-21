@@ -346,10 +346,10 @@ func apply_entity_pathing(entries: Array, catalog: Wc3IdCatalog) -> int:
 			n += 1
 		else:
 			# TGA 缺失时仍按文件名 WxH 画实心脚印，避免「建筑已放叠层不更新」
-			var cells: Vector2i = Wc3IdCatalog.parse_path_tex_cells(path_tex)
-			if cells.x > 0 and cells.y > 0:
+			var cells_dim: Vector2i = Wc3IdCatalog.parse_path_tex_cells(path_tex)
+			if cells_dim.x > 0 and cells_dim.y > 0:
 				blit_solid_footprint_at_world(
-					wx, wy, cells.x, cells.y, FLAG_NO_WALK | FLAG_NO_BUILD
+					wx, wy, cells_dim.x, cells_dim.y, FLAG_NO_WALK | FLAG_NO_BUILD
 				)
 				n += 1
 	return n

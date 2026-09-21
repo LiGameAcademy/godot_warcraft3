@@ -73,8 +73,8 @@ func _exit_tree() -> void:
 func setup(local_player: int, enable_army: bool = false) -> Node:
 	if _host_parent == null or _session == null or _map_root == null:
 		return null
-	var owner := 1 if local_player == 0 else 0
-	if not _session.stocks.has(owner):
+	var owner_id := 1 if local_player == 0 else 0
+	if not _session.stocks.has(owner_id):
 		return null
 
 	var unit_layer: Node = _map_root.get_unit_layer()
@@ -94,27 +94,27 @@ func setup(local_player: int, enable_army: bool = false) -> Node:
 			_find_build_site,
 			_find_build_site_by_node,
 			_ensure_attack,
-			owner
+			owner_id
 		)
 		if _wire_train_queue.is_valid():
 			commands.production_queue_ready.connect(_wire_train_queue)
 
 		economy = PlayerEconomyAIScript.new()
 		economy.name = "OpponentEconomy"
-		economy.configure(commands, unit_layer, _tree_registry, owner)
+		economy.configure(commands, unit_layer, _tree_registry, owner_id)
 		if _stock_for_owner.is_valid():
-			economy.stock = _stock_for_owner.call(owner)
+			economy.stock = _stock_for_owner.call(owner_id)
 		economy.pathing = _pathing
 		economy.path_query = _path_query
 		_host_parent.add_child(economy)
 
 	if enable_army and commands != null:
-		_ensure_army(commands, unit_layer, owner)
+		_ensure_army(commands, unit_layer, owner_id)
 
 	return economy
 
 
-func _ensure_army(commands: CommandRouter, unit_layer: Node, owner: int) -> void:
+func _ensure_army(commands: CommandRouter, unit_layer: Node, owner_id: int) -> void:
 	var army: Node = _host_parent.get_node_or_null("OpponentArmy")
 	if army == null:
 		army = PlayerArmyAIScript.new()
@@ -122,13 +122,13 @@ func _ensure_army(commands: CommandRouter, unit_layer: Node, owner: int) -> void
 		_host_parent.add_child(army)
 	army.router = commands
 	army.unit_host = unit_layer
-	army.observe_enemies = Callable(self, "observe_enemies").bind(owner)
+	army.observe_enemies = Callable(self, "observe_enemies").bind(owner_id)
 	# ItemsModule 可能晚于首次挂接；每次 setup 刷新引用。
 	army.item_service = _item_service
 
 
 ## 当前开发对局全图可见；后续战争迷雾只替换此观察接口。
-func observe_enemies(owner: int) -> Array[Node3D]:
+func observe_enemies(owner_id: int) -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	if _map_root == null:
 		return out
@@ -138,6 +138,6 @@ func observe_enemies(owner: int) -> Array[Node3D]:
 	for unit in layer.get_children():
 		if unit is Node3D and CombatQuery.is_alive_in_world(unit):
 			var other := CombatQuery.owner_of(unit)
-			if other != owner and not CombatQuery.is_neutral_owner(other):
+			if other != owner_id and not CombatQuery.is_neutral_owner(other):
 				out.append(unit)
 	return out

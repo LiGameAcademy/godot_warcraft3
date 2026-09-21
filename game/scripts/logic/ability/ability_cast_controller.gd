@@ -380,7 +380,6 @@ func _finish_channel(success: bool, reason: String = "") -> void:
 	var caster := get_parent() as Node3D
 	var abil_id := _abil_id
 	var goal := _goal
-	var ctx := _ctx
 	_reset_channel_state(caster)
 	var result := {"ok": false, "reason": reason if not reason.is_empty() else "引导打断"}
 	if success and caster != null and is_instance_valid(caster):

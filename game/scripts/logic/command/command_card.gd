@@ -239,7 +239,7 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 		)
 
 	if TechPresence.is_hero_id(uid):
-		_place_hero_skill_opener(card, cat, state)
+		_place_hero_skill_opener(card, state)
 
 	if not building_ids.is_empty():
 		_place_build_opener(card, cat, str(state.get("worker_race", "human")))
@@ -567,7 +567,7 @@ static func _place_passive_aura(
 
 
 static func _place_hero_skill_opener(
-	card: Array[Dictionary], cat: CommandButtonCatalog, state: Dictionary
+	card: Array[Dictionary], state: Dictionary
 ) -> void:
 	if bool(state.get("hero_skill_menu_open", false)):
 		return
@@ -594,10 +594,10 @@ static func _place_hero_skill_opener(
 
 
 static func _place_build_opener(
-	card: Array[Dictionary], cat: CommandButtonCatalog, race: String
+	card: Array[Dictionary], catalog: CommandButtonCatalog, race: String
 ) -> void:
 	var abil := build_ability_id(race)
-	var entry := cat.ability_hud_entry(abil, ACTION_OPEN_BUILD, {"enabled": true, "executing": false})
+	var entry := catalog.ability_hud_entry(abil, ACTION_OPEN_BUILD, {"enabled": true, "executing": false})
 	if entry.is_empty():
 		entry = {
 			"id": ACTION_OPEN_BUILD,
