@@ -10,6 +10,8 @@ const SLOT_SIZE := Vector2(56, 56)
 const GRID_COLS := 2 ## WC3 原作背包为 2×3
 
 var inventory: Inventory
+## true：仅展示（选中敌方/中立英雄）；禁止使用/丢弃/交换。
+var read_only: bool = false
 var buttons: Array[Button] = []
 var overlays: Array[CooldownButtonOverlay] = []
 var charge_labels: Array[Label] = []
@@ -92,13 +94,20 @@ func _ready() -> void:
 	set_process(false)
 
 
-func bind_inventory(inv: Inventory) -> void:
+func bind_inventory(inv: Inventory, is_read_only: bool = false) -> void:
 	if is_instance_valid(inventory) and inventory.changed.is_connected(refresh):
 		inventory.changed.disconnect(refresh)
 	inventory = inv
+	read_only = is_read_only and inv != null
 	marked = -1
 	visible = inv != null
 	set_process(inv != null)
+	if _hint != null:
+		_hint.text = (
+			"观察中（不可操作）"
+			if read_only
+			else "左键使用 · 右键丢弃\nShift+左键交换"
+		)
 	if inv != null:
 		inv.changed.connect(refresh)
 	refresh()
@@ -140,7 +149,11 @@ func refresh() -> void:
 		elif ItemCatalog.effect(item.type_id) == null:
 			charges.text = "?"
 			charges.visible = true
-		b.tooltip_text = ItemCatalog.tooltip(item.type_id) + "\n左键使用 / 右键丢弃 / Shift 点两格交换"
+		var tip := ItemCatalog.tooltip(item.type_id)
+		if read_only:
+			b.tooltip_text = tip + "\n观察中（不可操作）"
+		else:
+			b.tooltip_text = tip + "\n左键使用 / 右键丢弃 / Shift 点两格交换"
 
 
 func _process(delta: float) -> void:
@@ -152,6 +165,9 @@ func _process(delta: float) -> void:
 
 func _on_slot_input(event: InputEvent, slot: int) -> void:
 	if not event is InputEventMouseButton or not event.pressed:
+		return
+	if read_only:
+		accept_event()
 		return
 	if event.button_index == MOUSE_BUTTON_RIGHT:
 		marked = -1

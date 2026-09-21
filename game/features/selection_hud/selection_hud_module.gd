@@ -84,9 +84,16 @@ func bind_inventory_for(primary: Node3D) -> void:
 	if _game_hud == null or not _game_hud.has_method("bind_inventory"):
 		return
 	var inv = null
-	if primary != null and _controllable(primary):
-		inv = Inventory.of(primary)
-	_game_hud.call("bind_inventory", inv)
+	var read_only := false
+	if primary != null and is_instance_valid(primary):
+		var tid := CombatQuery.type_id_of(primary)
+		if TechPresence.is_hero_id(tid):
+			# 己方：可操作；敌方/中立：只读展示（对齐原作点选敌方英雄可见背包）。
+			inv = Inventory.of(primary)
+			if inv == null and _controllable(primary):
+				inv = Inventory.ensure_on(primary)
+			read_only = inv != null and not _controllable(primary)
+	_game_hud.call("bind_inventory", inv, read_only)
 
 
 func refresh_portrait_vitals() -> void:
