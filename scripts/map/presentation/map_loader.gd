@@ -80,6 +80,12 @@ func get_tiles() -> Wc3TerrainTileCatalog:
 	return _tiles
 
 
+func configure_unit_runtime(factory: Callable, initializer: Callable) -> void:
+	var layer := get_node("Units") as MapUnitLayer
+	layer.unit_factory = factory
+	layer.unit_initializer = initializer
+
+
 func get_cliff_catalog() -> Wc3CliffCatalog:
 	return _cliff_catalog
 

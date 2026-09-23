@@ -101,7 +101,7 @@ static func _ensure_config() -> void:
 		"GAME": true,
 		"GM": true,
 	}
-	_apply_config_file(CONFIG_RES)
+	_apply_config_file(str(ProjectSettings.get_setting("warcraft3/log_config", CONFIG_RES)))
 	_apply_config_file(CONFIG_USER)
 
 
@@ -116,7 +116,7 @@ static func _apply_config_file(path: String) -> void:
 	if text.unicode_at(0) == 0xFEFF:
 		text = text.substr(1)
 	# _read_utf8_safe 已拒绝 NUL；不要构造非法的 NUL 字符串。
-	var data: Variant = RuntimeAssets.parse_json_text(text)
+	var data: Variant = JSON.parse_string(text.replace("\\u0000", ""))
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	var d: Dictionary = data

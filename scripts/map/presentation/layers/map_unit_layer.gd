@@ -7,6 +7,10 @@ extends Node3D
 signal batch_progress(done: int, total: int)
 signal batch_finished(placed: int, placeholders: int)
 
+## 产品注入：编辑器默认使用纯展示节点，游戏提供实体及运行态初始化。
+var unit_factory: Callable
+var unit_initializer: Callable
+
 @export var try_load_glb: bool = true
 ## 每帧放置预算（毫秒）；模型已缓存时 instantiate 很快。
 @export var batch_budget_ms: int = 28
@@ -408,7 +412,8 @@ func _place_one_internal(u: Dictionary, hf: Wc3Heightfield, allow_sync_load: boo
 				if not glb.is_empty():
 					Wc3Pe2Particles.apply_sequence(node, "Stand")
 	_sync_drop_ring(node, u)
-	UnitLife.ensure(node)
+	if unit_initializer.is_valid():
+		unit_initializer.call(node)
 	_apply_unit_render_layers(node)
 	return node
 
@@ -523,11 +528,11 @@ func _make_unit_node(
 
 
 ## 实体根 Unit + 子节点 Model（表现）；unit_data / 变换挂在 Unit 上。
-func _wrap_unit_entity(model: Node3D) -> Unit:
-	var unit := Unit.new()
+func _wrap_unit_entity(model: Node3D) -> Node3D:
+	var unit: Node3D = unit_factory.call() if unit_factory.is_valid() else Node3D.new()
 	var is_ph := bool(model.get_meta("is_placeholder", false))
 	unit.set_meta("is_placeholder", is_ph)
-	model.name = Unit.MODEL_NODE_NAME
+	model.name = "Model"
 	unit.add_child(model)
 	return unit
 
@@ -632,10 +637,9 @@ func _restart_pe2_emitters(root: Node, sequence_name: String = "Birth") -> void:
 
 ## 地图 scale 乘在 Model 上，避免把选框等逻辑子节点一并缩放。
 func _scale_target_for(node: Node3D) -> Node3D:
-	if node is Unit:
-		var m := (node as Unit).model_node()
-		if m != null:
-			return m
+	var model := node.get_node_or_null("Model") as Node3D
+	if model != null:
+		return model
 	return node
 
 

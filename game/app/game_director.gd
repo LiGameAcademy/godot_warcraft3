@@ -220,6 +220,7 @@ func _resolve_exports() -> void:
 
 
 func _configure_map_root() -> void:
+	map_root.configure_unit_runtime(func() -> Node3D: return Unit.new(), UnitLife.ensure)
 	if not map_dir.is_empty():
 		map_root.map_dir = map_dir
 	map_root.place_doodads = true
