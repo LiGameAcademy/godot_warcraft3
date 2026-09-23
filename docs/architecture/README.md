@@ -6,6 +6,8 @@
 
 | 文件 | 内容 |
 |------|------|
+| [GAMEPLAY_MODULE_BOUNDARIES.md](GAMEPLAY_MODULE_BOUNDARIES.md) | 玩法系统划分、状态所有权、编队/AI 层级与跨模块接口 |
+| [HUD_LAYOUT_REDESIGN.md](../design/game/HUD_LAYOUT_REDESIGN.md) | 当前 HUD 问题审查、响应式布局、英雄 UI、全局研究/生产、快捷键与控制组 |
 | [GAMEPLAY_REFACTOR_PLAN.md](GAMEPLAY_REFACTOR_PLAN.md) | 当前实施策划：输入/命令/状态/行动职责、近期与双产品目录、文件映射和迁移验收 |
 | [GAMEPLAY_TARGET_ARCHITECTURE.md](GAMEPLAY_TARGET_ARCHITECTURE.md) | Gameplay 架构审查、双产品目录与共享边界、运行时内容/Mod API 提案及分波次验收 |
 | [STATE_OWNERS.md](STATE_OWNERS.md) | **D0** 状态所有者表（Content / MatchState / ViewState） |

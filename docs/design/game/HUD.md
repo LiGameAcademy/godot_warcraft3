@@ -1,5 +1,7 @@
 # 游戏 HUD
 
+> 2026-09-23 补充：布局重构以 [HUD_LAYOUT_REDESIGN.md](HUD_LAYOUT_REDESIGN.md) 为准。本文部分阶段记录已过时，尤其“生产队列未接”：当前代码已接入训练/研究队列及全局当前活动，待完善的是布局、完整总览与任务定位。
+
 > 场景：`game/scenes/game_hud.tscn` · 脚本：`game/scripts/presentation/game_hud.gd`  
 > 选中权威：`scenes/selection/unit_selector.gd`  
 > 命令卡：`game/scripts/logic/command/command_card.gd`  

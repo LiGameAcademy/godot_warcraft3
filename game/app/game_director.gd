@@ -131,6 +131,9 @@ var _wired_selector: Node
 
 
 func _ready() -> void:
+	var assets := get_node_or_null("/root/AssetProvider")
+	if assets != null:
+		assets.seal_runtime_content()
 	_rng.randomize()
 	AppLog.reload_config()
 	_resolve_exports()
@@ -2136,8 +2139,6 @@ func _toggle_path_debug() -> void:
 ## 切换整张地图/对局应走 MatchLifecycle 的重开流程。
 func rebind_modules() -> void:
 	_binding_epoch += 1
-	if _entity_registry != null:
-		_entity_registry.clear()
 	_wire_hud()
 	_setup_selector()
 	_ensure_combat_module()

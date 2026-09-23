@@ -26,6 +26,16 @@ func _ready() -> void:
 	var r1 := router.submit_request(bad_goal)
 	check(r1.ok == false, "无效落点失败")
 	check(r1.error == CommandRequest.ErrorCode.INVALID_GOAL, "无效落点错误码")
+	var queue := router.queue_for(dummy)
+	var original := UnitOrder.move(Vector2(10, 20))
+	queue.set_current(original)
+	var wrong := CommandRequest.stop_units([dummy], UnitOrder.Source.PANEL, 1)
+	check(router.submit_request(wrong).error == CommandRequest.ErrorCode.WRONG_PLAYER, "wrong owner rejected")
+	var append := CommandRequest.move_to([dummy], Vector2.ZERO)
+	append.queue_append = true
+	check(router.submit_request(append).error == CommandRequest.ErrorCode.APPEND_UNSUPPORTED, "unsupported append rejected")
+	check(queue.current == original, "rejected requests preserve current order")
+	check(router.submit_request(CommandRequest.move_to([dummy], Vector2(NAN, 0))).error == CommandRequest.ErrorCode.INVALID_GOAL, "NaN rejected")
 	dummy.queue_free()
 
 	var stop_req := CommandRequest.stop_units([])

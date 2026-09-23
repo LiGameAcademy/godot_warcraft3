@@ -39,12 +39,17 @@ func run() -> void:
 	var reservation := director._cell_reservation
 	var units := director._units
 	var tree_registry := director._tree_registry
+	var entity_host := director._unit_host()
+	var registered_unit := entity_host.get_child(0)
+	var registered_id := director._entity_registry.id_of(registered_unit)
+	check(registered_id.is_valid(), "initial map units registered")
 	var old_selector := director.unit_selector
 	var replacement := SelectorStub.new()
 	game.add_child(replacement)
 	director._interaction.begin_aim(InteractionModule.Aim.MOVE)
 	director.unit_selector = replacement
 	director.rebind_modules()
+	check(director._entity_registry.get_node(registered_id) == registered_unit, "rebind preserves entity identity")
 	var rebound := director.module_binding_counts()
 	for key in counts:
 		check(int(rebound[key]) == int(counts[key]) + 1, "explicit rebind once: " + str(key))

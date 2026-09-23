@@ -43,6 +43,8 @@ func configure(deps: Dictionary) -> void:
 	_ensure_navigator = deps.get("ensure_navigator", Callable()) as Callable
 	_ensure_attack_controller = deps.get("ensure_attack_controller", Callable()) as Callable
 	_unit_host = deps.get("unit_host", Callable()) as Callable
+	if _entity_registry != null and _unit_host.is_valid():
+		_entity_registry.bind_host(_unit_host.call())
 	_refresh_pathing = deps.get("refresh_pathing", Callable()) as Callable
 	_on_inventory_changed = deps.get("on_inventory_changed", Callable()) as Callable
 	_ensure_hero_passives = deps.get("ensure_hero_passives", Callable()) as Callable
@@ -70,6 +72,8 @@ func shutdown() -> void:
 	_command_router = null
 	_health_bar_manager = null
 	_registry_host = null
+	if _entity_registry != null:
+		_entity_registry.clear()
 	_entity_registry = null
 	_ensure_navigator = Callable()
 	_ensure_attack_controller = Callable()
@@ -96,7 +100,7 @@ func entity_registry() -> EntityRegistry:
 
 
 func _register_entity(node: Node, creation_number: int) -> void:
-	if _entity_registry == null or node == null:
+	if _entity_registry == null or node == null or _entity_registry.id_of(node).is_valid():
 		return
 	_entity_registry.register_unit(EntityId.from_creation_number(creation_number), node)
 

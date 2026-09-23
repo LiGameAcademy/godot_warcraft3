@@ -51,6 +51,10 @@ var _find_build_site_by_node: Callable = Callable()		## 查找建筑站点
 func submit_request(req: CommandRequest) -> CommandResult:
 	if req == null:
 		return CommandResult.fail(CommandRequest.ErrorCode.REJECTED, "null request")
+	if req.player_id != -1 and req.player_id != local_owner_id():
+		return CommandResult.fail(CommandRequest.ErrorCode.WRONG_PLAYER, "request player differs from bound owner")
+	if req.queue_append:
+		return CommandResult.fail(CommandRequest.ErrorCode.APPEND_UNSUPPORTED, "append is not implemented by this entry")
 	if req.units.is_empty():
 		return CommandResult.fail(CommandRequest.ErrorCode.EMPTY_SELECTION, "empty units")
 	match req.kind:
@@ -60,7 +64,7 @@ func submit_request(req: CommandRequest) -> CommandResult:
 				CommandRequest.ErrorCode.NO_MOVERS, "stop: no movers"
 			)
 		UnitOrder.Kind.MOVE:
-			if req.goal_wc3 == Vector2.INF:
+			if not req.goal_wc3.is_finite():
 				return CommandResult.fail(CommandRequest.ErrorCode.INVALID_GOAL, "move: no goal")
 			return CommandResult.from_move_dict(
 				issue_move_to_wc3(req.units, req.goal_wc3, req.source)
@@ -73,7 +77,7 @@ func submit_request(req: CommandRequest) -> CommandResult:
 				CommandRequest.ErrorCode.NO_MOVERS, "attack: none issued"
 			)
 		UnitOrder.Kind.ATTACK_MOVE:
-			if req.goal_wc3 == Vector2.INF:
+			if not req.goal_wc3.is_finite():
 				return CommandResult.fail(CommandRequest.ErrorCode.INVALID_GOAL, "attack_move: no goal")
 			return CommandResult.from_move_dict(
 				issue_attack_move(req.units, req.goal_wc3, req.source)

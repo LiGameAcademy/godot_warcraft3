@@ -14,6 +14,14 @@ const DEFAULT_DATA_RES := "res://assets/slk-exported"
 
 ## { "id": String, "root": String }，后注册者优先。
 var _overlays: Array[Dictionary] = []
+## Once a match starts, process-wide catalog/resource caches may retain references.
+var _runtime_content_sealed := false
+var runtime_content_sealed: bool:
+	get: return _runtime_content_sealed
+
+func seal_runtime_content() -> void:
+	_runtime_content_sealed = true
+
 
 
 func _ready() -> void:
@@ -137,6 +145,8 @@ func open(logical_path: String) -> FileAccess:
 
 ## 注册 mod 覆盖根目录。同 logical_path 下后注册者优先。
 func register_overlay(mod_id: String, root: String) -> void:
+	if runtime_content_sealed:
+		return
 	if mod_id.is_empty() or root.is_empty():
 		push_warning("AssetProvider.register_overlay: mod_id/root 不能为空")
 		return
@@ -147,6 +157,8 @@ func register_overlay(mod_id: String, root: String) -> void:
 
 
 func clear_overlays() -> void:
+	if runtime_content_sealed:
+		return
 	_overlays.clear()
 
 

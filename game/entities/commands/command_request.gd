@@ -11,6 +11,8 @@ enum ErrorCode {
 	INVALID_GOAL = 3,
 	INVALID_TARGET = 4,
 	REJECTED = 5,
+	WRONG_PLAYER = 6,
+	APPEND_UNSUPPORTED = 7,
 }
 
 var kind: int = UnitOrder.Kind.NONE
