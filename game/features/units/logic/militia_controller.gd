@@ -213,3 +213,12 @@ func _duration_from_def() -> float:
 	if ab != null and ab.dur1 > 0.0:
 		return ab.dur1
 	return DEFAULT_DURATION_SEC
+
+
+func shutdown() -> void:
+	set_process(false)
+	_pending = PendingForm.NONE
+	_revert_left = 0.0
+	_apply_form = Callable()
+	_find_town_hall = Callable()
+	_order_move_to_hall = Callable()

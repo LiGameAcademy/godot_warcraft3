@@ -27,10 +27,7 @@ func shutdown() -> void:
 	for ref: WeakRef in _controllers.values():
 		var mc := ref.get_ref() as MilitiaController
 		if is_instance_valid(mc):
-			mc.set_process(false)
-			mc._apply_form = Callable()
-			mc._find_town_hall = Callable()
-			mc._order_move_to_hall = Callable()
+			mc.shutdown()
 	_controllers.clear()
 	_units = null
 	_map = null

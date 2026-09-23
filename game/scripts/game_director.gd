@@ -1,15 +1,11 @@
 class_name GameDirector
 extends Node
 
-const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
-
 ## 游戏总管（对标 MapEditor）。
-## 职责：配置 MapLoader、Melee 开局、Session/库存、选中、相机。
+## 职责：场景配置、对局启动、模块绑定及尚待迁移的建造/HUD 协调。
 
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready
-
-## 场景实例仍需 preload；脚本类一律用 class_name。
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -110,18 +106,12 @@ var _tree_registry: TreeRegistry:
 	get:
 		return _harvest.tree_registry if is_instance_valid(_harvest) else null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
-var _ability_ctx_factory: AbilityCastContextFactory = null
-var _ability_hud: AbilityHudFeedback = null
 var _ability_runtime: AbilityRuntimeRegistry = null
-var _ability_targeting_svc: AbilityTargetingService = null
 ## 选中可训建筑时显示的集结旗（长驻，复用）
 var _feedback: InteractionFeedback
 var _world_picker: WorldPicker
 var _match_input: MatchInputController
-## 瞄准期内被霜蓝染色的单位/建筑（Present）。
-
-## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
-## 鼠标 → godot 拾取（暴露给 placement 控制器，避开循环引用）。
+## 鼠标位置只读/写转发，状态由 MatchInputController 持有。
 var _last_screen_pos: Vector2:
 	get:
 		return _match_input.last_screen_pos if is_instance_valid(_match_input) else Vector2.ZERO
@@ -130,6 +120,12 @@ var _last_screen_pos: Vector2:
 ## 对局内生产功能及本地界面适配器；队列订阅由模块持有。
 var _production: ProductionModule
 var _production_panel: ProductionPanel
+## 配置阶段递增；仅缓存绑定代次，不保存业务状态或服务定位表。
+var _binding_epoch := 0
+var _bound_modules: Dictionary = {}
+var _binding_counts: Dictionary = {}
+var _wired_hud: GameHud
+var _wired_selector: Node
 
 
 func _ready() -> void:
@@ -150,10 +146,6 @@ func _ready() -> void:
 		map_root.map_loaded.connect(_on_map_loaded)
 	if map_root.is_map_ready():
 		_on_map_loaded()
-
-
-func _toggle_gm_panel() -> void:
-	_ensure_debug_tools_module().toggle_gm_panel()
 
 
 func _apply_path_debug_visibility() -> void:
@@ -267,29 +259,25 @@ func _apply_camera_world_bounds() -> void:
 
 
 func _wire_hud() -> void:
-	if game_hud != null:
-		game_hud.item_use.connect(_on_item_use)
-		game_hud.item_drop.connect(_on_item_drop)
-		game_hud.item_swap.connect(_on_item_swap)
+	var callbacks := {
+		"item_use": _on_item_use, "item_drop": _on_item_drop, "item_swap": _on_item_swap,
+		"minimap_clicked": _on_minimap_clicked, "command_pressed": _on_command_pressed,
+		"command_action": _on_command_action, "command_action_rclick": _on_command_action_rclick,
+		"multi_select_clicked": _on_multi_select_clicked, "train_queue_cancel": _on_train_queue_cancel,
+	}
+	if is_instance_valid(_wired_hud) and _wired_hud != game_hud:
+		for event: String in callbacks:
+			if _wired_hud.is_connected(event, callbacks[event]):
+				_wired_hud.disconnect(event, callbacks[event])
+	_wired_hud = game_hud
 	if game_hud == null:
 		return
+	for event: String in callbacks:
+		if game_hud.has_signal(event) and not game_hud.is_connected(event, callbacks[event]):
+			game_hud.connect(event, callbacks[event])
 	if not map_dir.is_empty():
 		game_hud.map_dir = map_dir
 	game_hud.set_status(_map_display_name())
-	if not game_hud.minimap_clicked.is_connected(_on_minimap_clicked):
-		game_hud.minimap_clicked.connect(_on_minimap_clicked)
-	if not game_hud.command_pressed.is_connected(_on_command_pressed):
-		game_hud.command_pressed.connect(_on_command_pressed)
-	if game_hud.has_signal("command_action") and not game_hud.command_action.is_connected(_on_command_action):
-		game_hud.command_action.connect(_on_command_action)
-	if game_hud.has_signal("command_action_rclick") and not game_hud.command_action_rclick.is_connected(
-		_on_command_action_rclick
-	):
-		game_hud.command_action_rclick.connect(_on_command_action_rclick)
-	if game_hud.has_signal("multi_select_clicked") and not game_hud.multi_select_clicked.is_connected(_on_multi_select_clicked):
-		game_hud.multi_select_clicked.connect(_on_multi_select_clicked)
-	if game_hud.has_signal("train_queue_cancel") and not game_hud.train_queue_cancel.is_connected(_on_train_queue_cancel):
-		game_hud.train_queue_cancel.connect(_on_train_queue_cancel)
 
 
 func _setup_portrait_hud() -> void:
@@ -305,6 +293,10 @@ func _on_multi_select_clicked(instance_id: int) -> void:
 
 
 func _setup_selector() -> void:
+	if is_instance_valid(_wired_selector) and _wired_selector != unit_selector:
+		if _wired_selector.is_connected("selection_changed", _on_selection_changed):
+			_wired_selector.disconnect("selection_changed", _on_selection_changed)
+	_wired_selector = unit_selector
 	if unit_selector == null or rts_camera == null or map_root == null:
 		push_warning("GameDirector: UnitSelector 绑定失败（selector/camera/map 为空）")
 		return
@@ -360,7 +352,7 @@ func _on_map_loaded() -> void:
 	_ensure_navigation_module().initialize(map_root, Callable(_unit_presenter(), "ensure_visual"))
 	_bootstrap_melee()
 	_setup_selector()
-	_setup_pathing()
+	_bind_match_modules()
 	_setup_minimap()
 	_setup_portrait_hud()
 	_setup_health_bars()
@@ -397,11 +389,11 @@ func _setup_health_bars() -> void:
 	health_bar_manager.resync()
 
 
-## 导航服务初始化后装配命令路由与功能模块。
-func _setup_pathing() -> void:
+func _bind_match_modules() -> void:
 	if map_root == null:
 		return
 	_command_router = CommandRouter.new()
+	_binding_epoch += 1
 	_ensure_combat_module()
 	_ensure_abilities_module()
 	_ensure_build_module()
@@ -414,7 +406,7 @@ func _setup_pathing() -> void:
 		_session,
 		Callable(_build, "find_site"),
 		Callable(_build, "find_site_for_node"),
-		Callable(self, "_ensure_attack_controller")
+		Callable(_ensure_combat_module(), "ensure_attack_controller")
 	)
 	if not _command_router.production_queue_ready.is_connected(_wire_train_queue):
 		_command_router.production_queue_ready.connect(_wire_train_queue)
@@ -428,6 +420,9 @@ func _setup_pathing() -> void:
 	_ensure_command_input_module()
 	_ensure_command_card_module()
 	_ensure_selection_hud_module()
+	_ensure_debug_tools_module()
+	_ensure_interaction_feedback()
+	_ensure_match_input()
 
 
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
@@ -496,11 +491,6 @@ func _process(delta: float) -> void:
 	_ensure_selection_hud_module().tick(delta)
 	if is_instance_valid(_path_debug_mod):
 		_path_debug_mod.tick(delta)
-	_ensure_command_card_module().tick_cooldown_hud(delta)
-
-
-## 技能 CD 进行中时低频刷命令卡，驱动扇形遮罩进度（否则只在施法瞬间刷一次会「卡住」）。
-func _tick_command_card_cooldown_hud(delta: float) -> void:
 	_ensure_command_card_module().tick_cooldown_hud(delta)
 
 
@@ -584,10 +574,6 @@ func _find_local_town_hall() -> Node3D:
 	)
 
 
-func _order_militia_move_to_hall(unit: Node3D, hall: Node3D) -> void:
-	_ensure_units_module().forms._order_move_to_hall(unit, hall)
-
-
 func _unhandled_input(event: InputEvent) -> void:
 	_ensure_match_input().handle_unhandled(event, enable_move_command, debug_building_fx_hotkeys)
 
@@ -607,45 +593,9 @@ func _try_toggle_defend(source: int = UnitOrder.Source.UNKNOWN) -> void:
 	_ensure_command_input_module().try_toggle_defend(source)
 
 
-func _issue_attack_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_attack_at_screen(screen_pos, source)
-
-
-func _issue_patrol_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_patrol_at_screen(screen_pos, source)
-
-
-func _issue_smart_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_smart_at_screen(screen_pos, source)
-
-
-func _issue_set_rally_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_set_rally_at_screen(screen_pos, source)
-
-
-func _apply_rally_from_smart(building: Node3D, target: SmartTarget) -> void:
-	_ensure_command_input_module().apply_rally_from_smart(building, target)
-
-
 ## Present/输入：屏幕点 → SmartTarget；不在此按兵种分支下令。
 ## 拾取走 UnitSelector 脚底 2D 圆；送回点 / 工地另加脚底像素近距门槛。
 const SMART_BUILDING_FOOT_PX := 40.0 ## 保留常量别名；实际阈值在 SmartCommandModule
-
-
-func _resolve_smart_target(screen_pos: Vector2, selected: Array) -> SmartTarget:
-	return _ensure_smart_command_module().resolve_smart_target(screen_pos, selected)
-
-
-func _flash_tree_target(creation_number: int) -> void:
-	_ensure_smart_command_module().flash_tree_target(creation_number)
-
-
-func _format_smart_status(result: Dictionary) -> String:
-	return _ensure_smart_command_module().format_smart_status(result)
-
-
-func _issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_move_at_screen(screen_pos, source)
 
 
 ## F3-2: Shift+RMB 队形排开群体移动（FormationFollow）。
@@ -655,10 +605,6 @@ func _issue_group_move_command(
 	spacing: float = 64.0
 ) -> bool:
 	return _ensure_command_input_module().issue_group_move_command(screen_pos, formation, spacing)
-
-
-func _issue_harvest_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_command_input_module().issue_harvest_at_screen(screen_pos, source)
 
 
 func _issue_return_goods(source: int = UnitOrder.Source.UNKNOWN) -> bool:
@@ -683,10 +629,6 @@ func _begin_harvest_targeting(source: int) -> void:
 
 func _begin_rally_targeting(source: int) -> void:
 	_ensure_command_input_module().begin_rally_targeting(source)
-
-
-func _setup_ability_services() -> void:
-	_ensure_abilities_module()
 
 
 func _ability_set_status(text: String) -> void:
@@ -768,24 +710,10 @@ func _issue_self_ability(abil_id: String, source: int) -> bool:
 	return _ensure_abilities_module().issue_self(abil_id, source)
 
 
-## 单位目标技能：瞄准态左键点单位。
-func _issue_ability_at_unit_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_abilities_module().issue_at_unit_screen(screen_pos, source)
-
-
-## 技能瞄准落点：点地召唤 / 区域 DOT 等。
-func _issue_ability_at_screen(screen_pos: Vector2, source: int) -> bool:
-	return _ensure_abilities_module().issue_at_screen(screen_pos, source)
-
-
 func _on_ability_cast_resolved(result: Dictionary, abil_id: String) -> void:
 	# 兼容旧入口；实际由 AbilitiesModule 处理。
 	if is_instance_valid(_abilities):
 		_abilities.call("_on_cast_resolved", result, abil_id)
-
-
-func _ability_cast_context() -> Dictionary:
-	return _ensure_abilities_module().cast_context()
 
 
 func _kill_unit(unit: Node3D) -> void:
@@ -795,11 +723,6 @@ func _kill_unit(unit: Node3D) -> void:
 ## 引导开场清空命令队列（见 AbilityCastController._stop_caster_for_cast）。
 func _clear_caster_orders(caster: Node3D) -> void:
 	_ensure_abilities_module().clear_caster_orders(caster)
-
-
-## 引导中 / 接近施法点：玩家新指令（非 AI）→ 打断暴风雪等。
-func _ability_channel_interrupt_check(caster: Node3D) -> bool:
-	return _ensure_abilities_module().channel_interrupt_check(caster)
 
 
 func _ability_ui_state_for(primary: Node3D) -> Dictionary:
@@ -812,10 +735,6 @@ func _ensure_caster_runtime(unit: Node3D) -> void:
 
 func _ensure_hero_runtime(unit: Node3D) -> void:
 	_ensure_units_module().ensure_hero(unit)
-
-
-func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
-	_ensure_abilities_module().set_targeting(active, abil_id)
 
 
 func _sync_selector_enabled_for_targeting() -> void:
@@ -846,11 +765,6 @@ func _sync_rally_flag_for_selection() -> void:
 	_ensure_interaction_feedback().sync_rally_flag()
 
 
-## 集结旗数据源：主选可训且已设 → 主选；否则选中里第一个已设集结的可训建筑。
-func _rally_flag_source_building() -> Node3D:
-	return _ensure_interaction_feedback().rally_source()
-
-
 func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	return _ensure_navigation_module().ensure_navigator(unit)
 
@@ -876,23 +790,12 @@ func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
 	return _ensure_units_module().forms.ensure_militia(unit)
 
 
-## 就地换 typeId + 模型（农民↔民兵）。保持同一 Unit 节点与 creationNumber。
-func _apply_unit_form(unit: Node3D, new_type_id: String) -> bool:
-	return _ensure_units_module().forms.apply_form(unit, new_type_id)
-
-
-func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: int) -> bool:
-	return _ensure_units_module().presenter.swap_model(unit, type_id, owner_id, variation)
-
-
 func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
 	var n_ok := _ensure_units_module().issue_call_to_arms(_get_selected_safe(), source)
 	if game_hud != null:
 		game_hud.set_status("战斗号召：已转换 %d 人" % n_ok if n_ok > 0 else "战斗号召：无可用农民/民兵")
 	_refresh_command_card()
 	return n_ok
-
-
 
 
 func _building_has_town_bell(type_id: String) -> bool:
@@ -919,20 +822,8 @@ func _on_damage_applied_present(result: Dictionary) -> void:
 		_combat.call("_on_damage_applied_present", result)
 
 
-func _on_unit_dying(unit: Node3D) -> void:
-	_ensure_combat_module().on_unit_dying(unit)
-
-
-func _on_corpse_expired(unit: Node3D) -> void:
-	_ensure_combat_module().on_corpse_expired(unit)
-
-
 func _wire_all_gold_mines() -> void:
 	_ensure_harvest_module().wire_mines()
-
-
-func _wire_gold_mine(mine: Node3D) -> void:
-	_ensure_harvest_module().wire_mine(mine)
 
 
 func _on_gold_mine_depleted(mine: Node3D) -> void:
@@ -1025,18 +916,6 @@ func _cancel_build_targeting() -> void:
 		_sync_selector_enabled_for_targeting()
 	if game_hud:
 		game_hud.set_status("建造取消")
-
-
-func _set_build_menu_open(open: bool) -> void:
-	_ensure_command_card_module().set_build_menu_open(open)
-
-
-func _set_hero_skill_menu_open(open: bool) -> void:
-	_ensure_command_card_module().set_hero_skill_menu_open(open)
-
-
-func _try_learn_hero_skill(abil_id: String) -> void:
-	_ensure_command_card_module().try_learn_hero_skill(abil_id)
 
 
 ## —— GM：英雄等级 / 技能（转发 DebugToolsModule）——
@@ -1297,10 +1176,6 @@ func _owned_buildings_for_local() -> Dictionary:
 	return _ensure_command_card_module().owned_buildings_for_local()
 
 
-func _researched_for_local() -> Dictionary:
-	return _ensure_command_card_module().researched_for_local()
-
-
 func _try_issue_train(unit_id: String) -> void:
 	_ensure_production_module()
 	_production_panel.request_train(unit_id)
@@ -1389,10 +1264,6 @@ func _crowd_query_ref() -> UnitCrowdQuery:
 	return _crowd_query
 
 
-func _wire_harvest_signals(hc: HarvestController) -> void:
-	_ensure_harvest_module()._wire_signals(hc)
-
-
 func _on_harvest_carry_changed(_resource_id: String, _amount: int) -> void:
 	_refresh_command_card()
 
@@ -1408,10 +1279,6 @@ func _on_harvest_deposited(gold: int, lumber: int) -> void:
 
 func _on_harvest_state_changed(_state: int) -> void:
 	_refresh_command_card()
-
-
-func _is_harvestable_tree_node(node: Node) -> bool:
-	return _ensure_harvest_module().is_harvestable_tree(node)
 
 
 func _tree_cn_of(node: Node) -> int:
@@ -1435,22 +1302,8 @@ func _ensure_interaction_components(unit: Node3D) -> void:
 	_ensure_units_module().presenter.ensure_interaction(unit)
 
 
-## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
-## 注意：UnitUI.walk 是动画侧速率，不是对象编辑器「移动速度」。
-func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
-	_ensure_navigation_module().apply_move_stats(unit, nav)
-
 func _ground_at_screen(screen_pos: Vector2) -> Vector3:
 	return _ensure_world_picker().ground_at_screen(screen_pos)
-
-
-## 沿射线步进，找「射线高度穿过地形高度」的交点（RTS 常用、不依赖碰撞层）。
-func _ray_heightfield(from: Vector3, dir: Vector3) -> Vector3:
-	return _ensure_world_picker().ray_heightfield(from, dir)
-
-
-func _debug_apply_hall_phase(phase: int) -> bool:
-	return _ensure_debug_tools_module().apply_hall_phase(phase)
 
 
 func _on_minimap_clicked(uv: Vector2) -> void:
@@ -1485,10 +1338,6 @@ func _on_command_action(
 	action_id: String, source: int = UnitOrder.Source.PANEL
 ) -> void:
 	_ensure_command_card_module().dispatch_action(action_id, source)
-
-
-func _clear_command_card_hotkeys() -> void:
-	_ensure_command_card_module().clear_hotkeys()
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
@@ -1562,14 +1411,6 @@ func _refresh_move_executing_ui() -> void:
 	_ensure_command_card_module().refresh_move_executing_ui()
 
 
-func _primary_type_id(_selected: Array = []) -> String:
-	return _ensure_command_card_module().primary_type_id(_selected)
-
-
-func _setup_item_system() -> void:
-	_ensure_items_module()
-
-
 func _on_ground_item_spawned(ground: GroundItem) -> void:
 	if is_instance_valid(_items):
 		_items.call("_on_ground_spawned", ground)
@@ -1612,8 +1453,11 @@ func gm_item_test_creep() -> void:
 func _ensure_debug_tools_module() -> DebugToolsModule:
 	if not is_instance_valid(_debug_tools):
 		_debug_tools = DebugToolsModule.new()
+		_bound_modules.erase(&"debug_tools")
 		_debug_tools.name = "DebugToolsModule"
 		add_child(_debug_tools)
+	if _bound_modules.get(&"debug_tools", -1) == _binding_epoch:
+		return _debug_tools
 	if game_hud == null or unit_selector == null:
 		_resolve_exports()
 	_debug_tools.configure({
@@ -1636,6 +1480,8 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 		) -> Node3D:
 			return _ensure_units_module().spawn_near(near, type_id, owner_id, offset, opts),
 	})
+	_bound_modules[&"debug_tools"] = _binding_epoch
+	_binding_counts[&"debug_tools"] = int(_binding_counts.get(&"debug_tools", 0)) + 1
 	return _debug_tools
 
 
@@ -1643,8 +1489,11 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 func _ensure_opponent_ai_module() -> OpponentAiModule:
 	if not is_instance_valid(_opponent_ai):
 		_opponent_ai = OpponentAiModule.new()
+		_bound_modules.erase(&"opponent_ai")
 		_opponent_ai.name = "OpponentAiModule"
 		add_child(_opponent_ai)
+	if _bound_modules.get(&"opponent_ai", -1) == _binding_epoch:
+		return _opponent_ai
 	_opponent_ai.configure({
 		"host_parent": self,
 		"map_root": map_root,
@@ -1657,12 +1506,14 @@ func _ensure_opponent_ai_module() -> OpponentAiModule:
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_harvest": Callable(_ensure_harvest_module(), "ensure_controller"),
 		"ensure_build": Callable(self, "_ensure_build_controller"),
-		"ensure_attack": Callable(self, "_ensure_attack_controller"),
+		"ensure_attack": Callable(_ensure_combat_module(), "ensure_attack_controller"),
 		"find_build_site": Callable(_build, "find_site"),
 		"find_build_site_by_node": Callable(_build, "find_site_for_node"),
 		"wire_train_queue": Callable(self, "_wire_train_queue"),
 		"stock_for_owner": Callable(self, "_stock_for_owner"),
 	})
+	_bound_modules[&"opponent_ai"] = _binding_epoch
+	_binding_counts[&"opponent_ai"] = int(_binding_counts.get(&"opponent_ai", 0)) + 1
 	return _opponent_ai
 
 
@@ -1670,12 +1521,17 @@ func _ensure_opponent_ai_module() -> OpponentAiModule:
 func _ensure_match_lifecycle_module() -> MatchLifecycleModule:
 	if not is_instance_valid(_match_lifecycle):
 		_match_lifecycle = MatchLifecycleModule.new()
+		_bound_modules.erase(&"match_lifecycle")
 		_match_lifecycle.name = "MatchLifecycleModule"
 		add_child(_match_lifecycle)
+	if _bound_modules.get(&"match_lifecycle", -1) == _binding_epoch:
+		return _match_lifecycle
 	_match_lifecycle.configure({
 		"game_root": get_parent(),
 		"settings_source": self,
 	})
+	_bound_modules[&"match_lifecycle"] = _binding_epoch
+	_binding_counts[&"match_lifecycle"] = int(_binding_counts.get(&"match_lifecycle", 0)) + 1
 	return _match_lifecycle
 
 
@@ -1683,8 +1539,11 @@ func _ensure_match_lifecycle_module() -> MatchLifecycleModule:
 func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
 	if not is_instance_valid(_match_bootstrap):
 		_match_bootstrap = MatchBootstrapModule.new()
+		_bound_modules.erase(&"match_bootstrap")
 		_match_bootstrap.name = "MatchBootstrapModule"
 		add_child(_match_bootstrap)
+	if _bound_modules.get(&"match_bootstrap", -1) == _binding_epoch:
+		return _match_bootstrap
 	if game_hud == null or rts_camera == null:
 		_resolve_exports()
 	_match_bootstrap.configure({
@@ -1698,6 +1557,8 @@ func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
 		"map_display_name": Callable(self, "_map_display_name"),
 		"on_pathing_map": Callable(_ensure_navigation_module(), "bind_pathing"),
 	})
+	_bound_modules[&"match_bootstrap"] = _binding_epoch
+	_binding_counts[&"match_bootstrap"] = int(_binding_counts.get(&"match_bootstrap", 0)) + 1
 	return _match_bootstrap
 
 
@@ -1705,8 +1566,11 @@ func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
 func _ensure_path_debug_module() -> PathDebugModule:
 	if not is_instance_valid(_path_debug_mod):
 		_path_debug_mod = PathDebugModule.new()
+		_bound_modules.erase(&"path_debug_mod")
 		_path_debug_mod.name = "PathDebugModule"
 		add_child(_path_debug_mod)
+	if _bound_modules.get(&"path_debug_mod", -1) == _binding_epoch:
+		return _path_debug_mod
 	if unit_selector == null:
 		_resolve_exports()
 	_path_debug_mod.configure({
@@ -1715,6 +1579,8 @@ func _ensure_path_debug_module() -> PathDebugModule:
 		"unit_selector": unit_selector,
 		"enabled": show_path_debug,
 	})
+	_bound_modules[&"path_debug_mod"] = _binding_epoch
+	_binding_counts[&"path_debug_mod"] = int(_binding_counts.get(&"path_debug_mod", 0)) + 1
 	return _path_debug_mod
 
 
@@ -1789,8 +1655,11 @@ func _ensure_command_card_module() -> CommandCardModule:
 func _ensure_interaction_module() -> InteractionModule:
 	if not is_instance_valid(_interaction):
 		_interaction = InteractionModule.new()
+		_bound_modules.erase(&"interaction")
 		_interaction.name = "InteractionModule"
 		add_child(_interaction)
+	if _bound_modules.get(&"interaction", -1) == _binding_epoch:
+		return _interaction
 	if game_cursor == null:
 		_resolve_exports()
 	_interaction.configure({
@@ -1807,6 +1676,8 @@ func _ensure_interaction_module() -> InteractionModule:
 			return is_instance_valid(_abilities) and _abilities.is_targeting(),
 		"is_build_targeting": Callable(self, "_is_build_targeting"),
 	})
+	_bound_modules[&"interaction"] = _binding_epoch
+	_binding_counts[&"interaction"] = int(_binding_counts.get(&"interaction", 0)) + 1
 	return _interaction
 
 
@@ -1814,8 +1685,11 @@ func _ensure_interaction_module() -> InteractionModule:
 func _ensure_smart_command_module() -> SmartCommandModule:
 	if not is_instance_valid(_smart_command):
 		_smart_command = SmartCommandModule.new()
+		_bound_modules.erase(&"smart_command")
 		_smart_command.name = "SmartCommandModule"
 		add_child(_smart_command)
+	if _bound_modules.get(&"smart_command", -1) == _binding_epoch:
+		return _smart_command
 	if unit_selector == null or rts_camera == null:
 		_resolve_exports()
 	# ground_items 可能在 ItemsModule 之后才就绪
@@ -1829,6 +1703,8 @@ func _ensure_smart_command_module() -> SmartCommandModule:
 		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
 	})
+	_bound_modules[&"smart_command"] = _binding_epoch
+	_binding_counts[&"smart_command"] = int(_binding_counts.get(&"smart_command", 0)) + 1
 	return _smart_command
 
 
@@ -1837,8 +1713,11 @@ func _ensure_smart_command_module() -> SmartCommandModule:
 func _ensure_command_input_module() -> CommandInputModule:
 	if not is_instance_valid(_command_input):
 		_command_input = CommandInputModule.new()
+		_bound_modules.erase(&"command_input")
 		_command_input.name = "CommandInputModule"
 		add_child(_command_input)
+	if _bound_modules.get(&"command_input", -1) == _binding_epoch:
+		return _command_input
 	if unit_selector == null or rts_camera == null:
 		_resolve_exports()
 	_command_input.configure({
@@ -1858,11 +1737,13 @@ func _ensure_command_input_module() -> CommandInputModule:
 		"sync_rally_flag": Callable(_ensure_interaction_feedback(), "sync_rally_flag"),
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
-		"is_harvestable_tree": Callable(self, "_is_harvestable_tree_node"),
-		"tree_cn_of": Callable(self, "_tree_cn_of"),
+		"is_harvestable_tree": Callable(_ensure_harvest_module(), "is_harvestable_tree"),
+		"tree_cn_of": Callable(_ensure_harvest_module(), "tree_cn_of"),
 		"local_stock": Callable(self, "_local_stock"),
 		"is_controllable": Callable(self, "_is_controllable"),
 	})
+	_bound_modules[&"command_input"] = _binding_epoch
+	_binding_counts[&"command_input"] = int(_binding_counts.get(&"command_input", 0)) + 1
 	return _command_input
 
 
@@ -1871,9 +1752,12 @@ func _ensure_command_input_module() -> CommandInputModule:
 func _ensure_combat_module() -> CombatModule:
 	if not is_instance_valid(_combat):
 		_combat = CombatModule.new()
+		_bound_modules.erase(&"combat")
 		_combat.name = "CombatModule"
 		add_child(_combat)
 		_combat.tree_exiting.connect(_on_combat_module_exiting)
+	if _bound_modules.get(&"combat", -1) == _binding_epoch:
+		return _combat
 	_combat.configure({
 		"map_root": map_root,
 		"health_bar_manager": health_bar_manager,
@@ -1893,6 +1777,8 @@ func _ensure_combat_module() -> CombatModule:
 	_damage_pipeline = _combat.damage_pipeline
 	_death_service = _combat.death_service
 	_projectile_service = _combat.projectile_service
+	_bound_modules[&"combat"] = _binding_epoch
+	_binding_counts[&"combat"] = int(_binding_counts.get(&"combat", 0)) + 1
 	return _combat
 
 
@@ -1919,8 +1805,11 @@ func _deselect_unit_on_death(unit: Node3D) -> void:
 func _ensure_build_module() -> BuildModule:
 	if not is_instance_valid(_build):
 		_build = BuildModule.new()
+		_bound_modules.erase(&"build")
 		_build.name = "BuildModule"
 		add_child(_build)
+	if _bound_modules.get(&"build", -1) == _binding_epoch:
+		return _build
 	_build.configure({
 		"map_root": map_root,
 		"heightfield": _heightfield,
@@ -1941,6 +1830,8 @@ func _ensure_build_module() -> BuildModule:
 		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 	})
+	_bound_modules[&"build"] = _binding_epoch
+	_binding_counts[&"build"] = int(_binding_counts.get(&"build", 0)) + 1
 	return _build
 
 
@@ -1958,9 +1849,12 @@ func _resync_health_bars() -> void:
 func _ensure_units_module() -> UnitsModule:
 	if not is_instance_valid(_units):
 		_units = UnitsModule.new()
+		_bound_modules.erase(&"units")
 		_units.name = "UnitsModule"
 		_units.form_changed.connect(_on_unit_form_changed)
 		add_child(_units)
+	if _bound_modules.get(&"units", -1) == _binding_epoch:
+		return _units
 	_units.configure({
 		"navigation": _ensure_navigation_module(),
 		"session": _session,
@@ -1972,7 +1866,7 @@ func _ensure_units_module() -> UnitsModule:
 		"health_bar_manager": health_bar_manager,
 		"registry_host": self,
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
-		"ensure_attack_controller": Callable(self, "_ensure_attack_controller"),
+		"ensure_attack_controller": Callable(_ensure_combat_module(), "ensure_attack_controller"),
 		"unit_host": Callable(self, "_unit_host"),
 		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
@@ -1986,6 +1880,8 @@ func _ensure_units_module() -> UnitsModule:
 			if stock != null:
 				stock.add_food_used(food),
 	})
+	_bound_modules[&"units"] = _binding_epoch
+	_binding_counts[&"units"] = int(_binding_counts.get(&"units", 0)) + 1
 	return _units
 
 
@@ -1993,8 +1889,11 @@ func _ensure_units_module() -> UnitsModule:
 func _ensure_abilities_module() -> AbilitiesModule:
 	if not is_instance_valid(_abilities):
 		_abilities = AbilitiesModule.new()
+		_bound_modules.erase(&"abilities")
 		_abilities.name = "AbilitiesModule"
 		add_child(_abilities)
+	if _bound_modules.get(&"abilities", -1) == _binding_epoch:
+		return _abilities
 	_ensure_combat_module()
 	_abilities.configure({
 		"map_root": map_root,
@@ -2027,10 +1926,9 @@ func _ensure_abilities_module() -> AbilitiesModule:
 		"sync_selection_info": Callable(self, "_sync_selection_info_panel"),
 		"last_screen_pos": func() -> Vector2: return _last_screen_pos,
 	})
-	_ability_ctx_factory = _abilities.ctx_factory
-	_ability_hud = _abilities.hud
 	_ability_runtime = _abilities.runtime
-	_ability_targeting_svc = _abilities.targeting
+	_bound_modules[&"abilities"] = _binding_epoch
+	_binding_counts[&"abilities"] = int(_binding_counts.get(&"abilities", 0)) + 1
 	return _abilities
 
 
@@ -2038,8 +1936,11 @@ func _ensure_abilities_module() -> AbilitiesModule:
 func _ensure_items_module() -> ItemsModule:
 	if not is_instance_valid(_items):
 		_items = ItemsModule.new()
+		_bound_modules.erase(&"items")
 		_items.name = "ItemsModule"
 		add_child(_items)
+	if _bound_modules.get(&"items", -1) == _binding_epoch:
+		return _items
 	_items.configure({
 		"map_root": map_root,
 		"heightfield": _heightfield,
@@ -2061,6 +1962,8 @@ func _ensure_items_module() -> ItemsModule:
 	})
 	_item_service = _items.item_service
 	_ground_items = _items.ground_host()
+	_bound_modules[&"items"] = _binding_epoch
+	_binding_counts[&"items"] = int(_binding_counts.get(&"items", 0)) + 1
 	return _items
 
 
@@ -2069,6 +1972,7 @@ func _ensure_items_module() -> ItemsModule:
 func _ensure_production_module() -> ProductionModule:
 	if not is_instance_valid(_production):
 		_production = ProductionModule.new()
+		_bound_modules.erase(&"production")
 		_production.name = "ProductionModule"
 		add_child(_production)
 		_production_panel = ProductionPanel.new()
@@ -2084,15 +1988,20 @@ func _ensure_production_module() -> ProductionModule:
 		_production_panel.command_card_requested.connect(_apply_building_train_card)
 		_production_panel.selection_refresh_requested.connect(_sync_build_hud_for_selection)
 		_production_panel.command_refresh_requested.connect(_refresh_command_card)
+	if (_bound_modules.get(&"production", -1) == _binding_epoch
+			and _production_panel.matches_dependencies(_session, _command_router, unit_selector, game_hud)):
+		return _production
 	var units := _ensure_units_module()
 	_production.configure(
 		_session,
 		units.spawn_trained,
 		units.ensure_hero,
-		Callable(self, "_apply_building_upgrade")
+		Callable(units, "apply_building_upgrade")
 	)
 	_production_panel.configure(_session, _command_router, unit_selector, game_hud,
 		_unit_host(), map_root.get_model_cache() if map_root != null else null)
+	_bound_modules[&"production"] = _binding_epoch
+	_binding_counts[&"production"] = int(_binding_counts.get(&"production", 0)) + 1
 	return _production
 
 
@@ -2116,15 +2025,21 @@ func _ensure_navigation_module() -> NavigationModule:
 func _ensure_harvest_module() -> HarvestModule:
 	if not is_instance_valid(_harvest):
 		_harvest = HarvestModule.new()
+		_bound_modules.erase(&"harvest")
 		_harvest.name = "HarvestModule"
 		add_child(_harvest)
-		_harvest.configure(map_root, _ensure_navigation_module(), _session,
-			rts_camera.get_camera() if rts_camera != null else null,
-			Callable(_unit_presenter(), "ensure_visual"), Callable(_ensure_combat_module(), "on_corpse_expired"))
 		_harvest.carry_changed.connect(_on_harvest_carry_changed)
 		_harvest.deposited.connect(_on_harvest_deposited)
 		_harvest.state_changed.connect(_on_harvest_state_changed)
 		_harvest.mine_depleted.connect(_deselect_unit_on_death)
+
+	if _bound_modules.get(&"harvest", -1) == _binding_epoch:
+		return _harvest
+	_harvest.configure(map_root, _ensure_navigation_module(), _session,
+		rts_camera.get_camera() if rts_camera != null else null,
+		Callable(_unit_presenter(), "ensure_visual"), Callable(_ensure_combat_module(), "on_corpse_expired"))
+	_bound_modules[&"harvest"] = _binding_epoch
+	_binding_counts[&"harvest"] = int(_binding_counts.get(&"harvest", 0)) + 1
 	return _harvest
 
 
@@ -2132,10 +2047,12 @@ func _unit_presenter() -> UnitModelPresenter:
 	# 表现绑定在地图加载前也可用，不触发其余玩法模块装配。
 	if not is_instance_valid(_units):
 		_units = UnitsModule.new()
+		_bound_modules.erase(&"units")
 		_units.name = "UnitsModule"
 		_units.form_changed.connect(_on_unit_form_changed)
 		add_child(_units)
-	_units.presenter.configure(map_root)
+	if _units.presenter.map_root != map_root:
+		_units.presenter.configure(map_root)
 	return _units.presenter
 
 func _on_unit_form_changed(_unit: Node3D) -> void:
@@ -2147,24 +2064,37 @@ func _on_unit_form_changed(_unit: Node3D) -> void:
 func _ensure_world_picker() -> WorldPicker:
 	if _world_picker == null:
 		_world_picker = WorldPicker.new()
+		_bound_modules.erase(&"world_picker")
+	if _bound_modules.get(&"world_picker", -1) == _binding_epoch:
+		return _world_picker
 	_world_picker.configure(rts_camera, _ensure_navigation_module())
+	_bound_modules[&"world_picker"] = _binding_epoch
+	_binding_counts[&"world_picker"] = int(_binding_counts.get(&"world_picker", 0)) + 1
 	return _world_picker
 
 func _ensure_interaction_feedback() -> InteractionFeedback:
 	if not is_instance_valid(_feedback):
 		_feedback = InteractionFeedback.new()
+		_bound_modules.erase(&"feedback")
 		_feedback.name = "InteractionFeedback"
 		add_child(_feedback)
+	if _bound_modules.get(&"feedback", -1) == _binding_epoch:
+		return _feedback
 	_feedback.configure(map_root, unit_selector, _session, _ensure_navigation_module(),
 		preview_race, local_player, Callable(self, "_get_selected_safe"), Callable(self, "_is_controllable"))
+	_bound_modules[&"feedback"] = _binding_epoch
+	_binding_counts[&"feedback"] = int(_binding_counts.get(&"feedback", 0)) + 1
 	return _feedback
 
 func _ensure_match_input() -> MatchInputController:
 	if not is_instance_valid(_match_input):
 		_match_input = MatchInputController.new()
+		_bound_modules.erase(&"match_input")
 		_match_input.name = "MatchInput"
 		add_child(_match_input)
 		_match_input.path_debug_toggle_requested.connect(_toggle_path_debug)
+	if _bound_modules.get(&"match_input", -1) == _binding_epoch:
+		return _match_input
 	_match_input.configure({
 		"commands": _ensure_command_input_module(),
 		"interaction": _ensure_interaction_module(),
@@ -2178,6 +2108,8 @@ func _ensure_match_input() -> MatchInputController:
 		"commit_build": Callable(self, "_commit_build_targeting"),
 		"cancel_build": Callable(self, "_cancel_build_targeting"),
 	})
+	_bound_modules[&"match_input"] = _binding_epoch
+	_binding_counts[&"match_input"] = int(_binding_counts.get(&"match_input", 0)) + 1
 	return _match_input
 
 func _toggle_path_debug() -> void:
@@ -2186,3 +2118,34 @@ func _toggle_path_debug() -> void:
 	_apply_path_debug_visibility()
 	if game_hud:
 		game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
+
+
+## 替换场景依赖后显式调用；保留运行中的查询、预约、队列和瞄准状态。
+## 切换整张地图/对局应走 MatchLifecycle 的重开流程。
+func rebind_modules() -> void:
+	_binding_epoch += 1
+	_wire_hud()
+	_setup_selector()
+	_ensure_combat_module()
+	_ensure_units_module()
+	_ensure_harvest_module()
+	_ensure_build_module()
+	_ensure_interaction_module()
+	_ensure_abilities_module()
+	_ensure_items_module()
+	_ensure_production_module()
+	_ensure_smart_command_module()
+	_ensure_command_input_module()
+	_ensure_command_card_module()
+	_ensure_selection_hud_module()
+	_ensure_path_debug_module()
+	_ensure_debug_tools_module()
+	_ensure_interaction_feedback()
+	_ensure_match_input()
+	_ensure_match_bootstrap_module()
+	_ensure_match_lifecycle_module()
+	_ensure_opponent_ai_module()
+	_interaction.refresh_selector()
+
+func module_binding_counts() -> Dictionary:
+	return _binding_counts.duplicate()

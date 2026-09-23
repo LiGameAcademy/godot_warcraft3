@@ -389,3 +389,7 @@ func cancel_selected(slot: int) -> void:
 
 func on_progress(queue: TrainQueue) -> void:
 	_on_train_progress_changed(0.0, 0.0, queue)
+
+
+func matches_dependencies(session: GameSession, commands: CommandRouter, selector: Node, hud: GameHud) -> bool:
+	return _session == session and _command_router == commands and unit_selector == selector and game_hud == hud

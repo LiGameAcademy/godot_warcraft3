@@ -21,7 +21,9 @@ game/features/
     logic/                        PathQuery / UnitCrowdQuery / PathCellReservation
     presentation/                 UnitNavigator
   units/
-    units_module.gd                对局内单位出生、AI/英雄装配与 CN 分配
+    units_module.gd                单位出生、AI/英雄装配与形态变化入口
+    logic/                        UnitFormService / MilitiaController
+    presentation/                 UnitModelPresenter
   build/
     build_module.gd                对局内建造调度、工地注册表与放置视觉
   combat/
@@ -34,6 +36,9 @@ game/features/
     interaction_module.gd          互斥瞄准状态机 + 光标同步
     smart_command_module.gd        右键智能目标解析 / 闪选 / 文案
     command_input_module.gd        issue_*/begin_* 下发、瞄准点击与智能右键
+    match_input_controller.gd      场景输入分发与鼠标位置
+    logic/                        WorldPicker
+    presentation/                 InteractionFeedback
   command_card/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
   selection_hud/
@@ -66,6 +71,17 @@ game/features/
 - Director 的导航属性为只读转发，不再持有第二份服务状态。导航与动态寻路回调直接绑定 NavigationModule。
 - BuildModule 是唯一工地注册表和 BuildSitesHost 所有者；玩家与 AI 路由器使用同一查询入口。失效或已取消工地不再返回给调用方。
 - InteractionModule 独占瞄准状态和选择器启用状态；Director 不再复制普通命令/技能瞄准布尔值或技能 ID，CommandInputModule 不再请求总管同步镜像。
-- 当前继续保留少量 Director 兼容方法；单位视觉装配、采集、民兵形态和大部分功能依赖装配留待后续批次。
+- 该批次之后的采集、单位形态和输入拆分现已完成，见下方四波次说明。
 
 导航契约与回归入口见 [navigation/README.md](navigation/README.md)。
+
+## 四波次后续实现
+
+1. [采集](harvest/README.md)：采集组件与资源节点生命周期由 HarvestModule 持有。
+2. [单位](units/README.md)：UnitFormService 负责变形/升级事务，UnitModelPresenter 负责模型及动画绑定。
+3. [交互](interaction/README.md)：MatchInputController 接收显式事件入口，WorldPicker 和 InteractionFeedback 分别负责拾取与反馈。
+4. 装配：Director 在 `_bind_match_modules()` 建立新对局依赖阶段；普通 `_ensure_*` 只在首次创建或绑定代次改变时构造依赖。更换 HUD、选择器、相机等引用后调用 `rebind_modules()`，旧 HUD/选择器信号断开，新信号仅连接一次。命令卡、选中 HUD 和生产面板保留廉价的身份检查以兼容局部替换测试。
+
+`rebind_modules()` 不重建地图、会话、导航查询或预约，不重开正在运行的订单；更换整张地图应使用对局重开入口。各功能自己的 `_exit_tree` / `shutdown` 负责释放依赖和订阅。`module_binding_counts()` 返回绑定次数的副本，便于确认普通输入或每帧访问不会重新绑定。
+
+按整个仓库的代码、场景和测试引用清理了 37 个无调用方的私有兼容转发；公共 GM 入口及仍被测试使用的适配保留。Director 仍有建造交互校验、HUD 协调、相机和场景配置，没有为了缩短文件将这些职责混入通用管理器。

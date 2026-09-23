@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tests/integration/selftest_module_bindings_game.gd" id="1"]
+[node name="SelftestModuleBindingsGame" type="Node"]
+script = ExtResource("1")

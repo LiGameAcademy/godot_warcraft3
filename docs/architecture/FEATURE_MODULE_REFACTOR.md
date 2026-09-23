@@ -480,3 +480,47 @@
 共 12 组无渲染测试通过，最终日志无 GDScript 解析或运行错误。编辑器导入成功注册新类；沙箱下仍有用户目录日志/编辑器设置写入权限和系统证书读取提示，另有既有资源路径大小写警告。没有在本批重新执行有渲染或 30 分钟性能验收。
 
 GameDirector 从 2949 行降至 2708 行。剩余体积主要来自尚未迁移的采集/形态/输入表现逻辑、兼容入口和模块装配，后续继续按功能边界迁移。
+
+
+## 2026-09-23：四波次后续实现与验收
+
+在 `e5e21e2` 基线上继续按功能拆分，每波回归后提交：
+
+| 波次 | 结果 |
+|---|---|
+| 1：采集（28ec0e7） | HarvestModule 统一采集装配、树木和金矿生命周期；保留会话资源账本，接入变化信号 |
+| 2：单位（0688dae） | UnitFormService 处理民兵/升级事务；UnitModelPresenter 处理模型与动画重绑 |
+| 3：交互（28feb73） | MatchInputController、WorldPicker、InteractionFeedback 分别负责输入、拾取和反馈 |
+| 4：装配（本提交） | 对局启动与显式重绑形成依赖阶段，普通获取不再构造依赖字典；清理 37 个无调用方的私有适配 |
+
+当前目录与接口以 `game/features/README.md` 及各功能 README 为准。模块仍随对局销毁，没有新增玩法 Autoload、全局事件总线或服务定位容器。
+
+### 行为与边界
+
+- 金矿信号用同一个带参数 Callable 查重；组件跟踪随节点退出释放，旧对局的延迟倒塌回调不能作用于新绑定。
+- 民兵查询本单位 owner 的主城；单位变形保留节点、creationNumber 和生命比例。主城升级仍使用原有升级规则与资源归属。
+- 事件入口只由 Director 调用一次，保留背包 GUI → 瞄准 → 选择器/热键的处理顺序。
+- `rebind_modules()` 更新替换后的依赖和 HUD/选择器信号，保留导航查询、预约、单位服务和瞄准状态。更换整张地图走原重开入口。
+- 命令卡、选中 HUD、生产面板另保留廉价身份比较，兼容现有局部依赖替换入口。
+- 没有改变寻路算法、AI 更新频率或画质。
+
+### 最终验证（Godot 4.7.2，无渲染）
+
+21 组功能回归通过，最终日志无 GDScript 解析/运行错误：
+
+| 测试 | 结果 |
+|---|---|
+| navigation_module / harvest_module | PASS，14 / 10 项 |
+| gold_mine_depleted / militia | PASS |
+| units_module / production_module / production_owners | PASS，13 / 14 / 45 项 |
+| match_input / interaction_module / command_input_module | PASS，12 / 16 / 8 项 |
+| command_card_module / path_debug_module | PASS，9 / 3 项 |
+| match_round2 / match_hotpath_cache / economy_supply | PASS，1098 / 77 / 7 项 |
+| group_move / pathfinding_integration | PASS |
+| build_module_game / unit_forms_game | PASS，13 / 27 项 |
+| module_bindings_game | PASS，28 项；100 次获取不重绑，替换选择器后每模块仅重绑一次 |
+| match_end_game --restart | PASS，23 项 |
+
+额外完成默认地图 60 秒实时 AI 对战冒烟检查（4548 帧），无脚本错误。此项仅验证模块接入，不作为优化前后性能对比；本批没有重跑有渲染或 30 分钟性能验收。沙箱日志仍有用户目录写入、系统证书读取提示，以及既有资产大小写警告。
+
+GameDirector 从本轮开始的 2708 行降至 2151 行。仍保留场景配置、相机、建造交互校验与部分 HUD 协调；没有为追求行数把剩余业务整体搬进另一个总管。

@@ -25,6 +25,8 @@ func configure(map: MapLoader, navigation: NavigationModule, session: GameSessio
 	_navigation = navigation
 	_session = session
 	_camera = camera
+	if is_instance_valid(tree_registry):
+		tree_registry.set_camera(camera)
 	_ensure_visual = ensure_visual
 	_expire_corpse = expire_corpse
 
