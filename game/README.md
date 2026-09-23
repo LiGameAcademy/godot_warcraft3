@@ -4,6 +4,8 @@
 
 首批目录迁移已完成，详见 [D1 实施与验证记录](../docs/architecture/GAMEPLAY_DIRECTORY_D1.md)。
 
+战斗模块后续已按行动、规则、场景服务和表现归位，见 [战斗模块目录](features/combat/README.md) 与 [迁移记录](../docs/architecture/GAMEPLAY_DIRECTORY_COMBAT.md)。`packages/` 仍未成为运行源码主目录，两个应用仍是验证壳，最终双产品迁移尚未完成。
+
 | 目录 | 当前职责 |
 |---|---|
 | `app/` | GameDirector：场景引用、模块装配及尚待拆分的应用协调 |

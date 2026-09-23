@@ -27,12 +27,19 @@ func _ready() -> void:
 		"res://game/features/match/",
 		"res://game/scripts/logic/command/unit_order.gd",
 		"res://game/scripts/logic/command/order_queue.gd",
+		"res://game/scripts/logic/combat/",
+		"res://game/scripts/data/combat_damage_table.gd",
+		"res://game/scripts/presentation/combat_projectile_shell.gd",
+		"res://game/scripts/presentation/damage_float_text.gd",
+		"res://game/scripts/presentation/unit_hit_flash.gd",
 	]
 	var roots: Array[String] = [
 		"res://game/app",
 		"res://game/match",
 		"res://game/entities",
 		"res://game/features",
+		"res://game/scripts",
+		"res://game/scenes",
 	]
 	for pattern in stale:
 		var hit := _scan_contains(roots, pattern)
