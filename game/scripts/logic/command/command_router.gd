@@ -47,6 +47,44 @@ var _find_build_site: Callable = Callable()				## 查找建筑站点
 ## Callable(building_node: Node3D) -> BuildSite
 var _find_build_site_by_node: Callable = Callable()		## 查找建筑站点
 
+## D2：统一请求入口。玩家 / AI / 触发器应优先走此方法；内部转发既有 issue_*。
+func submit_request(req: CommandRequest) -> CommandResult:
+	if req == null:
+		return CommandResult.fail(CommandRequest.ErrorCode.REJECTED, "null request")
+	if req.units.is_empty():
+		return CommandResult.fail(CommandRequest.ErrorCode.EMPTY_SELECTION, "empty units")
+	match req.kind:
+		UnitOrder.Kind.STOP:
+			var n := issue_stop(req.units, req.source)
+			return CommandResult.success(n) if n > 0 else CommandResult.fail(
+				CommandRequest.ErrorCode.NO_MOVERS, "stop: no movers"
+			)
+		UnitOrder.Kind.MOVE:
+			if req.goal_wc3 == Vector2.INF:
+				return CommandResult.fail(CommandRequest.ErrorCode.INVALID_GOAL, "move: no goal")
+			return CommandResult.from_move_dict(
+				issue_move_to_wc3(req.units, req.goal_wc3, req.source)
+			)
+		UnitOrder.Kind.ATTACK:
+			if req.target == null or not is_instance_valid(req.target):
+				return CommandResult.fail(CommandRequest.ErrorCode.INVALID_TARGET, "attack: bad target")
+			var na := issue_attack_target(req.units, req.target, req.source)
+			return CommandResult.success(na) if na > 0 else CommandResult.fail(
+				CommandRequest.ErrorCode.NO_MOVERS, "attack: none issued"
+			)
+		UnitOrder.Kind.ATTACK_MOVE:
+			if req.goal_wc3 == Vector2.INF:
+				return CommandResult.fail(CommandRequest.ErrorCode.INVALID_GOAL, "attack_move: no goal")
+			return CommandResult.from_move_dict(
+				issue_attack_move(req.units, req.goal_wc3, req.source)
+			)
+		_:
+			return CommandResult.fail(
+				CommandRequest.ErrorCode.REJECTED,
+				"kind not in D2 vertical slice"
+			)
+
+
 ## 配置
 func configure(
 	path_query: PathQuery,

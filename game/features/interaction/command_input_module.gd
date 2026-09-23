@@ -154,11 +154,11 @@ func issue_stop(source: int = UnitOrder.Source.UNKNOWN) -> bool:
 		return false
 	var selected: Array = _selected()
 	_do_interrupt(selected)
-	var n_stop := _command_router.issue_stop(selected, source)
-	if n_stop > 0:
-		_set_status("停止 · %d 单位" % n_stop)
+	var result := _command_router.submit_request(CommandRequest.stop_units(selected, source))
+	if result.ok and result.affected > 0:
+		_set_status("停止 · %d 单位" % result.affected)
 	_do_refresh_card()
-	return n_stop > 0
+	return result.ok and result.affected > 0
 
 
 func issue_hold(source: int = UnitOrder.Source.UNKNOWN) -> bool:
@@ -348,9 +348,11 @@ func issue_move_at_screen(screen_pos: Vector2, source: int) -> bool:
 		return true
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var goal_center := Vector2(hit.x * inv, -hit.z * inv)
-	var result := _command_router.issue_move_to_wc3(selected, goal_center, source)
-	var moved: int = int(result.get("moved", 0))
-	var failed: int = int(result.get("failed", 0))
+	var cmd := _command_router.submit_request(
+		CommandRequest.move_to(selected, goal_center, source)
+	)
+	var moved: int = cmd.moved
+	var failed: int = cmd.failed
 	if moved > 0:
 		_do_spawn_confirm(goal_center)
 	if moved > 0:
