@@ -1,6 +1,6 @@
 ---
 description: HUD/游戏 UI 优先 signal 事件驱动，禁止用 Director 每帧轮询刷表现
-globs: game/scripts/presentation/game_hud.gd,game/scripts/game_director.gd,game/scripts/logic/production/**/*.gd,game/scripts/logic/construction/**/*.gd,game/scenes/game_hud.tscn
+globs: game/scripts/presentation/game_hud.gd,game/app/game_director.gd,game/scripts/logic/production/**/*.gd,game/scripts/logic/construction/**/*.gd,game/scenes/game_hud.tscn
 alwaysApply: false
 ---
 

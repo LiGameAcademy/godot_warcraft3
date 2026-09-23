@@ -55,7 +55,7 @@ game/scripts/data/
              ability_attach_fx_presenter.gd  通用单位附着 FX
              brilliance_aura_presenter.gd    薄封装 → AttachFxPresenter
         │
-game/scripts/game_director.gd
+game/app/game_director.gd
   瞄准 → AbilityCastController.begin_cast → cast_resolved
   _ability_cast_context() 注入 map_root / unit_host / pipeline…
 ```

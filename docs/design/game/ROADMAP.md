@@ -51,7 +51,7 @@ E  触发器运行时（远期） 事件/条件/动作 VM + 默认 Melee 图挂�
 
 ### A. 游戏场景壳（本分支首要交付）
 
-- [x] 目录：`game/scenes/game_main.tscn` + `game/scripts/game_director.gd`
+- [x] 目录：`game/scenes/game_main.tscn` + `game/app/game_director.gd`
 - [x] 实例化共用 `scenes/map/map_root.tscn`
 - [x] 默认 `map_dir = res://assets/map-parsed/echoisles`
 - [x] `place_doodads / place_units / auto_load_on_ready = true`

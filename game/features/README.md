@@ -36,23 +36,20 @@ game/features/
     interaction_module.gd          互斥瞄准状态机 + 光标同步
     smart_command_module.gd        右键智能目标解析 / 闪选 / 文案
     command_input_module.gd        issue_*/begin_* 下发、瞄准点击与智能右键
-    match_input_controller.gd      场景输入分发与鼠标位置
-    logic/                        WorldPicker
+    input/                        MatchInputController / WorldPicker
     presentation/                 InteractionFeedback
   command_card/
     command_card_module.gd         命令卡刷卡、热键、二级菜单与 action 分发
   selection_hud/
     selection_hud_module.gd        肖像 vitals / buff / 选中详情
-  match/
-    match_bootstrap_module.gd      对局开局会话、本地/对手基地、镜头
-    match_lifecycle_module.gd      胜负接线、结算屏、重开
-    opponent_ai_module.gd          对手经营 / 军队 AI 挂接
   debug/
     path_debug_module.gd           选中单位寻路折线调试
     debug_tools_module.gd          GM 面板 / 性能叠层 / GM 动作
 ```
 
 ## 依赖约定
+
+对局模块已迁至 `game/match/`，应用入口位于 `game/app/`；见 [游戏目录索引](../README.md)。历史批次记录中的旧路径保留用于说明迁移过程。
 
 - `GameDirector` 是装配入口，创建模块、提供依赖并连接信号。模块不持有或查找 `GameDirector`。
 - 功能模块是当前对局的 Node，随对局销毁；不注册为 Autoload。

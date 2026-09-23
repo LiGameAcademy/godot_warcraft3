@@ -103,7 +103,7 @@ UnitSelector（中央：输入 / 2D 脚底圆 / 框选 / 悬停）
 | `scenes/selection/` | SelectionRing、UnitSelector |
 | `scripts/shared/selection/` | Selectable / Interactable / InteractionSetup、框选 |
 | `scripts/map/catalog/wc3_id_catalog.gd` | `selection_diameter_wc3` |
-| `game/scripts/game_director.gd` | `_setup_selector`、装配 |
+| `game/app/game_director.gd` | `_setup_selector`、装配 |
 | `game/scripts/logic/selection_info_builder.gd` | HUD 选中信息 |
 | `game/scripts/presentation/target_flash_fx.gd` | 右键目标闪 |
 | `game/scripts/presentation/move_confirm_fx.gd` | 命令确认（勿混） |
