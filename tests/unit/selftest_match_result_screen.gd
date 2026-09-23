@@ -1,6 +1,6 @@
 extends Node
 
-const Screen = preload("res://game/scripts/presentation/match_result_screen.gd")
+const Screen = preload("res://client/hud/match_result_screen.gd")
 var failures := 0
 var checks := 0
 var exit_events := 0

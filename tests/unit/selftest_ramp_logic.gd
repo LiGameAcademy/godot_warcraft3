@@ -2,7 +2,7 @@ extends SceneTree
 ## HiveWE 对齐落旗自测。
 ## godot --headless --path . -s res://tests/unit/selftest_ramp_logic.gd
 
-const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+const MapDocumentScript = preload("res://documents/map_document.gd")
 
 var failed := 0
 

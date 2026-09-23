@@ -1,0 +1,84 @@
+"""Copy canonical packages into independent Godot applications without rewriting references."""
+import argparse, hashlib, json, pathlib, shutil, subprocess
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+PACKAGES = {"game": ("foundation", "content", "map", "gameplay"), "map_editor": ("foundation", "content", "map")}
+
+def safe_path(app, relative):
+    relative = pathlib.Path(relative)
+    if relative.parts[0] not in {'addons', 'assets', 'tools', 'scripts', 'icon.svg'}:
+        raise ValueError(f"Not a generated resource: {relative}")
+    target = app / relative
+    if not target.resolve().is_relative_to(app.resolve()):
+        raise ValueError(f"Outside app: {target}")
+    for p in (target, *target.parents):
+        if p == app.parent: break
+        if p.is_symlink() or p.is_junction(): raise ValueError(f"Link in generated path: {p}")
+    return target
+
+def sync(name):
+    app = ROOT / 'apps' / name
+    manifest_path = app / '.workspace-sync.json'
+    previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else []
+    sources = {}
+    for package in PACKAGES[name]:
+        base = ROOT / 'packages' / package
+        for path in base.rglob('*'):
+            if path.is_file() and path.suffix not in {'.md', '.import'}:
+                sources[f'addons/rts_{package}/{path.relative_to(base).as_posix()}'] = path
+    plugins = ('godot_ability_system', 'panku_console') if name == 'game' else ()
+    for plugin in plugins:
+        base = ROOT / 'addons' / plugin
+        listed = subprocess.check_output(['git', '-C', str(base), 'ls-files', '-z']).decode().split('\0')
+        for rel in filter(None, listed):
+            if (base / rel).is_file(): sources[f'addons/{plugin}/{rel}'] = base / rel
+    assets = subprocess.check_output(['git','-C',str(ROOT),'ls-files','-z','--','assets','icon.svg']).decode().split('\0')
+    for rel in filter(None, assets):
+        p = ROOT / rel
+        if p.is_file() and p.suffix != '.import': sources[rel] = p
+    if name == 'game':
+        for p in (ROOT / 'tools/godot').rglob('*'):
+            if p.is_file(): sources[p.relative_to(ROOT).as_posix()] = p
+        for p in (ROOT / 'tools/asset-convert/src').rglob('*'):
+            if p.is_file() and p.suffix in {'.js', '.mjs'}:
+                sources[p.relative_to(ROOT).as_posix()] = p
+    # Binary scenes retain historical script paths. Godot .remap files redirect them
+    # without duplicate scripts/class_names or rewriting users' converted assets.
+    redirects = {}
+    model_base = ROOT / 'packages/map/presentation/wc3_model'
+    for source in model_base.glob('*.gd'):
+        target = 'res://addons/rts_map/presentation/wc3_model/' + source.name
+        for old in ['scripts/presentation/wc3_model/', 'scripts/map/presentation/']:
+            rel = old + source.name + '.remap'
+            redirects[rel] = ('[remap]\npath=' + json.dumps(target) + '\n').encode()
+    for row in previous:
+        if row['path'] not in sources and row['path'] not in redirects:
+            p = safe_path(app, row['path'])
+            if p.is_file(): p.unlink()
+    legacy = safe_path(app, 'addons/rts_runtime')
+    if legacy.exists():
+        for p in legacy.rglob('*'): safe_path(app, p.relative_to(app))
+        shutil.rmtree(legacy)
+    records = []
+    for relative, source in sorted(sources.items()):
+        target = safe_path(app, relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = source.read_bytes()
+        if not target.exists() or target.read_bytes() != data: target.write_bytes(data)
+        records.append({'path':relative, 'source':source.relative_to(ROOT).as_posix(), 'sha256':hashlib.sha256(data).hexdigest()})
+    for relative, data in sorted(redirects.items()):
+        target = safe_path(app, relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        records.append({'path':relative, 'generated':'legacy_model_redirect', 'sha256':hashlib.sha256(data).hexdigest()})
+    manifest_path.write_text(json.dumps(records, indent=2)+'\n', encoding='utf-8')
+    config = app / 'override.cfg'
+    if not config.exists(): config.write_text('[warcraft3]\nasset_root='+json.dumps((ROOT/'assets').as_posix())+'\n',encoding='utf-8')
+    print(f'{name}: synced {len(records)} files; packages={",".join(PACKAGES[name])}',flush=True)
+
+if __name__ == '__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--app',choices=('all',*PACKAGES),default='all');parser.add_argument('--test');args=parser.parse_args()
+    for name in PACKAGES if args.app=='all' else (args.app,):
+        sync(name)
+        if args.test:
+            from test_apps import prepare
+            prepare(name,args.test)

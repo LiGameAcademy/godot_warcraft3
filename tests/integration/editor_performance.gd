@@ -1,7 +1,7 @@
 extends Node
 ## Fixed workload, real renderer. Writes evidence; does not hide failed targets.
-const EditorScene := preload("res://editor/scenes/editor_main.tscn")
-const Document := preload("res://editor/scripts/map_document.gd")
+const EditorScene := preload("res://scenes/editor_main.tscn")
+const Document := preload("res://documents/map_document.gd")
 var results: Array = []
 
 

@@ -1,20 +1,77 @@
-; Minimal game app shell (D4). Run Sync-Packages.ps1 before opening.
-; Cutover: point Autoloads at addons/rts_* once packages fully migrated.
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
 [application]
 
 config/name="warcraft3_game"
-config/features=PackedStringArray("4.7", "Forward Plus")
 run/main_scene="res://boot.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.svg"
 
 [autoload]
-AssetProvider="*res://addons/rts_runtime/addons/asset_provider/asset_provider.gd"
-EditorI18n="*res://addons/rts_runtime/editor/ui/editor_i18n.gd"
-Wc3DefStore="*res://addons/rts_runtime/scripts/auto/wc3_def_store.gd"
-GameplayAbilitySystem="*res://addons/rts_runtime/addons/godot_ability_system/scripts/singletons/gameplay_ability_system.gd"
-DamageCalculator="*res://addons/rts_runtime/addons/godot_ability_system/scripts/singletons/damage_calculator.gd"
-TagManager="*res://addons/rts_runtime/addons/godot_ability_system/scripts/singletons/gameplay_tag_manager.gd"
-AbilityEventBus="*res://addons/rts_runtime/addons/godot_ability_system/scripts/singletons/ability_event_bus.gd"
-GameplayCueManager="*res://addons/rts_runtime/addons/godot_ability_system/scripts/singletons/gameplay_cue_manager.gd"
+
+LogPruner="*res://addons/rts_foundation/logger/log_pruner.gd"
+AssetProvider="*res://addons/rts_content/asset_provider/asset_provider.gd"
+EditorI18n="*res://addons/rts_content/localization/editor_i18n.gd"
+Wc3DefStore="*res://addons/rts_content/stores/wc3_def_store.gd"
+Panku="*res://addons/panku_console/console.tscn"
+PerfProbe="*res://client/debug/perf_probe.gd"
+GameplayAbilitySystem="*uid://u2lf4qtnkmft"
+DamageCalculator="*uid://b2jxgcjagrkdx"
+TagManager="*uid://crdi6238nttlg"
+AbilityEventBus="*uid://dly4cms3ynkwf"
+GameplayCueManager="*uid://b4t83autfu2j7"
+
+[debug]
+
+file_logging/enable_file_logging=true
+
+[display]
+
+window/subwindows/embed_subwindows=false
+window/per_pixel_transparency/allowed=true
+
+[dotnet]
+
+project/assembly_name="godot_warcraft3"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_ability_system/plugin.cfg", "res://addons/panku_console/plugin.cfg")
+
+[input]
+
+toggle_console={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194334,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+
+[internationalization]
+
+locale/locale_filter_mode=0
+locale/fallbacks=["en"]
+
+[panku]
+
+disable_on_release=true
+custom_default_config="res://config/panku_default_config.cfg"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"
+
+[warcraft3]
+
+log_config="res://config/debug_log.json"

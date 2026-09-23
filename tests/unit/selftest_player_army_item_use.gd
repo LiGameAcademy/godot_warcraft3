@@ -1,7 +1,7 @@
 extends Node
 
 ## PlayerArmyAI 用药：HP/MP 阈值触发 try_use；满血不耗；装备不主动用。
-const ArmyScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
+const ArmyScript = preload("res://addons/rts_gameplay/features/ai/logic/player_army_ai.gd")
 var failures := 0
 var checks := 0
 var enemies: Array[Node3D] = []

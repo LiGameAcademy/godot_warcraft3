@@ -1,7 +1,7 @@
 extends SceneTree
 ## 自测：MapDocument 空白图 / 笔刷 / JSON 保存。
 
-const MapDocumentScript := preload("res://editor/scripts/map_document.gd")
+const MapDocumentScript := preload("res://documents/map_document.gd")
 const LOST_TEMPLE := "res://assets/map-parsed/losttemple"
 
 
@@ -68,12 +68,12 @@ func _run() -> void:
 		push_error("expected dirty")
 		quit(1)
 		return
-	var err: int = doc.save_json("user://editor_maps/selftest_blank.json")
+	var err: int = doc.save_json("res://tmp/editor_maps/selftest_blank.json")
 	if err != OK:
 		push_error("save failed %s" % err)
 		quit(1)
 		return
-	if FileAccess.file_exists(LOST_TEMPLE.path_join("terrain-heightfield.json")):
+	if RuntimeAssets.file_exists(LOST_TEMPLE.path_join("terrain-heightfield.json")):
 		err = doc.load_from_map_dir(LOST_TEMPLE)
 		if err != OK or doc.is_empty():
 			push_error("load losttemple failed")

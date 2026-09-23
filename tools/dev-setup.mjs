@@ -74,7 +74,7 @@ function printHelp() {
   # 设好 GODOT 后，同命令会自动 bake .scn + 导 TownHall PE2/visuals
 
 完成后:
-  Godot 打开本仓库 → 运行 game/scenes/game_main.tscn（F6）
+  同步源码后打开 apps/game/project.godot 或 apps/map_editor/project.godot
 `);
 }
 
@@ -378,8 +378,9 @@ function printSummary(opts, gameDir) {
   console.log(`  [ ] （可选）assets/pe2-prefabs/ / assets/visuals/`);
   console.log("");
   console.log("打开 Godot 4.6 → 导入本仓库 → 运行:");
-  console.log("  game/scenes/game_main.tscn     # Echo Isles 对战壳（推荐）");
-  console.log("  editor/scenes/editor_main.tscn # 地图编辑器");
+  console.log("  python tools/workspace/sync_packages.py");
+  console.log("  apps/game/project.godot       # Echo Isles 对战");
+  console.log("  apps/map_editor/project.godot # 地图编辑器");
   console.log("");
   console.log("热键: S=Stop 选中单位 | F9=路径调试");
   if (gameDir) console.log(`经典客户端: ${gameDir}`);

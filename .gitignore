@@ -84,3 +84,15 @@ assets/model-experiments/
 
 # D4: generated package sync into app shells (run Sync-Packages.ps1)
 apps/*/addons/
+apps/*/assets/
+apps/*/icon.svg
+apps/*/.workspace-sync.json
+apps/*/override.cfg
+apps/*/tests/
+apps/game/tools/
+apps/*/scripts/
+apps/*/content/
+apps/*/.godot/
+apps/*/logs/
+apps/*/tmp/
+**/__pycache__/

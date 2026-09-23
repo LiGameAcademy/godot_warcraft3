@@ -9,7 +9,7 @@ func check(ok: bool, label: String) -> void:
 func _ready() -> void:
 	call_deferred("run")
 func run() -> void:
-	var game: Node = load("res://game/scenes/game_main.tscn").instantiate()
+	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.dev_spawn_archmage = false
 	director.dev_spawn_priest = false

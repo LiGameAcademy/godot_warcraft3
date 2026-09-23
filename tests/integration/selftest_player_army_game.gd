@@ -14,7 +14,7 @@ func _ready() -> void:
 
 func run() -> void:
 	# 战斗测试夹具单独布置四个步兵；经济生产闭环由 two_player_start 另测。
-	var game: Node = load("res://game/scenes/game_main.tscn").instantiate()
+	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.spawn_opponent_base = true
 	director.dev_spawn_archmage = false

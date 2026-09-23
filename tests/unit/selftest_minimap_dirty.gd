@@ -1,5 +1,5 @@
 extends SceneTree
-const Document := preload("res://editor/scripts/map_document.gd")
+const Document := preload("res://documents/map_document.gd")
 
 
 func _initialize() -> void:

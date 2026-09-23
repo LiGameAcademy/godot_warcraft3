@@ -37,7 +37,7 @@ func _run() -> void:
 	# 2) 用 export_model_scenes 跑一次 force 重烤
 	# 绕开 res:// — 直接 import gltf 路径
 	_report("\n\n=== 执行 export_model_scenes (--include FireBallMissile --force) ===")
-	var ExportScript := preload("res://scripts/tool/export_model_scenes.gd")
+	var ExportScript := preload("res://tools/godot/export_model_scenes.gd")
 	var export_tree := ExportScript.new()
 	export_tree._initialize()
 	_report("切换方案：手动模拟 export_model_scenes 跑 FireBallMissile force")

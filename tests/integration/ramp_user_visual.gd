@@ -1,7 +1,7 @@
 extends Node
 var failures := 0
 func _ready() -> void:
-	var doc = preload("res://editor/scripts/map_document.gd").new()
+	var doc = preload("res://documents/map_document.gd").new()
 	var args := OS.get_cmdline_user_args()
 	var map_path := args[0] if args.size() > 0 else "res://tests/fixtures/editor/ramp-user-111.wc3map.json"
 	if doc.load_json(map_path) != OK:
@@ -38,7 +38,7 @@ func _ready() -> void:
 	camera.position = center + (Vector3(3.5, 5, 4) if map_path.contains("222") else Vector3(3.5, 5, -4))
 	camera.look_at(center)
 	camera.current = true
-	var map: MapLoader = preload("res://scenes/map/map_root.tscn").instantiate()
+	var map: MapLoader = preload("res://addons/rts_map/scenes/map/map_root.tscn").instantiate()
 	map.auto_load_on_ready = false
 	map.place_units = false
 	map.place_doodads = false

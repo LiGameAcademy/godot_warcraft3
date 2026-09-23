@@ -1,6 +1,6 @@
 extends SceneTree
 
-const Rules = preload("res://game/scripts/data/melee_game_constants.gd")
+const Rules = preload("res://addons/rts_gameplay/catalog/melee_game_constants.gd")
 var failures := 0
 var checks := 0
 

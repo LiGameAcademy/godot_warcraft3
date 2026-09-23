@@ -16,7 +16,7 @@ func _init() -> void:
 
 
 func _make_blank() -> Wc3Heightfield:
-	var doc_script: GDScript = load("res://editor/scripts/map_document.gd") as GDScript
+	var doc_script: GDScript = load("res://documents/map_document.gd") as GDScript
 	var doc = doc_script.new()
 	doc.create_blank(5)
 	return doc.heightfield

@@ -20,7 +20,7 @@ Wc3Pe2Particles.apply_sequence(root, "Stand")
 
 ```gdscript
 # ❌ 仅为绕过「未声明」而 preload 同项目 class_name 脚本
-const _Resolver := preload("res://scripts/map/presentation/anim_sequence_resolver.gd")
+const _Resolver := preload("res://addons/rts_map/presentation/anim_sequence_resolver.gd")
 _Resolver.sequence_name(...)
 ```
 

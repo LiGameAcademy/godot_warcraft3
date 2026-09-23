@@ -1,5 +1,5 @@
 extends SceneTree
-const Stitcher := preload("res://scripts/map/presentation/cliff/wc3_cliff_stitcher.gd")
+const Stitcher := preload("res://addons/rts_map/presentation/cliff/wc3_cliff_stitcher.gd")
 var failures := 0
 func check(ok: bool, message: String) -> void:
 	if not ok:
@@ -8,7 +8,7 @@ func check(ok: bool, message: String) -> void:
 func _initialize() -> void:
 	call_deferred("run")
 func run() -> void:
-	var doc = preload("res://editor/scripts/map_document.gd").new()
+	var doc = preload("res://documents/map_document.gd").new()
 	doc.create_from_options({"width": 4, "height": 4, "main_tileset": "L"})
 	var hf: Wc3Heightfield = doc.heightfield
 	hf.center_offset = Vector2.ZERO

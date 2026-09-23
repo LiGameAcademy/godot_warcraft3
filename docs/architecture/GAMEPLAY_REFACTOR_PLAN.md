@@ -1,6 +1,6 @@
 # Gameplay 分层与项目目录重构实施策划
 
-日期：2026-09-23。实施状态更新于 2026-09-24：D1 首批目录及战斗模块归位已实施；双应用目前仍是验证壳，packages 尚未承载正式运行源码，最终目录未完成。见 [D1 记录](GAMEPLAY_DIRECTORY_D1.md)、[战斗目录记录](GAMEPLAY_DIRECTORY_COMBAT.md) 和 [审查修复记录](REVIEW_FIXES_2026_09_23.md)。
+日期：2026-09-23。2026-09-24 更新：完整源码目录已迁入 apps/packages，根项目入口已退役；当前实施记录见 [双产品目录迁移验收](DIRECTORY_CUTOVER_2026_09_24.md)。下文保留原阶段策划与历史路径。
 
 前置设计：[架构审查与双产品目标](GAMEPLAY_TARGET_ARCHITECTURE.md)。本文记录讨论后确定的四方面职责，并明确下一轮目录迁移的边界、批次和验收；已有四波次实现历史仍见 [FEATURE_MODULE_REFACTOR.md](FEATURE_MODULE_REFACTOR.md)。
 

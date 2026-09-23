@@ -18,7 +18,7 @@ func _run() -> void:
 		push_error("This test requires a real renderer: dummy MultiMesh readback does not report transforms.")
 		get_tree().quit(1)
 		return
-	var scene = preload("res://editor/scenes/editor_main.tscn").instantiate()
+	var scene = preload("res://scenes/editor_main.tscn").instantiate()
 	get_tree().root.add_child(scene)
 	var editor = scene.get_node("Editor")
 	while editor._tool_palettes.is_empty():

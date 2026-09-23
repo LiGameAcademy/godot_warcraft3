@@ -1,7 +1,7 @@
 extends SceneTree
 ## 自测：brazierOmni PE2 旁路 JSON 可挂载到 GLB 实例。
 
-const _Pe2 := preload("res://scripts/map/presentation/effects/wc3_pe2_particles.gd")
+const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
 
 
 func _initialize() -> void:

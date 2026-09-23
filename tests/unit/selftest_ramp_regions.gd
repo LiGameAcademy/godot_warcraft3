@@ -1,6 +1,6 @@
 extends SceneTree
-const Regions = preload("res://scripts/map/logic/ramp/wc3_ramp_regions.gd")
-const Plan = preload("res://scripts/map/logic/ramp/wc3_ramp_surface_plan.gd")
+const Regions = preload("res://addons/rts_map/logic/ramp/wc3_ramp_regions.gd")
+const Plan = preload("res://addons/rts_map/logic/ramp/wc3_ramp_surface_plan.gd")
 var failures := 0
 
 func check(condition: bool, message: String) -> void:
@@ -26,7 +26,7 @@ func _run() -> void:
 	for key in keys:
 		reverse[key] = true
 	check(Regions.build(reverse, {Vector2i.ZERO: true})[0].cells == regions[0].cells, "Membership independent of traversal and seed")
-	var doc = preload("res://editor/scripts/map_document.gd").new()
+	var doc = preload("res://documents/map_document.gd").new()
 	check(doc.load_json("res://tests/fixtures/editor/ramp-user-222.wc3map.json") == OK, "Load 222")
 	var hf: Wc3Heightfield = doc.heightfield
 	var flags := hf.flags_packed.duplicate()

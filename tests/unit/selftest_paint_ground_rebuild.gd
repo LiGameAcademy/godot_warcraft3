@@ -3,7 +3,7 @@ extends SceneTree
 ## godot --headless -s res://tests/unit/selftest_paint_ground_rebuild.gd
 
 
-const DocScript := preload("res://editor/scripts/map_document.gd")
+const DocScript := preload("res://documents/map_document.gd")
 
 
 func _init() -> void:
@@ -47,7 +47,7 @@ func _test_paint_then_rebuild() -> int:
 	layer.add_child(ground)
 	layer._ground = ground
 
-	var ctx = (load("res://scripts/map/presentation/map_build_context.gd") as GDScript).create(
+	var ctx = (load("res://addons/rts_map/presentation/map_build_context.gd") as GDScript).create(
 		"res://",
 		doc.as_build_dict(),
 		{},

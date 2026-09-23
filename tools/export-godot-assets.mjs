@@ -137,7 +137,7 @@ function main() {
   if (!opts.skipBake) {
     console.log("\n=== bake GLB → .scn（含 PE2）===");
     code = runGodotScript({
-      scriptRes: "res://scripts/tool/export_model_scenes.gd",
+      scriptRes: "res://tools/godot/export_model_scenes.gd",
       userArgs: ua,
       godot,
     });
@@ -147,7 +147,7 @@ function main() {
   if (!opts.skipPe2) {
     console.log("\n=== [deprecated] export PE2 prefabs ===");
     code = runGodotScript({
-      scriptRes: "res://scripts/tool/export_pe2_scenes.gd",
+      scriptRes: "res://tools/godot/export_pe2_scenes.gd",
       userArgs: ua,
       godot,
     });
@@ -157,7 +157,7 @@ function main() {
   if (!opts.skipVisuals) {
     console.log("\n=== export visuals ===");
     code = runGodotScript({
-      scriptRes: "res://scripts/tool/export_visual_scenes.gd",
+      scriptRes: "res://tools/godot/export_visual_scenes.gd",
       userArgs: ua,
       godot,
     });

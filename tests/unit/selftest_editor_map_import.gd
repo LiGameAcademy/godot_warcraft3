@@ -1,6 +1,6 @@
 extends SceneTree
-const Doc := preload("res://editor/scripts/map_document.gd")
-const MapFile := preload("res://editor/scripts/map_file.gd")
+const Doc := preload("res://documents/map_document.gd")
+const MapFile := preload("res://documents/map_file.gd")
 var failed := 0
 var fixture := "res://tmp/editor-import-" + str(Time.get_ticks_usec())
 

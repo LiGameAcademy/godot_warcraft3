@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://by84p6a5ibic2"]
 
 [ext_resource type="PackedScene" path="res://assets/asset-converted/Buildings/Human/AltarOfKings/AltarOfKings.scn" id="1_base"]
-[ext_resource type="Script" uid="uid://bo6fqj0r1uus4" path="res://scripts/map/presentation/model_visual_sync.gd" id="2_sync"]
+[ext_resource type="Script" uid="uid://bo6fqj0r1uus4" path="res://addons/rts_map/presentation/model_visual_sync.gd" id="2_sync"]
 
 [node name="Buildings_Human_AltarOfKings_AltarOfKings_mdx" unique_id=683668092 instance=ExtResource("1_base")]
 script = ExtResource("2_sync")

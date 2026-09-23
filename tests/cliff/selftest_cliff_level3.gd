@@ -2,7 +2,7 @@ extends SceneTree
 ## 复现：从层 2 升到层 5（+3）后 cliff_slices / 缺模 / 是否报错。
 
 
-const DocScript := preload("res://editor/scripts/map_document.gd")
+const DocScript := preload("res://documents/map_document.gd")
 
 
 func _initialize() -> void:

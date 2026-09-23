@@ -1,5 +1,5 @@
 extends Node
-class DragBrush extends "res://editor/scripts/tools/unit_brush.gd":
+class DragBrush extends "res://tools/unit_brush.gd":
 	var hit := Vector3.ZERO
 	func _ground_at(_screen: Vector2) -> Vector3:
 		return hit
@@ -9,7 +9,7 @@ func check(ok: bool, label: String) -> void:
 		failures += 1
 		push_error(label)
 func _ready() -> void:
-	var scene = preload("res://editor/scenes/editor_main.tscn").instantiate()
+	var scene = preload("res://scenes/editor_main.tscn").instantiate()
 	add_child(scene)
 	var editor = scene.get_node("Editor")
 	while editor._tool_palettes.is_empty():

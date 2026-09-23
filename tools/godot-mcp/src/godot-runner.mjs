@@ -8,6 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PROJECT_ROOT,
+  GAME_PROJECT_ROOT,
+  syncWorkspace,
   findGodotExecutable,
 } from "../../lib/godot-cli.mjs";
 
@@ -16,13 +18,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @returns {string} */
 export function defaultGodotLogPath() {
   const app = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  return path.join(app, "Godot", "app_userdata", "godot_warcraft3", "logs", "godot.log");
+  return path.join(app, "Godot", "app_userdata", "warcraft3_game", "logs", "godot.log");
 }
 
 /** @returns {{ godot: string, projectRoot: string }} */
 export function resolveEnv() {
   const godot = findGodotExecutable(process.env.GODOT || process.env.GODOT_BIN || "");
-  return { godot, projectRoot: PROJECT_ROOT };
+  return { godot, projectRoot: GAME_PROJECT_ROOT };
 }
 
 /**
@@ -44,7 +46,10 @@ export function runGodot({ args, timeoutMs = 300_000, godot = "" }) {
     };
   }
 
-  const fullArgs = ["--headless", "--path", PROJECT_ROOT, ...args];
+  const testArg = args.find((arg) => arg.startsWith("res://tests/")) || "";
+  const app = /editor|map_document/.test(testArg) ? "map_editor" : "game";
+  syncWorkspace(app, testArg.replace("res://tests/", ""));
+  const fullArgs = ["--headless", "--path", path.join(PROJECT_ROOT, "apps", app), ...args];
   const started = Date.now();
   const r = spawnSync(bin, fullArgs, {
     cwd: PROJECT_ROOT,

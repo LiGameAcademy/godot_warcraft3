@@ -1,6 +1,6 @@
 extends SceneTree
-const Doc := preload("res://editor/scripts/map_document.gd")
-const Sculpt := preload("res://scripts/map/logic/terrain/height_sculpt.gd")
+const Doc := preload("res://documents/map_document.gd")
+const Sculpt := preload("res://addons/rts_map/logic/terrain/height_sculpt.gd")
 var failures := 0
 
 

@@ -5,9 +5,9 @@ func check(ok: bool, label: String) -> void:
 		failures += 1
 		push_error(label)
 func _ready() -> void:
-	var editor = preload("res://editor/ui/editor_inspect_window.tscn").instantiate()
+	var editor = preload("res://ui/editor_inspect_window.tscn").instantiate()
 	add_child(editor)
-	var game = preload("res://game/hud/game_minimap.tscn").instantiate()
+	var game = preload("res://client/hud/game_minimap.tscn").instantiate()
 	add_child(game)
 	var image := Image.create(128, 64, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0.2, 0.5, 0.3))

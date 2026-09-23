@@ -1,5 +1,5 @@
 extends Node
-const EditorScene := preload("res://editor/scenes/editor_main.tscn")
+const EditorScene := preload("res://scenes/editor_main.tscn")
 var failed := 0
 
 
@@ -45,7 +45,7 @@ func _run() -> void:
 	check(editor.map_root.get_heightfield_dict().heights == after, "rendered map receives sculpted heightfield")
 	var path := "res://tmp/editor-height-acceptance.wc3map.json"
 	check(doc.save_json(path) == OK, "save sculpted map")
-	var restored = preload("res://editor/scripts/map_document.gd").new()
+	var restored = preload("res://documents/map_document.gd").new()
 	check(restored.load_json(path) == OK and restored.heightfield.heights == after, "sculpted heights survive reopen")
 	print("selftest_editor_height: %s (%d failures)" % ["PASS" if failed == 0 else "FAIL", failed])
 	get_tree().quit(0 if failed == 0 else 1)

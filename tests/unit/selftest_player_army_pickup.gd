@@ -1,7 +1,7 @@
 extends Node
 
 ## PlayerArmyAI 拾取：空位英雄发 PICKUP；满包/非白名单/已认领不发；进攻态不绕路。
-const ArmyScript = preload("res://game/scripts/logic/ai/player_army_ai.gd")
+const ArmyScript = preload("res://addons/rts_gameplay/features/ai/logic/player_army_ai.gd")
 var failures := 0
 var checks := 0
 var enemies: Array[Node3D] = []

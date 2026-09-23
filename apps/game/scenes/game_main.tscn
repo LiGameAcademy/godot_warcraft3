@@ -1,0 +1,58 @@
+[gd_scene format=3 uid="uid://b20kj6oms7qoi"]
+
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://addons/rts_map/scenes/map/map_root.tscn" id="1_map"]
+[ext_resource type="PackedScene" uid="uid://ss6bd7p6xnoa" path="res://scenes/rts_camera.tscn" id="2_cam"]
+[ext_resource type="Script" uid="uid://cdwscnq1co36x" path="res://app/game_director.gd" id="3_director"]
+[ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://client/interaction/wc3_game_cursor.gd" id="4_cursor"]
+[ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://scenes/game_hud.tscn" id="5_hud"]
+[ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://client/selection/unit_selector.tscn" id="6_sel"]
+[ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://addons/rts_gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
+[ext_resource type="PackedScene" path="res://scenes/game_loading_screen.tscn" id="8_loading"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.08, 0.1, 0.14, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.6, 0.7, 1)
+ambient_light_energy = 0.85
+
+[node name="GameMain" type="Node3D" unique_id=1991182570]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=601131783]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=764742783]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
+light_energy = 1.1
+
+[node name="MapRoot" parent="." unique_id=1052640455 instance=ExtResource("1_map")]
+map_dir = "res://assets/map-parsed/echoisles"
+place_units = true
+show_start_locations = false
+show_drop_rings = false
+show_editor_helpers = false
+status_path = NodePath("")
+show_ramp_debug = false
+show_pathing_ground = true
+
+[node name="RtsCamera" parent="." unique_id=1187867648 instance=ExtResource("2_cam")]
+
+[node name="GameHud" parent="." unique_id=553656308 instance=ExtResource("5_hud")]
+
+[node name="HealthBarManager" type="CanvasLayer" parent="." unique_id=635129444]
+layer = 8
+script = ExtResource("7_hpbar")
+
+[node name="UnitSelector" parent="." unique_id=1109850831 instance=ExtResource("6_sel")]
+
+[node name="GameDirector" type="Node" parent="." unique_id=528822564]
+script = ExtResource("3_director")
+spawn_opponent_base = true
+enable_opponent_economy = true
+enable_opponent_army = true
+
+[node name="GameCursor" type="Node" parent="." unique_id=1503412235]
+script = ExtResource("4_cursor")
+
+[node name="GameLoadingScreen" parent="." unique_id=1817649303 instance=ExtResource("8_loading")]
+map_title = "Echo Isles"

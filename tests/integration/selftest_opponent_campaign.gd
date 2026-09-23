@@ -35,7 +35,7 @@ func _ready() -> void:
 
 func run() -> void:
 	# 正常对战开局：不生成测试军队、不补资源、不加速或直接下作战命令。
-	var game: Node = load("res://game/scenes/game_main.tscn").instantiate()
+	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.spawn_opponent_base = true
 	director.enable_opponent_economy = true

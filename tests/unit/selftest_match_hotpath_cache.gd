@@ -51,7 +51,7 @@ func _ready() -> void:
 	bars._bar_world_pos(entry, unit)
 	check(bars.resolves == 4 and bars.bounds_queries == 3, "model replacement drops freed anchor and rebuilds fallback")
 
-	var chip := preload("res://game/hud/unit_combat_stat_chip.tscn").instantiate() as UnitCombatStatChip
+	var chip := preload("res://client/hud/unit_combat_stat_chip.tscn").instantiate() as UnitCombatStatChip
 	add_child(chip)
 	var image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
 	image.fill(Color.RED)

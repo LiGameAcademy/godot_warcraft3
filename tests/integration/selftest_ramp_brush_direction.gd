@@ -1,6 +1,6 @@
 extends Node
-const Document := preload("res://editor/scripts/map_document.gd")
-class DirectionBrush extends "res://editor/scripts/tools/terrain_brush.gd":
+const Document := preload("res://documents/map_document.gd")
+class DirectionBrush extends "res://tools/terrain_brush.gd":
 	var direction := Vector2i(0, 1)
 	func _pick_vertex(_pos: Vector2) -> Vector2i:
 		return Vector2i(8, 8)
@@ -65,7 +65,7 @@ func _ready() -> void:
 	check(PackedInt32Array(restored.heightfield.flags_packed) == PackedInt32Array(second), "reopen retains ramp flags")
 	check(PackedInt32Array(restored.heightfield.cliff_textures) == PackedInt32Array(original_textures), "save/reopen preserves cliff textures")
 	brush.queue_free()
-	var map: MapLoader = preload("res://scenes/map/map_root.tscn").instantiate()
+	var map: MapLoader = preload("res://addons/rts_map/scenes/map/map_root.tscn").instantiate()
 	map.auto_load_on_ready = false
 	map.place_units = false
 	map.place_doodads = false

@@ -1,6 +1,6 @@
 extends Node
 
-const VictoryRules = preload("res://game/scripts/logic/melee_victory_rules.gd")
+const VictoryRules = preload("res://addons/rts_gameplay/match/rules/melee_victory_rules.gd")
 
 var failures := 0
 var checks := 0

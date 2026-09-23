@@ -1,5 +1,7 @@
 # godot_warcraft3 文档
 
+当前双产品入口与源码目录见 [完整目录迁移记录](architecture/DIRECTORY_CUTOVER_2026_09_24.md)；同步和验证见 [workspace 工具](../tools/workspace/README.md)。历史文档中的旧路径可通过 `tools/workspace/source-layout.json` 查找新位置。
+
 > Godot 4.6 复刻《魔兽争霸 3》玩法的实验项目。  
 >
 > 总纲：[architecture/LAYERED_ARCHITECTURE.md](architecture/LAYERED_ARCHITECTURE.md)  

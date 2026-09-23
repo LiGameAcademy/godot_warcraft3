@@ -9,7 +9,7 @@ func check(ok: bool, message: String) -> void:
 func _initialize() -> void:
 	call_deferred("run")
 func run() -> void:
-	var doc = preload("res://editor/scripts/map_document.gd").new()
+	var doc = preload("res://documents/map_document.gd").new()
 	doc.create_from_options({"width": 4, "height": 4, "main_tileset": "L", "ground_tilesets": ["Ldrt", "Lgrs"], "cliff_tilesets": ["CLdi", "CLgr"]})
 	var hf: Wc3Heightfield = doc.heightfield
 	var indices := [6, 7, 11, 12]

@@ -2,7 +2,7 @@ extends SceneTree
 ## 诊断：草地崖周围边界格的四角纹理与 atlas mask。
 
 
-const DocScript := preload("res://editor/scripts/map_document.gd")
+const DocScript := preload("res://documents/map_document.gd")
 
 
 func _initialize() -> void:

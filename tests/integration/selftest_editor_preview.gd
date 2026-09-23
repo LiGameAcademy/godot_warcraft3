@@ -1,5 +1,5 @@
 extends Node
-const EditorScene := preload("res://editor/scenes/editor_main.tscn")
+const EditorScene := preload("res://scenes/editor_main.tscn")
 var failed := 0
 
 

@@ -422,7 +422,7 @@ function main() {
   }
 
   log("=== ✅ 资源就绪 ===");
-  log("下一步：godot --editor --path .");
+  log("下一步：python tools/workspace/sync_packages.py，然后 godot --editor --path apps/game");
   plog.endSession({ ok: true });
 }
 

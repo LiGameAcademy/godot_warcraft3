@@ -1,5 +1,5 @@
 extends SceneTree
-const Replacement := preload("res://scripts/map/presentation/doodad_texture.gd")
+const Replacement := preload("res://addons/rts_map/presentation/doodad_texture.gd")
 const SUMMER := "ReplaceableTextures/LordaeronTree/LordaeronSummerTree.png"
 const WINTER := "ReplaceableTextures/LordaeronTree/LordaeronWinterTree.png"
 var failures := 0

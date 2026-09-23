@@ -3,7 +3,7 @@ extends SceneTree
 ## godot --headless -s res://tests/unit/selftest_editor_commands.gd
 
 
-const DocScript := preload("res://editor/scripts/map_document.gd")
+const DocScript := preload("res://documents/map_document.gd")
 
 
 func _init() -> void:

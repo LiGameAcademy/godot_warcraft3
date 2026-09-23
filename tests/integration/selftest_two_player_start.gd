@@ -19,7 +19,7 @@ func run() -> void:
 	var free := MeleeBootstrap.available_slocs([a, duplicate, b, b], [a])
 	check(free.size() == 1 and free[0] == b, "按坐标排除已占和重复出生点")
 	check(MeleeBootstrap.available_slocs([a, duplicate], [a]).is_empty(), "无剩余出生点不会重叠分配")
-	var game: Node = load("res://game/scenes/game_main.tscn").instantiate()
+	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.spawn_opponent_base = true
 	director.dev_spawn_archmage = false

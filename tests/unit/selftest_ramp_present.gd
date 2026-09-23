@@ -84,7 +84,7 @@ func _test_dig_and_entrance_plans() -> void:
 
 func _test_footprint_both_tiles_dug() -> void:
 	# CliffTrans 占 2 格：崖格 + 探出格；dig 必须两格都挖（探出格无 cliff，只靠 romp/footprint）
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 16,
@@ -143,7 +143,7 @@ func _test_footprint_both_tiles_dug() -> void:
 
 func _test_entrance_height_boost() -> void:
 	# 手工入口：四角 FLAG_RAMP + 层差；低侧两角应 boost。
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 8,
@@ -187,7 +187,7 @@ func _test_entrance_height_boost() -> void:
 
 func _test_l_recess_entrance() -> void:
 	# L 高台内角 + 两臂 + L 补心：三高一低格应作入口（undig + 低角 +0.5），形成凹陷坡。
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 20,
@@ -216,7 +216,7 @@ func _test_l_recess_entrance() -> void:
 
 func _test_l_recess_not_fake_diagonal() -> void:
 	# L 凹槽 2×2 四格全部 undig+藏崖；只 boost 凹陷低角 1 个（不把三兄弟抬成伪对角）
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 20,
@@ -246,7 +246,7 @@ func _test_l_recess_not_fake_diagonal() -> void:
 func _test_outer_corner_l_arm_undig() -> void:
 	# 小高台 + L 臂旗落在邻边（外角格自身 nr=0）→ 外角碗 undig/清 dig/藏崖
 	# 回归用户场景：entrances=0 导致藏崖灰缝
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 32,
@@ -275,7 +275,7 @@ func _test_outer_corner_l_arm_undig() -> void:
 
 func _test_widen_keeps_footprint_dug() -> void:
 	# 回归：先单列再邻列加宽 → 入口判定变真，但原 CliffTrans footprint 仍必须挖开
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 16,
@@ -326,7 +326,7 @@ func _test_widen_keeps_footprint_dug() -> void:
 
 func _test_l_corner_clifftrans() -> void:
 	# 双臂 L 转角：中格被另一臂污染时仍应匹配 LABH/BALH（凹陷坡身）
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 20,
@@ -355,7 +355,7 @@ func _test_l_corner_clifftrans() -> void:
 
 func _test_no_clifftrans_keeps_ground() -> void:
 	# 无 CliffTrans：L 碗 2×2 四格 undig；凹槽 hide；dig=0
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 20,
@@ -427,7 +427,7 @@ func _test_builder_from_ramp_placements() -> void:
 
 func _test_vertical_ramp_footprint() -> void:
 	# 垂直坡 TAG 的 mesh 在解旋后应沿 map-Y 拉长（Godot -Z），而非 map-X
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -485,7 +485,7 @@ func _test_vertical_ramp_footprint() -> void:
 func _test_hide_cliff_piece_by_slice() -> void:
 	# 不依赖 Paint（Paint 只认层差 1）；手工摆一层高崖 + 一条 footprint 坡。
 	# 跨度 4 → 两块叠段 base=2 / base=4；坡 base=2 → 只藏下层。
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -550,7 +550,7 @@ func _test_hide_cliff_piece_by_slice() -> void:
 
 func _test_filter_cliff_placements() -> void:
 	# filter 后：下层 placement 消失、上层保留（挂模前跳过，非零缩放）
-	const MapDocumentScript = preload("res://editor/scripts/map_document.gd")
+	const MapDocumentScript = preload("res://documents/map_document.gd")
 	var doc = MapDocumentScript.new()
 	doc.create_from_options({
 		"width": 12,
@@ -602,7 +602,7 @@ func _test_filter_cliff_placements() -> void:
 func _test_completed_outer_corners() -> void:
 	for dx in [-1, 1]:
 		for dy in [-1, 1]:
-			var doc = preload("res://editor/scripts/map_document.gd").new()
+			var doc = preload("res://documents/map_document.gd").new()
 			doc.create_from_options({"width": 16, "height": 16, "main_tileset": "L", "ground_tilesets": ["Ldrt"], "cliff_tilesets": ["CLdi"]})
 			var hf: Wc3Heightfield = doc.heightfield
 			for y in range(hf.height):

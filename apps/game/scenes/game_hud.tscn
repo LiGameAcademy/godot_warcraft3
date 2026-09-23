@@ -1,0 +1,540 @@
+[gd_scene load_steps=6 format=3 uid="uid://jswtl3uxmvo7"]
+
+[ext_resource type="Script" uid="uid://c850mpebl5u1v" path="res://client/hud/game_hud.gd" id="1_hud"]
+[ext_resource type="PackedScene" uid="uid://de0w2wwx4cytc" path="res://client/hud/game_minimap.tscn" id="2_minimap"]
+[ext_resource type="PackedScene" uid="uid://b1ihsk6ogfgxw" path="res://client/hud/unit_portrait_view.tscn" id="3_portrait"]
+[ext_resource type="PackedScene" path="res://client/hud/unit_combat_stat_chip.tscn" id="4_stat_chip"]
+[ext_resource type="PackedScene" path="res://client/hud/unit_buff_strip.tscn" id="5_buff_strip"]
+
+[node name="GameHud" type="CanvasLayer" unique_id=1807320661]
+layer = 10
+script = ExtResource("1_hud")
+
+[node name="Root" type="Control" parent="." unique_id=985632839]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopBar" type="PanelContainer" parent="Root" unique_id=180870470]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -308.0
+offset_bottom = 36.0
+grow_horizontal = 0
+
+[node name="ResRow" type="HBoxContainer" parent="Root/TopBar" unique_id=662170213]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 2
+
+[node name="Gold" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=568527752]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="GoldCaption" type="Label" parent="Root/TopBar/ResRow/Gold" unique_id=476008702]
+layout_mode = 2
+text = "金"
+
+[node name="GoldValue" type="Label" parent="Root/TopBar/ResRow/Gold" unique_id=75815061]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+
+[node name="Lumber" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=799264023]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LumberCaption" type="Label" parent="Root/TopBar/ResRow/Lumber" unique_id=1154707519]
+layout_mode = 2
+text = "木"
+
+[node name="LumberValue" type="Label" parent="Root/TopBar/ResRow/Lumber" unique_id=493352544]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+
+[node name="Food" type="HBoxContainer" parent="Root/TopBar/ResRow" unique_id=1848231926]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="FoodCaption" type="Label" parent="Root/TopBar/ResRow/Food" unique_id=1596925424]
+layout_mode = 2
+text = "人口"
+
+[node name="FoodValue" type="Label" parent="Root/TopBar/ResRow/Food" unique_id=1325027006]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0/0"
+
+[node name="HintLabel" type="Label" parent="Root" unique_id=366636799]
+unique_name_in_owner = true
+layout_mode = 1
+offset_right = 708.0
+offset_bottom = 23.0
+text = "LMB 点选/框选 · RMB 移动 · WASD/边缘滚 · 中键旋转 · 滚轮缩放 · F3 性能"
+
+[node name="DebugStatusLabel" type="Label" parent="Root" unique_id=105278050]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 216.0
+offset_top = -48.0
+offset_right = 720.0
+offset_bottom = -28.0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.75, 0.78, 0.7, 0.85)
+theme_override_font_sizes/font_size = 12
+mouse_filter = 2
+text = ""
+
+[node name="ActivityFeed" type="VBoxContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -420.0
+offset_right = 220.0
+offset_bottom = -208.0
+grow_vertical = 0
+theme_override_constants/separation = 4
+mouse_filter = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="Root" unique_id=709350863]
+custom_minimum_size = Vector2(192, 192)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -200.0
+offset_right = 200.0
+offset_bottom = -8.0
+grow_vertical = 0
+
+[node name="MinimapPanel" type="PanelContainer" parent="Root/MarginContainer" unique_id=1317276697]
+custom_minimum_size = Vector2(176, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Minimap" parent="Root/MarginContainer/MinimapPanel" unique_id=1263699207 instance=ExtResource("2_minimap")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MarginContainer2" type="MarginContainer" parent="Root" unique_id=325332713]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -240.0
+offset_top = -168.0
+offset_right = 240.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="InfoFrame" type="PanelContainer" parent="Root/MarginContainer2" unique_id=1451336587]
+layout_mode = 2
+
+[node name="CenterPanel" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame" unique_id=2040397340]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="InfoBody" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=2040397341]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="PortraitCol" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody" unique_id=2040397342]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="PortraitHost" type="CenterContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol" unique_id=2040397343]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 96)
+layout_mode = 2
+
+[node name="UnitPortraitView" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHost" unique_id=2040397399 instance=ExtResource("3_portrait")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PortraitHpRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 14)
+layout_mode = 2
+
+[node name="PortraitHpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="PortraitHpLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.95, 0.98, 0.95, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
+
+[node name="PortraitManaRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(96, 12)
+layout_mode = 2
+
+[node name="PortraitManaBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="PortraitManaLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.9, 0.93, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
+
+[node name="DetailCol" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody" unique_id=2040397346]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="UnitName" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=1610151325]
+unique_name_in_owner = true
+layout_mode = 2
+text = "—"
+
+[node name="UnitHp" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166218]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="AttackChip" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("4_stat_chip")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ArmorChip" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("4_stat_chip")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PortraitXpRow" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PortraitXpBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="PortraitXpLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.98, 0.94, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+text = ""
+
+[node name="SpecialLines" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/InfoBody/DetailCol" unique_id=951166221]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 2
+
+[node name="MultiSelectStrip" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=2040397347]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="BuildProgressRow" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1451336588]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="BuildProgressLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/BuildProgressRow" unique_id=1451336589]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.82, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "建造 0%"
+
+[node name="BuildProgressBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/BuildProgressRow" unique_id=1451336590]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="TrainQueueRow" type="VBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1451336601]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TrainQueueHeader" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336602]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainQueueTitle" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader" unique_id=1451336603]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = "训练"
+
+[node name="TrainQueueCount" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader" unique_id=1451336604]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.68, 1)
+theme_override_font_sizes/font_size = 11
+text = "0/7"
+
+[node name="TrainActiveRow" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336610]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainActiveIcon" type="Button" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow" unique_id=1451336611]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+focus_mode = 0
+flat = true
+expand_icon = true
+
+[node name="TrainActiveBarHost" type="Control" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow" unique_id=1451336612]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TrainActiveBar" type="ProgressBar" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost" unique_id=1451336613]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+max_value = 100.0
+show_percentage = false
+
+[node name="TrainActiveLabel" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost" unique_id=1451336614]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.98, 0.96, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.05, 0.05, 0.85)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "剩余 0s"
+
+[node name="TrainQueueStrip" type="HBoxContainer" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336605]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TrainQueueHint" type="Label" parent="Root/MarginContainer2/InfoFrame/CenterPanel/TrainQueueRow" unique_id=1451336606]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.58, 0.55, 1)
+theme_override_font_sizes/font_size = 10
+text = "点击图标取消 · 全额退款"
+
+[node name="UnitBuffStrip" parent="Root/MarginContainer2/InfoFrame/CenterPanel" unique_id=1982746501 instance=ExtResource("5_buff_strip")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+
+[node name="MarginContainer3" type="MarginContainer" parent="Root" unique_id=1702800395]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -248.0
+offset_top = -220.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="CommandPanel" type="PanelContainer" parent="Root/MarginContainer3" unique_id=364355579]
+custom_minimum_size = Vector2(232, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Inner" type="VBoxContainer" parent="Root/MarginContainer3/CommandPanel" unique_id=364355580]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="CommandTitle" type="Label" parent="Root/MarginContainer3/CommandPanel/Inner" unique_id=114244542]
+layout_mode = 2
+text = "指令"
+
+[node name="CommandGrid" type="GridContainer" parent="Root/MarginContainer3/CommandPanel/Inner" unique_id=1952571021]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 4
+
+[node name="Cmd0" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=570164550]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd1" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=1639223339]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd2" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=1581790916]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd3" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=154927593]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd4" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=606494545]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd5" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=2045303926]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd6" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=242728706]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd7" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=100713796]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd8" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=1684310417]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd9" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=1910180373]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd10" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=1549365463]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""
+
+[node name="Cmd11" type="Button" parent="Root/MarginContainer3/CommandPanel/Inner/CommandGrid" unique_id=2029959165]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = ""

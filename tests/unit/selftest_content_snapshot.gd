@@ -23,6 +23,10 @@ func _ready() -> void:
 	var sample := ProjectSettings.globalize_path("res://content/samples/demo_mod")
 	reg.register_package("demo_mod", sample)
 	var snap := reg.commit_snapshot("demo")
+	if snap == null:
+		check(false, "demo fixture mounted: " + reg.last_error)
+		get_tree().quit(1)
+		return
 	check(snap.frozen, "demo 冻结")
 	var has_demo := false
 	for pid in snap.package_ids:

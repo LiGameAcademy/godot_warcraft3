@@ -17,7 +17,7 @@ func check(ok: bool, label: String) -> void:
 		push_error("PORTRAIT SHUTDOWN: " + label)
 
 func portrait(parent: Node, cache: MapModelCache) -> UnitPortraitView:
-	var view := load("res://game/hud/unit_portrait_view.tscn").instantiate() as UnitPortraitView
+	var view := load("res://client/hud/unit_portrait_view.tscn").instantiate() as UnitPortraitView
 	parent.add_child(view)
 	view.configure(cache, null)
 	view._type_id = "Hamg"

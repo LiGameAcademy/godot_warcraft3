@@ -1,6 +1,6 @@
 extends Node
 
-class RecordingEconomy extends "res://game/scripts/logic/ai/player_economy_ai.gd":
+class RecordingEconomy extends "res://addons/rts_gameplay/features/ai/logic/player_economy_ai.gd":
 	var requested: Array[String] = []
 	func _build_one(_workers: Array[Node3D], building_id: String) -> void:
 		requested.append(building_id)

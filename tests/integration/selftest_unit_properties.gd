@@ -1,5 +1,5 @@
 extends Node
-const EditorScene := preload("res://editor/scenes/editor_main.tscn")
+const EditorScene := preload("res://scenes/editor_main.tscn")
 var failed := 0
 
 
@@ -82,7 +82,7 @@ func _run() -> void:
 	check(doc.get_unit(index) == edited, "editor redo restores edited properties")
 	var path := "res://tmp/unit-properties-acceptance.wc3map.json"
 	check(doc.save_json(path) == OK, "save edited properties")
-	var restored = preload("res://editor/scripts/map_document.gd").new()
+	var restored = preload("res://documents/map_document.gd").new()
 	check(restored.load_json(path) == OK and same_saved_value(restored.get_unit(index), edited), "properties survive save and reopen")
 	for owner in [12, 13, 14, 15]:
 		var probe := entry.duplicate(true)

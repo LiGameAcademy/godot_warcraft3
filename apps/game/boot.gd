@@ -1,21 +1,34 @@
 extends Node
 
-## Package smoke test, not a full gameplay/editor entry point yet.
 func _ready() -> void:
-	var session_script = load("res://addons/rts_runtime/game/match/game_session.gd")
-	if session_script == null or not session_script.can_instantiate():
-		push_error("Runtime package failed to load GameSession")
+	call_deferred("_start")
+
+func _start() -> void:
+	var packed := load("res://scenes/game_main.tscn") as PackedScene
+	if packed == null:
 		get_tree().quit(1)
 		return
-	var session = session_script.new()
-	var stock = session.ensure_stock(0)
-	if stock == null:
+	var scene := packed.instantiate()
+	if "--smoke-test" in OS.get_cmdline_user_args():
+		scene.get_node("GameDirector").spawn_opponent_base = true
+	get_tree().root.add_child(scene)
+	get_tree().current_scene = scene
+	if not "--smoke-test" in OS.get_cmdline_user_args():
+		queue_free()
+		return
+
+	var director = scene.get_node("GameDirector")
+	var deadline := Time.get_ticks_msec() + 180000
+	while not director.is_session_ready() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	if not director.is_session_ready():
+		push_error("Game startup timed out")
 		get_tree().quit(1)
 		return
-	var result = session.evaluate_match(null)
-	if not result is Dictionary or not result.has("finished"):
+	if director.get_session() == null or director.map_root.get_unit_layer().get_child_count() < 12:
+		push_error("Game startup did not create a playable match")
 		get_tree().quit(1)
 		return
-	print("runtime package smoke PASS: GameSession + PlayerStock")
-	if DisplayServer.get_name() == "headless":
-		get_tree().quit(0)
+
+	print("APP startup PASS: game")
+	get_tree().quit(0)

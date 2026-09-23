@@ -3,7 +3,7 @@ func _ready() -> void:
 	call_deferred("_run")
 	get_tree().create_timer(90).timeout.connect(func(): get_tree().quit(1))
 func _run() -> void:
-	var scene = preload("res://editor/scenes/editor_main.tscn").instantiate()
+	var scene = preload("res://scenes/editor_main.tscn").instantiate()
 	get_tree().root.add_child(scene)
 	var editor = scene.get_node("Editor")
 	while editor._tool_palettes.is_empty():

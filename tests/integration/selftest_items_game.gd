@@ -48,7 +48,7 @@ func find_hero(host: Node) -> Node3D:
 
 func run() -> void:
 	get_window().size = Vector2i(1280, 800)
-	game = load("res://game/scenes/game_main.tscn").instantiate()
+	game = load("res://scenes/game_main.tscn").instantiate()
 	add_child(game)
 	var director := game.get_node("GameDirector") as GameDirector
 	var ready := await wait_until(director.is_session_ready, 180.0)

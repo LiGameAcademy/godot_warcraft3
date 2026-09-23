@@ -124,7 +124,7 @@ function main() {
   if (report.jsonMissingTscnList.length === 0) {
     lines.push("- 100% 覆盖");
   } else {
-    lines.push("- 修复：跑 `godot --headless -s res://scripts/tool/export_pe2_scenes.gd -- --include <theme>`");
+    lines.push("- 修复：跑 `godot --headless -s res://tools/godot/export_pe2_scenes.gd -- --include <theme>`");
   }
   const md = lines.join("\n");
   if (mdOut) {

@@ -16,7 +16,7 @@ func tween_refs() -> Array[WeakRef]:
 	return refs
 
 func _ready() -> void:
-	var packed: PackedScene = load("res://game/scenes/game_loading_screen.tscn")
+	var packed: PackedScene = load("res://scenes/game_loading_screen.tscn")
 	var screen: GameLoadingScreen = packed.instantiate()
 	screen.min_visible_sec = 0.0
 	screen.fade_out_sec = 10.0

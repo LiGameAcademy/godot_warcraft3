@@ -10,7 +10,7 @@ extends SceneTree
 ##
 ## godot --headless --path . -s res://tests/unit/selftest_c3_split.gd
 
-const SplitMeshesByGroupScript := preload("res://scripts/tool/split_meshes_by_group.gd")
+const SplitMeshesByGroupScript := preload("res://tools/godot/split_meshes_by_group.gd")
 
 var passed: int = 0
 var total: int = 5

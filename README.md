@@ -1,22 +1,28 @@
 # godot_warcraft3
 
-用 **Godot 4.6** 复刻《魔兽争霸3》玩法的实验项目。
+用 **Godot 4.7.2** 复刻《魔兽争霸3》玩法的实验项目。
 
 仓库**不含**暴雪游戏资产。开发前须自备正版**经典**客户端（含 `War3.mpq` / `War3x.mpq`，不是仅有 `Data/` 的现代 CASC）。合规说明：[docs/data/LEGAL.md](docs/data/LEGAL.md)。
 
 | 入口 | 场景 |
 |------|------|
-| **对战壳（推荐）** | `game/scenes/game_main.tscn`（Echo Isles，F6） |
-| 地图编辑器 | `editor/scenes/editor_main.tscn` |
+| **游戏项目** | `apps/game/project.godot`（Echo Isles） |
+| **地图编辑器项目** | `apps/map_editor/project.godot` |
 | 文档索引 | [docs/README.md](docs/README.md) |
 
 ---
+
+## 双项目开发入口
+
+共享源码位于 `packages/{foundation,content,map,gameplay}`；应用源码位于 `apps/`。先运行 `python tools/workspace/sync_packages.py`（Python 3.12+），再打开对应项目。生成的 addons 不手工修改。首次同步配置本机外部资产路径。
+
+详见 [同步与验证](tools/workspace/README.md) 和 [完整目录迁移记录](docs/architecture/DIRECTORY_CUTOVER_2026_09_24.md)。
 
 ## 新电脑：一条命令准备资源
 
 ### 前置
 
-- [Godot 4.6](https://godotengine.org/)（建议 **console** 版 exe，便于 headless）
+- [Godot 4.7.2](https://godotengine.org/)（建议 **console** 版 exe，便于 headless）
 - [Node.js 18+](https://nodejs.org/)
 - 经典 WC3 安装目录（能看到 `War3.mpq`）
 
@@ -24,7 +30,7 @@
 
 ```powershell
 $env:WC3_GAME_DIR = "D:\Program Files (x86)\Warcraft3"
-$env:GODOT = "D:\Godot\Godot_v4.6.3-stable_win64_console.exe"
+$env:GODOT = "D:\Godot\Godot_v4.7.2-stable_win64_console.exe"
 ```
 
 ### 一键流水线（推荐）
@@ -49,7 +55,7 @@ node tools/dev-setup.mjs --game-dir "D:/Program Files (x86)/Warcraft3"
 6. `sync-data-assets`：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
 7. Godot headless：bake `.scn`（含 PE2）
 
-完成后用 Godot 打开本仓库，运行 `game/scenes/game_main.tscn`。
+完成后运行 `python tools/workspace/sync_packages.py`，分别打开 `apps/game/project.godot` 或 `apps/map_editor/project.godot`。根目录不再是 Godot 项目。
 
 更多选项见：
 
@@ -77,7 +83,7 @@ node tools/dev-setup.mjs --help
 node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 ```
 
-等价于调用 `scripts/tool/export_model_scenes.gd`（GLB→`.scn`，**含 PE2**），可选再导 `assets/visuals/`。
+等价于调用 `tools/godot/export_model_scenes.gd`（GLB→`.scn`，**含 PE2**），可选再导 `assets/visuals/`。
 
 ---
 
@@ -113,8 +119,8 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
 - 分层总纲：[docs/architecture/LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)
 - 资产三车道：[docs/architecture/ASSET_LANES.md](docs/architecture/ASSET_LANES.md)
-- 游戏场景：[docs/game/README.md](docs/game/README.md) · 寻路选型：[docs/game/PATHFINDING_CHOICE.md](docs/game/PATHFINDING_CHOICE.md)
-- 地图编辑器：[docs/editor/EDITOR.md](docs/editor/EDITOR.md)
+- 游戏场景：[docs/design/game/README.md](docs/design/game/README.md)
+- 地图编辑器：[docs/design/editor/EDITOR.md](docs/design/editor/EDITOR.md)
 - 水体：[docs/water/WATER.md](docs/water/WATER.md)
 - 路线图：[docs/roadmap/NEXT.md](docs/roadmap/NEXT.md)（近中期）· [docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)（地图 ①–⑫）
 

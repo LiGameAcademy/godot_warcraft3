@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const root = "D:/GodotProject/laoli_gamedev_godot4_course/godot_warcraft3";
+const root = fileURLToPath(new URL("../", import.meta.url));
 const gs = fs.readFileSync(`${root}/assets/asset-converted/UI/WorldEditGameStrings.txt`, "utf8");
 const ws = fs.readFileSync(`${root}/assets/asset-converted/UI/WorldEditStrings.txt`, "utf8");
 const dict = {};
@@ -19,6 +20,6 @@ const out = {};
 keys.forEach((k, i) => {
   out[k] = i;
 });
-fs.writeFileSync(`${root}/editor/locale/westring_name_sort_zh.json`, JSON.stringify(out));
+fs.writeFileSync(`${root}/packages/content/localization/locale/westring_name_sort_zh.json`, JSON.stringify(out));
 console.log("keys", keys.length);
 console.log("first", keys.slice(0, 8).map((k) => dict[k]));

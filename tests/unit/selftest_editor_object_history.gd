@@ -1,7 +1,7 @@
 extends SceneTree
-const Doc := preload("res://editor/scripts/map_document.gd")
-const Units := preload("res://editor/scripts/commands/unit_edit_command.gd")
-const Doodads := preload("res://editor/scripts/commands/doodad_edit_command.gd")
+const Doc := preload("res://documents/map_document.gd")
+const Units := preload("res://documents/commands/unit_edit_command.gd")
+const Doodads := preload("res://documents/commands/doodad_edit_command.gd")
 var failed := 0
 
 

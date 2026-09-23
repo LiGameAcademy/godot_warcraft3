@@ -24,7 +24,7 @@ func run() -> void:
 	if "--scale" in OS.get_cmdline_user_args():
 		run_scale()
 		return
-	var game := preload("res://game/scenes/game_main.tscn").instantiate()
+	var game := preload("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.random_start_location = false
 	var args := OS.get_cmdline_user_args()

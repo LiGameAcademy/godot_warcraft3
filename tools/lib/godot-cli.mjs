@@ -1,5 +1,5 @@
 /**
- * 共享：定位 Godot 可执行文件，并 headless 跑 `res://scripts/tool/*.gd`。
+ * 共享：定位 Godot 可执行文件，并 headless 跑 `res://tools/godot/*.gd`。
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,6 +9,14 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = path.resolve(__dirname, "../..");
+export const GAME_PROJECT_ROOT = path.join(PROJECT_ROOT, "apps", "game");
+
+export function syncWorkspace(app = "game", testCase = "") {
+  const args = [path.join(PROJECT_ROOT, "tools/workspace/sync_packages.py"), "--app", app];
+  if (testCase) args.push("--test", testCase);
+  const result = spawnSync(process.env.PYTHON || "python", args, { cwd: PROJECT_ROOT, stdio: "inherit", shell: false });
+  if (result.error || result.status !== 0) throw new Error("Workspace synchronization failed; install Python 3.12+ and initialize Git submodules.");
+}
 
 export function candidateGodotBins() {
   const home = os.homedir();
@@ -16,6 +24,7 @@ export function candidateGodotBins() {
   return [
     process.env.GODOT,
     process.env.GODOT_BIN,
+    path.join(desktop, "Godot_v4.7.2-stable_mono_win64_console.exe"),
     path.join(desktop, "Godot_v4.6.3-stable_win64_console.exe"),
     path.join(desktop, "Godot_v4.6.3-stable_win64.exe"),
     path.join(desktop, "Godot_v4.6.1-stable_win64_console.exe"),
@@ -54,7 +63,7 @@ export function findGodotExecutable(explicit = "") {
 
 /**
  * @param {object} opts
- * @param {string} opts.scriptRes  如 res://scripts/tool/export_pe2_scenes.gd
+ * @param {string} opts.scriptRes  如 res://tools/godot/export_pe2_scenes.gd
  * @param {string[]} [opts.userArgs]  -- 之后传给脚本的参数
  * @param {string} [opts.godot]
  * @param {boolean} [opts.required] 找不到 Godot 时是否失败（默认 true）
@@ -73,7 +82,8 @@ export function runGodotScript(opts) {
     return 1;
   }
   const userArgs = opts.userArgs || [];
-  const args = ["--headless", "--path", PROJECT_ROOT, "-s", opts.scriptRes];
+  syncWorkspace();
+  const args = ["--headless", "--path", GAME_PROJECT_ROOT, "-s", opts.scriptRes];
   if (userArgs.length) args.push("--", ...userArgs);
 
   console.log(`godot: ${godot}`);

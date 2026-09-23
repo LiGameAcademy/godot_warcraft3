@@ -23,7 +23,7 @@ extends SceneTree
 ##   godot --headless --path . -s res://tests/cliff/selftest_cliff_variants.gd
 
 
-const DocScript := preload("res://editor/scripts/map_document.gd")
+const DocScript := preload("res://documents/map_document.gd")
 
 
 func _initialize() -> void:

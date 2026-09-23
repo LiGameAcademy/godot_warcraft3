@@ -1,0 +1,72 @@
+[gd_scene format=3 uid="uid://bgpdr7ovrx422"]
+
+[ext_resource type="Script" uid="uid://cmcse56y5iy4" path="res://app/editor.gd" id="1b_editor"]
+[ext_resource type="Script" uid="uid://bt835wxh3srsy" path="res://app/editor_shell.gd" id="1_shell"]
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://addons/rts_map/scenes/map/map_root.tscn" id="2_map"]
+[ext_resource type="PackedScene" uid="uid://bu5ueg1e2g7ad" path="res://scenes/editor_camera.tscn" id="4_i7eot"]
+[ext_resource type="Environment" path="res://resources/editor_environment.tres" id="7_env"]
+[ext_resource type="PackedScene" uid="uid://3yrhgljwb6r5" path="res://ui/open_map_dialog.tscn" id="8b_openmap"]
+[ext_resource type="PackedScene" uid="uid://dphccp4bf1ij5" path="res://ui/new_map_dialog.tscn" id="8_newmap"]
+[ext_resource type="Script" uid="uid://dul17558jgq6s" path="res://tools/doodad_brush.gd" id="9b_doodad_brush"]
+[ext_resource type="Script" uid="uid://2kmh5mp5q2r7" path="res://tools/unit_brush.gd" id="9c_unit_brush"]
+[ext_resource type="Script" uid="uid://8oswoni0b7wf" path="res://tools/terrain_brush.gd" id="9_brush"]
+[ext_resource type="PackedScene" uid="uid://gucvrdgtaaal" path="res://scenes/editor_hud.tscn" id="10_usfbw"]
+[ext_resource type="Script" uid="uid://bg1ekyvl5jqu7" path="res://input/editor_input_router.gd" id="11_input"]
+
+[node name="EditorMain" type="Node3D" unique_id=112749149]
+script = ExtResource("1_shell")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1613313878]
+environment = ExtResource("7_env")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1896899719]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 40, 0)
+light_energy = 1.1
+
+[node name="MapRoot" parent="." unique_id=1366656073 instance=ExtResource("2_map")]
+place_doodads = false
+status_path = NodePath("")
+auto_load_on_ready = false
+build_terrain_collision = true
+show_pathing_debug_grid = false
+
+[node name="EditorCamera" parent="." unique_id=240492891 instance=ExtResource("4_i7eot")]
+
+[node name="TerrainBrush" type="Node3D" parent="." unique_id=1905798659]
+script = ExtResource("9_brush")
+
+[node name="DoodadBrush" type="Node3D" parent="." unique_id=1905798660]
+script = ExtResource("9b_doodad_brush")
+
+[node name="UnitBrush" type="Node3D" parent="." unique_id=802567159]
+script = ExtResource("9c_unit_brush")
+
+[node name="NewMapDialog" parent="." unique_id=471861079 instance=ExtResource("8_newmap")]
+
+[node name="OpenMapDialog" parent="." unique_id=134833771 instance=ExtResource("8b_openmap")]
+oversampling_override = 1.0
+
+[node name="UI" parent="." unique_id=1999418285 instance=ExtResource("10_usfbw")]
+
+[node name="Editor" type="Node" parent="." unique_id=1811291115]
+script = ExtResource("1b_editor")
+map_root = NodePath("../MapRoot")
+camera_rig = NodePath("../EditorCamera")
+brush = NodePath("../TerrainBrush")
+doodad_brush = NodePath("../DoodadBrush")
+unit_brush = NodePath("../UnitBrush")
+input_router = NodePath("../EditorInputRouter")
+new_map_dialog = NodePath("../NewMapDialog")
+open_map_dialog = NodePath("../OpenMapDialog")
+menu = NodePath("../UI/MenuBarPanel/MenuBar")
+toolbar = NodePath("../UI/ToolStrip/Toolbar")
+palette = NodePath("../UI/SideBar/TilePalette")
+status_bar = NodePath("../UI/StatusBar")
+status_label = NodePath("../UI/StatusBar/Margin/Row/StatusChip/StatusValue")
+hover_label = NodePath("../UI/StatusBar/Margin/Row/CoordsChip/CoordsValue")
+
+[node name="EditorInputRouter" type="Node" parent="." unique_id=213255939]
+script = ExtResource("11_input")
+camera_rig = NodePath("../EditorCamera")
+brush = NodePath("../TerrainBrush")
+editor = NodePath("../Editor")

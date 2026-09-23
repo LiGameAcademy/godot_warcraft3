@@ -1,6 +1,6 @@
 extends Node
-const MapScene := preload("res://scenes/map/map_root.tscn")
-const Document := preload("res://editor/scripts/map_document.gd")
+const MapScene := preload("res://addons/rts_map/scenes/map/map_root.tscn")
+const Document := preload("res://documents/map_document.gd")
 var failed := 0
 
 

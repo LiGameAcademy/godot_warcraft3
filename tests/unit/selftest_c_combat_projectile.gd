@@ -98,7 +98,7 @@ func _test_unit_func_missile() -> bool:
 	else:
 		print("  hwat missilespeed OK")
 	var hwat_path := RuntimeAssets.converted_path(hwat_art)
-	if not FileAccess.file_exists(hwat_path) and not FileAccess.file_exists(hwat_path.get_basename() + ".scn"):
+	if not RuntimeAssets.file_exists(hwat_path) and not RuntimeAssets.file_exists(hwat_path.get_basename() + ".scn"):
 		push_error("hwat 飞弹资产缺失：%s" % hwat_path)
 		ok = false
 	else:

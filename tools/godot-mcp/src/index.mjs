@@ -119,7 +119,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        script: { type: "string", description: "如 res://scripts/tool/export_pe2_scenes.gd" },
+        script: { type: "string", description: "如 res://tools/godot/export_pe2_scenes.gd" },
         args: { type: "array", items: { type: "string" } },
         timeout_ms: { type: "number", default: 300000 },
       },
@@ -199,7 +199,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { godot, projectRoot } = resolveEnv();
         return textResult({
           project_root: projectRoot,
-          main_scene: "res://game/scenes/game_main.tscn",
+          main_scene: "res://scenes/game_main.tscn",
           godot_executable: godot || null,
           godot_found: Boolean(godot),
           hint: godot

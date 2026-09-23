@@ -14,16 +14,16 @@ foreach ($name in $selected) {
         $log = Join-Path $logRoot "$name-$phase.log"
         $arguments = @("--headless", "--path", $appRoot, "--log-file", "$log.engine")
         if ($phase -eq "import") { $arguments += @("--editor", "--import", "--quit") }
-        else { $arguments += @("--quit-after", "60") }
+        else { $arguments += @("--", "--smoke-test") }
         & $Godot @arguments *> $log
         $exitCode = $LASTEXITCODE
         $output = Get-Content -LiteralPath $log -Raw
-        if ($exitCode -ne 0 -or $output -match 'SCRIPT ERROR|Parse Error|Failed to load script') {
+        if ($exitCode -ne 0 -or $output -match 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|Can.t load dependency') {
             throw "$name $phase failed. See $log"
         }
-        if ($phase -eq "boot" -and $output -notmatch 'runtime package smoke PASS') {
+        if ($phase -eq "boot" -and $output -notmatch 'APP startup PASS') {
             throw "$name did not exercise the runtime package. See $log"
         }
     }
-    Write-Output "$name import and runtime package smoke PASS"
+    Write-Output "$name import and actual application startup PASS"
 }

@@ -1,21 +1,24 @@
 extends Node
 
-## Package smoke test, not a full gameplay/editor entry point yet.
 func _ready() -> void:
-	var session_script = load("res://addons/rts_runtime/game/match/game_session.gd")
-	if session_script == null or not session_script.can_instantiate():
-		push_error("Runtime package failed to load GameSession")
+	call_deferred("_start")
+
+func _start() -> void:
+	var packed := load("res://scenes/editor_main.tscn") as PackedScene
+	if packed == null:
 		get_tree().quit(1)
 		return
-	var session = session_script.new()
-	var stock = session.ensure_stock(0)
-	if stock == null:
+	var scene := packed.instantiate()
+	get_tree().root.add_child(scene)
+	get_tree().current_scene = scene
+	if not "--smoke-test" in OS.get_cmdline_user_args():
+		queue_free()
+		return
+
+	await get_tree().process_frame
+	if scene.get_node_or_null("Editor") == null:
 		get_tree().quit(1)
 		return
-	var result = session.evaluate_match(null)
-	if not result is Dictionary or not result.has("finished"):
-		get_tree().quit(1)
-		return
-	print("runtime package smoke PASS: GameSession + PlayerStock")
-	if DisplayServer.get_name() == "headless":
-		get_tree().quit(0)
+
+	print("APP startup PASS: map_editor")
+	get_tree().quit(0)

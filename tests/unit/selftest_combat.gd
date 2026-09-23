@@ -5,8 +5,8 @@ extends SceneTree
 ## 不测 _process 行为（需要 body scene tree）— 留 F4-2 GameDirector e2e 验。
 ## 这里只验 5 个 纯函数 / 状态机 / 闭包行为。
 
-const CombatSteeringScr = preload("res://game/scripts/logic/pathing/combat_steering.gd")
-const SteeringScr = preload("res://game/scripts/logic/pathing/steering_behaviors.gd")
+const CombatSteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/combat_steering.gd")
+const SteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/steering_behaviors.gd")
 
 
 func _init() -> void:

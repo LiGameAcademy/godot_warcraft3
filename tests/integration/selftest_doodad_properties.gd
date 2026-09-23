@@ -8,7 +8,7 @@ func _ready() -> void:
 	call_deferred("_run")
 	get_tree().create_timer(60).timeout.connect(func(): get_tree().quit(1))
 func _run() -> void:
-	var scene = preload("res://editor/scenes/editor_main.tscn").instantiate()
+	var scene = preload("res://scenes/editor_main.tscn").instantiate()
 	get_tree().root.add_child(scene)
 	var editor = scene.get_node("Editor")
 	while editor._tool_palettes.is_empty():
@@ -48,7 +48,7 @@ func _run() -> void:
 	check(doc.get_doodad(0) == after, "redo restores edited entry")
 	var path := "res://tmp/doodad-properties.wc3map.json"
 	check(doc.save_json(path) == OK, "save properties")
-	var loaded = preload("res://editor/scripts/map_document.gd").new()
+	var loaded = preload("res://documents/map_document.gd").new()
 	check(loaded.load_json(path) == OK, "reopen properties")
 	check(loaded.get_doodad(0).scale == after.scale and loaded.get_doodad(0).life == 63, "scale and life survive reopen")
 	brush.handle_double_click(screen)
