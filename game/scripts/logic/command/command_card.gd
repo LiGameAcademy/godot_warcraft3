@@ -420,6 +420,24 @@ static func _place_locomotion(card: Array[Dictionary], cat: CommandButtonCatalog
 	)
 
 
+## Re-evaluate only visible castable abilities, preserving the current menu/layout.
+static func update_ability_entries(current: Array, unit_id: String, state: Dictionary, owned: Dictionary, researched: Dictionary) -> Array:
+	var result := current.duplicate(true)
+	var cat := CommandButtonCatalog.get_shared()
+	for i in range(current.size()):
+		var action := str(current[i].get("id", ""))
+		if not action.begins_with(ACTION_ABILITY_PREFIX):
+			continue
+		var scratch := _empty_card()
+		_place_supported_ability(scratch, cat, action.trim_prefix(ACTION_ABILITY_PREFIX), unit_id,
+			state, false, owned, researched, int(state.get("hero_level", 1)), state.get("ability_levels", {}))
+		for entry in scratch:
+			if str(entry.get("id", "")) == action:
+				result[i] = entry
+				break
+	return result
+
+
 static func _place_supported_ability(
 	card: Array[Dictionary],
 	cat: CommandButtonCatalog,

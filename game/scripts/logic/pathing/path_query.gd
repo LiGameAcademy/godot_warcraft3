@@ -326,6 +326,19 @@ func find_path(
 	agent_id: int = 0,
 	ignore_reservation: bool = false
 ) -> Dictionary:
+	var started := MatchHotpathMetrics.begin()
+	var result: Dictionary = _measured_find_path(from_wc3, to_wc3, clearance_cells, agent_id, ignore_reservation)
+	MatchHotpathMetrics.finish(&"pathfinding", started)
+	return result
+
+
+func _measured_find_path(
+	from_wc3: Vector2,
+	to_wc3: Vector2,
+	clearance_cells: int = 0,
+	agent_id: int = 0,
+	ignore_reservation: bool = false
+) -> Dictionary:
 	if not is_ready():
 		return {"ok": false, "waypoints": [], "reason": "no_pathing"}
 	_clearance = maxi(clearance_cells, 0)

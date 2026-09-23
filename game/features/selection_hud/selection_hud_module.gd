@@ -12,6 +12,10 @@ var _sync_build_hud: Callable
 var _is_controllable: Callable
 
 
+func matches_dependencies(hud: Node, selector: Node, root: Node) -> bool:
+	return _game_hud == hud and _unit_selector == selector and _map_root == root and _sync_build_hud.is_valid()
+
+
 func configure(deps: Dictionary) -> void:
 	_game_hud = deps.get("game_hud") as Node
 	_unit_selector = deps.get("unit_selector") as Node

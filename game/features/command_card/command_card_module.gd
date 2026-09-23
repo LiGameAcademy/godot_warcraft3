@@ -47,6 +47,18 @@ var _card_hotkey_actions: Dictionary = {}
 var _build_menu_open: bool = false
 var _hero_skill_menu_open: bool = false
 var _cd_hud_acc: float = 0.0
+var _dynamic_update := false
+var _displayed_card: Array = []
+var _last_dynamic_state: Dictionary = {}
+
+
+func matches_dependencies(
+	hud: Node, selector: Node, router: CommandRouter,
+	session: GameSession, move_enabled: bool
+) -> bool:
+	return (_game_hud == hud and _unit_selector == selector
+		and _command_router == router and _session == session
+		and _enable_move_command == move_enabled and _unit_host.is_valid())
 
 
 func configure(deps: Dictionary) -> void:
@@ -87,6 +99,8 @@ func shutdown() -> void:
 	_card_hotkey_actions.clear()
 	_last_harvest_ui.clear()
 	_last_ability_ui.clear()
+	_last_dynamic_state.clear()
+	_displayed_card.clear()
 	_game_hud = null
 	_unit_selector = null
 	_command_router = null
@@ -170,10 +184,32 @@ func tick_cooldown_hud(delta: float) -> void:
 	_cd_hud_acc = 0.0
 	if not _primary_has_ability_cd():
 		return
-	refresh()
+	_refresh_dynamic()
+
+
+func _refresh_dynamic() -> void:
+	if _unit_selector == null or not _ability_ui_state_for.is_valid() or not _card_supports_move:
+		return
+	var primary := _unit_selector.call("get_primary") as Node3D
+	if primary == null:
+		return
+	var started := MatchHotpathMetrics.begin()
+	var state: Dictionary = _ability_ui_state_for.call(primary)
+	var card := CommandCard.update_ability_entries(_displayed_card, CombatQuery.type_id_of(primary),
+		state, owned_buildings_for_local(), researched_for_local())
+	_dynamic_update = true
+	_apply_command_card(card)
+	_dynamic_update = false
+	MatchHotpathMetrics.finish(&"command_dynamic", started)
 
 
 func refresh() -> void:
+	var started := MatchHotpathMetrics.begin()
+	_measured_refresh()
+	MatchHotpathMetrics.finish(&"command_card", started)
+
+
+func _measured_refresh() -> void:
 	if _game_hud == null or not _card_supports_move or _unit_selector == null:
 		return
 	if not _unit_selector.has_method("get_selected"):
@@ -256,7 +292,7 @@ func refresh_move_executing_ui() -> void:
 		var ptid := str(primary.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
 		is_hero = TechPresence.is_hero_id(ptid)
 	var ab_ui := {}
-	if is_hero and _ability_ui_state_for.is_valid():
+	if primary != null and _ability_ui_state_for.is_valid():
 		ab_ui = _ability_ui_state_for.call(primary)
 	if _command_router != null:
 		moving = _command_router.any_moving(selected)
@@ -272,7 +308,20 @@ func refresh_move_executing_ui() -> void:
 		"returning": returning,
 		"moving": moving,
 	}
+	var dynamic_state := {
+		"mana": ab_ui.get("ability_mana_ok_map", {}),
+		"mana_all": ab_ui.get("ability_mana_ok", true),
+		"cooling": (ab_ui.get("ability_cd", {}) as Dictionary).keys(),
+	}
+	# Numeric cooldown progress is display state, not card structure.
+	ab_ui.erase("ability_cd")
+	ab_ui.erase("ability_mana_ok_map")
+	ab_ui.erase("ability_mana_ok")
+	var dynamic_changed := dynamic_state != _last_dynamic_state
+	_last_dynamic_state = dynamic_state.duplicate(true)
 	if snap == _last_harvest_ui and moving == _last_move_executing and ab_ui == _last_ability_ui:
+		if dynamic_changed:
+			_refresh_dynamic()
 		return
 	_last_move_executing = moving
 	_last_harvest_ui = snap
@@ -283,6 +332,8 @@ func refresh_move_executing_ui() -> void:
 		refresh()
 	else:
 		_game_hud.set_command_executing(CommandCard.ACTION_MOVE, moving)
+		if dynamic_changed:
+			_refresh_dynamic()
 
 
 ## 选中变化后的命令卡分支（inventory / interaction / 血条由总管编排）。
@@ -605,8 +656,12 @@ func clear_hotkeys() -> void:
 
 
 func _apply_command_card(card: Array) -> void:
+	_displayed_card = card
 	if _game_hud != null:
-		_game_hud.set_command_card(card)
+		if _dynamic_update and _game_hud.has_method("update_command_card_dynamic"):
+			_game_hud.update_command_card_dynamic(card)
+		else:
+			_game_hud.set_command_card(card)
 	_card_hotkey_actions.clear()
 	for e in card:
 		if typeof(e) != TYPE_DICTIONARY:

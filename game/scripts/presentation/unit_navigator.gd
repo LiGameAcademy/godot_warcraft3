@@ -102,6 +102,10 @@ func set_harvest_ghost(on: bool, keep_separation: bool = false) -> void:
 		_release_reservation()
 
 
+func _exit_tree() -> void:
+	_release_reservation()
+
+
 func configure(
 	query: PathQuery,
 	heightfield: Wc3Heightfield,
@@ -111,6 +115,8 @@ func configure(
 	_query = query
 	_heightfield = heightfield
 	_crowd = crowd
+	if _reservation != reservation:
+		_release_reservation()
 	_reservation = reservation
 
 

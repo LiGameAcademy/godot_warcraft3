@@ -9,6 +9,8 @@
 
 | 文档 | 内容 |
 |------|------|
+| [PERFORMANCE_2026_09_23.md](PERFORMANCE_2026_09_23.md) | 第二轮性能优化：预约格、命令卡、路径绘制、自动索敌与持续测试 |
+| [PERFORMANCE_2026_09_21.md](PERFORMANCE_2026_09_21.md) | 对战 CPU 热点测量、血条/图标/邻近查询优化与复现方法 |
 | [ORIGINAL_RTS_VISION.md](ORIGINAL_RTS_VISION.md) | **原创产品总纲 v0.13**：西式奇幻三联盟、100人口非对称编制、三位剧情英雄、装备与天赋 |
 | [WORLD_AND_ALLIANCES.md](WORLD_AND_ALLIANCES.md) | **世界观对齐稿 v0.14**：逆潮当代史、四次护约远征、两次大陆战争、衡约诸传与三大联盟 |
 | [COSMOLOGY_AND_MAGIC.md](COSMOLOGY_AND_MAGIC.md) | **底层规则框架 v0.7**：虚空与两仪、生命与灵魂、诸界生命，以及作者规律与世界内信仰的边界 |

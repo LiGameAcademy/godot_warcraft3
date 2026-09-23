@@ -418,13 +418,11 @@ static func is_hostile(a: Node, b: Node) -> bool:
 		return false
 	if not is_instance_valid(a) or not is_instance_valid(b):
 		return false
-	var oa := owner_of(a)
-	var ob := owner_of(b)
-	if oa == ob:
-		return false
-	if is_neutral_owner(oa) and is_neutral_owner(ob):
-		return false
-	return true
+	return _owners_are_hostile(owner_of(a), owner_of(b))
+
+
+static func _owners_are_hostile(owner_a: int, owner_b: int) -> bool:
+	return owner_a != owner_b and not (is_neutral_owner(owner_a) and is_neutral_owner(owner_b))
 
 
 ## 可受伤的攻击目标基础过滤（不含敌对判定）。
@@ -616,19 +614,42 @@ static func any_can_auto_attack(selected: Array, target: Node) -> bool:
 
 ## 在 host 子树中找 acquire 范围内最近敌对目标。
 static func find_acquire_target(attacker: Node3D, host: Node, max_range: float = -1.0) -> Node3D:
+	var started := MatchHotpathMetrics.begin()
+	var result := _measured_find_acquire_target(attacker, host, max_range)
+	MatchHotpathMetrics.finish(&"ai_acquire", started)
+	return result
+
+
+static func _measured_find_acquire_target(attacker: Node3D, host: Node, max_range: float = -1.0) -> Node3D:
 	if attacker == null or host == null:
 		return null
 	var lim := max_range if max_range > 0.0 else acquire_range_wc3(attacker)
 	var best: Node3D = null
 	var best_d := lim
+	var attacker_owner := owner_of(attacker)
+	var origin := Wc3Coords.godot_to_wc3_xy(attacker.global_position)
+	# Query-local geometry cache: no stale data across movement, upgrades or reloads.
+	var half_extents_by_type := {}
 	for c in host.get_children():
 		if not (c is Node3D):
 			continue
 		var other := c as Node3D
-		if not is_auto_acquire_target(attacker, other):
+		if other == attacker or not _owners_are_hostile(attacker_owner, owner_of(other)):
 			continue
-		var d := weapon_distance_wc3(attacker, other)
-		if d <= best_d:
+		# Exact distance includes building footprint edges. Reject far candidates
+		# before definition/team queries; keep <= so distance ties remain stable.
+		var tid := type_id_of(other)
+		if not half_extents_by_type.has(tid):
+			var half_extents := Vector2.ZERO
+			if BuildingCatalog.is_building(tid):
+				var footprint := BuildingCatalog.get_footprint(tid)
+				if footprint.x > 0 and footprint.y > 0:
+					half_extents = Vector2(footprint) * Wc3Coords.PATHING_CELL * 0.5
+			half_extents_by_type[tid] = half_extents
+		var position := Wc3Coords.godot_to_wc3_xy(other.global_position)
+		var outside: Vector2 = (origin - position).abs() - half_extents_by_type[tid]
+		var d := Vector2(maxf(outside.x, 0.0), maxf(outside.y, 0.0)).length()
+		if d <= best_d and is_auto_acquire_target(attacker, other):
 			best_d = d
 			best = other
 	return best

@@ -919,6 +919,20 @@ func set_command_card(entries: Array) -> void:
 		_apply_command_button(btn, i, entry)
 
 
+## 更新已有槽位的动态状态；布局变化必须走 set_command_card。
+func update_command_card_dynamic(entries: Array) -> void:
+	if _command_grid == null:
+		return
+	for i in range(mini(entries.size(), _command_grid.get_child_count())):
+		var entry: Dictionary = entries[i]
+		if i >= _slot_action_ids.size() or str(entry.get("id", "")) != str(_slot_action_ids[i]):
+			return # Structural changes must use set_command_card.
+	for i in range(mini(entries.size(), _command_grid.get_child_count())):
+		var btn := _command_grid.get_child(i) as Button
+		if btn != null and btn.get_meta("_command_entry", {}) != entries[i]:
+			_apply_command_button(btn, i, entries[i])
+
+
 ## 只刷新执行中态（避免整卡重建闪烁）。
 func set_command_executing(action_id: String, executing: bool) -> void:
 	if _command_grid == null or action_id.is_empty():
@@ -993,6 +1007,7 @@ func set_minimap_texture(tex: Texture2D) -> void:
 
 
 func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
+	btn.set_meta("_command_entry", entry.duplicate(true))
 	var action_id := str(entry.get("id", "")).strip_edges()
 	_slot_action_ids[slot] = action_id
 	var enabled := bool(entry.get("enabled", not action_id.is_empty()))
@@ -1000,6 +1015,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 	if action_id.is_empty():
 		btn.text = ""
 		btn.icon = null
+		btn.remove_meta("_command_icon_path")
 		btn.disabled = true
 		btn.tooltip_text = ""
 		btn.modulate = Color(1, 1, 1, 0.55)
@@ -1031,8 +1047,10 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		var dis := str(entry.get("icon_disabled", ""))
 		if not dis.is_empty():
 			icon_rel = dis
-	var icon := _load_icon(icon_rel)
-	btn.icon = icon
+	if str(btn.get_meta("_command_icon_path", "#uninitialized")) != icon_rel or (btn.icon == null and not icon_rel.is_empty()):
+		btn.icon = _load_icon(icon_rel)
+		btn.set_meta("_command_icon_path", icon_rel)
+	var icon := btn.icon
 	btn.expand_icon = true
 	if icon != null and (text.is_empty() or text == "执行中"):
 		btn.text = ""

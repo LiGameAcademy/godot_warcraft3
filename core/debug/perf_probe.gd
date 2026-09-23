@@ -137,3 +137,14 @@ func _find_team_registry() -> TeamRegistry:
 		if nested is TeamRegistry:
 			return nested as TeamRegistry
 	return null
+
+
+## Opt-in CPU hotpath sampling, exposed through Panku as perf.
+func set_hotpaths_enabled(on: bool) -> void:
+	MatchHotpathMetrics.drain()
+	MatchHotpathMetrics.enabled = on
+
+
+## Returns one bounded window and resets its counters.
+func hotpaths() -> Dictionary:
+	return MatchHotpathMetrics.drain()

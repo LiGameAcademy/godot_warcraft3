@@ -11,10 +11,20 @@ var _heightfield: Wc3Heightfield = null
 var _line_mi: MeshInstance3D = null
 var _dot_mi: MeshInstance3D = null
 var _enabled: bool = true
+var _line_mesh := ImmediateMesh.new()
+var _dot_mesh := ImmediateMesh.new()
+var _line_mat: StandardMaterial3D
+var _dot_mat: StandardMaterial3D
+var _last_paths: Array = []
 
 
 func setup(heightfield: Wc3Heightfield) -> void:
+	if _heightfield != heightfield:
+		_clear_meshes()
 	_heightfield = heightfield
+	if _line_mat == null:
+		_line_mat = _make_mat(PATH_COLOR)
+		_dot_mat = _make_mat(WAYPOINT_COLOR)
 	if _line_mi == null:
 		_line_mi = MeshInstance3D.new()
 		_line_mi.name = "PathLines"
@@ -40,13 +50,20 @@ func is_enabled() -> bool:
 
 ## paths: Array，每项 { "points": Array[Vector2] }（WC3 XY）
 func redraw(paths: Array) -> void:
+	var started := MatchHotpathMetrics.begin()
+	_measured_redraw(paths)
+	MatchHotpathMetrics.finish(&"path_draw", started)
+
+
+func _measured_redraw(paths: Array) -> void:
 	if not _enabled:
 		_clear_meshes()
 		return
-	var line_mesh := ImmediateMesh.new()
-	var dot_mesh := ImmediateMesh.new()
-	var line_mat := _make_mat(PATH_COLOR)
-	var dot_mat := _make_mat(WAYPOINT_COLOR)
+	if paths == _last_paths:
+		return
+	_last_paths = paths.duplicate(true)
+	_line_mesh.clear_surfaces()
+	_dot_mesh.clear_surfaces()
 	var any_line := false
 	var any_dot := false
 	for item in paths:
@@ -60,25 +77,25 @@ func redraw(paths: Array) -> void:
 			if p is Vector2:
 				godot_pts.append(_to_godot(p))
 		if godot_pts.size() >= 2:
-			line_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, line_mat)
+			_line_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, _line_mat)
 			for g in godot_pts:
-				line_mesh.surface_add_vertex(g)
-			line_mesh.surface_end()
+				_line_mesh.surface_add_vertex(g)
+			_line_mesh.surface_end()
 			any_line = true
 		# 路点小十字
 		for g in godot_pts:
 			var s := 0.18
-			dot_mesh.surface_begin(Mesh.PRIMITIVE_LINES, dot_mat)
-			dot_mesh.surface_add_vertex(g + Vector3(-s, 0, 0))
-			dot_mesh.surface_add_vertex(g + Vector3(s, 0, 0))
-			dot_mesh.surface_add_vertex(g + Vector3(0, 0, -s))
-			dot_mesh.surface_add_vertex(g + Vector3(0, 0, s))
-			dot_mesh.surface_end()
+			_dot_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _dot_mat)
+			_dot_mesh.surface_add_vertex(g + Vector3(-s, 0, 0))
+			_dot_mesh.surface_add_vertex(g + Vector3(s, 0, 0))
+			_dot_mesh.surface_add_vertex(g + Vector3(0, 0, -s))
+			_dot_mesh.surface_add_vertex(g + Vector3(0, 0, s))
+			_dot_mesh.surface_end()
 			any_dot = true
 	if _line_mi:
-		_line_mi.mesh = line_mesh if any_line else null
+		_line_mi.mesh = _line_mesh if any_line else null
 	if _dot_mi:
-		_dot_mi.mesh = dot_mesh if any_dot else null
+		_dot_mi.mesh = _dot_mesh if any_dot else null
 
 
 func _to_godot(wc3: Vector2) -> Vector3:
@@ -102,6 +119,11 @@ func _make_mat(color: Color) -> StandardMaterial3D:
 
 
 func _clear_meshes() -> void:
+	if _last_paths.is_empty():
+		return
+	_last_paths.clear()
+	_line_mesh.clear_surfaces()
+	_dot_mesh.clear_surfaces()
 	if _line_mi:
 		_line_mi.mesh = null
 	if _dot_mi:

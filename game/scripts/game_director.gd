@@ -613,13 +613,19 @@ func _ensure_path_debug() -> void:
 
 func _process(delta: float) -> void:
 	if _session != null and spawn_opponent_base and is_session_ready():
+		var match_started := MatchHotpathMetrics.begin()
 		var result := _session.evaluate_match(map_root.get_unit_layer())
+		MatchHotpathMetrics.finish(&"match_evaluate", match_started)
 		if bool(result.finished):
 			return
 	if is_instance_valid(_combat):
+		var combat_started := MatchHotpathMetrics.begin()
 		_combat.tick(delta)
+		MatchHotpathMetrics.finish(&"combat_tick", combat_started)
 	if is_instance_valid(_abilities):
+		var abilities_started := MatchHotpathMetrics.begin()
 		_abilities.tick(delta)
+		MatchHotpathMetrics.finish(&"abilities_tick", abilities_started)
 	_refresh_move_executing_ui()
 	_ensure_selection_hud_module().tick(delta)
 	if is_instance_valid(_path_debug_mod):
@@ -2561,6 +2567,8 @@ func _ensure_selection_hud_module() -> SelectionHudModule:
 		add_child(_selection_hud)
 	if game_hud == null or unit_selector == null:
 		_resolve_exports()
+	if _selection_hud.matches_dependencies(game_hud, unit_selector, map_root):
+		return _selection_hud
 	_selection_hud.configure({
 		"game_hud": game_hud,
 		"unit_selector": unit_selector,
@@ -2579,6 +2587,8 @@ func _ensure_command_card_module() -> CommandCardModule:
 		add_child(_command_card)
 	if game_hud == null or unit_selector == null:
 		_resolve_exports()
+	if _command_card.matches_dependencies(game_hud, unit_selector, _command_router, _session, enable_move_command):
+		return _command_card
 	_command_card.configure({
 		"game_hud": game_hud,
 		"unit_selector": unit_selector,

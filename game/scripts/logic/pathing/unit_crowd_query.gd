@@ -53,6 +53,18 @@ func neighbors_of(
 	range_wc3: float = DEFAULT_RANGE_WC3,
 	include_buildings: bool = false
 ) -> Array:
+	var started := MatchHotpathMetrics.begin()
+	var result: Array = _measured_neighbors_of(self_unit, self_pos_wc3, range_wc3, include_buildings)
+	MatchHotpathMetrics.finish(&"crowd", started)
+	return result
+
+
+func _measured_neighbors_of(
+	self_unit: Node,
+	self_pos_wc3: Vector2,
+	range_wc3: float = DEFAULT_RANGE_WC3,
+	include_buildings: bool = false
+) -> Array:
 	var out: Array = []
 	if _unit_layer == null:
 		return out
