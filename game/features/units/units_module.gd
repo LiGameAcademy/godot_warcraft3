@@ -26,6 +26,8 @@ var _ensure_hero_passives: Callable
 var _ensure_caster: Callable
 var _add_food_used: Callable
 var _next_runtime_cn: int = 900000
+## D5：对局实体注册表（可选注入）。
+var _entity_registry: EntityRegistry
 
 
 func configure(deps: Dictionary) -> void:
@@ -37,6 +39,7 @@ func configure(deps: Dictionary) -> void:
 	_command_router = deps.get("command_router") as CommandRouter
 	_health_bar_manager = deps.get("health_bar_manager") as HealthBarManager
 	_registry_host = deps.get("registry_host") as Node
+	_entity_registry = deps.get("entity_registry") as EntityRegistry
 	_ensure_navigator = deps.get("ensure_navigator", Callable()) as Callable
 	_ensure_attack_controller = deps.get("ensure_attack_controller", Callable()) as Callable
 	_unit_host = deps.get("unit_host", Callable()) as Callable
@@ -67,6 +70,7 @@ func shutdown() -> void:
 	_command_router = null
 	_health_bar_manager = null
 	_registry_host = null
+	_entity_registry = null
 	_ensure_navigator = Callable()
 	_ensure_attack_controller = Callable()
 	_unit_host = Callable()
@@ -87,6 +91,16 @@ func alloc_creation_number() -> int:
 	return cn
 
 
+func entity_registry() -> EntityRegistry:
+	return _entity_registry
+
+
+func _register_entity(node: Node, creation_number: int) -> void:
+	if _entity_registry == null or node == null:
+		return
+	_entity_registry.register_unit(EntityId.from_creation_number(creation_number), node)
+
+
 ## 训练完工刷单位：脚印四角 → 重叠挤位 → AI/英雄装配 → 集结。
 func spawn_trained(
 	unit_id: String, site_wc3: Vector2, owner_id: int, from_building: Node3D = null
@@ -94,6 +108,7 @@ func spawn_trained(
 	if _map_root == null or _heightfield == null:
 		return null
 	var corner_xy := TrainSpawn.exit_xy_for_building(from_building, site_wc3)
+	var cn := alloc_creation_number()
 	var entry := {
 		"typeId": unit_id,
 		"position": {"x": corner_xy.x, "y": corner_xy.y, "z": 0.0},
@@ -101,12 +116,13 @@ func spawn_trained(
 		"scale": {"x": 1.0, "y": 1.0, "z": 1.0},
 		"owner": owner_id,
 		"flags": 2,
-		"creationNumber": alloc_creation_number(),
+		"creationNumber": cn,
 		"variation": 0,
 	}
 	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view())
 	if node == null:
 		return null
+	_register_entity(node, cn)
 	UnitLife.ensure(node)
 	var final_xy := TrainSpawn.resolve_with_displace(
 		corner_xy, site_wc3, node, unit_id, _path_query, _crowd_query

@@ -86,6 +86,8 @@ var _item_service: ItemService
 var _ground_items: Node3D
 var _navigation: NavigationModule
 var _units: UnitsModule
+var _entity_registry: EntityRegistry
+var _behavior_registry: BehaviorRegistry
 var _build: BuildModule
 var _combat: CombatModule
 var _abilities: AbilitiesModule
@@ -1853,6 +1855,8 @@ func _ensure_units_module() -> UnitsModule:
 		_units.name = "UnitsModule"
 		_units.form_changed.connect(_on_unit_form_changed)
 		add_child(_units)
+	if _entity_registry == null:
+		_entity_registry = EntityRegistry.new()
 	if _bound_modules.get(&"units", -1) == _binding_epoch:
 		return _units
 	_units.configure({
@@ -1865,6 +1869,7 @@ func _ensure_units_module() -> UnitsModule:
 		"command_router": _command_router,
 		"health_bar_manager": health_bar_manager,
 		"registry_host": self,
+		"entity_registry": _entity_registry,
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_attack_controller": Callable(_ensure_combat_module(), "ensure_attack_controller"),
 		"unit_host": Callable(self, "_unit_host"),
@@ -1883,6 +1888,13 @@ func _ensure_units_module() -> UnitsModule:
 	_bound_modules[&"units"] = _binding_epoch
 	_binding_counts[&"units"] = int(_binding_counts.get(&"units", 0)) + 1
 	return _units
+
+
+## D5：技能行为工厂（对局内冻结后只读）。
+func _ensure_behavior_registry() -> BehaviorRegistry:
+	if _behavior_registry == null:
+		_behavior_registry = BehaviorRegistry.new()
+	return _behavior_registry
 
 
 ## 装配技能模块：cast ctx / runtime / 瞄准 / 预览。
@@ -2124,6 +2136,8 @@ func _toggle_path_debug() -> void:
 ## 切换整张地图/对局应走 MatchLifecycle 的重开流程。
 func rebind_modules() -> void:
 	_binding_epoch += 1
+	if _entity_registry != null:
+		_entity_registry.clear()
 	_wire_hud()
 	_setup_selector()
 	_ensure_combat_module()
@@ -2146,6 +2160,8 @@ func rebind_modules() -> void:
 	_ensure_match_lifecycle_module()
 	_ensure_opponent_ai_module()
 	_interaction.refresh_selector()
+	if _behavior_registry != null and not _behavior_registry.is_frozen():
+		_behavior_registry.freeze()
 
 func module_binding_counts() -> Dictionary:
 	return _binding_counts.duplicate()
