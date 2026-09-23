@@ -6,6 +6,8 @@
 
 | 文件 | 内容 |
 |------|------|
+| [GAMEPLAY_REFACTOR_PLAN.md](GAMEPLAY_REFACTOR_PLAN.md) | 当前实施策划：输入/命令/状态/行动职责、近期与双产品目录、文件映射和迁移验收 |
+| [GAMEPLAY_TARGET_ARCHITECTURE.md](GAMEPLAY_TARGET_ARCHITECTURE.md) | Gameplay 架构审查、双产品目录与共享边界、运行时内容/Mod API 提案及分波次验收 |
 | [FEATURE_MODULE_REFACTOR.md](FEATURE_MODULE_REFACTOR.md) | 游戏按功能聚合的目录约定、生产模块迁移及后续批次 |
 | [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层分层总纲（Data / Catalog / Logic / Presentation / Editor）+ 门禁 + 命名约定 |
 | [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | MapRoot 节点树 + 脚本职责全表 + 手动干预速查 + 重构优先级 |
