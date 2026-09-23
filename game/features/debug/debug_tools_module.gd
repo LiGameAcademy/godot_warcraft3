@@ -4,6 +4,7 @@ extends Node
 ## 开发调试：GM 面板 / 性能叠层挂接，以及英雄等级与测试道具动作。
 ## 不持有 GameDirector 类型；依赖经 configure 注入。
 
+var _map_root: MapLoader
 var _host_parent: Node
 var _game_hud: Node
 var _unit_selector: Node
@@ -23,6 +24,7 @@ var _spawn_near: Callable
 
 
 func configure(deps: Dictionary) -> void:
+	_map_root = deps.get("map_root") as MapLoader
 	_host_parent = deps.get("host_parent") as Node
 	_game_hud = deps.get("game_hud") as Node
 	_unit_selector = deps.get("unit_selector") as Node
@@ -39,6 +41,7 @@ func configure(deps: Dictionary) -> void:
 
 
 func shutdown() -> void:
+	_map_root = null
 	_host_parent = null
 	_game_hud = null
 	_unit_selector = null
@@ -289,3 +292,25 @@ func _refresh_ui() -> void:
 		_refresh_command_card.call()
 	if _sync_selection_info.is_valid():
 		_sync_selection_info.call()
+
+
+func apply_hall_phase(phase: int) -> bool:
+	if _map_root == null:
+		return false
+	var layer := _map_root.get_unit_layer()
+	if layer == null:
+		return false
+	var cache: MapModelCache = null
+	if _map_root.has_method("get_model_cache"):
+		cache = _map_root.get_model_cache()
+	for c in layer.get_children():
+		if not (c is Node3D):
+			continue
+		var d: Dictionary = (c as Node).get_meta("unit_data", {})
+		var tid := str(d.get("typeId", ""))
+		if tid != "htow" and tid != "hkee" and tid != "hcas":
+			continue
+		if cache != null:
+			BuildingVisual.apply_phase(cache, c, tid, phase)
+		return true
+	return false

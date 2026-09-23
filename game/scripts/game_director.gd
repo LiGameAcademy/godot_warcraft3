@@ -10,7 +10,6 @@ const SceneDelay = preload("res://scripts/shared/infra/scene_delay.gd")
 signal session_ready
 
 ## 场景实例仍需 preload；脚本类一律用 class_name。
-const MoveConfirmFxScene = preload("res://game/scenes/move_confirm_fx.tscn")
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -116,12 +115,18 @@ var _ability_hud: AbilityHudFeedback = null
 var _ability_runtime: AbilityRuntimeRegistry = null
 var _ability_targeting_svc: AbilityTargetingService = null
 ## 选中可训建筑时显示的集结旗（长驻，复用）
-var _rally_flag: RallyFlagFx = null
+var _feedback: InteractionFeedback
+var _world_picker: WorldPicker
+var _match_input: MatchInputController
 ## 瞄准期内被霜蓝染色的单位/建筑（Present）。
 
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 ## 鼠标 → godot 拾取（暴露给 placement 控制器，避开循环引用）。
-var _last_screen_pos: Vector2 = Vector2.ZERO
+var _last_screen_pos: Vector2:
+	get:
+		return _match_input.last_screen_pos if is_instance_valid(_match_input) else Vector2.ZERO
+	set(value):
+		_ensure_match_input().last_screen_pos = value
 ## 对局内生产功能及本地界面适配器；队列订阅由模块持有。
 var _production: ProductionModule
 var _production_panel: ProductionPanel
@@ -324,63 +329,7 @@ func _setup_selector() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# 背包点击交给 GUI，包括移动/技能瞄准期间，不把槽位当世界落点。
-	if event is InputEventMouseButton and is_instance_valid(game_hud) and is_instance_valid(game_hud.inventory_panel):
-		var panel := game_hud.inventory_panel
-		if panel.is_visible_in_tree() and panel.get_global_rect().has_point(event.position):
-			return
-	# 运行时再解析一次：防止 ready 时序导致 selector 引用为空。
-	if unit_selector == null:
-		_resolve_exports()
-	# 移动/攻击/巡逻/采集/集结瞄准：左键下发、右键取消（须在 UnitSelector 之前拦截）
-	if _ensure_command_input_module().try_handle_aim_input(event):
-		get_viewport().set_input_as_handled()
-		return
-	# 技能瞄准：左键点地/点单位施法
-	if (is_instance_valid(_interaction) and _interaction.is_ability()) and event is InputEventMouseButton and _ability_targeting_svc != null:
-		var mb_ab := event as InputEventMouseButton
-		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
-			var abil_id := _ability_targeting_svc.pending_abil_id()
-			var tk := AbilityCatalog.target_kind(abil_id)
-			if tk == AbilityCatalog.TARGET_UNIT or tk == AbilityCatalog.TARGET_ALLY:
-				_ability_targeting_svc.issue_at_unit_screen(mb_ab.position, UnitOrder.Source.TARGETING)
-			else:
-				_ability_targeting_svc.issue_at_screen(mb_ab.position, UnitOrder.Source.TARGETING)
-			_ability_targeting_svc.cancel()
-			get_viewport().set_input_as_handled()
-			return
-		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_RIGHT:
-			_ability_targeting_svc.cancel()
-			get_viewport().set_input_as_handled()
-			return
-	# F2-4：建造瞄准 → 左键 commit / 右键 cancel / mousemove 跟手 ghost
-	# 任何鼠标事件都记录最新位置，给 build_placement 跟手用
-	if event is InputEventMouseMotion:
-		_last_screen_pos = (event as InputEventMouseMotion).position
-		_ensure_build_module()
-		_build.update_last_screen_pos(_last_screen_pos)
-		if (is_instance_valid(_interaction) and _interaction.is_ability()):
-			_update_ability_preview(_last_screen_pos)
-		if _build.is_build_targeting():
-			_build.set_confirm_armed(true)
-			_build.update_placement_screen(_last_screen_pos)
-	if _build.is_build_targeting() and event is InputEventMouseButton:
-		var mb_b := event as InputEventMouseButton
-		if mb_b.pressed and mb_b.button_index == MOUSE_BUTTON_LEFT:
-			# 点在 HUD/小地图上不提交；须先移动过鼠标再确认
-			if not _build.is_confirm_armed() or _pointer_over_blocking_gui():
-				get_viewport().set_input_as_handled()
-				return
-			_commit_build_targeting(mb_b.position)
-			get_viewport().set_input_as_handled()
-			return
-		if mb_b.pressed and mb_b.button_index == MOUSE_BUTTON_RIGHT:
-			_cancel_build_targeting()
-			get_viewport().set_input_as_handled()
-			return
-	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
-		if bool(unit_selector.call("handle_pointer_event", event)):
-			get_viewport().set_input_as_handled()
+	_ensure_match_input().handle_input(event)
 
 
 func _map_display_name() -> String:
@@ -640,89 +589,7 @@ func _order_militia_move_to_hall(unit: Node3D, hall: Node3D) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# 移动/采集/建造瞄准：Esc 取消（落点已在 _input 处理）
-	if (
-		(
-			_ensure_command_input_module().is_basic_aiming()
-			or (is_instance_valid(_interaction) and _interaction.is_ability())
-			or _is_build_targeting()
-		)
-		and event is InputEventKey
-		and event.pressed
-		and not event.echo
-	):
-		if (event as InputEventKey).keycode == KEY_ESCAPE:
-			_ensure_interaction_module().cancel_aim("escape")
-
-			get_viewport().set_input_as_handled()
-			return
-	# 建造二级面板：Esc → 回主卡
-	if event is InputEventKey and event.pressed and not event.echo:
-		if (event as InputEventKey).keycode == KEY_ESCAPE:
-			if _ensure_command_card_module().handle_submenu_escape():
-				get_viewport().set_input_as_handled()
-				return
-	# 右键智能 / Shift+RMB 队形
-	if _ensure_command_input_module().try_handle_smart_rmb(event, enable_move_command):
-		get_viewport().set_input_as_handled()
-		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var ek := event as InputEventKey
-		var key := ek.keycode
-		var phys := ek.physical_keycode
-		# 多选：Tab / Shift+Tab 切换当前选中（肖像 + 命令卡）
-		if key == KEY_TAB or phys == KEY_TAB:
-			if unit_selector != null and unit_selector.has_method("cycle_primary"):
-				var step := -1 if ek.shift_pressed else 1
-				if unit_selector.cycle_primary(step):
-					get_viewport().set_input_as_handled()
-					return
-		# GM 面板：`（反引号）或 F4。F10 常被编辑器占用。
-		if (
-			key == KEY_QUOTELEFT
-			or phys == KEY_QUOTELEFT
-			or key == KEY_F4
-			or phys == KEY_F4
-		):
-			_toggle_gm_panel()
-			get_viewport().set_input_as_handled()
-			return
-		# 命令卡热键（Catalog Tip/Hotkey；交回官方为 E）
-		if _ensure_command_card_module().try_hotkey(key):
-			get_viewport().set_input_as_handled()
-			return
-		if key == KEY_F9:
-			show_path_debug = not show_path_debug
-			_ensure_path_debug()
-			_apply_path_debug_visibility()
-			if game_hud:
-				game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
-			get_viewport().set_input_as_handled()
-			return
-		if key == KEY_F3 or phys == KEY_F3:
-			_ensure_debug_tools_module().toggle_perf_overlay()
-			get_viewport().set_input_as_handled()
-			return
-		if not debug_building_fx_hotkeys:
-			return
-		var phase := -1
-		var label := ""
-		match key:
-			KEY_F6:
-				phase = BuildingVisual.Phase.BIRTH
-				label = "Birth（建造尘）"
-			KEY_F7:
-				phase = BuildingVisual.Phase.WORK
-				label = "Stand Work（训练烟）"
-			KEY_F8:
-				phase = BuildingVisual.Phase.IDLE
-				label = "Stand"
-			_:
-				return
-		if _debug_apply_hall_phase(phase):
-			if game_hud:
-				game_hud.set_status("主城 FX → %s" % label)
-			get_viewport().set_input_as_handled()
+	_ensure_match_input().handle_unhandled(event, enable_move_command, debug_building_fx_hotkeys)
 
 
 ## —— 命令输入：薄转发至 CommandInputModule ——
@@ -967,77 +834,21 @@ func _flash_cursor_move() -> void:
 
 
 func _spawn_move_confirm(goal_wc3: Vector2, kind: int = MoveConfirmFx.Kind.MOVE) -> void:
-	if map_root == null:
-		return
-	var fx := MoveConfirmFxScene.instantiate() as MoveConfirmFx
-	map_root.add_child(fx)
-	var cache: MapModelCache = null
-	if map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	fx.setup(cache)
-	fx.play_at_wc3(goal_wc3, _heightfield, kind)
+	_ensure_interaction_feedback().spawn_move_confirm(goal_wc3, kind)
 
 
 func _ensure_rally_flag() -> RallyFlagFx:
-	if _rally_flag != null and is_instance_valid(_rally_flag):
-		return _rally_flag
-	if map_root == null:
-		return null
-	var fx := RallyFlagFx.new()
-	fx.name = "RallyFlagFx"
-	map_root.add_child(fx)
-	var cache: MapModelCache = null
-	if map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	fx.setup(cache)
-	_rally_flag = fx
-	return fx
+	return _ensure_interaction_feedback().ensure_rally_flag()
 
 
 ## 选中集合里：优先主选可训建筑；否则任一已设集结的可训建筑 → 显示种族旗。
 func _sync_rally_flag_for_selection() -> void:
-	var building := _rally_flag_source_building()
-	if building == null:
-		if _rally_flag != null and is_instance_valid(_rally_flag):
-			_rally_flag.hide_flag()
-		return
-	var fx := _ensure_rally_flag()
-	if fx == null:
-		return
-	var d: Dictionary = building.get_meta("unit_data", {})
-	var race := str(d.get("race", "")).strip_edges().to_lower()
-	if race.is_empty() and _session != null:
-		race = str(_session.local_race).to_lower()
-	if race.is_empty():
-		race = preview_race.strip_edges().to_lower()
-	var owner_id := int(d.get("owner", local_player))
-	var tid := str(d.get("typeId", ""))
-	var color_i := MapUnitLayer.resolve_team_color_index(tid, owner_id)
-	fx.show_at_wc3(BuildingRally.goal_wc3(building), race, color_i, _heightfield)
+	_ensure_interaction_feedback().sync_rally_flag()
 
 
 ## 集结旗数据源：主选可训且已设 → 主选；否则选中里第一个已设集结的可训建筑。
 func _rally_flag_source_building() -> Node3D:
-	if unit_selector == null:
-		return null
-	var primary: Node3D = null
-	if unit_selector.has_method("get_primary"):
-		primary = unit_selector.call("get_primary") as Node3D
-	if (
-		primary != null
-		and _is_controllable(primary)
-		and BuildingRally.can_set_rally(primary)
-		and BuildingRally.has_rally(primary)
-	):
-		return primary
-	var selected: Array = _get_selected_safe()
-	for n in selected:
-		if not (n is Node3D):
-			continue
-		var b := n as Node3D
-		if BuildingRally.can_set_rally(b) and BuildingRally.has_rally(b):
-			return b
-	return null
+	return _ensure_interaction_feedback().rally_source()
 
 
 func _ensure_navigator(unit: Node3D) -> UnitNavigator:
@@ -1358,15 +1169,7 @@ func _ensure_ghost_node(_building_id: String) -> void:
 ## 不用底栏粗条带兜底（见 UnitSelector._hud_blocks_screen include_edge_bands=false），
 ## 否则屏幕下缘地图落点左键会被静默吞掉，表现为「建造点了没反应」。
 func _pointer_over_blocking_gui() -> bool:
-	if unit_selector != null and unit_selector.has_method("_hud_blocks_screen"):
-		return bool(unit_selector.call("_hud_blocks_screen", _last_screen_pos, false))
-	var vp := get_viewport()
-	if vp == null:
-		return false
-	var hovered := vp.gui_get_hovered_control()
-	if hovered == null:
-		return false
-	return hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE
+	return _ensure_interaction_feedback().pointer_over_blocking_gui(_last_screen_pos)
 
 
 func _heightfield_ref() -> Wc3Heightfield:
@@ -1638,96 +1441,16 @@ func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
 	_ensure_navigation_module().apply_move_stats(unit, nav)
 
 func _ground_at_screen(screen_pos: Vector2) -> Vector3:
-	if rts_camera == null:
-		return Vector3.INF
-	var cam := rts_camera.get_camera()
-	if cam == null:
-		return Vector3.INF
-	var from := cam.project_ray_origin(screen_pos)
-	var dir := cam.project_ray_normal(screen_pos)
-	if dir.length_squared() < 1e-8:
-		return Vector3.INF
-	dir = dir.normalized()
-	if _heightfield != null and _heightfield.is_valid():
-		var hit := _ray_heightfield(from, dir)
-		if hit != Vector3.INF:
-			return hit
-	# 回退：物理射线（排除无 heightfield 时）
-	var space := cam.get_world_3d().direct_space_state
-	if space != null:
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 20000.0)
-		q.collision_mask = 0xFFFFFFFF
-		var hit2 := space.intersect_ray(q)
-		if not hit2.is_empty():
-			return hit2.get("position", Vector3.INF)
-	if absf(dir.y) < 1e-5:
-		return Vector3.INF
-	var t := -from.y / dir.y
-	if t < 0.0:
-		return Vector3.INF
-	return from + dir * t
+	return _ensure_world_picker().ground_at_screen(screen_pos)
 
 
 ## 沿射线步进，找「射线高度穿过地形高度」的交点（RTS 常用、不依赖碰撞层）。
 func _ray_heightfield(from: Vector3, dir: Vector3) -> Vector3:
-	var step := 0.35
-	var max_dist := 400.0
-	var prev_above := true
-	var d := step
-	var inv := 1.0 / Wc3Coords.WORLD_SCALE
-	while d <= max_dist:
-		var p: Vector3 = from + dir * d
-		var wx := p.x * inv
-		var wy := -p.z * inv
-		var gz := _heightfield.interpolated_height(wx, wy)
-		var ground := Wc3Coords.wc3_xy_to_godot(wx, wy, gz)
-		var above := p.y >= ground.y
-		if prev_above and not above:
-			# 二分细化交点，减少步进粒度带来的落点偏差。
-			var lo := d - step
-			var hi := d
-			for _i in range(6):
-				var mid := (lo + hi) * 0.5
-				var pm: Vector3 = from + dir * mid
-				var w2x := pm.x * inv
-				var w2y := -pm.z * inv
-				var gz2 := _heightfield.interpolated_height(w2x, w2y)
-				var g2 := Wc3Coords.wc3_xy_to_godot(w2x, w2y, gz2)
-				if pm.y >= g2.y:
-					lo = mid
-				else:
-					hi = mid
-			var final_d := (lo + hi) * 0.5
-			var pf: Vector3 = from + dir * final_d
-			var wfx := pf.x * inv
-			var wfy := -pf.z * inv
-			var gzf := _heightfield.interpolated_height(wfx, wfy)
-			return Wc3Coords.wc3_xy_to_godot(wfx, wfy, gzf)
-		prev_above = above
-		d += step
-	return Vector3.INF
+	return _ensure_world_picker().ray_heightfield(from, dir)
 
 
 func _debug_apply_hall_phase(phase: int) -> bool:
-	if map_root == null:
-		return false
-	var layer := map_root.get_unit_layer()
-	if layer == null:
-		return false
-	var cache: MapModelCache = null
-	if map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	for c in layer.get_children():
-		if not (c is Node3D):
-			continue
-		var d: Dictionary = (c as Node).get_meta("unit_data", {})
-		var tid := str(d.get("typeId", ""))
-		if tid != "htow" and tid != "hkee" and tid != "hcas":
-			continue
-		if cache != null:
-			BuildingVisual.apply_phase(cache, c, tid, phase)
-		return true
-	return false
+	return _ensure_debug_tools_module().apply_hall_phase(phase)
 
 
 func _on_minimap_clicked(uv: Vector2) -> void:
@@ -1894,6 +1617,7 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 	if game_hud == null or unit_selector == null:
 		_resolve_exports()
 	_debug_tools.configure({
+		"map_root": map_root,
 		"host_parent": get_parent(),
 		"game_hud": game_hud,
 		"unit_selector": unit_selector,
@@ -2102,7 +1826,7 @@ func _ensure_smart_command_module() -> SmartCommandModule:
 		"rts_camera": rts_camera,
 		"tree_registry": _tree_registry,
 		"ground_items": _ground_items,
-		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
 	})
 	return _smart_command
@@ -2125,13 +1849,13 @@ func _ensure_command_input_module() -> CommandInputModule:
 		"interaction": _ensure_interaction_module(),
 		"smart_command": _ensure_smart_command_module(),
 		"game_hud": game_hud,
-		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"get_selected": Callable(self, "_get_selected_safe"),
 		"interrupt_channels": Callable(self, "_interrupt_channels_for_units"),
 		"refresh_command_card": Callable(self, "_refresh_command_card"),
-		"spawn_move_confirm": Callable(self, "_spawn_move_confirm"),
+		"spawn_move_confirm": Callable(_ensure_interaction_feedback(), "spawn_move_confirm"),
 		"flash_cursor_move": Callable(self, "_flash_cursor_move"),
-		"sync_rally_flag": Callable(self, "_sync_rally_flag_for_selection"),
+		"sync_rally_flag": Callable(_ensure_interaction_feedback(), "sync_rally_flag"),
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
 		"is_harvestable_tree": Callable(self, "_is_harvestable_tree_node"),
@@ -2214,7 +1938,7 @@ func _ensure_build_module() -> BuildModule:
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_unit_visual": Callable(_unit_presenter(), "ensure_visual"),
 		"resync_health_bars": Callable(self, "_resync_health_bars"),
-		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 	})
 	return _build
@@ -2291,7 +2015,7 @@ func _ensure_abilities_module() -> AbilitiesModule:
 		"kill_unit": Callable(self, "_kill_unit"),
 		"get_primary": Callable(self, "_ability_get_primary"),
 		"pick_at": Callable(self, "_ability_pick_at"),
-		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"ground_at_screen": Callable(_ensure_world_picker(), "ground_at_screen"),
 		"clear_rival_targeting": Callable(self, "_clear_rival_targeting_for_ability"),
 		"on_targeting_changed": Callable(self, "_on_ability_targeting_changed"),
 		"set_status": Callable(self, "_ability_set_status"),
@@ -2418,3 +2142,47 @@ func _on_unit_form_changed(_unit: Node3D) -> void:
 	_refresh_command_card()
 	_sync_selection_info_panel()
 	_resync_health_bars()
+
+
+func _ensure_world_picker() -> WorldPicker:
+	if _world_picker == null:
+		_world_picker = WorldPicker.new()
+	_world_picker.configure(rts_camera, _ensure_navigation_module())
+	return _world_picker
+
+func _ensure_interaction_feedback() -> InteractionFeedback:
+	if not is_instance_valid(_feedback):
+		_feedback = InteractionFeedback.new()
+		_feedback.name = "InteractionFeedback"
+		add_child(_feedback)
+	_feedback.configure(map_root, unit_selector, _session, _ensure_navigation_module(),
+		preview_race, local_player, Callable(self, "_get_selected_safe"), Callable(self, "_is_controllable"))
+	return _feedback
+
+func _ensure_match_input() -> MatchInputController:
+	if not is_instance_valid(_match_input):
+		_match_input = MatchInputController.new()
+		_match_input.name = "MatchInput"
+		add_child(_match_input)
+		_match_input.path_debug_toggle_requested.connect(_toggle_path_debug)
+	_match_input.configure({
+		"commands": _ensure_command_input_module(),
+		"interaction": _ensure_interaction_module(),
+		"abilities": _ensure_abilities_module(),
+		"build": _ensure_build_module(),
+		"card": _ensure_command_card_module(),
+		"debug": _ensure_debug_tools_module(),
+		"feedback": _ensure_interaction_feedback(),
+		"selector": unit_selector,
+		"hud": game_hud,
+		"commit_build": Callable(self, "_commit_build_targeting"),
+		"cancel_build": Callable(self, "_cancel_build_targeting"),
+	})
+	return _match_input
+
+func _toggle_path_debug() -> void:
+	show_path_debug = not show_path_debug
+	_ensure_path_debug()
+	_apply_path_debug_visibility()
+	if game_hud:
+		game_hud.set_status("路径调试：%s" % ("开" if show_path_debug else "关"))
