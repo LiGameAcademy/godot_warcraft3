@@ -190,4 +190,15 @@ D1 不需要以 30 分钟性能测试替代路径和功能检查；D2 及后续�
 
 以“移动请求如何成为实际移动”和“攻击如何被中断”作为前两个教程切片；每个示例展示完整链路和唯一状态所有者。教程链接到稳定入口与功能 README，避免依赖私有总管方法。
 
-每批更新目录索引、实现状态和测试入口。本文当前所有迁移批次均未实施；只完成 D0 的文档编写，尚未 Git 提交。
+每批更新目录索引、实现状态和测试入口。
+
+### 实施状态（对照仓库）
+
+| 批次 | 状态 |
+|------|------|
+| D0 | 契约文档 + `tests/architecture` 门禁 |
+| D1 | 前七项目录归位已落地（`game/app`、`game/match`、`entities/commands`、`interaction/input`） |
+| D2 | `CommandRequest`/`CommandResult` + `CommandRouter.submit_request`；停止/移动经请求入口 |
+| D3 | `ContentSnapshot`/`ContentRegistry`；DefStore 经 AssetProvider overlay；`content/samples/demo_mod` |
+| D4 | `apps/game`、`apps/map_editor` 壳 + `tools/workspace/Sync-Packages.ps1` |
+| D5 | `EntityId`/`EntityRegistry`/`BehaviorRegistry`；UnitsModule 可注入注册表 |

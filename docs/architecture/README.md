@@ -8,6 +8,12 @@
 |------|------|
 | [GAMEPLAY_REFACTOR_PLAN.md](GAMEPLAY_REFACTOR_PLAN.md) | 当前实施策划：输入/命令/状态/行动职责、近期与双产品目录、文件映射和迁移验收 |
 | [GAMEPLAY_TARGET_ARCHITECTURE.md](GAMEPLAY_TARGET_ARCHITECTURE.md) | Gameplay 架构审查、双产品目录与共享边界、运行时内容/Mod API 提案及分波次验收 |
+| [STATE_OWNERS.md](STATE_OWNERS.md) | **D0** 状态所有者表（Content / MatchState / ViewState） |
+| [DEPENDENCY_BOUNDS.md](DEPENDENCY_BOUNDS.md) | **D0** 依赖禁区与适配边界 |
+| [PRODUCT_AUTOLOADS.md](PRODUCT_AUTOLOADS.md) | **D0** 双产品 Autoload / 启动差异 |
+| [D2_COMMAND_VERTICAL.md](D2_COMMAND_VERTICAL.md) | **D2** 移动/攻击请求纵切 |
+| [D4_DUAL_APPS.md](D4_DUAL_APPS.md) | **D4** 双应用与同步工具 |
+| [D5_ENTITY_BEHAVIOR.md](D5_ENTITY_BEHAVIOR.md) | **D5** EntityId / BehaviorRegistry |
 | [FEATURE_MODULE_REFACTOR.md](FEATURE_MODULE_REFACTOR.md) | 游戏按功能聚合的目录约定、生产模块迁移及后续批次 |
 | [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) | 五层分层总纲（Data / Catalog / Logic / Presentation / Editor）+ 门禁 + 命名约定 |
 | [MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md) | MapRoot 节点树 + 脚本职责全表 + 手动干预速查 + 重构优先级 |
@@ -17,10 +23,13 @@
 
 ## 阅读顺序
 
-1. **[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)** — 总纲
-2. **[SCRIPTS_LAYOUT.md](SCRIPTS_LAYOUT.md)** — `scripts/` 全景
-3. **[MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md)** — 节点树 + 手动干预速查
-4. **[MAP_DATA.md](MAP_DATA.md)** — 数据契约
+1. **Gameplay 升级**：TARGET → REFACTOR_PLAN → STATE_OWNERS / DEPENDENCY_BOUNDS
+2. **[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)** — 地图五层总纲
+3. **[SCRIPTS_LAYOUT.md](SCRIPTS_LAYOUT.md)** — `scripts/` 全景
+4. **[MAP_ARCHITECTURE.md](MAP_ARCHITECTURE.md)** — 节点树 + 手动干预速查
+5. **[MAP_DATA.md](MAP_DATA.md)** — 数据契约
+
+架构门禁：`res://tests/architecture/selftest_dependency_bounds.tscn`
 
 ## 何时查这里
 
