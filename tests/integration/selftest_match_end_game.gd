@@ -34,6 +34,8 @@ func run() -> void:
 	if not director.is_session_ready():
 		get_tree().quit(1)
 		return
+	var old_navigation: WeakRef = weakref(director._navigation)
+	var old_reservations := director._cell_reservation
 	var session := director.get_session()
 	session.match_finished.connect(func(_result: Dictionary) -> void: notifications += 1)
 	var halls: Dictionary = {}
@@ -84,6 +86,8 @@ func run() -> void:
 		while not director.is_session_ready() and Time.get_ticks_msec() < deadline:
 			await get_tree().process_frame
 		check(director.is_session_ready() and director.can_process(), "新局完成加载并恢复处理")
+		check(old_navigation.get_ref() == null, "restart destroys old navigation module")
+		check(director._cell_reservation != old_reservations, "restart creates fresh navigation reservations")
 		var fresh := director.get_session()
 		check(fresh != session and fresh.get_match_result().is_empty(), "新会话不继承胜负结果")
 		check(fresh.stocks.has(1) and fresh.stocks[1].gold == 500 and fresh.stocks[1].lumber == 150, "新局恢复正常初始资源")

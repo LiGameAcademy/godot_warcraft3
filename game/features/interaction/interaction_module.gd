@@ -2,7 +2,7 @@ class_name InteractionModule
 extends Node
 
 ## 对局交互协调：互斥瞄准状态机 + 光标同步 + 选择取消瞄准。
-## 命令卡内容生成仍在总管；本模块只编排「瞄准 ↔ 光标 ↔ 选中」。
+## 命令卡由 CommandCardModule 生成；本模块独占瞄准状态和选择器启用状态。
 
 enum Aim {
 	NONE,
@@ -284,3 +284,7 @@ func _sync_selector() -> void:
 		return
 	var aiming := _aim != Aim.NONE or _external_aim_active()
 	_unit_selector.enabled = not aiming
+
+
+func refresh_selector() -> void:
+	_sync_selector()

@@ -38,6 +38,17 @@ func _ready() -> void:
 	check(key == module.site_lookup_key("halt", Vector2(64.0, 96.0)),
 		"construction_key 与 site_lookup_key 一致")
 
+	var site := BuildSite.new()
+	module.add_child(site)
+	site.start(order, 0)
+	module.register_site(site, null, order)
+	check(module.find_site(order.site_wc3, order.building_id) == site, "active site found")
+	site.cancel()
+	check(module.find_site(order.site_wc3, order.building_id) == null, "cancelled site filtered")
+	site.free()
+	check(module.find_site(order.site_wc3, order.building_id) == null, "freed site filtered safely")
+	module.unregister_site(order)
+
 	# 不依赖 heightfield 时的 placement 行为：begin 创建控制器，但 update/commit 时
 	# 没有 pathing → placement 应仍可 cancel（信号放光 + 工地状态重置）。
 	check(module.begin_placement("halt", Vector2.ZERO, true),

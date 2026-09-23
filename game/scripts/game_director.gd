@@ -67,18 +67,29 @@ var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
 var _session: GameSession = null
-## 共享 PathQuery：所有 UnitNavigator 注入同一实例，避免每单位一份 A* 图。
-var _path_query: PathQuery = null
-var _pathing: Wc3PathingMap = null
-var _heightfield: Wc3Heightfield = null
+## 导航服务只读兼容入口；实例和生命周期统一归 NavigationModule。
+var _path_query: PathQuery:
+	get:
+		return _navigation.path_query if is_instance_valid(_navigation) else null
+var _pathing: Wc3PathingMap:
+	get:
+		return _navigation.pathing if is_instance_valid(_navigation) else null
+var _heightfield: Wc3Heightfield:
+	get:
+		return _navigation.heightfield if is_instance_valid(_navigation) else null
 ## 邻近单位查询（soft 分离）；与 PathQuery 一样地图就绪后绑定。
-var _crowd_query: UnitCrowdQuery = null
-var _cell_reservation: PathCellReservation = null
+var _crowd_query: UnitCrowdQuery:
+	get:
+		return _navigation.crowd_query if is_instance_valid(_navigation) else null
+var _cell_reservation: PathCellReservation:
+	get:
+		return _navigation.cell_reservation if is_instance_valid(_navigation) else null
 var _command_router: CommandRouter = null
 var _damage_pipeline: DamagePipeline = null
 var _death_service: DeathService = null
 var _item_service: ItemService
 var _ground_items: Node3D
+var _navigation: NavigationModule
 var _units: UnitsModule
 var _build: BuildModule
 var _combat: CombatModule
@@ -101,19 +112,6 @@ var _ability_ctx_factory: AbilityCastContextFactory = null
 var _ability_hud: AbilityHudFeedback = null
 var _ability_runtime: AbilityRuntimeRegistry = null
 var _ability_targeting_svc: AbilityTargetingService = null
-## 点了行动面板「移动」或热键 M 后，等待左键指定落点
-var _move_targeting: bool = false
-## 攻击瞄准：左键单位=Attack，地面=Attack-Move
-var _attack_targeting: bool = false
-## 巡逻瞄准：左键指定另一端点
-var _patrol_targeting: bool = false
-## 点了「采集」或热键 G 后，等待左键点金矿/树
-var _harvest_targeting: bool = false
-## 点了「集结点」后，等待左键指定地点/矿/树
-var _rally_targeting: bool = false
-## 英雄技能瞄准镜像（由 AbilityTargetingService 同步）
-var _ability_targeting: bool = false
-var _pending_ability_id: String = ""
 ## 选中可训建筑时显示的集结旗（长驻，复用）
 var _rally_flag: RallyFlagFx = null
 ## 瞄准期内被霜蓝染色的单位/建筑（Present）。
@@ -121,12 +119,6 @@ var _rally_flag: RallyFlagFx = null
 ## F2-4：建造瞄准态（玩家按下建造按钮后进入）。
 ## 鼠标 → godot 拾取（暴露给 placement 控制器，避开循环引用）。
 var _last_screen_pos: Vector2 = Vector2.ZERO
-## 工地宿主（农民离开后 BuildSite 挂于此）
-var _build_sites_host: Node = null
-## building Node3D instance_id → BuildSite
-var _build_site_by_building: Dictionary = {}
-## "%s_x_y" → BuildSite
-var _build_site_by_key: Dictionary = {}
 ## 对局内生产功能及本地界面适配器；队列订阅由模块持有。
 var _production: ProductionModule
 var _production_panel: ProductionPanel
@@ -342,7 +334,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	# 技能瞄准：左键点地/点单位施法
-	if _ability_targeting and event is InputEventMouseButton and _ability_targeting_svc != null:
+	if (is_instance_valid(_interaction) and _interaction.is_ability()) and event is InputEventMouseButton and _ability_targeting_svc != null:
 		var mb_ab := event as InputEventMouseButton
 		if mb_ab.pressed and mb_ab.button_index == MOUSE_BUTTON_LEFT:
 			var abil_id := _ability_targeting_svc.pending_abil_id()
@@ -364,7 +356,7 @@ func _input(event: InputEvent) -> void:
 		_last_screen_pos = (event as InputEventMouseMotion).position
 		_ensure_build_module()
 		_build.update_last_screen_pos(_last_screen_pos)
-		if _ability_targeting:
+		if (is_instance_valid(_interaction) and _interaction.is_ability()):
 			_update_ability_preview(_last_screen_pos)
 		if _build.is_build_targeting():
 			_build.set_confirm_armed(true)
@@ -413,6 +405,7 @@ func _on_map_loaded() -> void:
 		return
 	_bootstrapped = true
 	_hide_start_locations()
+	_ensure_navigation_module().initialize(map_root, Callable(self, "_ensure_unit_visual"))
 	_bootstrap_melee()
 	_setup_selector()
 	_setup_pathing()
@@ -452,38 +445,23 @@ func _setup_health_bars() -> void:
 	health_bar_manager.resync()
 
 
-## 地图就绪后再绑 PathQuery：WPM/合成图此时才保证有效。
+## 导航服务初始化后装配命令路由与功能模块。
 func _setup_pathing() -> void:
 	if map_root == null:
 		return
-	_path_query = PathQuery.new()
-	_path_query.bind_pathing(map_root.get_pathing_map())
-	_cell_reservation = PathCellReservation.new()
-	_path_query.bind_reservation(_cell_reservation)
-	var hf_dict := map_root.get_heightfield_dict()
-	if not hf_dict.is_empty():
-		_heightfield = Wc3Heightfield.from_dict(hf_dict, true)
-	else:
-		_heightfield = null
-	_pathing = map_root.get_pathing_map() if map_root != null else null
-	_crowd_query = UnitCrowdQuery.new()
-	_crowd_query.configure(
-		map_root.get_unit_layer(),
-		map_root.get_id_catalog()
-	)
 	_command_router = CommandRouter.new()
 	_ensure_combat_module()
 	_ensure_abilities_module()
-	_ensure_build_sites_host()
+	_ensure_build_module()
 	_command_router.configure(
 		_path_query,
 		_crowd_query,
-		Callable(self, "_ensure_navigator"),
+		Callable(_ensure_navigation_module(), "ensure_navigator"),
 		Callable(self, "_ensure_harvest_controller"),
 		Callable(self, "_ensure_build_controller"),
 		_session,
-		Callable(self, "_find_build_site"),
-		Callable(self, "_find_build_site_by_node"),
+		Callable(_build, "find_site"),
+		Callable(_build, "find_site_for_node"),
 		Callable(self, "_ensure_attack_controller")
 	)
 	if not _command_router.production_queue_ready.is_connected(_wire_train_queue):
@@ -506,71 +484,17 @@ func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
 		_combat.call("_award_death_experience", victim, killer)
 
 
-func _ensure_build_sites_host() -> void:
-	if _build_sites_host != null and is_instance_valid(_build_sites_host):
-		return
-	var host := Node.new()
-	host.name = "BuildSitesHost"
-	host.add_to_group("build_sites_host")
-	add_child(host)
-	_build_sites_host = host
-
-
 func _find_build_site(site_wc3: Vector2, building_id: String) -> BuildSite:
-	var key := _site_lookup_key(building_id, site_wc3)
-	var site: BuildSite = _build_site_by_key.get(key) as BuildSite
-	if site != null and is_instance_valid(site) and site.is_active():
-		return site
-	return null
+	return _ensure_build_module().find_site(site_wc3, building_id)
 
 
 func _find_build_site_by_node(building_node: Node3D) -> BuildSite:
-	if building_node == null or not is_instance_valid(building_node):
-		return null
-	var site: BuildSite = _build_site_by_building.get(building_node.get_instance_id()) as BuildSite
-	if site != null and is_instance_valid(site) and site.is_active():
-		return site
-	# 回退：用 unit_data 坐标查
-	var d: Dictionary = building_node.get_meta("unit_data", {})
-	var bid := str(d.get("typeId", ""))
-	var pos: Dictionary = d.get("position", {})
-	return _find_build_site(Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0))), bid)
+	return _ensure_build_module().find_site_for_node(building_node)
 
 
 func _site_lookup_key(building_id: String, site_wc3: Vector2) -> String:
-	return "%s_%.0f_%.0f" % [building_id, site_wc3.x, site_wc3.y]
+	return _ensure_build_module().site_lookup_key(building_id, site_wc3)
 
-
-func _register_build_site(site: BuildSite, building_node: Node3D, order: BuildOrder) -> void:
-	if site == null or order == null:
-		return
-	var key := _site_lookup_key(order.building_id, order.site_wc3)
-	_build_site_by_key[key] = site
-	if building_node != null and is_instance_valid(building_node):
-		_build_site_by_building[building_node.get_instance_id()] = site
-	if not site.build_completed.is_connected(_on_registered_site_completed):
-		site.build_completed.connect(_on_registered_site_completed)
-
-
-func _unregister_build_site(order: BuildOrder, building_node: Node3D = null) -> void:
-	if order == null:
-		return
-	var key := _site_lookup_key(order.building_id, order.site_wc3)
-	var site: BuildSite = _build_site_by_key.get(key) as BuildSite
-	_build_site_by_key.erase(key)
-	if building_node != null and is_instance_valid(building_node):
-		_build_site_by_building.erase(building_node.get_instance_id())
-	if site != null and is_instance_valid(site):
-		if site.build_completed.is_connected(_on_registered_site_completed):
-			site.build_completed.disconnect(_on_registered_site_completed)
-		# 已 reparent 到 host 的工地需释放；仍挂在农民下的由 BuildController 释放
-		if _build_sites_host != null and site.get_parent() == _build_sites_host:
-			site.queue_free()
-
-
-func _on_registered_site_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
-	# 农民已离开时由 Director 收尾；若 BuildController 仍会 emit，二次调用安全
-	_on_build_completed(order, site_wc3, player_owner)
 
 func _setup_minimap() -> void:
 	if game_hud == null or map_root == null or rts_camera == null:
@@ -732,7 +656,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if (
 		(
 			_ensure_command_input_module().is_basic_aiming()
-			or _ability_targeting
+			or (is_instance_valid(_interaction) and _interaction.is_ability())
 			or _is_build_targeting()
 		)
 		and event is InputEventKey
@@ -741,7 +665,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	):
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_ensure_interaction_module().cancel_aim("escape")
-			_sync_aim_flags_from_interaction()
+
 			get_viewport().set_input_as_handled()
 			return
 	# 建造二级面板：Esc → 回主卡
@@ -960,18 +884,8 @@ func _ability_pick_at(screen_pos: Vector2) -> Node3D:
 
 
 func _clear_rival_targeting_for_ability() -> void:
-	# begin_targeting 时 ability 尚未 adopt；清掉 move/attack/build 等互斥态
-	if is_instance_valid(_interaction):
-		var a := _interaction.current_aim()
-		if a != InteractionModule.Aim.NONE and a != InteractionModule.Aim.ABILITY:
-			_interaction.cancel_aim("rival_for_ability")
-			_sync_aim_flags_from_interaction()
-	else:
-		_set_move_targeting(false)
-		_set_attack_targeting(false)
-		_set_patrol_targeting(false)
-		_set_harvest_targeting(false)
-		_set_rally_targeting(false)
+	if is_instance_valid(_interaction) and not _interaction.is_ability():
+		_interaction.cancel_aim("rival_for_ability")
 
 
 func _ability_blizzard_preview_refresh() -> void:
@@ -979,23 +893,15 @@ func _ability_blizzard_preview_refresh() -> void:
 
 
 func _on_ability_targeting_changed(active: bool, abil_id: String) -> void:
-	_ability_targeting = active
-	_pending_ability_id = abil_id.strip_edges() if active else ""
 	if active:
-		var kind := AbilityCatalog.target_kind(_pending_ability_id)
 		_ensure_interaction_module().adopt_external_aim(
-			InteractionModule.Aim.ABILITY, {"abil_id": _pending_ability_id, "target_kind": kind}
+			InteractionModule.Aim.ABILITY,
+			{"abil_id": abil_id.strip_edges(), "target_kind": AbilityCatalog.target_kind(abil_id.strip_edges())}
 		)
-		_sync_aim_flags_from_interaction()
-		_ability_targeting = true
-		_pending_ability_id = abil_id.strip_edges()
 	else:
 		if is_instance_valid(_interaction) and _interaction.is_ability():
-			_interaction.cancel_aim("ability_end")
-			_sync_aim_flags_from_interaction()
+			_interaction.acknowledge_external_end()
 		_clear_ability_preview()
-	_sync_selector_enabled_for_targeting()
-	# 光标由 InteractionModule 统一设置（友方 → ALLY）
 
 
 func _begin_ability_targeting(abil_id: String, source: int) -> void:
@@ -1057,78 +963,15 @@ func _set_ability_targeting(active: bool, abil_id: String = "") -> void:
 	_ensure_abilities_module().set_targeting(active, abil_id)
 
 
-func _set_move_targeting(active: bool) -> void:
-	if active:
-		_ensure_interaction_module().begin_aim(InteractionModule.Aim.MOVE)
-	elif is_instance_valid(_interaction) and _interaction.is_move():
-		_interaction.cancel_aim()
-	_sync_aim_flags_from_interaction()
-
-
-func _set_attack_targeting(active: bool) -> void:
-	if active:
-		_ensure_interaction_module().begin_aim(InteractionModule.Aim.ATTACK)
-	elif is_instance_valid(_interaction) and _interaction.is_attack():
-		_interaction.cancel_aim()
-	_sync_aim_flags_from_interaction()
-
-
-func _set_patrol_targeting(active: bool) -> void:
-	if active:
-		_ensure_interaction_module().begin_aim(InteractionModule.Aim.PATROL)
-	elif is_instance_valid(_interaction) and _interaction.is_patrol():
-		_interaction.cancel_aim()
-	_sync_aim_flags_from_interaction()
-
-
-func _set_harvest_targeting(active: bool) -> void:
-	if active:
-		_ensure_interaction_module().begin_aim(InteractionModule.Aim.HARVEST)
-	elif is_instance_valid(_interaction) and _interaction.is_harvest():
-		_interaction.cancel_aim()
-	_sync_aim_flags_from_interaction()
-
-
-func _set_rally_targeting(active: bool) -> void:
-	if active:
-		_ensure_interaction_module().begin_aim(InteractionModule.Aim.RALLY)
-	elif is_instance_valid(_interaction) and _interaction.is_rally():
-		_interaction.cancel_aim()
-	_sync_aim_flags_from_interaction()
-
-
-func _sync_aim_flags_from_interaction() -> void:
-	if not is_instance_valid(_interaction):
-		return
-	var a := _interaction.current_aim()
-	_move_targeting = a == InteractionModule.Aim.MOVE
-	_attack_targeting = a == InteractionModule.Aim.ATTACK
-	_patrol_targeting = a == InteractionModule.Aim.PATROL
-	_harvest_targeting = a == InteractionModule.Aim.HARVEST
-	_rally_targeting = a == InteractionModule.Aim.RALLY
-	_ability_targeting = a == InteractionModule.Aim.ABILITY
-	_sync_selector_enabled_for_targeting()
-
-
 func _sync_selector_enabled_for_targeting() -> void:
-	if unit_selector == null:
-		return
-	unit_selector.enabled = not (
-		_move_targeting
-		or _attack_targeting
-		or _patrol_targeting
-		or _harvest_targeting
-		or _rally_targeting
-		or _ability_targeting
-		or _is_build_targeting()
-	)
+	if is_instance_valid(_interaction):
+		_interaction.refresh_selector()
 
 
 func _flash_cursor_move() -> void:
-	# 先退出瞄准再 flash，避免 set_move_targeting(false)→IDLE 掐死箭头动画
+	# 先退出瞄准再 flash，避免 取消瞄准→IDLE 掐死箭头动画
 	if is_instance_valid(_interaction):
 		_interaction.flash_move_confirm()
-		_sync_aim_flags_from_interaction()
 	elif game_cursor is Wc3GameCursor:
 		(game_cursor as Wc3GameCursor).flash_move()
 	elif game_cursor != null and game_cursor.has_method("flash_move"):
@@ -1210,31 +1053,14 @@ func _rally_flag_source_building() -> Node3D:
 
 
 func _ensure_navigator(unit: Node3D) -> UnitNavigator:
-	var visual := _ensure_unit_visual(unit)
-	var existing := unit.get_node_or_null("UnitNavigator") as UnitNavigator
-	if existing != null:
-		existing.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
-		existing.set_visual(visual)
-		_apply_move_stats(unit, existing)
-		_wire_navigator_signals(existing)
-		return existing
-	var nav := UnitNavigator.new()
-	nav.name = "UnitNavigator"
-	# 先 configure 再进树：即使 _ready 延后，query 也已就绪。
-	nav.configure(_path_query, _heightfield, _crowd_query, _cell_reservation)
-	nav.set_visual(visual)
-	_apply_move_stats(unit, nav)
-	unit.add_child(nav)
-	_wire_navigator_signals(nav)
-	return nav
-
+	return _ensure_navigation_module().ensure_navigator(unit)
 
 func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	_ensure_unit_visual(unit)
 	var existing := unit.get_node_or_null("HarvestController") as HarvestController
 	if existing != null:
 		existing.configure(
-			Callable(self, "_ensure_navigator"),
+			Callable(_ensure_navigation_module(), "ensure_navigator"),
 			Callable(self, "_stock_for_unit").bind(unit),
 			Callable(self, "_unit_host"),
 			Callable(self, "_path_query_ref"),
@@ -1246,7 +1072,7 @@ func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
 	var hc := HarvestController.new()
 	hc.name = "HarvestController"
 	hc.configure(
-		Callable(self, "_ensure_navigator"),
+		Callable(_ensure_navigation_module(), "ensure_navigator"),
 		Callable(self, "_stock_for_unit").bind(unit),
 		Callable(self, "_unit_host"),
 		Callable(self, "_path_query_ref"),
@@ -1608,14 +1434,14 @@ func _begin_build_targeting(building_id: String, _source: int) -> void:
 	# 选建筑后收起二级面板，进入瞄准（begin_aim 互斥清掉 ability/move 等）
 	_ensure_command_card_module().close_submenus()
 	_ensure_interaction_module().begin_aim(InteractionModule.Aim.BUILD, {"building_id": building_id})
-	_sync_aim_flags_from_interaction()
+
 	var vp := get_viewport()
 	if vp != null:
 		_last_screen_pos = vp.get_mouse_position()
 	var module := _ensure_build_module()
 	if not module.begin_placement(building_id, _last_screen_pos, not _pointer_over_blocking_gui()):
 		_ensure_interaction_module().cancel_aim("build_fail")
-		_sync_aim_flags_from_interaction()
+
 		return
 	_refresh_command_card()
 	if game_hud:
@@ -1629,7 +1455,7 @@ func _cancel_build_targeting() -> void:
 	_build.cancel_placement()
 	if is_instance_valid(_interaction) and _interaction.is_build():
 		_interaction.cancel_aim("build_cancel")
-		_sync_aim_flags_from_interaction()
+
 	else:
 		_sync_selector_enabled_for_targeting()
 	if game_hud:
@@ -1717,7 +1543,7 @@ func _commit_build_targeting(screen_pos: Vector2) -> void:
 		# placement 已在 commit 中结束；勿再 cancel_placement（会清掉钉住幽灵）
 		if is_instance_valid(_interaction) and _interaction.is_build():
 			_interaction.acknowledge_external_end()
-			_sync_aim_flags_from_interaction()
+
 		else:
 			_sync_selector_enabled_for_targeting()
 		_refresh_command_card()
@@ -1728,7 +1554,7 @@ func _commit_build_targeting(screen_pos: Vector2) -> void:
 	if not module.is_build_targeting():
 		if is_instance_valid(_interaction) and _interaction.is_build():
 			_interaction.acknowledge_external_end()
-			_sync_aim_flags_from_interaction()
+
 		else:
 			_sync_selector_enabled_for_targeting()
 		module.clear_pinned_ghost()
@@ -1854,25 +1680,9 @@ func _wire_build_signals(bc: BuildController) -> void:
 		bc.build_completed.connect(_on_build_completed)
 	if not bc.build_cancelled.is_connected(_on_build_cancelled):
 		bc.build_cancelled.connect(_on_build_cancelled)
-	if not bc.build_joined.is_connected(_on_build_joined):
-		bc.build_joined.connect(_on_build_joined)
 	# 协助农民轮询「首工到位后」登记的工地（BuildModule 反查）
 	_ensure_build_module()
 	bc.find_site_at = Callable(_build, "find_site")
-
-
-## 增派工人到位（半成品应已存在；此信号仅作进度/动画旁路，不再提前刷建筑）。
-func _on_build_joined(_site: BuildSite, _builder: Node3D) -> void:
-	pass
-
-
-## 0 工人：冻结 Birth/粒子；有人回来继续 → 由 BuildModule 内部处理。
-func _on_construction_paused(_paused: bool, _key: String) -> void:
-	pass
-
-
-func _set_construction_present_paused(_building: Node3D, _building_id: String, _paused: bool) -> void:
-	pass
 
 
 func _find_anim_player(n: Node) -> AnimationPlayer:
@@ -1891,17 +1701,8 @@ func _on_build_started(order: BuildOrder) -> void:
 
 
 ## 开工让位：脚印内可移动单位走开，避免卡在半成品 pathTex 上。
-func _make_way_for_construction(_order: BuildOrder, _building_node: Node3D, _site: BuildSite) -> void:
-	# 由 BuildModule.on_construction_started 内部完成
-	pass
 
 
-func _on_construction_progress(_elapsed: float, _total: float, _ratio: float, _key: String) -> void:
-	# BuildModule 内部负责：UnitLife.set_ratio + HUD 刷新
-	pass
-
-
-## F2-5：工地 timer 跑完 → 半成品转正（满血）；若无半成品则兜底刷建筑。
 func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
 	_ensure_build_module().on_construction_completed(order, site_wc3, player_owner)
 	_refresh_command_card()
@@ -1923,18 +1724,8 @@ func _construction_key(order: BuildOrder) -> String:
 	return _site_lookup_key(order.building_id, order.site_wc3)
 
 func _refresh_dynamic_pathing() -> void:
-	if map_root == null:
-		return
-	# 动态脚印变更后：数据与叠层必须同源，否则会出现「蓝格可摆」或「叠层过期」
-	if bool(map_root.get("show_pathing_ground")) and map_root.has_method("_rebuild_pathing_overlay"):
-		map_root.call("_rebuild_pathing_overlay")
-	elif map_root.has_method("_apply_dynamic_pathing"):
-		map_root.call("_apply_dynamic_pathing")
-	elif map_root.has_method("set_pathing_map") and _pathing != null:
-		map_root.set_pathing_map(_pathing)
+	_ensure_navigation_module().refresh_dynamic_pathing()
 
-
-## 完工后入图的 unit entry dict（MapUnitLayer 期望的字段）。
 func _build_entry_for(building_id: String, site_wc3: Vector2, player_owner: int, creation_number: int = -1) -> Dictionary:
 	return _ensure_units_module().build_building_entry(building_id, site_wc3, player_owner, creation_number)
 
@@ -2131,13 +1922,6 @@ static func _is_gold_mine(node: Node) -> bool:
 	return str(d.get("typeId", "")).strip_edges() == HarvestController.GOLD_MINE_TYPE
 
 
-func _wire_navigator_signals(nav: UnitNavigator) -> void:
-	if nav == null:
-		return
-	if not nav.locomotion_changed.is_connected(_on_unit_locomotion_changed):
-		nav.locomotion_changed.connect(_on_unit_locomotion_changed)
-
-
 func _on_unit_locomotion_changed(_moving: bool) -> void:
 	_refresh_move_executing_ui()
 
@@ -2173,34 +1957,8 @@ func _ensure_interaction_components(unit: Node3D) -> void:
 ## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
 ## 注意：UnitUI.walk 是动画侧速率，不是对象编辑器「移动速度」。
 func _apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
-	if unit == null or nav == null:
-		return
-	var d: Dictionary = unit.get_meta("unit_data", {})
-	var tid := str(d.get("typeId", "")).strip_edges()
-	if tid.is_empty():
-		return
-	var spd := 0.0
-	var turn := 0.0
-	var radius := 0.0
-	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-	Wc3DefStore.ensure_table(UnitDataDef.TABLE_NAME)
-	var bal := Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid) as UnitBalanceDef
-	if bal != null and bal.spd > 0.0:
-		spd = bal.spd
-	var data := Wc3DefStore.get_row(UnitDataDef.TABLE_NAME, tid) as UnitDataDef
-	if data != null and data.turn_rate > 0.0:
-		turn = data.turn_rate
-	if _crowd_query != null:
-		radius = _crowd_query.radius_for_unit(unit)
-	nav.apply_unit_stats(spd, turn, radius)
-	var dc := DefendController.of(unit)
-	nav.speed_mul = dc.speed_mul() if dc != null else 1.0
-	# 农民 soft 分离略放大，减轻采金/伐木叠人（不改 UnitBalance.collision 权威值）
-	if tid == HarvestController.WORKER_PEASANT:
-		nav.separation_radius_mul = 1.45
+	_ensure_navigation_module().apply_move_stats(unit, nav)
 
-## 地面拾取：沿相机射线对 Heightfield 求交，而不是 PhysicsRay。
-## 为何不用物理射线：会先打到单位网格/选中环，目标变成「自己脚下」→ 表现为不移动。
 func _ground_at_screen(screen_pos: Vector2) -> Vector3:
 	if rts_camera == null:
 		return Vector3.INF
@@ -2335,7 +2093,7 @@ func _clear_command_card_hotkeys() -> void:
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_ensure_selection_hud_module().bind_inventory_for(primary)
 	_ensure_interaction_module().on_selection_changed(primary, selected)
-	_sync_aim_flags_from_interaction()
+
 	if health_bar_manager:
 		health_bar_manager.set_selection(selected)
 	if game_hud == null:
@@ -2494,12 +2252,12 @@ func _ensure_opponent_ai_module() -> OpponentAiModule:
 		"pathing": _pathing,
 		"tree_registry": _tree_registry,
 		"item_service": _ensure_items_module().item_service,
-		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_harvest": Callable(self, "_ensure_harvest_controller"),
 		"ensure_build": Callable(self, "_ensure_build_controller"),
 		"ensure_attack": Callable(self, "_ensure_attack_controller"),
-		"find_build_site": Callable(self, "_find_build_site"),
-		"find_build_site_by_node": Callable(self, "_find_build_site_by_node"),
+		"find_build_site": Callable(_build, "find_site"),
+		"find_build_site_by_node": Callable(_build, "find_site_for_node"),
 		"wire_train_queue": Callable(self, "_wire_train_queue"),
 		"stock_for_owner": Callable(self, "_stock_for_owner"),
 	})
@@ -2534,10 +2292,9 @@ func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
 		"rts_camera": rts_camera,
 		"rng": _rng,
 		"apply_cursor_race": Callable(self, "_apply_cursor_race"),
-		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 		"map_display_name": Callable(self, "_map_display_name"),
-		"on_pathing_map": func(pm) -> void:
-			_pathing = pm,
+		"on_pathing_map": Callable(_ensure_navigation_module(), "bind_pathing"),
 	})
 	return _match_bootstrap
 
@@ -2603,8 +2360,7 @@ func _ensure_command_card_module() -> CommandCardModule:
 		"get_selected": Callable(self, "_get_selected_safe"),
 		"unbind_hud_build_site": Callable(self, "_unbind_hud_build_site"),
 		"cancel_aim_rivals": func() -> void:
-			_ensure_interaction_module().cancel_aim("submenu")
-			_sync_aim_flags_from_interaction(),
+			_ensure_interaction_module().cancel_aim("submenu"),
 		"ensure_caster": Callable(self, "_ensure_caster_runtime"),
 		"begin_move": Callable(self, "_begin_move_targeting"),
 		"issue_stop": Callable(self, "_issue_stop"),
@@ -2644,14 +2400,9 @@ func _ensure_interaction_module() -> InteractionModule:
 				_abilities.cancel_targeting(),
 		"cancel_build": Callable(self, "_cancel_build_targeting"),
 		"ability_target_kind": func() -> int:
-			var id := _pending_ability_id
-			if id.is_empty() and is_instance_valid(_abilities):
-				id = _abilities.pending_abil_id()
-			return AbilityCatalog.target_kind(id),
+			return AbilityCatalog.target_kind(_abilities.pending_abil_id()) if is_instance_valid(_abilities) else 0,
 		"is_ability_targeting": func() -> bool:
-			return _ability_targeting or (
-				is_instance_valid(_abilities) and _abilities.is_targeting()
-			),
+			return is_instance_valid(_abilities) and _abilities.is_targeting(),
 		"is_build_targeting": Callable(self, "_is_build_targeting"),
 	})
 	return _interaction
@@ -2703,8 +2454,7 @@ func _ensure_command_input_module() -> CommandInputModule:
 		"spawn_move_confirm": Callable(self, "_spawn_move_confirm"),
 		"flash_cursor_move": Callable(self, "_flash_cursor_move"),
 		"sync_rally_flag": Callable(self, "_sync_rally_flag_for_selection"),
-		"sync_aim_flags": Callable(self, "_sync_aim_flags_from_interaction"),
-		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"is_gold_mine": Callable(self, "_is_gold_mine"),
 		"is_harvestable_tree": Callable(self, "_is_harvestable_tree_node"),
 		"tree_cn_of": Callable(self, "_tree_cn_of"),
@@ -2725,7 +2475,7 @@ func _ensure_combat_module() -> CombatModule:
 	_combat.configure({
 		"map_root": map_root,
 		"health_bar_manager": health_bar_manager,
-		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
 		"unit_host": Callable(self, "_unit_host"),
 		"release_food": Callable(self, "_release_unit_food"),
@@ -2779,15 +2529,15 @@ func _ensure_build_module() -> BuildModule:
 		"session": _session,
 		"health_bar_manager": health_bar_manager,
 		"game_hud": game_hud,
-		"sites_registry_host": self,
 		"alloc_creation_number": Callable(self, "_alloc_runtime_cn"),
 		"build_entry_for": Callable(self, "_build_entry_for"),
 		"find_anim_player": Callable(self, "_find_anim_player"),
 		"issue_move": Callable(self, "_command_router_issue_move"),
-		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
 		"resync_health_bars": Callable(self, "_resync_health_bars"),
 		"ground_at_screen": Callable(self, "_ground_at_screen"),
+		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 	})
 	return _build
 
@@ -2816,10 +2566,10 @@ func _ensure_units_module() -> UnitsModule:
 		"command_router": _command_router,
 		"health_bar_manager": health_bar_manager,
 		"registry_host": self,
-		"ensure_navigator": Callable(self, "_ensure_navigator"),
+		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
 		"ensure_attack_controller": Callable(self, "_ensure_attack_controller"),
 		"unit_host": Callable(self, "_unit_host"),
-		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 		"on_inventory_changed": Callable(self, "_on_inventory_changed"),
 		"ensure_hero_passives": func(unit: Node3D) -> void:
 			_ensure_abilities_module().ensure_hero_passives(unit),
@@ -2865,7 +2615,7 @@ func _ensure_abilities_module() -> AbilitiesModule:
 		"on_targeting_changed": Callable(self, "_on_ability_targeting_changed"),
 		"set_status": Callable(self, "_ability_set_status"),
 		"refresh_command_card": Callable(self, "_refresh_command_card"),
-		"refresh_pathing": Callable(self, "_refresh_dynamic_pathing"),
+		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
 		"resync_health_bars": func() -> void:
 			if health_bar_manager != null:
 				health_bar_manager.resync(),
@@ -2947,3 +2697,12 @@ func _on_production_activity_changed(_queue: TrainQueue = null) -> void:
 	if not game_hud.has_method("set_activity_feed"):
 		return
 	game_hud.set_activity_feed(_production.collect_owner_activities(_session.local_player))
+
+
+func _ensure_navigation_module() -> NavigationModule:
+	if not is_instance_valid(_navigation):
+		_navigation = NavigationModule.new()
+		_navigation.name = "NavigationModule"
+		add_child(_navigation)
+		_navigation.locomotion_changed.connect(_on_unit_locomotion_changed)
+	return _navigation

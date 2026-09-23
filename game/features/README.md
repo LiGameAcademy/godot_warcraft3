@@ -13,6 +13,10 @@ game/features/
       building_rally.gd            集结点状态
     presentation/
       production_panel.gd          本地选择、生产反馈与建筑工作表现
+  navigation/
+    navigation_module.gd          对局导航服务、Navigator 装配与动态寻路刷新
+    logic/                        PathQuery / UnitCrowdQuery / PathCellReservation
+    presentation/                 UnitNavigator
   units/
     units_module.gd                对局内单位出生、AI/英雄装配与 CN 分配
   build/
@@ -52,3 +56,13 @@ game/features/
 - 回归测试暂保留在 `tests/unit`、`tests/integration`，以功能前缀定位；各功能文档列出自己的验收入口。
 
 当前生产与单位功能边界、兼容入口和后续批次见 [模块化重构计划](../../docs/architecture/FEATURE_MODULE_REFACTOR.md)。
+
+## 2026-09-23：导航与状态归属收尾
+
+- 导航模块只在地图就绪时初始化；普通获取不重装依赖。开局刷兵前建立服务，刷兵后同步动态脚印。销毁或重新初始化时停止已装配的导航组件、释放预约并断开信号。
+- Director 的导航属性为只读转发，不再持有第二份服务状态。导航与动态寻路回调直接绑定 NavigationModule。
+- BuildModule 是唯一工地注册表和 BuildSitesHost 所有者；玩家与 AI 路由器使用同一查询入口。失效或已取消工地不再返回给调用方。
+- InteractionModule 独占瞄准状态和选择器启用状态；Director 不再复制普通命令/技能瞄准布尔值或技能 ID，CommandInputModule 不再请求总管同步镜像。
+- 当前继续保留少量 Director 兼容方法；单位视觉装配、采集、民兵形态和大部分功能依赖装配留待后续批次。
+
+导航契约与回归入口见 [navigation/README.md](navigation/README.md)。

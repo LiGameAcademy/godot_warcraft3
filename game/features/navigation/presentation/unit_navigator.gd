@@ -6,7 +6,7 @@ extends Node
 ## 为何是子节点而不是把 A* 写进单位脚本：
 ## - 表现层单位只负责「沿路点走」；换皮/换动画时不应牵动寻路算法。
 ## - 建筑、静止物可以不挂本节点；需要移动时再 ensure，避免无谓 _process。
-## - PathQuery 由 Director/Session 注入（共享一张 WPM），这里绝不持有 pathing 副本。
+## - PathQuery 由 NavigationModule 注入（共享一张 WPM），这里绝不持有 pathing 副本。
 
 signal arrived
 signal path_failed(reason: String)

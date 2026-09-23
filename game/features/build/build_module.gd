@@ -24,8 +24,7 @@ var _command_router: CommandRouter
 var _session: GameSession
 var _health_bar_manager: HealthBarManager
 var _game_hud: GameHud
-## 注册表宿主（通常为 BuildSitesHost）。
-var _sites_registry_host: Node
+var _refresh_pathing: Callable
 var _alloc_creation_number: Callable
 var _build_entry_for: Callable
 var _find_anim_player: Callable
@@ -60,6 +59,7 @@ var _last_screen_pos: Vector2 = Vector2.ZERO
 
 
 func configure(deps: Dictionary) -> void:
+	_refresh_pathing = deps.get("refresh_pathing", Callable()) as Callable
 	_map_root = deps.get("map_root") as MapLoader
 	_heightfield = deps.get("heightfield") as Wc3Heightfield
 	_pathing = deps.get("pathing") as Wc3PathingMap
@@ -69,7 +69,6 @@ func configure(deps: Dictionary) -> void:
 	_session = deps.get("session") as GameSession
 	_health_bar_manager = deps.get("health_bar_manager") as HealthBarManager
 	_game_hud = deps.get("game_hud") as GameHud
-	_sites_registry_host = deps.get("sites_registry_host") as Node
 	_alloc_creation_number = deps.get("alloc_creation_number", Callable()) as Callable
 	_build_entry_for = deps.get("build_entry_for", Callable()) as Callable
 	_find_anim_player = deps.get("find_anim_player", Callable()) as Callable
@@ -84,6 +83,7 @@ func configure(deps: Dictionary) -> void:
 func shutdown() -> void:
 	cancel_placement()
 	unbind_hud_site()
+	_refresh_pathing = Callable()
 	_map_root = null
 	_heightfield = null
 	_pathing = null
@@ -93,7 +93,6 @@ func shutdown() -> void:
 	_session = null
 	_health_bar_manager = null
 	_game_hud = null
-	_sites_registry_host = null
 	_alloc_creation_number = Callable()
 	_build_entry_for = Callable()
 	_find_anim_player = Callable()
@@ -157,7 +156,8 @@ func _cell_reservation_ref() -> PathCellReservation:
 ## BuildController 反查工地用（兼容旧 (site_wc3, building_id) 顺序）。
 func find_site(site_wc3: Vector2, building_id: String) -> BuildSite:
 	var key := site_lookup_key(building_id, site_wc3)
-	return _sites_by_key.get(key) as BuildSite
+	var site: Variant = _sites_by_key.get(key)
+	return site if is_instance_valid(site) and site.is_active() else null
 
 
 func find_site_by_key(site_wc3: Vector2, building_id: String) -> BuildSite:
@@ -167,8 +167,8 @@ func find_site_by_key(site_wc3: Vector2, building_id: String) -> BuildSite:
 func find_site_for_node(building_node: Node3D) -> BuildSite:
 	if building_node == null or not is_instance_valid(building_node):
 		return null
-	var site: BuildSite = _sites_by_building.get(building_node.get_instance_id()) as BuildSite
-	if site != null and site.is_active():
+	var site: Variant = _sites_by_building.get(building_node.get_instance_id())
+	if is_instance_valid(site) and site.is_active():
 		return site
 	var d: Dictionary = building_node.get_meta("unit_data", {})
 	var bid := str(d.get("typeId", ""))
@@ -234,14 +234,14 @@ func unregister_site(order: BuildOrder, building_node: Node3D = null) -> void:
 	if order == null:
 		return
 	var key := site_lookup_key(order.building_id, order.site_wc3)
-	var site: BuildSite = _sites_by_key.get(key) as BuildSite
+	var site: Variant = _sites_by_key.get(key)
 	_sites_by_key.erase(key)
-	if site != null:
+	if is_instance_valid(site):
 		if site.build_completed.is_connected(_on_site_completed):
 			site.build_completed.disconnect(_on_site_completed)
 	if building_node != null and is_instance_valid(building_node):
 		_sites_by_building.erase(building_node.get_instance_id())
-	if site != null and site.is_active() == false:
+	if is_instance_valid(site) and site.is_active() == false:
 		if site.get_parent() == _sites_host:
 			site.queue_free()
 
@@ -455,14 +455,8 @@ func map_root_get_model_cache() -> MapModelCache:
 
 
 func _refresh_dynamic_pathing() -> void:
-	if _map_root == null:
-		return
-	if bool(_map_root.get("show_pathing_ground")) and _map_root.has_method("_rebuild_pathing_overlay"):
-		_map_root.call("_rebuild_pathing_overlay")
-	elif _map_root.has_method("_apply_dynamic_pathing"):
-		_map_root.call("_apply_dynamic_pathing")
-	elif _map_root.has_method("set_pathing_map") and _pathing != null:
-		_map_root.set_pathing_map(_pathing)
+	if _refresh_pathing.is_valid():
+		_refresh_pathing.call()
 
 
 ## HUD 工地：刷新选中或主动取消时调用。
@@ -486,7 +480,7 @@ func sync_hud_for_selection(primary_getter: Callable) -> void:
 		return
 	var bc := primary.get_node_or_null("BuildController") as BuildController
 	var site: BuildSite = bc.current_site() if bc != null else null
-	if site != null and site.is_active():
+	if is_instance_valid(site) and site.is_active():
 		if _game_hud.has_method("clear_train_queue"):
 			_game_hud.clear_train_queue()
 		bind_hud_site(site)

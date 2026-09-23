@@ -95,10 +95,14 @@ func run() -> void:
 	module.on_construction_started(order)
 	check(started_count == 1, "construction_started 信号触发")
 
+	check(director._find_build_site(site_xy, "hfoo") == site, "Director adapter uses authoritative registry")
+	check(director._command_router._find_site_at(site_xy, "hfoo") == site, "command router sees registered site")
+	check(get_tree().get_nodes_in_group("build_sites_host").size() == 1, "one site host per match")
 	# 半成品是否在场景里。
 	var half_found := false
 	for unit in director.map_root.get_unit_layer().get_children():
 		if unit.has_meta("unit_data") and int(unit.get_meta("unit_data", {}).get("owner", -1)) == director.local_player and str(unit.get_meta("unit_data", {}).get("typeId", "")) == "hfoo" and UnitLife.is_under_construction(unit):
+			check(director._command_router._find_site_for_building_node(unit) == site, "router finds site by building")
 			half_found = true
 			break
 	check(half_found, "半成品 hfoo 已入图且 under_construction")
@@ -119,6 +123,7 @@ func run() -> void:
 	# 完工后 BuildModule 应已 unregister site。
 	check(module.find_site(site_xy, "hfoo") == null, "完工后 site 注册已清")
 
+	check(director._command_router._find_site_at(site_xy, "hfoo") == null, "completed site unavailable to router")
 	game.queue_free()
 	await get_tree().process_frame
 	print("selftest_build_module_game: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])

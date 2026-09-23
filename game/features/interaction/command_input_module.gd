@@ -20,7 +20,6 @@ var _refresh_command_card: Callable
 var _spawn_move_confirm: Callable
 var _flash_cursor_move: Callable
 var _sync_rally_flag: Callable
-var _sync_aim_flags: Callable
 var _ensure_navigator: Callable
 var _is_gold_mine: Callable
 var _is_harvestable_tree: Callable
@@ -44,7 +43,6 @@ func configure(deps: Dictionary) -> void:
 	_spawn_move_confirm = deps.get("spawn_move_confirm", Callable()) as Callable
 	_flash_cursor_move = deps.get("flash_cursor_move", Callable()) as Callable
 	_sync_rally_flag = deps.get("sync_rally_flag", Callable()) as Callable
-	_sync_aim_flags = deps.get("sync_aim_flags", Callable()) as Callable
 	_ensure_navigator = deps.get("ensure_navigator", Callable()) as Callable
 	_is_gold_mine = deps.get("is_gold_mine", Callable()) as Callable
 	_is_harvestable_tree = deps.get("is_harvestable_tree", Callable()) as Callable
@@ -68,7 +66,6 @@ func shutdown() -> void:
 	_spawn_move_confirm = Callable()
 	_flash_cursor_move = Callable()
 	_sync_rally_flag = Callable()
-	_sync_aim_flags = Callable()
 	_ensure_navigator = Callable()
 	_is_gold_mine = Callable()
 	_is_harvestable_tree = Callable()
@@ -500,7 +497,6 @@ func begin_move_targeting(source: int) -> void:
 	_do_interrupt(selected)
 	if is_instance_valid(_interaction):
 		_interaction.begin_aim(InteractionModule.Aim.MOVE)
-	_do_sync_aim()
 	var src := "面板" if source == UnitOrder.Source.PANEL else "热键 M"
 	_set_status("移动瞄准（%s）· 左键指定地点 · Esc 取消" % src)
 
@@ -512,7 +508,6 @@ func begin_attack_targeting(source: int) -> void:
 		return
 	if is_instance_valid(_interaction):
 		_interaction.begin_aim(InteractionModule.Aim.ATTACK)
-	_do_sync_aim()
 	var src := "面板" if source == UnitOrder.Source.PANEL else "热键 A"
 	_set_status("攻击瞄准（%s）· 左键单位/地面 · Esc 取消" % src)
 
@@ -524,7 +519,6 @@ func begin_patrol_targeting(source: int) -> void:
 		return
 	if is_instance_valid(_interaction):
 		_interaction.begin_aim(InteractionModule.Aim.PATROL)
-	_do_sync_aim()
 	var src := "面板" if source == UnitOrder.Source.PANEL else "热键 P"
 	_set_status("巡逻瞄准（%s）· 左键指定另一端 · Esc 取消" % src)
 
@@ -536,7 +530,6 @@ func begin_harvest_targeting(source: int) -> void:
 		return
 	if is_instance_valid(_interaction):
 		_interaction.begin_aim(InteractionModule.Aim.HARVEST)
-	_do_sync_aim()
 	var src := "面板" if source == UnitOrder.Source.PANEL else "热键 G"
 	_set_status("采集瞄准（%s）· 左键点金矿 · Esc 取消" % src)
 
@@ -553,7 +546,6 @@ func begin_rally_targeting(source: int) -> void:
 		return
 	if is_instance_valid(_interaction):
 		_interaction.begin_aim(InteractionModule.Aim.RALLY)
-	_do_sync_aim()
 	var src := "面板" if source == UnitOrder.Source.PANEL else "热键"
 	_set_status("集结瞄准（%s）· 左键点地面/金矿/树 · Esc 取消" % src)
 
@@ -574,7 +566,6 @@ func is_basic_aiming() -> bool:
 func _cancel_basic_aim() -> void:
 	if is_instance_valid(_interaction):
 		_interaction.cancel_aim()
-	_do_sync_aim()
 
 
 func _selected() -> Array:
@@ -607,11 +598,6 @@ func _do_spawn_confirm(goal_wc3: Vector2, kind: int = MoveConfirmFx.Kind.MOVE) -
 func _do_flash_cursor_move() -> void:
 	if _flash_cursor_move.is_valid():
 		_flash_cursor_move.call()
-
-
-func _do_sync_aim() -> void:
-	if _sync_aim_flags.is_valid():
-		_sync_aim_flags.call()
 
 
 func _gold_mine(node: Node) -> bool:
