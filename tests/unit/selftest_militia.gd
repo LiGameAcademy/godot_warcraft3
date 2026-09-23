@@ -1,12 +1,12 @@
-extends SceneTree
+extends Node
 
 ## 民兵 Amil：Duration + 形态 ID 常量；MilitiaController 武装/收回。
-## godot --headless --path . -s res://tests/unit/selftest_militia.gd
+## godot --headless --path . res://tests/unit/selftest_militia.tscn
 
 var failed := 0
 
 
-func _initialize() -> void:
+func _ready() -> void:
 	call_deferred("_run")
 
 
@@ -16,10 +16,10 @@ func _run() -> void:
 	await _test_auto_revert_timeout()
 	if failed == 0:
 		print("selftest_militia: PASS")
-		quit(0)
+		get_tree().quit(0)
 	else:
 		push_error("selftest_militia: FAIL (%d)" % failed)
-		quit(1)
+		get_tree().quit(1)
 
 
 func _fail(msg: String) -> void:
@@ -28,7 +28,7 @@ func _fail(msg: String) -> void:
 
 
 func _test_amil_duration() -> void:
-	var store := root.get_node_or_null("Wc3DefStore")
+	var store := get_tree().root.get_node_or_null("Wc3DefStore")
 	if store == null:
 		_fail("Wc3DefStore 缺失")
 		return
@@ -47,7 +47,7 @@ func _test_controller_toggle_forms() -> void:
 	var applied: Array[String] = []
 	var body := Node3D.new()
 	body.set_meta("unit_data", {"typeId": "hpea", "owner": 0})
-	root.add_child(body)
+	add_child(body)
 
 	var mc := MilitiaController.new()
 	mc.name = MilitiaController.NODE_NAME
@@ -58,7 +58,7 @@ func _test_controller_toggle_forms() -> void:
 		u.set_meta("unit_data", d)
 		applied.append(tid)
 		return true
-	mc.configure(apply, 45.0)
+	mc.configure(apply, func() -> Node3D: return body, Callable(), 45.0)
 
 	if not mc.toggle_call_to_arms():
 		_fail("农民应能武装为民兵")
@@ -84,7 +84,7 @@ func _test_auto_revert_timeout() -> void:
 	var applied: Array[String] = []
 	var body := Node3D.new()
 	body.set_meta("unit_data", {"typeId": "hpea", "owner": 0})
-	root.add_child(body)
+	add_child(body)
 	var mc := MilitiaController.new()
 	mc.name = MilitiaController.NODE_NAME
 	body.add_child(mc)
@@ -94,7 +94,7 @@ func _test_auto_revert_timeout() -> void:
 		u.set_meta("unit_data", d)
 		applied.append(tid)
 		return true
-	mc.configure(apply, 0.08)
+	mc.configure(apply, func() -> Node3D: return body, Callable(), 0.08)
 	if not mc.toggle_call_to_arms():
 		_fail("武装应成功")
 		body.queue_free()
@@ -103,7 +103,7 @@ func _test_auto_revert_timeout() -> void:
 		_fail("武装后应为 hmil")
 		body.queue_free()
 		return
-	await create_timer(0.15).timeout
+	await get_tree().create_timer(0.15).timeout
 	if mc.is_militia():
 		_fail("0.08s 后应自动收回为农民")
 		body.queue_free()

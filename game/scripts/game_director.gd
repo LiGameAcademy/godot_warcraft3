@@ -408,7 +408,7 @@ func _on_map_loaded() -> void:
 		return
 	_bootstrapped = true
 	_hide_start_locations()
-	_ensure_navigation_module().initialize(map_root, Callable(self, "_ensure_unit_visual"))
+	_ensure_navigation_module().initialize(map_root, Callable(_unit_presenter(), "ensure_visual"))
 	_bootstrap_melee()
 	_setup_selector()
 	_setup_pathing()
@@ -636,12 +636,7 @@ func _find_local_town_hall() -> Node3D:
 
 
 func _order_militia_move_to_hall(unit: Node3D, hall: Node3D) -> void:
-	if unit == null or hall == null or _command_router == null:
-		return
-	if not is_instance_valid(unit) or not is_instance_valid(hall):
-		return
-	var goal := Wc3Coords.godot_to_wc3_xy(hall.global_position)
-	_command_router.issue_move_to_wc3([unit], goal, UnitOrder.Source.PANEL)
+	_ensure_units_module().forms._order_move_to_hall(unit, hall)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1067,208 +1062,34 @@ func _wire_all_unit_ai() -> void:
 
 
 func _ensure_militia_controller(unit: Node3D) -> MilitiaController:
-	if unit == null or not is_instance_valid(unit):
-		return null
-	if not MilitiaController.unit_has_abil(unit):
-		return null
-	var existing := MilitiaController.of(unit)
-	if existing != null:
-		existing.configure(
-			Callable(self, "_apply_unit_form"),
-			Callable(self, "_find_local_town_hall"),
-			Callable(self, "_order_militia_move_to_hall")
-		)
-		return existing
-	var mc := MilitiaController.new()
-	mc.name = MilitiaController.NODE_NAME
-	mc.configure(
-		Callable(self, "_apply_unit_form"),
-		Callable(self, "_find_local_town_hall"),
-		Callable(self, "_order_militia_move_to_hall")
-	)
-	unit.add_child(mc)
-	return mc
+	return _ensure_units_module().forms.ensure_militia(unit)
 
 
 ## 就地换 typeId + 模型（农民↔民兵）。保持同一 Unit 节点与 creationNumber。
 func _apply_unit_form(unit: Node3D, new_type_id: String) -> bool:
-	if unit == null or not is_instance_valid(unit) or new_type_id.is_empty():
-		return false
-	var d: Dictionary = unit.get_meta("unit_data", {}).duplicate(true)
-	var old_tid := str(d.get("typeId", "")).strip_edges()
-	if old_tid == new_type_id:
-		return true
-	var hc := unit.get_node_or_null("HarvestController") as HarvestController
-	if hc != null:
-		hc.abort()
-	var ac := unit.get_node_or_null("AttackController") as AttackController
-	if ac != null:
-		ac.cancel()
-	var uai := UnitAI.of(unit)
-	if uai != null:
-		uai.yield_to_player()
-	var life_ratio := UnitLife.ratio(unit)
-	d["typeId"] = new_type_id
-	unit.set_meta("unit_data", d)
-	if unit.has_meta(UnitLife.META_LIFE):
-		unit.remove_meta(UnitLife.META_LIFE)
-	if unit.has_meta(UnitLife.META_MAX_LIFE):
-		unit.remove_meta(UnitLife.META_MAX_LIFE)
-	UnitLife.ensure(unit)
-	UnitLife.set_ratio(unit, life_ratio)
-	if not _swap_unit_model(unit, new_type_id, int(d.get("owner", 0)), int(d.get("variation", 0))):
-		AppLog.warn(AppLog.Layer.LOGIC, "GameDirector", "morph 模型失败 %s→%s" % [old_tid, new_type_id])
-	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
-	if nav != null:
-		_apply_move_stats(unit, nav)
-	if CombatQuery.has_weapon(unit):
-		_ensure_attack_controller(unit)
-		_ensure_unit_ai(unit)
-	else:
-		# 收回农民：卸掉战斗 AI 空转（可选保留 PASSIVE）
-		var ai2 := UnitAI.of(unit)
-		if ai2 != null:
-			ai2.set_profile(UnitAI.Profile.PASSIVE)
-	_refresh_command_card()
-	_sync_selection_info_panel()
-	if health_bar_manager != null:
-		health_bar_manager.resync()
-	return true
+	return _ensure_units_module().forms.apply_form(unit, new_type_id)
 
 
 func _swap_unit_model(unit: Node3D, type_id: String, owner_id: int, variation: int) -> bool:
-	if map_root == null:
-		return false
-	var cache: MapModelCache = null
-	var catalog = null
-	if map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	if map_root.has_method("get_id_catalog"):
-		catalog = map_root.get_id_catalog()
-	if cache == null or catalog == null:
-		return false
-	var glb: String = catalog.converted_glb_path(type_id, variation)
-	if glb.is_empty():
-		return false
-	var unit_soft := not BuildingVisual.is_building(type_id)
-	var inst: Node3D = cache.instance_glb(glb, unit_soft) as Node3D
-	if inst == null:
-		return false
-	var color_i := MapUnitLayer.resolve_team_color_index(type_id, owner_id)
-	cache.apply_team_color(inst, color_i, false)
-	inst.name = Unit.MODEL_NODE_NAME
-	var u: Unit = Unit.of(unit)
-	var old: Node3D = null
-	if u != null:
-		old = u.model_node()
-	else:
-		old = unit.get_node_or_null(Unit.MODEL_NODE_NAME) as Node3D
-	if old != null:
-		old.name = "Model_Old"
-		old.queue_free()
-	unit.remove_meta(AnimPlayback.META_ANIM_PLAYER)
-	unit.add_child(inst)
-	# 新 Model 置顶（旧节点可能延后释放）
-	unit.move_child(inst, 0)
-	var vis := _ensure_unit_visual(unit)
-	var ap := AnimPlayback.find_animation_player(inst)
-	if ap == null:
-		ap = AnimPlayback.find_animation_player(unit)
-	if vis != null:
-		vis.bind_cache(cache)
-		vis.bind_animation_player(ap)
-	var u2 := Unit.of(unit)
-	if u2 != null and ap != null:
-		u2.bind_animation_player(ap)
-	if ap != null:
-		AnimPlayback.bind_animation_player(unit, ap)
-	cache.autoplay_stand(unit)
-	if cache.has_method("snap_stand_geoset_visibility"):
-		cache.call("snap_stand_geoset_visibility", unit)
-	if Wc3Pe2Particles.has_emitters(glb):
-		Wc3Pe2Particles.attach_to(unit, glb)
-		Wc3Pe2Particles.apply_sequence(unit, "Stand")
-	return true
+	return _ensure_units_module().presenter.swap_model(unit, type_id, owner_id, variation)
 
 
 func _issue_call_to_arms(source: int = UnitOrder.Source.PANEL) -> int:
-	if unit_selector == null:
-		return 0
-	var selected: Array = _get_selected_safe()
-	var bells: Array[Node3D] = []
-	var direct: Array[Node3D] = []
-	for n in selected:
-		if not (n is Node3D):
-			continue
-		var unit := n as Node3D
-		var tid := CombatQuery.type_id_of(unit)
-		if BuildingVisual.is_building(tid) and _building_has_town_bell(tid):
-			bells.append(unit)
-		elif MilitiaController.unit_has_abil(unit):
-			direct.append(unit)
-	var n_ok := 0
-	if not bells.is_empty():
-		n_ok += _issue_town_bell_near_peasants(bells, source)
-	for unit in direct:
-		if _command_router != null:
-			_command_router.issue_stop([unit], source)
-		var mc := _ensure_militia_controller(unit)
-		if mc != null and mc.toggle_call_to_arms():
-			n_ok += 1
-	if game_hud != null and n_ok > 0:
-		game_hud.set_status("战斗号召：已转换 %d 人" % n_ok)
-	elif game_hud != null:
-		game_hud.set_status("战斗号召：无可用农民/民兵")
+	var n_ok := _ensure_units_module().issue_call_to_arms(_get_selected_safe(), source)
+	if game_hud != null:
+		game_hud.set_status("战斗号召：已转换 %d 人" % n_ok if n_ok > 0 else "战斗号召：无可用农民/民兵")
 	_refresh_command_card()
 	return n_ok
 
 
-const TOWN_BELL_RADIUS_WC3 := 2800.0
 
 
 func _building_has_town_bell(type_id: String) -> bool:
-	var cat := CommandButtonCatalog.get_shared()
-	for abil_id in cat.get_all_abil_list(type_id):
-		if cat.get_ability_order(str(abil_id)) == "townbellon":
-			return true
-	return false
+	return _ensure_units_module().forms._building_has_town_bell(type_id)
 
 
 func _issue_town_bell_near_peasants(bells: Array[Node3D], source: int) -> int:
-	var host := _unit_host()
-	if host == null:
-		return 0
-	var n_ok := 0
-	var touched: Dictionary = {}
-	for bell in bells:
-		if bell == null or not is_instance_valid(bell):
-			continue
-		var bell_owner := int(bell.get_meta("unit_data", {}).get("owner", 0))
-		var bell_xy := Wc3Coords.godot_to_wc3_xy(bell.global_position)
-		for c in host.get_children():
-			if not (c is Node3D):
-				continue
-			var unit := c as Node3D
-			if not is_instance_valid(unit):
-				continue
-			if int(unit.get_meta("unit_data", {}).get("owner", -1)) != bell_owner:
-				continue
-			var tid := CombatQuery.type_id_of(unit)
-			if tid != "hpea" and tid != "hmil":
-				continue
-			var uid := unit.get_instance_id()
-			if touched.has(uid):
-				continue
-			var uxy := Wc3Coords.godot_to_wc3_xy(unit.global_position)
-			if uxy.distance_to(bell_xy) > TOWN_BELL_RADIUS_WC3:
-				continue
-			touched[uid] = true
-			if _command_router != null:
-				_command_router.issue_stop([unit], source)
-			var mc := _ensure_militia_controller(unit)
-			if mc != null and mc.toggle_call_to_arms():
-				n_ok += 1
-	return n_ok
+	return _ensure_units_module().forms._issue_town_bell_near_peasants(bells, source)
 
 
 func _on_combat_projectile_launched(info: Dictionary) -> void:
@@ -1700,43 +1521,7 @@ func _try_issue_building_upgrade(target_id: String) -> void:
 
 ## 主城升本完工：改 typeId、按比例保留生命、切 TownHall 档位姿态（同模型）。
 func _apply_building_upgrade(building: Node3D, new_type_id: String) -> bool:
-	if building == null or not is_instance_valid(building) or new_type_id.is_empty():
-		return false
-	var d: Dictionary = building.get_meta("unit_data", {}).duplicate(true)
-	var old_tid := str(d.get("typeId", "")).strip_edges()
-	var want := TechPresence.filter_vertical_building_upgrade(old_tid, new_type_id)
-	if want.is_empty():
-		return false
-	var old_food := BuildingCatalog.get_food_made(old_tid)
-	var new_food := BuildingCatalog.get_food_made(want)
-	var life_ratio := UnitLife.ratio(building)
-	d["typeId"] = want
-	building.set_meta("unit_data", d)
-	if building.has_meta(UnitLife.META_LIFE):
-		building.remove_meta(UnitLife.META_LIFE)
-	if building.has_meta(UnitLife.META_MAX_LIFE):
-		building.remove_meta(UnitLife.META_MAX_LIFE)
-	UnitLife.ensure(building)
-	UnitLife.set_ratio(building, life_ratio)
-	var owner_id := int(d.get("owner", 0))
-	var stock := _stock_for_owner(owner_id)
-	if stock != null and new_food != old_food:
-		stock.add_food_cap(new_food - old_food)
-	var u := Unit.of(building)
-	if u != null:
-		u.set_stance(AnimSequenceResolver.stance_for_building_type(want), true)
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	if cache != null:
-		BuildingVisual.apply_phase(cache, building, want, BuildingVisual.Phase.IDLE)
-		if cache.has_method("snap_stand_geoset_visibility"):
-			cache.call("snap_stand_geoset_visibility", building)
-	_refresh_command_card()
-	_sync_selection_info_panel()
-	if health_bar_manager != null:
-		health_bar_manager.resync()
-	return true
+	return _ensure_units_module().forms.apply_building_upgrade(building, new_type_id)
 
 
 func _wire_train_queue(queue: TrainQueue) -> void:
@@ -1839,31 +1624,12 @@ func _on_unit_locomotion_changed(_moving: bool) -> void:
 
 
 func _ensure_unit_visual(unit: Node3D) -> Unit:
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	var u: Unit = Unit.of(unit)
-	if u == null:
-		# 旧存档/非 Unit 根：不应再挂 UnitVisual 子节点；尽量当实体用
-		AppLog.warn(AppLog.Layer.PRESENT, "GameDirector", "ensure_unit: 非 Unit 根 %s" % unit)
-		_ensure_interaction_components(unit)
-		return null
-	u.bind_cache(cache)
-	u.bind_animation_player(AnimPlayback.find_animation_player(u))
-	_ensure_interaction_components(u)
-	return u
+	return _ensure_units_module().presenter.ensure_visual(unit)
 
 
 ## 刷单位时挂选框场景 + Selectable / Interactable，并注入依赖。
 func _ensure_interaction_components(unit: Node3D) -> void:
-	if unit == null or not is_instance_valid(unit):
-		return
-	var d: Dictionary = unit.get_meta("unit_data", {})
-	var tid := str(d.get("typeId", "")).strip_edges()
-	var kind := InteractableComponent.SmartKind.NONE
-	if tid == "ngol":
-		kind = InteractableComponent.SmartKind.GOLD_MINE
-	InteractionSetup.attach(unit, kind)
+	_ensure_units_module().presenter.ensure_interaction(unit)
 
 
 ## 从 UnitBalance.spd / UnitData.turnRate / Balance.collision 写入 Navigator。
@@ -2388,7 +2154,7 @@ func _ensure_combat_module() -> CombatModule:
 		"map_root": map_root,
 		"health_bar_manager": health_bar_manager,
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
-		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
+		"ensure_unit_visual": Callable(_unit_presenter(), "ensure_visual"),
 		"unit_host": Callable(self, "_unit_host"),
 		"release_food": Callable(self, "_release_unit_food"),
 		"terminate_production": Callable(self, "_terminate_unit_production"),
@@ -2446,7 +2212,7 @@ func _ensure_build_module() -> BuildModule:
 		"find_anim_player": Callable(self, "_find_anim_player"),
 		"issue_move": Callable(self, "_command_router_issue_move"),
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
-		"ensure_unit_visual": Callable(self, "_ensure_unit_visual"),
+		"ensure_unit_visual": Callable(_unit_presenter(), "ensure_visual"),
 		"resync_health_bars": Callable(self, "_resync_health_bars"),
 		"ground_at_screen": Callable(self, "_ground_at_screen"),
 		"refresh_pathing": Callable(_ensure_navigation_module(), "refresh_dynamic_pathing"),
@@ -2469,8 +2235,11 @@ func _ensure_units_module() -> UnitsModule:
 	if not is_instance_valid(_units):
 		_units = UnitsModule.new()
 		_units.name = "UnitsModule"
+		_units.form_changed.connect(_on_unit_form_changed)
 		add_child(_units)
 	_units.configure({
+		"navigation": _ensure_navigation_module(),
+		"session": _session,
 		"map_root": map_root,
 		"heightfield": _heightfield,
 		"path_query": _path_query,
@@ -2627,9 +2396,25 @@ func _ensure_harvest_module() -> HarvestModule:
 		add_child(_harvest)
 		_harvest.configure(map_root, _ensure_navigation_module(), _session,
 			rts_camera.get_camera() if rts_camera != null else null,
-			Callable(self, "_ensure_unit_visual"), Callable(_ensure_combat_module(), "on_corpse_expired"))
+			Callable(_unit_presenter(), "ensure_visual"), Callable(_ensure_combat_module(), "on_corpse_expired"))
 		_harvest.carry_changed.connect(_on_harvest_carry_changed)
 		_harvest.deposited.connect(_on_harvest_deposited)
 		_harvest.state_changed.connect(_on_harvest_state_changed)
 		_harvest.mine_depleted.connect(_deselect_unit_on_death)
 	return _harvest
+
+
+func _unit_presenter() -> UnitModelPresenter:
+	# 表现绑定在地图加载前也可用，不触发其余玩法模块装配。
+	if not is_instance_valid(_units):
+		_units = UnitsModule.new()
+		_units.name = "UnitsModule"
+		_units.form_changed.connect(_on_unit_form_changed)
+		add_child(_units)
+	_units.presenter.configure(map_root)
+	return _units.presenter
+
+func _on_unit_form_changed(_unit: Node3D) -> void:
+	_refresh_command_card()
+	_sync_selection_info_panel()
+	_resync_health_bars()

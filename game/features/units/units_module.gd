@@ -1,6 +1,10 @@
 class_name UnitsModule
 extends Node
 
+signal form_changed(unit: Node3D)
+var presenter := UnitModelPresenter.new()
+var forms: UnitFormService
+
 ## 对局内单位出生与战斗组件装配。
 ## 由总管注入地图与服务；本模块不依赖 GameDirector 类型。
 ## 生产模块通过 spawn_trained / ensure_hero 两个 Callable 接入。
@@ -26,6 +30,7 @@ var _next_runtime_cn: int = 900000
 
 func configure(deps: Dictionary) -> void:
 	_map_root = deps.get("map_root") as MapLoader
+	presenter.configure(_map_root)
 	_heightfield = deps.get("heightfield") as Wc3Heightfield
 	_path_query = deps.get("path_query") as PathQuery
 	_crowd_query = deps.get("crowd_query") as UnitCrowdQuery
@@ -42,9 +47,19 @@ func configure(deps: Dictionary) -> void:
 	_add_food_used = deps.get("add_food_used", Callable()) as Callable
 	if deps.has("next_runtime_cn"):
 		_next_runtime_cn = int(deps["next_runtime_cn"])
+	if not is_instance_valid(forms):
+		forms = UnitFormService.new()
+		forms.name = "UnitForms"
+		add_child(forms)
+		forms.changed.connect(_on_form_changed)
+	forms.configure(self, _map_root, deps.get("navigation") as NavigationModule,
+		deps.get("session") as GameSession, _command_router, presenter, _ensure_attack_controller)
 
 
 func shutdown() -> void:
+	if is_instance_valid(forms):
+		forms.shutdown()
+	presenter.configure(null)
 	_map_root = null
 	_heightfield = null
 	_path_query = null
@@ -357,3 +372,19 @@ func _is_player_occupied(unit: Node3D) -> bool:
 	if o == null:
 		return false
 	return o.source != UnitOrder.Source.UNIT_AI
+
+
+func _on_form_changed(unit: Node3D) -> void:
+	form_changed.emit(unit)
+
+func ensure_visual(unit: Node3D) -> Unit:
+	return presenter.ensure_visual(unit)
+
+func apply_form(unit: Node3D, type_id: String) -> bool:
+	return forms.apply_form(unit, type_id) if is_instance_valid(forms) else false
+
+func apply_building_upgrade(unit: Node3D, type_id: String) -> bool:
+	return forms.apply_building_upgrade(unit, type_id) if is_instance_valid(forms) else false
+
+func issue_call_to_arms(selected: Array, source: int) -> int:
+	return forms.issue_call_to_arms(selected, source) if is_instance_valid(forms) else 0
