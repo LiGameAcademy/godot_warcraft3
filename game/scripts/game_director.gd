@@ -106,7 +106,10 @@ var _match_lifecycle: MatchLifecycleModule
 var _opponent_ai: OpponentAiModule
 var _debug_tools: DebugToolsModule
 var _projectile_service: ProjectileService = null
-var _tree_registry: TreeRegistry = null
+var _harvest: HarvestModule
+var _tree_registry: TreeRegistry:
+	get:
+		return _harvest.tree_registry if is_instance_valid(_harvest) else null
 ## 技能编排（由 AbilitiesModule 持有；此处保留别名便于旧入口）
 var _ability_ctx_factory: AbilityCastContextFactory = null
 var _ability_hud: AbilityHudFeedback = null
@@ -457,7 +460,7 @@ func _setup_pathing() -> void:
 		_path_query,
 		_crowd_query,
 		Callable(_ensure_navigation_module(), "ensure_navigator"),
-		Callable(self, "_ensure_harvest_controller"),
+		Callable(_ensure_harvest_module(), "ensure_controller"),
 		Callable(self, "_ensure_build_controller"),
 		_session,
 		Callable(_build, "find_site"),
@@ -514,17 +517,7 @@ func _setup_minimap() -> void:
 
 
 func _setup_tree_registry() -> void:
-	if map_root == null:
-		return
-	if _tree_registry == null or not is_instance_valid(_tree_registry):
-		_tree_registry = TreeRegistry.new()
-		_tree_registry.name = "TreeRegistry"
-		add_child(_tree_registry)
-	var cam: Camera3D = null
-	if rts_camera != null:
-		cam = rts_camera.get_camera()
-	_tree_registry.configure(map_root, map_root.get_id_catalog(), cam)
-	_tree_registry.rebuild_from_map()
+	_ensure_harvest_module().setup_trees()
 
 
 func _tree_registry_ref() -> TreeRegistry:
@@ -1056,32 +1049,7 @@ func _ensure_navigator(unit: Node3D) -> UnitNavigator:
 	return _ensure_navigation_module().ensure_navigator(unit)
 
 func _ensure_harvest_controller(unit: Node3D) -> HarvestController:
-	_ensure_unit_visual(unit)
-	var existing := unit.get_node_or_null("HarvestController") as HarvestController
-	if existing != null:
-		existing.configure(
-			Callable(_ensure_navigation_module(), "ensure_navigator"),
-			Callable(self, "_stock_for_unit").bind(unit),
-			Callable(self, "_unit_host"),
-			Callable(self, "_path_query_ref"),
-			Callable(self, "_crowd_query_ref"),
-			Callable(self, "_tree_registry_ref")
-		)
-		_wire_harvest_signals(existing)
-		return existing
-	var hc := HarvestController.new()
-	hc.name = "HarvestController"
-	hc.configure(
-		Callable(_ensure_navigation_module(), "ensure_navigator"),
-		Callable(self, "_stock_for_unit").bind(unit),
-		Callable(self, "_unit_host"),
-		Callable(self, "_path_query_ref"),
-		Callable(self, "_crowd_query_ref"),
-		Callable(self, "_tree_registry_ref")
-	)
-	unit.add_child(hc)
-	_wire_harvest_signals(hc)
-	return hc
+	return _ensure_harvest_module().ensure_controller(unit)
 
 
 func _ensure_attack_controller(unit: Node3D) -> AttackController:
@@ -1328,54 +1296,19 @@ func _on_corpse_expired(unit: Node3D) -> void:
 
 
 func _wire_all_gold_mines() -> void:
-	var host := _unit_host()
-	if host == null:
-		return
-	for c in host.get_children():
-		if not (c is Node3D) or not GoldMineRuntime.is_gold_mine(c):
-			continue
-		_wire_gold_mine(c as Node3D)
+	_ensure_harvest_module().wire_mines()
 
 
 func _wire_gold_mine(mine: Node3D) -> void:
-	if mine == null or not is_instance_valid(mine):
-		return
-	var rt := GoldMineRuntime.ensure(mine)
-	if rt == null:
-		return
-	if rt.depleted.is_connected(_on_gold_mine_depleted):
-		return
-	rt.depleted.connect(_on_gold_mine_depleted.bind(mine))
+	_ensure_harvest_module().wire_mine(mine)
 
 
 func _on_gold_mine_depleted(mine: Node3D) -> void:
-	if mine == null or not is_instance_valid(mine):
-		return
-	if bool(mine.get_meta("gold_mine_collapsing", false)):
-		return
-	mine.set_meta("gold_mine_collapsing", true)
-	if unit_selector != null and unit_selector.has_method("deselect_unit"):
-		unit_selector.call("deselect_unit", mine)
-	WorldMembership.exit(mine)
-	if is_instance_valid(mine):
-		mine.visible = true
-	var cache: MapModelCache = null
-	if map_root != null and map_root.has_method("get_model_cache"):
-		cache = map_root.get_model_cache()
-	var tid := str(mine.get_meta("unit_data", {}).get("typeId", "ngol"))
-	var played: Dictionary = BuildingVisual.play_death(cache, mine, tid)
-	var wait := float(played.get("duration", 0.0))
-	if wait < 0.35:
-		wait = 1.6
-	var tree := get_tree()
-	if tree != null:
-		SceneDelay.create_timer(self, wait).timeout.connect(_on_gold_mine_collapse_finished.bind(mine))
-	else:
-		_on_gold_mine_collapse_finished(mine)
+	_ensure_harvest_module()._on_gold_mine_depleted(mine)
 
 
 func _on_gold_mine_collapse_finished(mine: Node3D) -> void:
-	_on_corpse_expired(mine)
+	_ensure_harvest_module()._on_gold_mine_collapse_finished(mine)
 
 
 func _terminate_unit_production(unit: Node3D) -> void:
@@ -1869,14 +1802,7 @@ func _crowd_query_ref() -> UnitCrowdQuery:
 
 
 func _wire_harvest_signals(hc: HarvestController) -> void:
-	if hc == null:
-		return
-	if not hc.carry_changed.is_connected(_on_harvest_carry_changed):
-		hc.carry_changed.connect(_on_harvest_carry_changed)
-	if not hc.deposited.is_connected(_on_harvest_deposited):
-		hc.deposited.connect(_on_harvest_deposited)
-	if not hc.state_changed.is_connected(_on_harvest_state_changed):
-		hc.state_changed.connect(_on_harvest_state_changed)
+	_ensure_harvest_module()._wire_signals(hc)
 
 
 func _on_harvest_carry_changed(_resource_id: String, _amount: int) -> void:
@@ -1897,29 +1823,15 @@ func _on_harvest_state_changed(_state: int) -> void:
 
 
 func _is_harvestable_tree_node(node: Node) -> bool:
-	if node == null or not is_instance_valid(node):
-		return false
-	var dd: Dictionary = node.get_meta("doodad_data", {})
-	if dd.is_empty():
-		return false
-	var cn := int(dd.get("creationNumber", -1))
-	if cn < 0 or _tree_registry == null:
-		return false
-	return _tree_registry.is_alive(cn)
+	return _ensure_harvest_module().is_harvestable_tree(node)
 
 
 func _tree_cn_of(node: Node) -> int:
-	if node == null:
-		return -1
-	var dd: Dictionary = node.get_meta("doodad_data", {})
-	return int(dd.get("creationNumber", -1))
+	return _ensure_harvest_module().tree_cn_of(node)
 
 
 static func _is_gold_mine(node: Node) -> bool:
-	if node == null:
-		return false
-	var d: Dictionary = node.get_meta("unit_data", {})
-	return str(d.get("typeId", "")).strip_edges() == HarvestController.GOLD_MINE_TYPE
+	return HarvestModule.is_gold_mine(node)
 
 
 func _on_unit_locomotion_changed(_moving: bool) -> void:
@@ -2253,7 +2165,7 @@ func _ensure_opponent_ai_module() -> OpponentAiModule:
 		"tree_registry": _tree_registry,
 		"item_service": _ensure_items_module().item_service,
 		"ensure_navigator": Callable(_ensure_navigation_module(), "ensure_navigator"),
-		"ensure_harvest": Callable(self, "_ensure_harvest_controller"),
+		"ensure_harvest": Callable(_ensure_harvest_module(), "ensure_controller"),
 		"ensure_build": Callable(self, "_ensure_build_controller"),
 		"ensure_attack": Callable(self, "_ensure_attack_controller"),
 		"find_build_site": Callable(_build, "find_site"),
@@ -2706,3 +2618,18 @@ func _ensure_navigation_module() -> NavigationModule:
 		add_child(_navigation)
 		_navigation.locomotion_changed.connect(_on_unit_locomotion_changed)
 	return _navigation
+
+
+func _ensure_harvest_module() -> HarvestModule:
+	if not is_instance_valid(_harvest):
+		_harvest = HarvestModule.new()
+		_harvest.name = "HarvestModule"
+		add_child(_harvest)
+		_harvest.configure(map_root, _ensure_navigation_module(), _session,
+			rts_camera.get_camera() if rts_camera != null else null,
+			Callable(self, "_ensure_unit_visual"), Callable(_ensure_combat_module(), "on_corpse_expired"))
+		_harvest.carry_changed.connect(_on_harvest_carry_changed)
+		_harvest.deposited.connect(_on_harvest_deposited)
+		_harvest.state_changed.connect(_on_harvest_state_changed)
+		_harvest.mine_depleted.connect(_deselect_unit_on_death)
+	return _harvest

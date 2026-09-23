@@ -13,6 +13,9 @@ game/features/
       building_rally.gd            集结点状态
     presentation/
       production_panel.gd          本地选择、生产反馈与建筑工作表现
+  harvest/
+    harvest_module.gd             采集组件、树木注册、金矿生命周期
+    logic/                        HarvestController / TreeRegistry / GoldMineRuntime
   navigation/
     navigation_module.gd          对局导航服务、Navigator 装配与动态寻路刷新
     logic/                        PathQuery / UnitCrowdQuery / PathCellReservation

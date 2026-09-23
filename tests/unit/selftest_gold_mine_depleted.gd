@@ -1,12 +1,12 @@
-extends SceneTree
+extends Node
 
 ## 金矿踩空：depleted 只发一次；Death 单次播放。
-## godot --headless --path . -s res://tests/unit/selftest_gold_mine_depleted.gd
+## godot --headless --path . res://tests/unit/selftest_gold_mine_depleted.tscn
 
 var failed := 0
 
 
-func _initialize() -> void:
+func _ready() -> void:
 	call_deferred("_run")
 
 
@@ -16,10 +16,10 @@ func _run() -> void:
 	_test_play_death_once()
 	if failed == 0:
 		print("selftest_gold_mine_depleted: PASS")
-		quit(0)
+		get_tree().quit(0)
 	else:
 		push_error("selftest_gold_mine_depleted: FAIL (%d)" % failed)
-		quit(1)
+		get_tree().quit(1)
 
 
 func _fail(msg: String) -> void:
@@ -30,14 +30,14 @@ func _fail(msg: String) -> void:
 func _make_mine(gold_amount: int) -> Node3D:
 	var mine := Node3D.new()
 	mine.set_meta("unit_data", {"typeId": "ngol", "goldAmount": gold_amount, "owner": 12})
-	root.add_child(mine)
+	add_child(mine)
 	return mine
 
 
 func _test_last_take_emits_depleted() -> void:
 	var mine := _make_mine(10)
 	var peasant := Node3D.new()
-	root.add_child(peasant)
+	add_child(peasant)
 	var rt := GoldMineRuntime.ensure(mine)
 	if rt == null:
 		_fail("ensure GoldMineRuntime 失败")
@@ -66,7 +66,7 @@ func _test_last_take_emits_depleted() -> void:
 func _test_depleted_rejects_enter() -> void:
 	var mine := _make_mine(0)
 	var peasant := Node3D.new()
-	root.add_child(peasant)
+	add_child(peasant)
 	var rt := GoldMineRuntime.ensure(mine)
 	if rt == null:
 		_fail("ensure 空矿失败")
@@ -82,7 +82,7 @@ func _test_depleted_rejects_enter() -> void:
 
 func _test_play_death_once() -> void:
 	var host := Node3D.new()
-	root.add_child(host)
+	add_child(host)
 	var ap := AnimationPlayer.new()
 	host.add_child(ap)
 	var anim := Animation.new()
