@@ -1,0 +1,9 @@
+; Minimal map editor app shell (D4).
+
+config_version=5
+
+[application]
+
+config/name="warcraft3_map_editor"
+config/features=PackedStringArray("4.6", "Forward Plus")
+run/main_scene="res://boot.tscn"

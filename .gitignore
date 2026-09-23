@@ -81,3 +81,6 @@ wc3/
 
 # Local WC3-derived model experiments; keep source assets out of Git.
 assets/model-experiments/
+
+# D4: generated package sync into app shells (run Sync-Packages.ps1)
+apps/*/addons/

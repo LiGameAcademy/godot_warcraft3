@@ -1,0 +1,11 @@
+; Minimal game app shell (D4). Run Sync-Packages.ps1 before opening.
+; Cutover: point Autoloads at addons/rts_* once packages fully migrated.
+
+config_version=5
+
+[application]
+
+config/name="warcraft3_game"
+config/features=PackedStringArray("4.6", "Forward Plus")
+config/icon="res://icon.svg"
+run/main_scene="res://boot.tscn"
