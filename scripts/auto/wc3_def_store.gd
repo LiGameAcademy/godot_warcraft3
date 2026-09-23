@@ -118,12 +118,12 @@ func load_table(table_name: String) -> int:
 		AppLog.warn(AppLog.Layer.CATALOG, "DefStore", "未注册表: %s" % table_name)
 		return -1
 	var spec: Dictionary = _registry[table_name]
-	var path := RuntimeAssets.slk_path(str(spec["path"]))
+	var path := _resolve_definition_path(str(spec["path"]))
 	var key_field := str(spec["key_field"])
 	var factory: Callable = spec["factory"]
 	var by_id: Dictionary = {}
 	var order: Array[String] = []
-	if not FileAccess.file_exists(path):
+	if path.is_empty() or not FileAccess.file_exists(path):
 		AppLog.warn(AppLog.Layer.CATALOG, "DefStore", "缺少 %s" % path)
 		_tables[table_name] = by_id
 		_orders[table_name] = order
@@ -158,6 +158,26 @@ func load_table(table_name: String) -> int:
 		"loaded %s count=%d" % [table_name, by_id.size()]
 	)
 	return by_id.size()
+
+
+## D3：定义路径经 AssetProvider（含 overlay）解析；失败回退 RuntimeAssets.slk_path。
+func _resolve_definition_path(slk_rel: String) -> String:
+	var logical := slk_rel.replace("\\", "/")
+	while logical.begins_with("/"):
+		logical = logical.substr(1)
+	# AssetProvider Autoload
+	var ap: Node = get_node_or_null("/root/AssetProvider")
+	if ap != null and ap.has_method("resolve"):
+		var hit: String = str(ap.call("resolve", logical))
+		if not hit.is_empty():
+			return hit
+	return RuntimeAssets.slk_path(slk_rel)
+
+
+## D3：换 ContentSnapshot 时作废已加载表，下次 ensure/get 重新经 overlay 解析。
+func clear_loaded_tables() -> void:
+	_tables.clear()
+	_orders.clear()
 
 
 ## 主键 → Dictionary（只读视图；勿直接改写）。

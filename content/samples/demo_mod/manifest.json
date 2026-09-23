@@ -1,0 +1,11 @@
+{
+  "id": "demo_mod",
+  "version": "0.1.0",
+  "schema_version": 1,
+  "api_version": "0.1",
+  "depends": [],
+  "definitions": ["Units/UnitUI.json"],
+  "assets": [],
+  "overrides": ["base"],
+  "description": "最小示例 Mod：覆盖单位 UI 表条目（整表替换入口示意）"
+}
