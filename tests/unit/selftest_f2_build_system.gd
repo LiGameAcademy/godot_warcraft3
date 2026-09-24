@@ -1,7 +1,7 @@
 extends SceneTree
 ## F2 建造系统 selftest（按 BUILD_SYSTEM.md §9 钉死 6 维度）。
 ##
-## 7/7：
+## 8/8：
 ##   1. F2-D Builds 列表：hpea 含 hhou；不含敌族建筑（halt 在人类 list）
 ##   2. F2-A Profile：human/orc/nightelf/undead 默认值正确
 ##   3. F2-B Human 单工：HUMAN profile 多工 + cancel 退款 0.75
@@ -9,11 +9,12 @@ extends SceneTree
 ##   5. F2-A Profile Orc stub：supports_multi_builder == false + hides_builder == true
 ##   6. F2-D WorkerBuildListCatalog.can_build 一致性
 ##   7. Powerbuild 附加费按进度累计（非整次 join）：2 人全程 ≈ 造价×0.15
+##   8. 未开建（赶路）取消全额退；已开建按 0.75
 ##
 ## godot --headless --path . -s res://tests/unit/selftest_f2_build_system.gd
 
 var passed: int = 0
-var total: int = 7
+var total: int = 8
 
 
 func _init() -> void:
@@ -24,6 +25,7 @@ func _init() -> void:
 	_test_f2a_orc_profile_stub()
 	_test_f2d_can_build_consistency()
 	_test_powerbuild_cost_over_progress()
+	_test_unstarted_full_refund()
 
 	if passed == total:
 		print("selftest_f2_build_system: PASS")
@@ -262,4 +264,26 @@ func _test_powerbuild_cost_over_progress() -> void:
 	p1.queue_free()
 	p2.queue_free()
 	site.queue_free()
+	passed += 1
+
+
+# Test 8: 赶路未开建取消全额退；已开建 0.75
+func _test_unstarted_full_refund() -> void:
+	var bc := BuildController.new()
+	bc.set("_profile", ConstructionProfile.human())
+	bc.set("_state", BuildController.STATE_MOVING)
+	bc.set("_site", null)
+	var moving_r: float = float(bc.call("_cancel_refund_ratio"))
+	if absf(moving_r - 1.0) > 0.001:
+		push_error("test_8 FAIL: MOVING unstarted ratio=%f expected 1.0" % moving_r)
+		bc.free()
+		return
+	bc.set("_state", BuildController.STATE_BUILDING)
+	var building_r: float = float(bc.call("_cancel_refund_ratio"))
+	if absf(building_r - 0.75) > 0.001:
+		push_error("test_8 FAIL: BUILDING ratio=%f expected 0.75" % building_r)
+		bc.free()
+		return
+	print("  Unstarted cancel: MOVING → 100%; BUILDING → 75% OK")
+	bc.free()
 	passed += 1

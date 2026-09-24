@@ -31,6 +31,7 @@ const ACTION_PASSIVE_PREFIX := "passive:" ## 被动光环，不可点击
 const ACTION_OPEN_HERO_SKILLS := "open_hero_skills"
 const ACTION_CLOSE_HERO_SKILLS := "close_hero_skills"
 const ACTION_LEARN_PREFIX := "learn:" ## learn:AHwe
+const ACTION_BUY_PREFIX := "buy:" ## 商店购入：buy:phea
 
 const CMD_MOVE := "CmdMove"
 const CMD_STOP := "CmdStop"
@@ -110,6 +111,10 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 	if bool(state.get("hero_skill_menu_open", false)) and TechPresence.is_hero_id(uid):
 		return for_hero_skill_menu(uid, state)
 
+	## 中立商店：命令卡只显示可购物品（不混入训练/研究）。
+	if ShopCatalog.is_shop(uid):
+		return for_shop(uid, state)
+
 	var card := _empty_card()
 	var is_bldg := BuildingCatalog.is_building(uid)
 	var include_loco := bool(state.get("include_locomotion", not is_bldg))
@@ -185,6 +190,10 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			elif TechPresence.is_hero_id(tid) and hero_slots_full:
 				opts["enabled"] = false
 				opts["disabled_reason"] = "英雄数量已达上限"
+			else:
+				var cost_tip := _train_cost_line(tid, state)
+				if not cost_tip.is_empty():
+					opts["cost_line"] = cost_tip
 			_place(card, cat.unit_hud_entry(tid, ACTION_TRAIN_PREFIX + tid, opts))
 		var researches := TechPresence.filter_vertical_researches(uid, cat.get_researches(uid))
 		for rid in researches:
@@ -255,6 +264,66 @@ static func for_unit(unit_id: String, state: Dictionary = {}) -> Array[Dictionar
 			)
 		)
 
+	return card
+
+
+## 商店货架：buy:item_id；state 可带 shop_stock / shop_buyer_in_range / local_gold。
+static func for_shop(shop_type_id: String, state: Dictionary = {}) -> Array[Dictionary]:
+	var card := _empty_card()
+	var cat := _cat()
+	var stock_map: Dictionary = state.get("shop_stock", {}) as Dictionary
+	if stock_map == null:
+		stock_map = {}
+	var in_range := bool(state.get("shop_buyer_in_range", true))
+	var gold := int(state.get("local_gold", 999999))
+	var lumber := int(state.get("local_lumber", 999999))
+	var inv_full := bool(state.get("shop_buyer_inv_full", false))
+	var slot := 0
+	for item_id in ShopCatalog.stock_ids(shop_type_id):
+		if slot >= 12:
+			break
+		var left := int(stock_map.get(item_id, ShopCatalog.stock_start(item_id)))
+		var cost_g := ShopCatalog.price_gold(item_id)
+		var cost_l := ShopCatalog.price_lumber(item_id)
+		if cost_g <= 0 and cost_l <= 0:
+			cost_g = 150 if item_id == "phea" or item_id == "pman" else 125
+		var enabled := in_range and left > 0 and not inv_full and gold >= cost_g and lumber >= cost_l
+		var reason := ""
+		if not in_range:
+			reason = "英雄靠近商店后可购买"
+		elif inv_full:
+			reason = "背包已满"
+		elif left <= 0:
+			reason = "售罄"
+		elif gold < cost_g or lumber < cost_l:
+			reason = "资源不足"
+		var row := {
+			"art": ItemCatalog.icon(item_id),
+			"tip": ItemCatalog.title(item_id),
+			"ubertip": ItemCatalog.tooltip(item_id),
+			"buttonpos": "%d,0" % (slot % 4),
+		}
+		var opts := {
+			"enabled": enabled,
+			"slot_override": slot,
+			"cost_line": "%d金 · 库存%d" % [cost_g, left],
+		}
+		if not reason.is_empty():
+			opts["disabled_reason"] = reason
+		var entry := cat.make_hud_entry(row, ACTION_BUY_PREFIX + item_id, opts)
+		if entry.is_empty():
+			entry = {
+				"id": ACTION_BUY_PREFIX + item_id,
+				"text": ItemCatalog.title(item_id),
+				"tooltip": ItemCatalog.tooltip(item_id),
+				"icon": ItemCatalog.icon(item_id),
+				"enabled": enabled,
+				"slot": slot,
+			}
+			if not reason.is_empty():
+				entry["disabled_reason"] = reason
+		_place(card, entry)
+		slot += 1
 	return card
 
 
@@ -737,6 +806,27 @@ static func peasant_with_build(
 static func _building_cost_line(building_id: String) -> String:
 	var g := BuildingCatalog.get_gold_cost(building_id)
 	var l := BuildingCatalog.get_lumber_cost(building_id)
+	var cost := "造价 %d 金" % g
+	if l > 0:
+		cost += " · %d 木" % l
+	return cost + "。"
+
+
+## 训兵造价文案；近战首英雄经 GameMode 可显示「免费」。
+static func _train_cost_line(unit_id: String, state: Dictionary = {}) -> String:
+	var g := BuildingCatalog.get_gold_cost(unit_id)
+	var l := BuildingCatalog.get_lumber_cost(unit_id)
+	var session := TechPresence.bound_session()
+	if session != null:
+		var owner_id := int(state.get("local_owner", session.local_player))
+		var host: Node = state.get("unit_host") as Node
+		var adj := session.ensure_game_mode().adjust_train_cost(owner_id, unit_id, g, l, host)
+		g = int(adj.get("gold", g))
+		l = int(adj.get("lumber", l))
+		if bool(adj.get("waived", false)):
+			return "首英雄免费。"
+	if g <= 0 and l <= 0:
+		return ""
 	var cost := "造价 %d 金" % g
 	if l > 0:
 		cost += " · %d 木" % l

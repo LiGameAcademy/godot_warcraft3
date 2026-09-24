@@ -94,6 +94,18 @@ func _ready() -> void:
 	set_process(false)
 
 
+## 响应式：槽位边长随布局缩放（保持 2×3）。
+func apply_layout(panel_width: float, panel_height: float) -> void:
+	var w := maxf(panel_width, 96.0)
+	var h := maxf(panel_height, 160.0)
+	custom_minimum_size = Vector2(w, h)
+	var slot := clampf(minf((w - 24.0) / 2.0 - 5.0, (h - 56.0) / 3.0 - 5.0), 40.0, 56.0)
+	for b in buttons:
+		if b != null:
+			b.custom_minimum_size = Vector2(slot, slot)
+			b.add_theme_constant_override("icon_max_width", int(slot) - 12)
+
+
 func bind_inventory(inv: Inventory, is_read_only: bool = false) -> void:
 	if is_instance_valid(inventory) and inventory.changed.is_connected(refresh):
 		inventory.changed.disconnect(refresh)

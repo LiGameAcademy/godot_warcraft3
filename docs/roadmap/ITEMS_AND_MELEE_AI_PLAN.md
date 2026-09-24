@@ -24,7 +24,7 @@
 | I1 GroundItem / ItemService / Pickup / UI / 智能右键拾取 | **闭环** | `item_pickup_controller.gd:31-56`、`inventory_panel.gd:1-103`、`smart_handler_registry.gd:243-256` |
 | I2 使用效果 / 装备护甲 / 死亡保留 / 复活恢复 / 共享冷却组 | **闭环** | `inventory.gd:99-134`、`hero_death_registry.gd:21-39`、`production_module.gd:144-160` |
 | I3 死亡掉落 / 互斥组 / 全局表 / 随机码 / seed / 幂等 | **闭环** | `item_drop_table.gd:21-62`、`item_service.gd:65-73` |
-| I4 商店 / 回城卷轴 / PowerUp 自动触发 | **缺失**（第二批，不阻塞主线）| 全仓零 `shop*.gd`、零 `purchase/cost_gold` |
+| I4 商店 / 回城卷轴 / PowerUp 自动触发 | **进行中**（商店购买闭环已接线）| `shop_catalog.gd` / `shop_service.gd`；命令卡 `buy:`；`ItemsModule.try_buy_item`；`selftest_shop_service` PASS。回城卷轴与 PowerUp 仍缺 |
 
 ### 对战 AI（A0–A4）
 
@@ -115,11 +115,20 @@
 
 最终剧本：英雄清掉一个营地→道具真实掉落→拾取显示→使用/装备生效→丢弃与复活状态正确。
 
-### I4：商店与回城卷轴（第二批，约 3～5 日）
+### I4：商店与回城卷轴（第二批）
 
-第一批道具闭环完成即可启动 AI，不必等待此项。
+第一批道具闭环完成即可启动 AI，不必等待此项。**商店前半已落地**（2026-09-24）：
 
-商店复用 ItemDef 造价与库存字段，补交易距离、所属买家、库存补充、满包与退款一致性。回城卷轴可研究复用 MassTeleport 的传送和表现能力，但安全目的地、友方主城选择、使用次数与中断规则必须单独定义，不能简单给卷轴绑定英雄大招。
+- `ShopCatalog`：`ngme` / `nmrk` 首批货架（phea/pman/rde1）+ 交易距离
+- `ShopService`：距离 / 扣费 / 入包 / 库存 / 满包退款 / 半价出售
+- 接线：命令卡 `buy:item_id` → `GameDirector._try_issue_buy` → `ItemsModule.try_buy_item`
+- 验收：`tests/unit/selftest_shop_service.tscn`（20 checks）
+
+仍待：
+
+- 回城卷轴（安全目的地、友方主城、次数与中断；勿直接绑 MassTeleport）
+- PowerUp 自动触发
+- 完整 SellItems 表驱动货架与自动补货节奏
 
 ## 5. 对战 AI 计划
 
@@ -181,9 +190,9 @@
 | 3 | A1～A2：自行经营、出兵、回防 | **已完成** | 4～6 日 |
 | 4 | A4：胜负结算 + 重开 | **已完成** | 1～2 日 |
 | **5** | **A3：电脑英雄拾取 + 使用道具** | **已完成** | 2～3 日 |
-| 后续 | I4：商店与回城卷轴 | 未开始 | 3～5 日，单独安排 |
+| 后续 | I4：商店与回城卷轴 | **商店购买已接线**；回城/PowerUp 待做 | 余 1～3 日 |
 
-**对战 AI A0–A4 已全部闭环**；道具侧下一笔为 I4（商店 / 回城）。A3 验收见 `selftest_player_army_pickup` / `selftest_player_army_item_use`。
+**对战 AI A0–A4 已全部闭环**；道具 I4 商店购买已可 headless 验收（`selftest_shop_service`），回城卷轴 / PowerUp 仍待。A3 验收见 `selftest_player_army_pickup` / `selftest_player_army_item_use`。
 
 ## 7. 本次验证情况及工程边界
 

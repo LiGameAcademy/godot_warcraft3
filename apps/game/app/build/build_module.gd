@@ -271,16 +271,14 @@ func on_construction_started(order: BuildOrder) -> void:
 	var entry := build_entry_for(order.building_id, order.site_wc3, player_owner, cn)
 	entry["hitPoints"] = 5.0
 	entry["under_construction"] = true
-	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view()) as Node3D
+	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view(), false) as Node3D
 	if node == null:
 		push_warning("BuildModule: 半成品建筑刷出失败 %s" % order.building_id)
 		return
 	UnitLife.ensure(node)
 	UnitLife.set_under_construction(node, true)
 	UnitLife.set_ratio(node, 0.05)
-	var cache = map_root_get_model_cache()
-	if cache != null:
-		BuildingVisual.apply_phase(cache, node, order.building_id, BuildingVisual.Phase.BIRTH)
+	## Birth 已由 MapUnitLayer 对 under_construction 播放，此处不再重复 apply_phase。
 	var bc: BuildController = null
 	if order.builder != null:
 		bc = order.builder.get_node_or_null("BuildController") as BuildController
@@ -304,7 +302,12 @@ func on_construction_started(order: BuildOrder) -> void:
 			site.progress_changed.connect(cb)
 	_refresh_dynamic_pathing()
 	_make_way_for_construction(order, node, site)
-	if _resync_health_bars.is_valid():
+	if _health_bar_manager != null:
+		if _health_bar_manager.has_method("ensure_for"):
+			_health_bar_manager.ensure_for(node)
+		elif _resync_health_bars.is_valid():
+			_resync_health_bars.call()
+	elif _resync_health_bars.is_valid():
 		_resync_health_bars.call()
 	construction_started.emit(order)
 	if _game_hud != null:
@@ -362,6 +365,8 @@ func on_construction_cancelled(order: BuildOrder) -> void:
 	unbind_hud_site()
 	if _game_hud != null:
 		_game_hud.clear_build_progress()
+		if order != null and not order.cancel_reason.is_empty():
+			_game_hud.set_status(order.cancel_reason)
 	if _resync_health_bars.is_valid():
 		_resync_health_bars.call()
 	construction_cancelled.emit(order)

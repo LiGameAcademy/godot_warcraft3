@@ -18,8 +18,6 @@ func run() -> void:
 	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.spawn_opponent_base = true
-	director.dev_spawn_archmage = false
-	director.dev_spawn_priest = false
 	director.random_start_location = false
 	var standalone := "--main-scene" in OS.get_cmdline_user_args()
 	var host: Node = get_tree().root if standalone else self
@@ -92,7 +90,7 @@ func run() -> void:
 		check(fresh != session and fresh.get_match_result().is_empty(), "新会话不继承胜负结果")
 		check(fresh.stocks.has(1) and fresh.stocks[1].gold == 500 and fresh.stocks[1].lumber == 150, "新局恢复正常初始资源")
 		check(HeroDeathRegistry.dead_count(1) == 0, "旧局英雄阵亡记录不串入新局")
-		check(director.spawn_opponent_base and not director.random_start_location and not director.dev_spawn_archmage and not director.dev_spawn_priest, "重开保留双方及调试出生配置")
+		check(director.spawn_opponent_base and not director.random_start_location, "重开保留双方出生配置")
 		check(game.get_node_or_null("MatchResultScreen") == null and not get_tree().paused, "新局不残留结算层或全局暂停")
 	game.queue_free()
 	await get_tree().process_frame

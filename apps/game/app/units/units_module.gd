@@ -123,7 +123,7 @@ func spawn_trained(
 		"creationNumber": cn,
 		"variation": 0,
 	}
-	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view(), false)
 	if node == null:
 		return null
 	_register_entity(node, cn)
@@ -138,7 +138,10 @@ func spawn_trained(
 	if _refresh_pathing.is_valid():
 		_refresh_pathing.call()
 	if _health_bar_manager != null:
-		_health_bar_manager.resync()
+		if _health_bar_manager.has_method("ensure_for"):
+			_health_bar_manager.ensure_for(node)
+		else:
+			_health_bar_manager.resync()
 	_dispatch_trained_rally(from_building, node)
 	return node
 
@@ -181,7 +184,8 @@ func build_unit_entry(
 func spawn_entry(entry: Dictionary, opts: Dictionary = {}) -> Node3D:
 	if _map_root == null or _heightfield == null or entry.is_empty():
 		return null
-	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+	var do_pathing := bool(opts.get("refresh_pathing", true))
+	var node := _map_root.add_unit_instance(entry, _heightfield.as_dict_view(), not do_pathing)
 	if node == null:
 		return null
 	UnitLife.ensure(node)
@@ -196,10 +200,13 @@ func spawn_entry(entry: Dictionary, opts: Dictionary = {}) -> Node3D:
 		var food := BuildingCatalog.get_food_used(str(entry.get("typeId", "")))
 		if food > 0:
 			_add_food_used.call(int(entry.get("owner", 0)), food)
-	if bool(opts.get("refresh_pathing", true)) and _refresh_pathing.is_valid():
+	if do_pathing and _refresh_pathing.is_valid():
 		_refresh_pathing.call()
 	if _health_bar_manager != null:
-		_health_bar_manager.resync()
+		if _health_bar_manager.has_method("ensure_for"):
+			_health_bar_manager.ensure_for(node)
+		else:
+			_health_bar_manager.resync()
 	return node
 
 

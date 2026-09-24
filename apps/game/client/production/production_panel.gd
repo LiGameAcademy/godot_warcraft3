@@ -47,38 +47,32 @@ func request_train(unit_id: String) -> void:
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
 	if primary == null or not is_instance_valid(primary):
-		if game_hud:
-			game_hud.set_status("请先选中可训练建筑")
+		_tip("请先选中可训练建筑")
 		return
 	if not _is_controllable(primary):
-		if game_hud:
-			game_hud.set_status("无法控制该建筑")
+		_tip("无法控制该建筑")
 		return
 	var d: Dictionary = primary.get_meta("unit_data", {})
 	var building_id := str(d.get("typeId", "")).strip_edges()
 	if building_id.is_empty() or not BuildingCatalog.is_building(building_id):
-		if game_hud:
-			game_hud.set_status("当前选中无法训练")
+		_tip("当前选中无法训练")
 		return
 	if UnitLife.is_under_construction(primary):
-		if game_hud:
-			game_hud.set_status("建造中，无法训练")
+		_tip("建造中，无法训练")
 		return
 	var uid := unit_id.strip_edges()
 	var trains := TechPresence.filter_vertical_trains(
 		building_id, CommandButtonCatalog.get_shared().get_trains(building_id)
 	)
 	if trains.find(uid) < 0:
-		if game_hud:
-			game_hud.set_status("%s 不能训练 %s" % [building_id, uid])
+		_tip("%s 不能训练 %s" % [building_id, uid])
 		return
 	var owned := _owned_buildings_for_local()
 	var missing := TechPresence.missing_requires(
 		owned, UnitRequiresCatalog.get_shared().get_requires(uid)
 	)
 	if not missing.is_empty():
-		if game_hud:
-			game_hud.set_status(TechPresence.requires_tip(missing))
+		_tip(TechPresence.requires_tip(missing))
 		return
 	if TechPresence.is_hero_id(uid):
 		var owner_id := int(d.get("owner", 0))
@@ -86,37 +80,41 @@ func request_train(unit_id: String) -> void:
 			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
 			>= TechPresence.MAX_HEROES_PER_PLAYER
 		):
-			if game_hud:
-				game_hud.set_status("每位玩家同时只能拥有 %d 名英雄" % TechPresence.MAX_HEROES_PER_PLAYER)
+			_tip("每位玩家同时只能拥有 %d 名英雄" % TechPresence.MAX_HEROES_PER_PLAYER)
 			return
 	var stock := _local_stock()
 	var gold := BuildingCatalog.get_gold_cost(uid)
 	var lumber := BuildingCatalog.get_lumber_cost(uid)
 	var food := BuildingCatalog.get_food_used(uid)
+	## 与 ProductionOrders 一致：经 GameMode 调整（近战首英雄免费）。
+	if _session != null:
+		var owner_id2 := int(d.get("owner", 0))
+		var adj := _session.ensure_game_mode().adjust_train_cost(
+			owner_id2, uid, gold, lumber, _unit_host()
+		)
+		gold = int(adj.get("gold", gold))
+		lumber = int(adj.get("lumber", lumber))
 	if stock != null:
 		if food > 0 and not stock.can_afford_food(food):
-			if game_hud:
-				game_hud.set_status("人口不足（%d/%d）" % [stock.food_used, stock.food_cap])
+			_tip("人口不足（%d/%d）" % [stock.food_used, stock.food_cap])
 			return
 		if stock.gold < gold or stock.lumber < lumber:
-			_notify_cannot_afford_build(uid)
+			_notify_cannot_afford(uid, gold, lumber)
 			return
 	var existing := primary.get_node_or_null("TrainQueue") as TrainQueue
 	if existing != null and existing.is_full():
-		if game_hud:
-			game_hud.set_status("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
+		_tip("训练队列已满（%d/%d）" % [existing.queue_count(), TrainQueue.MAX_QUEUE])
 		return
 	if not _command_router.issue_train(primary, uid):
-		if game_hud:
-			game_hud.set_status("无法训练 %s" % uid)
+		_tip(_diagnose_train_fail(primary, uid, gold, lumber, food))
 		return
 	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
-	production.watch(queue)
+	if production != null:
+		production.watch(queue)
 	command_card_requested.emit(primary, building_id)
 	selection_refresh_requested.emit()
-	if game_hud:
-		var n := queue.queue_count() if queue != null else 1
-		game_hud.set_status("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
+	var n := queue.queue_count() if queue != null else 1
+	show_feedback("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
 
 func request_research(upgrade_id: String) -> void:
 	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
@@ -271,20 +269,79 @@ func request_building_upgrade(target_id: String) -> void:
 
 
 func _notify_cannot_afford_build(building_id: String) -> void:
-	if game_hud == null:
-		return
-	var g := BuildingCatalog.get_gold_cost(building_id)
-	var l := BuildingCatalog.get_lumber_cost(building_id)
+	_notify_cannot_afford(
+		building_id,
+		BuildingCatalog.get_gold_cost(building_id),
+		BuildingCatalog.get_lumber_cost(building_id)
+	)
+
+
+func _notify_cannot_afford(item_id: String, gold: int, lumber: int) -> void:
+	var g := gold
+	var l := lumber
 	var msg := "资源不够"
 	if g > 0 or l > 0:
 		msg = "资源不够（需 %d金" % g
 		if l > 0:
 			msg += " %d木" % l
 		msg += "）"
+	elif not item_id.is_empty():
+		msg = "资源不够（%s）" % item_id
+	_tip(msg)
+
+
+func _tip(message: String) -> void:
+	if message.is_empty() or game_hud == null:
+		return
 	if game_hud.has_method("show_command_tip"):
-		game_hud.show_command_tip(msg)
-	else:
-		game_hud.set_status(msg)
+		game_hud.show_command_tip(message)
+	elif game_hud.has_method("set_status"):
+		game_hud.set_status(message)
+
+
+func _diagnose_train_fail(
+	building: Node3D, unit_id: String, gold: int, lumber: int, food: int
+) -> String:
+	if building == null or not is_instance_valid(building):
+		return "无法训练 %s" % unit_id
+	if UnitLife.is_under_construction(building):
+		return "建造中，无法训练"
+	if BuildingCatalog.get_build_time(unit_id) <= 0.0:
+		return "缺少训练时间数据：%s" % unit_id
+	var stock := _local_stock()
+	if stock == null:
+		return "无本地库存，无法训练"
+	if food > 0 and not stock.can_afford_food(food):
+		return "人口不足（%d/%d）" % [stock.food_used, stock.food_cap]
+	if stock.gold < gold or stock.lumber < lumber:
+		var msg := "资源不够（需 %d金" % gold
+		if lumber > 0:
+			msg += " %d木" % lumber
+		return msg + "）"
+	if gold <= 0 and lumber <= 0 and not TechPresence.is_hero_id(unit_id):
+		return "造价无效：%s" % unit_id
+	if TechPresence.is_hero_id(unit_id):
+		var owner_id := int(building.get_meta("unit_data", {}).get("owner", 0))
+		## 非首免时金木皆 0：Catalog/模式异常，与 ProductionOrders 拒单对齐。
+		if gold <= 0 and lumber <= 0:
+			var mode_adj_waived := false
+			if _session != null:
+				var adj := _session.ensure_game_mode().adjust_train_cost(
+					owner_id, unit_id, BuildingCatalog.get_gold_cost(unit_id),
+					BuildingCatalog.get_lumber_cost(unit_id), _unit_host()
+				)
+				mode_adj_waived = bool(adj.get("waived", false))
+			if not mode_adj_waived:
+				return "造价无效：%s" % unit_id
+		if (
+			TechPresence.count_heroes_with_queues(_unit_host(), owner_id)
+			>= TechPresence.MAX_HEROES_PER_PLAYER
+		):
+			return "每位玩家同时只能拥有 %d 名英雄" % TechPresence.MAX_HEROES_PER_PLAYER
+	var q := building.get_node_or_null("TrainQueue") as TrainQueue
+	if q != null and q.is_full():
+		return "训练队列已满（%d/%d）" % [q.queue_count(), TrainQueue.MAX_QUEUE]
+	return "无法训练 %s" % unit_id
 
 func _sync_building_train_visual(building: Node3D) -> void:
 	if building == null or not is_instance_valid(building):

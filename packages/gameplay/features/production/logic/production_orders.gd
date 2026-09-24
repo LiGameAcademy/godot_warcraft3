@@ -54,20 +54,29 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 	var gold: int = BuildingCatalog.get_gold_cost(uid)
 	var lumber: int = BuildingCatalog.get_lumber_cost(uid)
 	var food: int = BuildingCatalog.get_food_used(uid)
-	if time_sec <= 0.0 or (gold <= 0 and lumber <= 0):
+	if time_sec <= 0.0:
+		return false
+	var waived := false
+	if _session != null:
+		var mode := _session.ensure_game_mode()
+		var adj := mode.adjust_train_cost(owner, uid, gold, lumber, unit_host)
+		gold = int(adj.get("gold", gold))
+		lumber = int(adj.get("lumber", lumber))
+		waived = bool(adj.get("waived", false))
+	## 非首免英雄仍要求 Catalog 有造价；首免允许 0 金 0 木。
+	if not waived and gold <= 0 and lumber <= 0:
 		return false
 	var stock: PlayerStock = null
 	if _session != null:
 		stock = _command_stock()
 	if stock == null:
 		return false
-	if stock != null:
-		if food > 0 and not stock.can_afford_food(food):
-			return false
-		if not stock.try_spend(gold, lumber):
-			return false
-		if food > 0:
-			stock.add_food_used(food)
+	if food > 0 and not stock.can_afford_food(food):
+		return false
+	if (gold > 0 or lumber > 0) and not stock.try_spend(gold, lumber):
+		return false
+	if food > 0:
+		stock.add_food_used(food)
 	var pos: Dictionary = d.get("position", {})
 	var site_wc3: Vector2 = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
 	var queue: TrainQueue = building.get_node_or_null("TrainQueue") as TrainQueue
@@ -82,6 +91,8 @@ func issue_train(building: Node3D, unit_id: String) -> bool:
 	if not queue.enqueue(uid, time_sec, gold, lumber, food, site_wc3, owner):
 		_refund_train_spend(stock, gold, lumber, food)
 		return false
+	if _session != null:
+		_session.ensure_game_mode().notify_train_issued(owner, uid, waived)
 	train_issued.emit(uid)
 	return true
 

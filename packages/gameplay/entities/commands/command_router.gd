@@ -642,6 +642,17 @@ func issue_move_to_wc3(
 	goal_center_wc3: Vector2,
 	source: int = UnitOrder.Source.UNKNOWN
 ) -> Dictionary:
+	var started := MatchHotpathMetrics.begin()
+	var result := _issue_move_to_wc3(selected, goal_center_wc3, source)
+	MatchHotpathMetrics.finish(&"move_command", started)
+	return result
+
+
+func _issue_move_to_wc3(
+	selected: Array,
+	goal_center_wc3: Vector2,
+	source: int = UnitOrder.Source.UNKNOWN
+) -> Dictionary:
 	var movers := filter_movers(selected)
 	var result := {
 		"moved": 0,

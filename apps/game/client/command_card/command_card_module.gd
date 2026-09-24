@@ -37,6 +37,7 @@ var _try_train: Callable
 var _try_revive: Callable
 var _try_research: Callable
 var _try_building_upgrade: Callable
+var _try_buy: Callable
 
 var _card_supports_move: bool = false
 var _card_is_peasant: bool = false
@@ -93,6 +94,7 @@ func configure(deps: Dictionary) -> void:
 	_try_revive = deps.get("try_revive", Callable()) as Callable
 	_try_research = deps.get("try_research", Callable()) as Callable
 	_try_building_upgrade = deps.get("try_building_upgrade", Callable()) as Callable
+	_try_buy = deps.get("try_buy", Callable()) as Callable
 
 
 func shutdown() -> void:
@@ -267,6 +269,7 @@ func _measured_refresh() -> void:
 			}
 			if primary != null and _ability_ui_state_for.is_valid():
 				state.merge(_ability_ui_state_for.call(primary), true)
+			_enrich_shop_state(state, primary, tid)
 			_apply_command_card(CommandCard.for_unit(tid, state))
 
 
@@ -433,6 +436,8 @@ func apply_building_train_card(building: Node3D, tid: String) -> void:
 		),
 		"hide_trains": under,
 		"dead_heroes": HeroDeathRegistry.dead_heroes(owner_id),
+		"local_owner": owner_id,
+		"unit_host": host,
 	}
 	if building != null and not under:
 		var q := building.get_node_or_null("TrainQueue") as TrainQueue
@@ -616,6 +621,11 @@ func dispatch_action(action_id: String, source: int = UnitOrder.Source.PANEL) ->
 				var lid := action_id.substr(CommandCard.ACTION_LEARN_PREFIX.length())
 				try_learn_hero_skill(lid)
 				return
+			if action_id.begins_with(CommandCard.ACTION_BUY_PREFIX):
+				var iid := action_id.substr(CommandCard.ACTION_BUY_PREFIX.length())
+				if _try_buy.is_valid():
+					_try_buy.call(iid)
+				return
 			if _game_hud:
 				_game_hud.set_status("指令：%s（未实现）" % action_id)
 
@@ -769,3 +779,39 @@ func _controllable(node: Node) -> bool:
 func _call_unbind_build_site() -> void:
 	if _unbind_hud_build_site.is_valid():
 		_unbind_hud_build_site.call()
+
+func _enrich_shop_state(state: Dictionary, shop: Node3D, shop_tid: String) -> void:
+	if not ShopCatalog.is_shop(shop_tid) or shop == null or not is_instance_valid(shop):
+		return
+	var stock_map: Dictionary = {}
+	if shop.has_meta("shop_stock_snapshot"):
+		var snap: Variant = shop.get_meta("shop_stock_snapshot")
+		if snap is Dictionary:
+			stock_map = (snap as Dictionary).duplicate()
+	if stock_map.is_empty():
+		for iid in ShopCatalog.stock_ids(shop_tid):
+			stock_map[iid] = ShopCatalog.stock_start(iid)
+	state["shop_stock"] = stock_map
+	var buyer: Node3D = null
+	if _get_selected.is_valid():
+		for n in _get_selected.call() as Array:
+			if n is Node3D and TechPresence.is_hero_id(
+				str((n as Node3D).get_meta("unit_data", {}).get("typeId", ""))
+			):
+				buyer = n as Node3D
+				break
+	var in_range := true
+	var inv_full := false
+	if buyer != null:
+		var pa := Wc3Coords.godot_to_wc3_xy(buyer.global_position)
+		var pb := Wc3Coords.godot_to_wc3_xy(shop.global_position)
+		in_range = pa.distance_to(pb) <= ShopCatalog.TRADE_RANGE_WC3
+		var inv := Inventory.of(buyer)
+		inv_full = inv != null and inv.is_full()
+	state["shop_buyer_in_range"] = in_range
+	state["shop_buyer_inv_full"] = inv_full
+	if _local_stock.is_valid():
+		var ps: PlayerStock = _local_stock.call() as PlayerStock
+		if ps != null:
+			state["local_gold"] = ps.gold
+			state["local_lumber"] = ps.lumber

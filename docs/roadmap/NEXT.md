@@ -5,7 +5,7 @@
 > **地图节奏**：[ROADMAP.md](ROADMAP.md)（①–⑫）  
 > **对战竖切**：[../design/game/ROADMAP.md](../design/game/ROADMAP.md) · [GAMEPLAY_VERTICAL.md](../design/game/GAMEPLAY_VERTICAL.md)  
 > **细粒度待办**：[TODO.md](TODO.md)  
-> 最后更新：2026-09-05
+> 最后更新：2026-09-24
 
 ---
 
@@ -15,7 +15,7 @@
 |------|------|
 | **资产管线** | MPQ → 三车道（视觉 / SLK / 地图）→ `.scn`+PE2；有效覆盖率约 99% |
 | **地图** | 高度图 + 地面纹理 + 崖 M0–M2 + 坡核心 ✅；水体 / 装饰物 Y / 单位笔刷仍有缺口 |
-| **对战** | Echo Isles 壳 + 采矿伐木 + 建造训兵 + 战斗 C0–C3 + 野怪 AI + 大法师/山丘/支援技能 ✅ |
+| **对战** | Echo Isles 人族 1v1 可结束（AI A0–A4 + 结算/重开）✅；N1 功能项已接线，剩 Echo 手测抛光 |
 | **技能架构** | Behavior / Fx / Buff / Effect + Director 外提（Phase A–E）✅ |
 
 入口：`game/scenes/game_main.tscn`（F6 玩法）· `editor/scenes/editor_main.tscn`（编辑器）。
@@ -55,21 +55,21 @@ N∞  远期（门禁后）        触发器 VM · 联机 · 物体编辑器 · 
 
 ---
 
-### N1 · 人族竖切「可玩闭环」收尾（当前主线）
+### N1 · 人族竖切「可玩闭环」收尾（代码收口 · 手测收尾）
 
-F10 技能与 C0–C3 战斗已接线；竖切剧本仍有「像魔兽」的洞。
+F10 技能与 C0–C3 战斗已接线；**功能项已落地**，当前只差 Echo 实机剧本打勾。
 
-| 优先级 | 项 | 说明 | 相关文档 |
+| 优先级 | 项 | 状态 | 相关文档 |
 |--------|-----|------|----------|
-| P0 | **U3 Echo 手测抛光** | 拉怪、打断 AI、尸体/归巢 | [UNIT_AI.md](../design/game/UNIT_AI.md) |
-| P0 | **英雄死亡 → 祭坛复活** | 已有 `HeroDeathRegistry` 线索 | [GAMEPLAY_VERTICAL.md](../design/game/GAMEPLAY_VERTICAL.md) |
-| P1 | **主城 Keep `htow→hkee`** | 解锁后续建筑/科技语义（原 F7） | 同上 |
-| P1 | **铁匠武器/护甲升级** | F6 后置；攻防芯片角标才有意义 | 同上 |
-| P1 | **HUD 生产队列** | 中栏训练中列表 | [HUD.md](../design/game/HUD.md) |
+| P0 | **U3 Echo 手测抛光** | ⏳ 人工：拉怪 / 打断 / 尸体归巢 | [UNIT_AI.md](../design/game/UNIT_AI.md) |
+| ✅ | **英雄死亡 → 祭坛复活** | 代码：`HeroDeathRegistry` + `ProductionModule` 复活队列 | [GAMEPLAY_VERTICAL.md](../design/game/GAMEPLAY_VERTICAL.md) |
+| ✅ | **主城 Keep `htow→hkee`** | 代码：`building_upgrade` + 单元/集成自测 | 同上 |
+| ✅ | **铁匠武器/护甲升级** | 代码：`Rhme/Rhar/...` + `TechPresence` 加成 | 同上 |
+| ✅ | **HUD 生产队列** | 代码：`SelectionDetailsPanel` / `ActivityFeedPanel` | [HUD.md](../design/game/HUD.md) |
 | P2 | 民兵回退 / 群体移动占位再对齐 | 手感，不挡功能 | [GROUP_MOVE.md](../design/pathfinding/GROUP_MOVE.md) |
 | ✅ | **单位自然回血/回蓝** | `UnitRegen`：Balance `regen*` + 英雄 STR/INT×0.05 | [GAMEPLAY_VERTICAL.md](../design/game/GAMEPLAY_VERTICAL.md) |
 
-**验收剧本（人工点一遍）**：
+**验收剧本（人工点一遍 · 收口门槛）**：
 
 1. 开局采矿伐木 → 造 Farm / Altar / Barracks  
 2. 祭坛训出大法师；兵营训步兵 /（铁匠后）火枪手  
@@ -78,7 +78,7 @@ F10 技能与 C0–C3 战斗已接线；竖切剧本仍有「像魔兽」的洞�
 5. 主城升 Keep；铁匠升级后伤害/护甲变化可见  
 6. HUD 显示训练队列；Buff / 自动施法不花  
 
-**目标**：一个人能在 Echo 上打完「开局 → 基建 → 英雄技能 → 清野」而不靠作弊补洞。
+**目标**：一个人能在 Echo 上打完「开局 → 基建 → 英雄技能 → 清野」而不靠作弊补洞。手测通过后 N1 正式关账，主线进 N2 / I4 余项。
 
 ---
 
@@ -116,7 +116,7 @@ F10 技能与 C0–C3 战斗已接线；竖切剧本仍有「像魔兽」的洞�
 
 | 选项 | 内容 | 备注 |
 |------|------|------|
-| A | **物品 + 商店 + 回城卷轴** | 对齐 Melee Bootstrap P1 |
+| A | **物品 + 商店 + 回城卷轴** | 商店购买闭环已开工（I4 前半）；回城/PowerUp 仍待 |
 | B | **人族二线单位** | 骑士 / 狮鹫等（需 Keep + 科技） |
 | C | **第二种族最小集** | 建议兽族：苦工 → 大厅 → 猎头 → 英雄一技能 |
 | D | **迷雾 / 游戏内小地图单位点** | 对战 HUD；编辑器小地图 Phase 3 已大部分落地 |

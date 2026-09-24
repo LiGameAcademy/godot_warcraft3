@@ -160,7 +160,8 @@ func spawn_opponent_base(
 		return false
 	var workers := maxi(int(result.get("spawned", 1)) - 1, 0)
 	var cap := BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
-	session.set_stock(owner_id, PlayerStock.melee_start(workers, cap))
+	var mode := session.ensure_game_mode()
+	session.set_stock(owner_id, mode.create_starting_stock(workers, cap))
 	return true
 
 

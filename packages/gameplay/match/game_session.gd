@@ -12,6 +12,8 @@ var local_player: int = 0
 var local_race: String = "human"
 ## owner_id → PlayerStock 实例
 var stocks: Dictionary = {}
+## 对局模式规则（近战首英雄免费、开局库存等）；空则用默认 MeleeGameMode。
+var game_mode: GameMode = null
 
 var _match_teams: Dictionary = {}
 var _match_armed := false
@@ -59,17 +61,28 @@ func local_stock() -> PlayerStock:
 	return ensure_stock(local_player)
 
 
+func ensure_game_mode() -> GameMode:
+	if game_mode == null:
+		game_mode = MeleeGameMode.new()
+	return game_mode
+
+
 static func from_melee_bootstrap(
 	p_map_dir: String,
 	p_local_player: int,
 	p_race: String,
 	worker_count: int,
-	hall_food: int = -1
+	hall_food: int = -1,
+	p_mode: GameMode = null
 ) -> GameSession:
 	var food_cap := hall_food if hall_food >= 0 else PlayerStock.MELEE_TOWN_HALL_FOOD
 	var session := GameSession.new()
 	session.map_dir = p_map_dir
 	session.local_player = clampi(p_local_player, 0, 15)
 	session.local_race = p_race
-	session.set_stock(session.local_player, PlayerStock.melee_start(worker_count, food_cap))
+	session.game_mode = p_mode if p_mode != null else MeleeGameMode.new()
+	session.set_stock(
+		session.local_player,
+		session.game_mode.create_starting_stock(worker_count, food_cap)
+	)
 	return session

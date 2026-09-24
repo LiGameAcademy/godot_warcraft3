@@ -11,8 +11,6 @@ func _ready() -> void:
 func run() -> void:
 	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
-	director.dev_spawn_archmage = false
-	director.dev_spawn_priest = false
 	director.random_start_location = false
 	add_child(game)
 	var deadline := Time.get_ticks_msec() + 120000

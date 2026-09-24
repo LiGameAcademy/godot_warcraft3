@@ -155,7 +155,7 @@ func start_join(site: BuildSite, building_id: String, site_wc3: Vector2) -> bool
 	return true
 
 
-## 工人被调走：离开工地（不拆建筑）；若是 MOVING 中的首单未开工则退款取消。
+## 工人被调走：离开工地（不拆建筑）；若是 MOVING 中的首单未开工则全额退款取消。
 func leave_or_abort() -> void:
 	if _state == STATE_BUILDING:
 		_leave_site_keep_building()
@@ -179,9 +179,7 @@ func cancel() -> bool:
 	if _joining_site != null and _state == STATE_BUILDING:
 		_leave_site_keep_building()
 		return true
-	var ratio: float = CANCEL_REFUND_RATIO
-	if _profile != null:
-		ratio = _profile.cancel_refund_ratio
+	var ratio := _cancel_refund_ratio()
 	var refund_g: int = int(round(float(_order.gold_spent) * ratio))
 	var refund_l: int = int(round(float(_order.lumber_spent) * ratio))
 	if _session != null:
@@ -201,6 +199,15 @@ func cancel() -> bool:
 	state_changed.emit(_state)
 	build_cancelled.emit(cancelled_order)
 	return true
+
+
+## 未开建（赶路、半成品未出）全额退；已开建按种族取消比例（人族 0.75）。
+func _cancel_refund_ratio() -> float:
+	if _state == STATE_MOVING and _site == null:
+		return 1.0
+	if _profile != null:
+		return _profile.cancel_refund_ratio
+	return CANCEL_REFUND_RATIO
 
 
 func _clear_moving_join() -> void:
@@ -298,14 +305,14 @@ func _on_arrived() -> void:
 	var nav: UnitNavigator = _peasant.get_node_or_null("UnitNavigator") as UnitNavigator
 	if nav != null:
 		nav.stop()
-	_face_build_site()
-	_state = STATE_BUILDING
-	_order.state = BuildOrder.STATE_BUILDING
-	set_process(false)
-	if _peasant != null and _profile != null and _profile.hides_builder():
-		_peasant.visible = false
 
 	if _joining_site != null:
+		_face_build_site()
+		_state = STATE_BUILDING
+		_order.state = BuildOrder.STATE_BUILDING
+		set_process(false)
+		if _peasant != null and _profile != null and _profile.hides_builder():
+			_peasant.visible = false
 		_site = null
 		_assist_only = false
 		if not _joining_site.add_builder(_peasant):
@@ -317,6 +324,19 @@ func _on_arrived() -> void:
 		_set_work_anim(true)
 		state_changed.emit(_state)
 		return
+
+	# 首单：到位后再判选址。赶路期间可能被占；失败取消且全额退（尚未开建）。
+	if not PlacementRules.can_build_at(_order.building_id, _order.site_wc3, _pathing, []):
+		_order.cancel_reason = "无法在此处建造（工地已失效）"
+		cancel()
+		return
+
+	_face_build_site()
+	_state = STATE_BUILDING
+	_order.state = BuildOrder.STATE_BUILDING
+	set_process(false)
+	if _peasant != null and _profile != null and _profile.hides_builder():
+		_peasant.visible = false
 
 	# 首单：到位后创建工地
 	_assist_only = false

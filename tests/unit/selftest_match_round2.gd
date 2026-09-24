@@ -122,30 +122,35 @@ func _ready() -> void:
 	draw.redraw([])
 	check(mesh.get_surface_count() == 0 and draw._line_mi.mesh == null, "empty clears once")
 	draw.free()
-	var hud := CountingHud.new()
+	var loads := {"n": 0}
+	var panel := CommandPanel.new()
 	var grid := GridContainer.new()
-	hud.add_child(grid)
-	hud._command_grid = grid
+	panel.add_child(grid)
 	var button := Button.new()
 	grid.add_child(button)
+	panel.attach_command_grid(grid)
+	panel.set_icon_loader(func(_path: String) -> Texture2D:
+		loads["n"] = int(loads["n"]) + 1
+		return GradientTexture2D.new()
+	)
 	var card := [{"id": "ability:test", "icon": "test-icon", "enabled": false, "cooldown_ratio": 0.5, "keep_icon_on_cd": true}]
-	hud.set_command_card(card)
+	panel.set_command_card(card)
 	var overlay := button.get_node("CooldownOverlay")
 	var icon := button.icon
 	card[0].cooldown_ratio = 0.25
-	hud.update_command_card_dynamic(card)
+	panel.update_command_card_dynamic(card)
 	check(is_equal_approx(float(overlay.get("_ratio")), 0.25) and overlay.visible, "partial update advances cooldown wedge")
-	check(hud.loads == 1 and button.icon == icon, "cooldown does not reload icon")
+	check(int(loads["n"]) == 1 and button.icon == icon, "cooldown does not reload icon")
 	check(button.get_node("CooldownOverlay") == overlay, "partial update retains overlay")
 	card[0].cooldown_ratio = 0.0
 	card[0].enabled = true
-	hud.update_command_card_dynamic(card)
+	panel.update_command_card_dynamic(card)
 	check(is_zero_approx(float(overlay.get("_ratio"))) and not overlay.visible, "finished cooldown hides wedge")
 	check(not button.get_meta("_cmd_blocked"), "cooldown completion enables command")
 	card[0].enabled = false
-	hud.update_command_card_dynamic(card)
+	panel.update_command_card_dynamic(card)
 	check(button.get_meta("_cmd_blocked"), "mana block applied")
-	hud.free()
+	panel.free()
 	var module := CountingCard.new()
 	var selector := Selector.new()
 	var fake_hud := FakeHud.new()
@@ -259,13 +264,6 @@ class Selector extends Node:
 		return primary
 	func get_selected() -> Array:
 		return [primary]
-
-
-class CountingHud extends GameHud:
-	var loads := 0
-	func _load_icon(_path: String) -> Texture2D:
-		loads += 1
-		return GradientTexture2D.new()
 
 
 class FakeHud extends Node:

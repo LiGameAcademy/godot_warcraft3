@@ -31,10 +31,6 @@ signal session_ready
 @export var spawn_opponent_base: bool = false
 @export var enable_opponent_economy: bool = false
 @export var enable_opponent_army: bool = false
-## TODO(临时)：开局刷大法师便于测英雄技能，验收后删除。
-@export var dev_spawn_archmage: bool = true
-## TODO(临时)：开局刷牧师（含牧师大师训练 → 心灵之火），验收后删除。
-@export var dev_spawn_priest: bool = true
 ## 开发：F6 Birth / F7 Stand Work（训练烟）/ F8 Stand
 @export var debug_building_fx_hotkeys: bool = true
 
@@ -367,10 +363,6 @@ func _on_map_loaded() -> void:
 	_wire_all_unit_ai()
 	if enable_opponent_economy:
 		_setup_opponent_economy()
-	if dev_spawn_archmage:
-		call_deferred("_dev_spawn_archmage")
-	if dev_spawn_priest:
-		call_deferred("_dev_spawn_priest")
 	# 地形材质已就绪后再刷调试栅格，避免 ready 阶段空材质警告
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
@@ -531,53 +523,6 @@ func _spawn_opponent_base(slocs: Array[Dictionary], local_sloc: Dictionary) -> b
 		return false
 	return _ensure_match_bootstrap_module().spawn_opponent_base(
 		_session, slocs, local_sloc, local_player
-	)
-
-
-## TODO(临时)：开局在己方主城旁刷 Hamg，便于测技能/暴风雪；验收后整段删除。
-func _dev_spawn_archmage() -> void:
-	var hall := _find_local_town_hall()
-	if hall == null:
-		push_warning("GameDirector[dev]: 未找到己方主城，跳过大法师")
-		return
-	var node := _ensure_units_module().spawn_near(
-		hall, "Hamg", local_player, Vector2(192.0, -192.0),
-		{"ensure_hero": true, "charge_food": true}
-	)
-	if node == null:
-		push_warning("GameDirector[dev]: 大法师刷出失败")
-		return
-	if unit_selector != null and unit_selector.has_method("select_node"):
-		unit_selector.call("select_node", node)
-	if game_hud:
-		game_hud.set_status("开发：已刷大法师（dev_spawn_archmage）")
-
-
-## TODO(临时)：开局在己方主城旁刷 hmpr，并授予牧师大师训练（Rhpt L2 → 心灵之火）。
-func _dev_spawn_priest() -> void:
-	var hall := _find_local_town_hall()
-	if hall == null:
-		push_warning("GameDirector[dev]: 未找到己方主城，跳过牧师")
-		return
-	var stock := _local_stock()
-	if stock != null:
-		stock.grant_upgrade("Rhpt", 2)
-	var node := _ensure_units_module().spawn_near(
-		hall, "hmpr", local_player, Vector2(64.0, -256.0),
-		{"ensure_caster": true, "charge_food": true}
-	)
-	if node == null:
-		push_warning("GameDirector[dev]: 牧师刷出失败")
-		return
-	if unit_selector != null and unit_selector.has_method("select_node"):
-		unit_selector.call("select_node", node)
-	if game_hud:
-		game_hud.set_status("开发：已刷牧师（Rhpt 大师 · 心灵之火）")
-
-
-func _find_local_town_hall() -> Node3D:
-	return _ensure_units_module().find_owned_unit_by_types(
-		local_player, PackedStringArray(["htow", "hkee", "hcas"])
 	)
 
 
@@ -1204,6 +1149,21 @@ func _try_issue_building_upgrade(target_id: String) -> void:
 	_production_panel.request_building_upgrade(target_id)
 
 
+## 商店购入：ItemsModule 扣费入包，刷状态栏与命令卡库存。
+func _try_issue_buy(item_id: String) -> void:
+	var result := _ensure_items_module().try_buy_item(item_id)
+	var reason := str(result.get("reason", "")).strip_edges()
+	if not reason.is_empty() and game_hud != null:
+		if bool(result.get("ok", false)):
+			game_hud.set_status(reason)
+		elif game_hud.has_method("show_command_tip"):
+			game_hud.show_command_tip(reason)
+		else:
+			game_hud.set_status(reason)
+	if is_instance_valid(_command_card):
+		_command_card.refresh()
+
+
 ## 主城升本完工：改 typeId、按比例保留生命、切 TownHall 档位姿态（同模型）。
 func _apply_building_upgrade(building: Node3D, new_type_id: String) -> bool:
 	return _ensure_units_module().forms.apply_building_upgrade(building, new_type_id)
@@ -1654,6 +1614,7 @@ func _ensure_command_card_module() -> CommandCardModule:
 		"try_revive": Callable(self, "_try_issue_revive"),
 		"try_research": Callable(self, "_try_issue_research"),
 		"try_building_upgrade": Callable(self, "_try_issue_building_upgrade"),
+		"try_buy": Callable(self, "_try_issue_buy"),
 	})
 	return _command_card
 
@@ -1976,6 +1937,9 @@ func _ensure_items_module() -> ItemsModule:
 			if map_root != null and map_root.has_method("get_model_cache"):
 				return map_root.get_model_cache() as MapModelCache
 			return null,
+		"local_stock": Callable(self, "_local_stock"),
+		"unit_host": Callable(self, "_unit_host"),
+		"get_selected": Callable(self, "_get_selected_safe"),
 	})
 	_item_service = _items.item_service
 	_ground_items = _items.ground_host()

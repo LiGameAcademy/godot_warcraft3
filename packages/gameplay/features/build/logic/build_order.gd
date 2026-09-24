@@ -9,7 +9,7 @@ extends RefCounted
 ##   PENDING     → start_build 刚验过 + 扣资源
 ##   MOVING      → 农民走向工地
 ##   BUILDING    → 到位，开始建造（F2-5 接管）
-##   CANCELLED   → 玩家取消（已退款 50%）
+##   CANCELLED   → 取消（未开建全额退；已开建按种族比例）
 ##   DONE        → 完工（F2-5 触发）
 
 const STATE_PENDING := 0
@@ -41,8 +41,10 @@ var builder: Node3D = null
 var owner: int = -1
 ## 当前状态。
 var state: int = STATE_PENDING
-## 资源快照（取消时按 50% 退款）。
+## 资源快照（取消：未开建全额退；已开建按种族比例，人族约 0.75）。
 var gold_spent: int = 0
 var lumber_spent: int = 0
 ## 建造总时长（秒；冗余存以便 UI 直接读，避免再查 BuildingCatalog）。
 var build_time_sec: float = 0.0
+## 取消原因（到位后选址失效等）；空则 UI 可不提示。
+var cancel_reason: String = ""

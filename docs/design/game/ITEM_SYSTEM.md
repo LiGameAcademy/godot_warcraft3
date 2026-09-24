@@ -43,7 +43,7 @@
 - HealthBarManager 先检查 Variant 类型与实例有效性，再做类型判断，避免英雄尸体释放后访问失效对象。
 - SpellHitFx 的节流标记改用资源路径摘要构成合法 metadata 标识符，修复低血量测试触发牧师治疗时的报错。
 
-商店、回城卷轴、全效果、PowerUp 自动触发及磁盘存档在本版之外。
+商店、回城卷轴、全效果、PowerUp 自动触发及磁盘存档在本版之外。**例外（2026-09-24）**：中立商店购买最小闭环已接线（`ngme`/`nmrk` 货架）；回城与 PowerUp 仍后置。
 
 ## 进度自检（与 [实施计划 I0–I4](../../roadmap/ITEMS_AND_MELEE_AI_PLAN.md) 对照）
 
@@ -53,7 +53,7 @@
 | I1 | GroundItem / ItemService / ItemPickupController / InventoryPanel / 智能右键拾取 / 抢道具 | **闭环** | `item_pickup_controller.gd:31-56`、`inventory_panel.gd:1-103`、`smart_handler_registry.gd:243-256`、Director L1465-1473 |
 | I2 | 使用效果 / 装备护甲 / 死亡保留 / 复活恢复 / 共享冷却组 | **闭环** | `inventory.gd:99-134`、`hero_death_registry.gd:21-39`、`production_module.gd:144-160` |
 | I3 | 死亡掉落 / 互斥组 / 全局表 / 随机码 / seed / 幂等 | **闭环** | `item_drop_table.gd:21-62`、`item_service.gd:65-73` |
-| I4 | 商店 / 回城卷轴 / PowerUp 自动触发 | **缺失**（与文档预期一致，第二批）| 全仓零 `**/shop*.gd`、零 `purchase/buy/cost_gold` 调用 |
+| I4 | 商店 / 回城卷轴 / PowerUp 自动触发 | **进行中**（商店购买已接线）| `ShopCatalog`/`ShopService` + 命令卡 `buy:`；回城/PowerUp 仍缺 |
 
 ## AI 侧道具决策（与 [MELEE_AI.md](MELEE_AI.md) §4 共口径）
 

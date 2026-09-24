@@ -40,8 +40,6 @@ func run() -> void:
 	director.spawn_opponent_base = true
 	director.enable_opponent_economy = true
 	director.enable_opponent_army = true
-	director.dev_spawn_archmage = false
-	director.dev_spawn_priest = false
 	director.random_start_location = false
 	add_child(game)
 	var deadline := Time.get_ticks_msec() + 180000
@@ -99,7 +97,7 @@ func run() -> void:
 				print("  tactical id=", soldier.get_instance_id(), " type=", CombatQuery.type_id_of(soldier), " hp=", UnitLife.get_life(soldier), " xy=", Wc3Coords.godot_to_wc3_xy(soldier.global_position), " attack=", attack.get_state() if attack != null else -1, " target=", CombatQuery.type_id_of(target) if is_instance_valid(target) else "none", " target_xy=", Wc3Coords.godot_to_wc3_xy(target.global_position) if is_instance_valid(target) else Vector2.INF, " moving=", nav.is_moving() if nav != null else false, " path=", nav.get_remaining_waypoints_wc3() if nav != null else [])
 		await get_tree().process_frame
 	check(seen.has("hbar") and seen.has("halt"), "正常经营建成兵营与祭坛")
-	check(seen.has("Hamg") and seen.has("hfoo"), "正常付费生产英雄与步兵")
+	check(seen.has("Hamg") and seen.has("hfoo"), "正常生产英雄与步兵（首英雄可免费）")
 	check(marched, "自产军队自行离开基地远征")
 	check(not is_instance_valid(enemy) or UnitLife.get_life(enemy) < initial_life, "自产军队进攻使敌方主城受伤")
 	check(army_damage > 0, "伤害事件证实攻击者为电脑自产军队")

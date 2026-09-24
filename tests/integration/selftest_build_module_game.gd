@@ -40,8 +40,6 @@ func run() -> void:
 	var game: Node = load("res://scenes/game_main.tscn").instantiate()
 	var director := game.get_node("GameDirector") as GameDirector
 	director.spawn_opponent_base = true
-	director.dev_spawn_archmage = false
-	director.dev_spawn_priest = false
 	director.enable_opponent_army = false
 	director.random_start_location = false
 	add_child(game)

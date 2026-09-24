@@ -115,6 +115,20 @@ func resync() -> void:
 		_free_entry(int(id))
 
 
+## 增量：仅为新建单位挂血条（训兵/开建热路径，避免全层扫描）。
+func ensure_for(node: Node3D) -> void:
+	if node == null or not is_instance_valid(node) or _root == null:
+		return
+	if not _is_trackable(node):
+		return
+	UnitLife.ensure(node)
+	var id := node.get_instance_id()
+	if _entries.has(id):
+		_update_attach_if_needed(_entries[id], node)
+		return
+	_entries[id] = _make_bar(node)
+
+
 func _process(delta: float) -> void:
 	if _camera == null or _unit_host == null or _root == null:
 		return
