@@ -13,6 +13,8 @@ var cell_reservation: PathCellReservation
 var _map_root: MapLoader
 var _ensure_visual: Callable
 var _navigators: Dictionary = {}
+## 同帧 coalesce：多次 refresh_dynamic_pathing 只 flush 一次。
+var _pathing_refresh_queued: bool = false
 
 
 func initialize(map_root: MapLoader, ensure_visual: Callable) -> void:
@@ -26,6 +28,7 @@ func initialize(map_root: MapLoader, ensure_visual: Callable) -> void:
 	path_query.bind_pathing(pathing)
 	cell_reservation = PathCellReservation.new()
 	path_query.bind_reservation(cell_reservation)
+	path_query.prepare_navigation()
 	var hf := _map_root.get_heightfield_dict()
 	heightfield = Wc3Heightfield.from_dict(hf, true) if not hf.is_empty() else null
 	crowd_query = UnitCrowdQuery.new()
@@ -126,6 +129,15 @@ func apply_move_stats(unit: Node3D, nav: UnitNavigator) -> void:
 
 
 func refresh_dynamic_pathing() -> void:
+	## 同帧多次训兵/开建合并为一次全量 blit + A* 重建。
+	if _pathing_refresh_queued:
+		return
+	_pathing_refresh_queued = true
+	call_deferred("_flush_dynamic_pathing")
+
+
+func _flush_dynamic_pathing() -> void:
+	_pathing_refresh_queued = false
 	if _map_root == null:
 		return
 	# 动态脚印变更后：数据与叠层必须同源，否则会出现「蓝格可摆」或「叠层过期」
@@ -135,9 +147,18 @@ func refresh_dynamic_pathing() -> void:
 		_map_root.call("_apply_dynamic_pathing")
 	elif _map_root.has_method("set_pathing_map") and pathing != null:
 		_map_root.set_pathing_map(pathing)
+	if path_query != null:
+		path_query.prepare_navigation()
+
+
+## 同帧大幅改单位坐标后调用，避免 crowd 空间哈希漏检。
+func invalidate_crowd_index() -> void:
+	if crowd_query != null:
+		crowd_query.invalidate()
 
 
 func bind_pathing(value: Wc3PathingMap) -> void:
 	pathing = value
 	if path_query != null:
 		path_query.bind_pathing(value)
+		path_query.prepare_navigation()

@@ -395,7 +395,8 @@ func is_units_batch_loading() -> bool:
 
 
 ## 编辑器/游戏增量放置一条单位。返回根节点；失败 null（bool 语境下仍可当成败用）。
-func add_unit_instance(entry: Dictionary, hf: Dictionary) -> Node3D:
+## apply_pathing=false：仅登记 entry，由调用方随后一次性 refresh（避免训兵/开建同帧双次全量 blit）。
+func add_unit_instance(entry: Dictionary, hf: Dictionary, apply_pathing: bool = true) -> Node3D:
 	if _units == null:
 		return null
 	_units.setup(get_id_catalog(), _cache)
@@ -406,10 +407,11 @@ func add_unit_instance(entry: Dictionary, hf: Dictionary) -> Node3D:
 	if node != null:
 		_pathing_unit_entries.append(entry)
 		# 无论是否显示叠层，都必须 blit 动态脚印（建造合法性依赖）
-		if show_pathing_ground:
-			_rebuild_pathing_overlay()
-		else:
-			_apply_dynamic_pathing()
+		if apply_pathing:
+			if show_pathing_ground:
+				_rebuild_pathing_overlay()
+			else:
+				_apply_dynamic_pathing()
 	return node
 
 

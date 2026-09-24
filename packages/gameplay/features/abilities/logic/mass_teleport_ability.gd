@@ -70,6 +70,9 @@ static func try_cast(caster: Node3D, abil_id: String, goal_wc3: Vector2, ctx: Di
 		var tid := str(u.get_meta("unit_data", {}).get("typeId", "")).strip_edges()
 		var dest := TrainSpawn.resolve_with_displace(goal_wc3, goal_wc3, u, tid, path_query, crowd)
 		teleport_cb.call(u, dest)
+		# 同帧空间哈希：大幅位移后失效，避免后续落点/分离漏检。
+		if crowd != null:
+			crowd.invalidate()
 		moved += 1
 	if moved <= 0:
 		out["reason"] = "传送失败"

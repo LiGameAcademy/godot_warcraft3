@@ -50,3 +50,11 @@ func _measured_set_owner_cells(owner_id: int, cells: Array) -> void:
 func is_blocked_for(cx: int, cy: int, self_id: int) -> bool:
 	var owner: int = _cells.get(Vector2i(cx, cy), 0)
 	return owner != 0 and owner != self_id
+
+
+func blocked_cells_for(self_id: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for cell: Vector2i in _cells:
+		if int(_cells[cell]) != self_id:
+			out.append(cell)
+	return out

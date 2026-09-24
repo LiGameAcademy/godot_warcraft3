@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/integration/selftest_move_click_game.gd" id="1"]
+
+[node name="MoveClickGameTest" type="Node"]
+script = ExtResource("1")

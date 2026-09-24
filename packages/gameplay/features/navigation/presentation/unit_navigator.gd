@@ -223,11 +223,12 @@ func go_to_wc3(goal_wc3: Vector2) -> bool:
 		"find_path", from, goal_wc3, clearance_cells, agent_id, harvest_ghost
 	)
 	if not result.get("ok", false) and not harvest_ghost:
-		# 再试一次：强制弹开后再寻路
-		from = _unstuck_if_pocket(body, from, true)
-		result = _query.call(
-			"find_path", from, goal_wc3, clearance_cells, agent_id, false
-		)
+		# 未改变起点时重跑相同搜索不会改变结果，只会加倍阻塞。
+		var freed := _unstuck_if_pocket(body, from, true)
+		if not freed.is_equal_approx(from):
+			result = _query.call(
+				"find_path", freed, goal_wc3, clearance_cells, agent_id, false
+			)
 	if not result.get("ok", false):
 		stop()
 		path_failed.emit(str(result.get("reason", "fail")))
@@ -481,28 +482,28 @@ func _finish() -> void:
 func _refresh_reservation(body: Node3D) -> void:
 	if harvest_ghost:
 		return
-	if _reservation == null or not _reservation.has_method("set_owner_cells"):
+	if _reservation == null:
 		return
-	if _query == null or body == null or not _query.has_method("world_to_cell"):
+	if _query == null or body == null:
 		return
 	var inv := 1.0 / Wc3Coords.WORLD_SCALE
 	var cur := Vector2(body.global_position.x * inv, -body.global_position.z * inv)
 	var cells: Array = []
-	cells.append(_query.call("world_to_cell", cur.x, cur.y))
+	cells.append(_query.world_to_cell(cur.x, cur.y))
 	if _goal_wc3 != Vector2.INF:
-		cells.append(_query.call("world_to_cell", _goal_wc3.x, _goal_wc3.y))
+		cells.append(_query.world_to_cell(_goal_wc3.x, _goal_wc3.y))
 	if _wp_i < _waypoints.size():
 		var nxt: Vector2 = _waypoints[_wp_i]
-		cells.append(_query.call("world_to_cell", nxt.x, nxt.y))
-	_reservation.call("set_owner_cells", body.get_instance_id(), cells)
+		cells.append(_query.world_to_cell(nxt.x, nxt.y))
+	# 始终调用：预约表在「格集不变」时仍会重试此前被他人占住的格。
+	_reservation.set_owner_cells(body.get_instance_id(), cells)
 
 
 func _release_reservation() -> void:
 	var body := _body()
 	if body == null or _reservation == null:
 		return
-	if _reservation.has_method("clear_owner"):
-		_reservation.call("clear_owner", body.get_instance_id())
+	_reservation.clear_owner(body.get_instance_id())
 
 
 func _set_locomotion(moving: bool) -> void:

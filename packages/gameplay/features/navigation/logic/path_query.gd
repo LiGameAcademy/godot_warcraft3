@@ -7,7 +7,8 @@ extends RefCounted
 ## - A* 的「图」是整张地图共享的；每个单位拷一份 pathing / 各自跑全图搜索会浪费且难单测。
 ## - 单位子节点只应消费路点（见 UnitNavigator），权威可走性仍来自 WPM（PATHFINDING_CHOICE）。
 
-## 单次搜索节点上限：防止极端不可达时拖死主线程（Echo Isles 全图格数很大）。
+## 脚本后端搜索上限；显式修改 max_nodes 时使用脚本后端保留限额语义。
+## 默认原生后端完整搜索可达区域，不把展开 48000 格当作不可达。
 const DEFAULT_MAX_NODES := 48000
 ## 直线采样步长（寻路格比例）：过稀会「穿墙漏检」，过密浪费。
 const LINE_SAMPLE_FRAC := 0.35
@@ -22,14 +23,47 @@ var _agent_id: int = 0
 ## 弦拉直后是否做 Catmull-Rom 细分（不可走采样会丢弃）
 var smooth_catmull: bool = true
 var catmull_subdiv: int = 3
+## A* 工作缓冲：Echo Isles ≈ 19 万格；代际戳避免每次全表 fill。
+var _astar_w: int = 0
+var _astar_h: int = 0
+var _astar_came: PackedInt32Array = PackedInt32Array()
+var _astar_g: PackedFloat32Array = PackedFloat32Array()
+var _astar_g_gen: PackedInt32Array = PackedInt32Array()
+var _astar_closed_gen: PackedInt32Array = PackedInt32Array()
+var _astar_gen: int = 1
+var _walk_gen: PackedInt32Array = PackedInt32Array()
+var _walk_ok: PackedByteArray = PackedByteArray()
+var _walk_cache_active := false
+## Native search preserves grid costs/clearance; script backend remains a differential oracle.
+var use_native_astar := true
+var _native_grids: Dictionary = {}
+var _native_static := PackedByteArray()
+var _native_dynamic := PackedByteArray()
+var _native_size := Vector2i.ZERO
+var _query_walk_cache: Dictionary = {}
+var _query_active := false
 
 
 func bind_pathing(map: Wc3PathingMap) -> void:
 	pathing = map
+	_astar_w = 0
+	_astar_h = 0
+	_native_grids.clear()
 
 
 func bind_reservation(res: PathCellReservation) -> void:
 	reservation = res
+
+
+## Build common movement grids during map setup, before the first player click.
+func prepare_navigation() -> void:
+	if not use_native_astar or not is_ready():
+		return
+	var saved := _clearance
+	for clearance in [0, 1]:
+		_clearance = clearance
+		_native_grid()
+	_clearance = saved
 
 
 func is_ready() -> bool:
@@ -50,25 +84,44 @@ func world_to_cell(wc3_x: float, wc3_y: float) -> Vector2i:
 
 ## 格子是否满足智能体净空（Chebyshev 邻域全可走）+ 他人预约。
 func can_walk_cell_clear(cx: int, cy: int, clearance: int = -1) -> bool:
+	if _query_active and clearance < 0:
+		var cell := Vector2i(cx, cy)
+		if not _query_walk_cache.has(cell):
+			_query_walk_cache[cell] = _can_walk_cell_clear_uncached(cx, cy, clearance)
+		return _query_walk_cache[cell]
+	if _walk_cache_active and clearance < 0:
+		if cx < 0 or cy < 0 or cx >= _astar_w or cy >= _astar_h:
+			return false
+		var index := cy * _astar_w + cx
+		if _walk_gen[index] != _astar_gen:
+			_walk_gen[index] = _astar_gen
+			_walk_ok[index] = int(_can_walk_cell_clear_uncached(cx, cy, clearance))
+		return _walk_ok[index] != 0
+	return _can_walk_cell_clear_uncached(cx, cy, clearance)
+
+
+func _can_walk_cell_clear_uncached(cx: int, cy: int, clearance: int = -1) -> bool:
 	if not is_ready():
 		return false
 	var c := _clearance if clearance < 0 else maxi(clearance, 0)
 	if not pathing.can_walk_cell(cx, cy):
 		return false
-	if reservation != null and reservation.has_method("is_blocked_for"):
-		if bool(reservation.call("is_blocked_for", cx, cy, _agent_id)):
-			return false
+	var res := reservation
+	var aid := _agent_id
+	if res != null and res.is_blocked_for(cx, cy, aid):
+		return false
 	if c <= 0:
 		return true
 	for dy in range(-c, c + 1):
 		for dx in range(-c, c + 1):
 			if dx == 0 and dy == 0:
 				continue
-			if not pathing.can_walk_cell(cx + dx, cy + dy):
+			var nx := cx + dx
+			var ny := cy + dy
+			if not pathing.can_walk_cell(nx, ny):
 				return false
-			if reservation != null and reservation.has_method("is_blocked_for"):
-				if bool(reservation.call("is_blocked_for", cx + dx, cy + dy, _agent_id)):
-					return false
+			if res != null and res.is_blocked_for(nx, ny, aid):
+				return false
 	return true
 
 
@@ -327,7 +380,11 @@ func find_path(
 	ignore_reservation: bool = false
 ) -> Dictionary:
 	var started := MatchHotpathMetrics.begin()
+	_query_walk_cache.clear()
+	_query_active = true
 	var result: Dictionary = _measured_find_path(from_wc3, to_wc3, clearance_cells, agent_id, ignore_reservation)
+	_query_active = false
+	_query_walk_cache.clear()
 	MatchHotpathMetrics.finish(&"pathfinding", started)
 	return result
 
@@ -364,7 +421,9 @@ func _measured_find_path(
 	if is_straight_walkable(start_p, goal_p):
 		reservation = prev_res
 		return {"ok": true, "waypoints": [goal_p], "reason": "straight"}
-	var cells := _astar(start_c, goal_c)
+	var stage := MatchHotpathMetrics.begin()
+	var cells := _native_astar(start_c, goal_c) if use_native_astar and max_nodes == DEFAULT_MAX_NODES else _astar(start_c, goal_c)
+	MatchHotpathMetrics.finish(&"path_search", stage)
 	if cells.is_empty():
 		reservation = prev_res
 		return {"ok": false, "waypoints": [], "reason": "unreachable"}
@@ -376,11 +435,105 @@ func _measured_find_path(
 	if wps.is_empty() or wps[wps.size() - 1].distance_to(goal_p) > 1.0:
 		wps.append(goal_p)
 	# 轻量拉直：为何在 Logic 做而不是 Navigator——减少每帧几何，路径语义仍基于可走采样。
+	stage = MatchHotpathMetrics.begin()
 	wps = _string_pull(start_p, wps)
 	if smooth_catmull:
 		wps = _catmull_smooth(wps)
+	MatchHotpathMetrics.finish(&"path_smoothing", stage)
 	reservation = prev_res
 	return {"ok": true, "waypoints": wps, "reason": "astar"}
+
+
+func _native_grid() -> AStarGrid2D:
+	var size := Vector2i(pathing.width, pathing.height)
+	# Keep owned snapshots: packed arrays assigned from script fields share storage.
+	# Value comparison also catches
+	# direct cell edits by editor/tests without relying on a missed dirty notification.
+	if size != _native_size or pathing.cells != _native_static or pathing.cells_dynamic != _native_dynamic:
+		_native_grids.clear()
+		_native_size = size
+		_native_static = pathing.cells.duplicate()
+		_native_dynamic = pathing.cells_dynamic.duplicate()
+	if _native_grids.has(_clearance):
+		return _native_grids[_clearance]
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(Vector2i.ZERO, size)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	# Keep jumping disabled: EI unreachable-target measurements regress with JPS.
+	grid.update()
+	# Dilate blocked row runs by the same Chebyshev clearance as can_walk_cell_clear.
+	for y in range(size.y):
+		var run := -1
+		for x in range(size.x + 1):
+			var blocked := false
+			if x < size.x:
+				var i := y * size.x + x
+				var flags := int(_native_static[i])
+				if i < _native_dynamic.size():
+					flags |= int(_native_dynamic[i])
+				blocked = (flags & Wc3PathingMap.FLAG_NO_WALK) != 0
+			if blocked and run < 0:
+				run = x
+			elif not blocked and run >= 0:
+				grid.fill_solid_region(Rect2i(run - _clearance, y - _clearance, x - run + 2 * _clearance, 1 + 2 * _clearance).intersection(grid.region))
+				run = -1
+	if _clearance > 0:
+		grid.fill_solid_region(Rect2i(0, 0, size.x, _clearance).intersection(grid.region))
+		grid.fill_solid_region(Rect2i(0, size.y - _clearance, size.x, _clearance).intersection(grid.region))
+		grid.fill_solid_region(Rect2i(0, 0, _clearance, size.y).intersection(grid.region))
+		grid.fill_solid_region(Rect2i(size.x - _clearance, 0, _clearance, size.y).intersection(grid.region))
+	_native_grids[_clearance] = grid
+	return grid
+
+
+func _native_astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
+	var grid := _native_grid()
+	var temporary: Array[Vector2i] = []
+	if reservation != null:
+		for cell: Vector2i in reservation.blocked_cells_for(_agent_id):
+			var area := Rect2i(cell - Vector2i(_clearance, _clearance), Vector2i.ONE * (2 * _clearance + 1)).intersection(grid.region)
+			for y in range(area.position.y, area.end.y):
+				for x in range(area.position.x, area.end.x):
+					var point := Vector2i(x, y)
+					if not grid.is_point_solid(point):
+						temporary.append(point)
+						grid.set_point_solid(point)
+	var result := grid.get_id_path(start, goal)
+	for point in temporary:
+		grid.set_point_solid(point, false)
+	return result
+
+
+func _ensure_astar_buffers(w: int, h: int) -> void:
+	var total: int = w * h
+	if total <= 0:
+		return
+	if _astar_w == w and _astar_h == h and _astar_came.size() == total:
+		return
+	_astar_w = w
+	_astar_h = h
+	_astar_came.resize(total)
+	_astar_g.resize(total)
+	_astar_g_gen.resize(total)
+	_astar_closed_gen.resize(total)
+	_walk_gen.resize(total)
+	_walk_ok.resize(total)
+	_walk_gen.fill(0)
+	_astar_g_gen.fill(0)
+	_astar_closed_gen.fill(0)
+	_astar_gen = 1
+
+
+func _begin_astar_search() -> int:
+	_astar_gen += 1
+	if _astar_gen >= 2147483647:
+		_astar_g_gen.fill(0)
+		_astar_closed_gen.fill(0)
+		_walk_gen.fill(0)
+		_astar_gen = 1
+	return _astar_gen
 
 
 func _astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
@@ -389,81 +542,84 @@ func _astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var total: int = w * h
 	if total <= 0:
 		return []
-	# came_from / g_score 用平行数组：Dictionary 在大开集上分配开销明显更高。
-	var came := PackedInt32Array()
-	came.resize(total)
-	came.fill(-1)
-	var g_score := PackedFloat32Array()
-	g_score.resize(total)
-	g_score.fill(INF)
-	var closed := PackedByteArray()
-	closed.resize(total)
-	closed.fill(0)
+	_ensure_astar_buffers(w, h)
+	var gen := _begin_astar_search()
 
-	var start_i := _idx(start, w)
-	var goal_i := _idx(goal, w)
+	var start_i := _idx(start, w, h)
+	var goal_i := _idx(goal, w, h)
 	if start_i < 0 or goal_i < 0:
 		return []
 	# 起终点自身不满足净空时仍允许搜（已由 snap 保证）；邻接扩展必须净空。
-	g_score[start_i] = 0.0
+	_astar_g_gen[start_i] = gen
+	_astar_g[start_i] = 0.0
+	_astar_came[start_i] = -1
 
 	# 简陋二元组堆：[{f, i}, ...]；GDScript 无现成优先队列时，小顶堆足够竖切。
 	var heap: Array = []
 	_heap_push(heap, _heuristic(start, goal), start_i)
 
 	var expanded := 0
+	_walk_cache_active = true
 	while not heap.is_empty() and expanded < max_nodes:
 		var cur_i: int = int(_heap_pop(heap))
-		if closed[cur_i] != 0:
+		if _astar_closed_gen[cur_i] == gen:
 			continue
-		closed[cur_i] = 1
+		_astar_closed_gen[cur_i] = gen
 		expanded += 1
 		if cur_i == goal_i:
-			return _reconstruct(came, cur_i, w)
+			_walk_cache_active = false
+			return _reconstruct(_astar_came, cur_i, w)
 		var cx: int = cur_i % w
 		@warning_ignore("integer_division")
 		var cy: int = cur_i / w
-		for n in _neighbors(cx, cy):
-			var ni := _idx(n, w)
-			if ni < 0 or closed[ni] != 0:
-				continue
-			if not can_walk_cell_clear(n.x, n.y):
-				continue
-			# 禁止斜穿「墙角」：否则单位视觉上会卡进建筑直角。
-			if n.x != cx and n.y != cy:
-				if not can_walk_cell_clear(cx, n.y) or not can_walk_cell_clear(n.x, cy):
+		var cur_g: float = _astar_g[cur_i]
+		# 内联 8 邻：避免每次扩展分配 Array。
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if dx == 0 and dy == 0:
 					continue
-			var step: float = 1.0 if (n.x == cx or n.y == cy) else 1.4142135
-			var tentative: float = g_score[cur_i] + step
-			if tentative >= g_score[ni]:
-				continue
-			came[ni] = cur_i
-			g_score[ni] = tentative
-			var f: float = tentative + _heuristic(n, goal)
-			_heap_push(heap, f, ni)
+				var nx := cx + dx
+				var ny := cy + dy
+				var ni := _idx_xy(nx, ny, w, h)
+				if ni < 0 or _astar_closed_gen[ni] == gen:
+					continue
+				if not can_walk_cell_clear(nx, ny):
+					continue
+				# 禁止斜穿「墙角」：否则单位视觉上会卡进建筑直角。
+				if dx != 0 and dy != 0:
+					if not can_walk_cell_clear(cx, ny) or not can_walk_cell_clear(nx, cy):
+						continue
+				var step: float = 1.0 if (dx == 0 or dy == 0) else 1.4142135
+				var tentative: float = cur_g + step
+				if _astar_g_gen[ni] == gen and tentative >= _astar_g[ni]:
+					continue
+				_astar_came[ni] = cur_i
+				_astar_g_gen[ni] = gen
+				_astar_g[ni] = tentative
+				var f: float = tentative + _heuristic_xy(nx, ny, goal.x, goal.y)
+				_heap_push(heap, f, ni)
+	_walk_cache_active = false
 	return []
 
 
-func _neighbors(cx: int, cy: int) -> Array[Vector2i]:
-	var out: Array[Vector2i] = []
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
-			if dx == 0 and dy == 0:
-				continue
-			out.append(Vector2i(cx + dx, cy + dy))
-	return out
+func _idx(c: Vector2i, w: int, h: int = -1) -> int:
+	return _idx_xy(c.x, c.y, w, h if h >= 0 else pathing.height)
 
 
-func _idx(c: Vector2i, w: int) -> int:
-	if c.x < 0 or c.y < 0 or c.x >= pathing.width or c.y >= pathing.height:
+func _idx_xy(x: int, y: int, w: int, h: int) -> int:
+	if x < 0 or y < 0 or x >= w or y >= h:
 		return -1
-	return c.y * w + c.x
+	return y * w + x
 
 
 func _heuristic(a: Vector2i, b: Vector2i) -> float:
+	return _heuristic_xy(a.x, a.y, b.x, b.y)
+
+
+func _heuristic_xy(ax: int, ay: int, bx: int, by: int) -> float:
 	# Octile：与 8 邻接代价匹配，避免曼哈顿高估导致次优扩张。
-	var dx := absi(a.x - b.x)
-	var dy := absi(a.y - b.y)
+	var dx := absi(ax - bx)
+	var dy := absi(ay - by)
 	var mn := mini(dx, dy)
 	var mx := maxi(dx, dy)
 	return float(mx - mn) + 1.4142135 * float(mn)
@@ -491,10 +647,24 @@ func _string_pull(start: Vector2, wps: Array[Vector2]) -> Array[Vector2]:
 	var i := 0
 	while i < wps.size():
 		var farthest := i
-		var j := i
-		while j < wps.size() and is_straight_walkable(anchor, wps[j]):
-			farthest = j
-			j += 1
+		# Exponential probes avoid re-sampling the same long visible prefix for
+		# every grid waypoint (quadratic work on long paths). Only retain a
+		# waypoint after its complete segment passed the existing clearance test.
+		var stride := 1
+		var upper := wps.size() - 1
+		while farthest < upper:
+			var probe := mini(i + stride, upper)
+			if not is_straight_walkable(anchor, wps[probe]):
+				upper = probe - 1
+				break
+			farthest = probe
+			stride *= 2
+		while farthest < upper:
+			var probe := (farthest + upper + 1) >> 1
+			if is_straight_walkable(anchor, wps[probe]):
+				farthest = probe
+			else:
+				upper = probe - 1
 		out.append(wps[farthest])
 		anchor = wps[farthest]
 		i = farthest + 1
