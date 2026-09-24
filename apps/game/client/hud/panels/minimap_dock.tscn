@@ -1,0 +1,29 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://client/hud/panels/minimap_dock.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://de0w2wwx4cytc" path="res://client/hud/game_minimap.tscn" id="2_minimap"]
+
+[node name="MinimapDock" type="MarginContainer"]
+custom_minimum_size = Vector2(192, 192)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -200.0
+offset_right = 200.0
+offset_bottom = -8.0
+grow_vertical = 0
+script = ExtResource("1_script")
+
+[node name="MinimapPanel" type="PanelContainer" parent="."]
+custom_minimum_size = Vector2(176, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Minimap" parent="MinimapPanel" instance=ExtResource("2_minimap")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3

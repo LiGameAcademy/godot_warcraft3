@@ -1,10 +1,12 @@
 # HUD 控件目录与组合契约
 
-日期：2026-09-23。状态：实现设计，尚未整体落地。配套 [布局方案](HUD_LAYOUT_REDESIGN.md)、[模块边界](../../architecture/GAMEPLAY_MODULE_BOUNDARIES.md)。
+日期：2026-09-23。状态：第一批面板已落地（ResourceBar / CommandPanel / SelectionDetailsPanel / ActivityFeedPanel / MinimapDock）；其余组合控件与布局外壳仍待推进。配套 [布局方案](HUD_LAYOUT_REDESIGN.md)、[模块边界](../../architecture/GAMEPLAY_MODULE_BOUNDARIES.md)。
 
 ## 1. 四级组织
 
 基础控件 → 组合控件 → HUD 功能面板 → 布局外壳。控件只消费展示数据、发出操作意图；Presenter 负责订阅、查询和调用命令。状态权威保留在 Gameplay，不把 Node、GameDirector 或可写业务组件作为所有控件的万能上下文。
+
+当前落地目录：`apps/game/client/hud/panels/`（功能面板）+ 既有 `client/hud/` 基础件（肖像、Buff、冷却、背包、小地图）。`GameHud`（`scenes/game_hud.tscn`）仅组装与转发，不再内嵌各区逻辑。
 
 ## 2. 基础控件
 
@@ -108,10 +110,14 @@ Presenter 在执行时重新解析身份与合法性；任务已完成/来源建
 
 ## 7. 目录与实现顺序
 
-近期沿用 `game/hud/`，可按实际文件增加 `primitives/`、`components/`、`panels/`、`layout/`、`presenters/`、`preview/`；不预创建空目录。双项目切换时整体归游戏客户端 UI，共享基础主题仅在编辑器确实需要时上提。
+近期沿用 `client/hud/`，功能面板落在 `client/hud/panels/`；可按实际文件继续增加 `primitives/`、`components/`、`layout/`、`presenters/`、`preview/`；不预创建空目录。双项目切换时整体归游戏客户端 UI，共享基础主题仅在编辑器确实需要时上提。
 
 优先复用已有 UnitPortraitView、CooldownButtonOverlay、UnitCombatStatChip、UnitBuffStrip、InventoryPanel 和 GameMinimap，通过适配逐步统一接口，不直接改名重写。
 
-第一批：IconActionButton、ValueBar、StatChip、QueueItemView、QueueStrip、SelectionDetailsPanel、CommandPanel、HudLayout。第二批：英雄栏、控制组、全局生产与 Tooltip/通知管理。保持现有按钮操作与冷却局部刷新行为。
+**已落地（第一批面板）**：`ResourceBar`、`CommandPanel`、`SelectionDetailsPanel`、`ActivityFeedPanel`、`MinimapDock`；`GameHud` 降为组装外壳。共享 `HudIconCache`。
+
+**已落地（U1 响应式）**：`HudLayout` 按视口宽分 FULL/COMPACT/TIGHT，夹紧底栏高度占比，缩放小地图/详情/命令格并防横向重叠。
+
+仍待：IconActionButton、ValueBar、StatChip（与 UnitCombatStatChip 统一）、QueueItemView、QueueStrip；第二批英雄栏、控制组、全局生产与 Tooltip/通知管理。保持现有按钮操作与冷却局部刷新行为。
 
 每个组合控件提供模拟数据预览场景；覆盖长文本、禁用原因、冷却、自动施法、空态、16+ 多选、相同任务、队列溢出、英雄死亡及 UI 缩放。测试显示语义与实际操作意图，不编写仅复述控件树的测试；布局矩形和截图验收沿用 HUD_LAYOUT_REDESIGN.md。

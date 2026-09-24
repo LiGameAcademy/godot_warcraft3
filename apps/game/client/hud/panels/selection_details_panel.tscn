@@ -1,0 +1,282 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://client/hud/panels/selection_details_panel.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://b1ihsk6ogfgxw" path="res://client/hud/unit_portrait_view.tscn" id="2_portrait"]
+[ext_resource type="PackedScene" path="res://client/hud/unit_combat_stat_chip.tscn" id="3_stat_chip"]
+[ext_resource type="PackedScene" path="res://client/hud/unit_buff_strip.tscn" id="4_buff_strip"]
+
+[node name="SelectionDetailsPanel" type="MarginContainer"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -240.0
+offset_top = -168.0
+offset_right = 240.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("1_script")
+
+[node name="InfoFrame" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CenterPanel" type="VBoxContainer" parent="InfoFrame"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="InfoBody" type="HBoxContainer" parent="InfoFrame/CenterPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="PortraitCol" type="VBoxContainer" parent="InfoFrame/CenterPanel/InfoBody"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="PortraitHost" type="CenterContainer" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 96)
+layout_mode = 2
+
+[node name="UnitPortraitView" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHost" instance=ExtResource("2_portrait")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PortraitHpRow" type="Control" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 14)
+layout_mode = 2
+
+[node name="PortraitHpBar" type="ProgressBar" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+show_percentage = false
+
+[node name="PortraitHpLabel" type="Label" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitHpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.95, 0.98, 0.95, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PortraitManaRow" type="Control" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(96, 12)
+layout_mode = 2
+
+[node name="PortraitManaBar" type="ProgressBar" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+show_percentage = false
+
+[node name="PortraitManaLabel" type="Label" parent="InfoFrame/CenterPanel/InfoBody/PortraitCol/PortraitManaRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.9, 0.93, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DetailCol" type="VBoxContainer" parent="InfoFrame/CenterPanel/InfoBody"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="UnitName" type="Label" parent="InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "—"
+
+[node name="UnitHp" type="Label" parent="InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="AttackChip" parent="InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("3_stat_chip")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ArmorChip" parent="InfoFrame/CenterPanel/InfoBody/DetailCol" instance=ExtResource("3_stat_chip")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PortraitXpRow" type="Control" parent="InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PortraitXpBar" type="ProgressBar" parent="InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+show_percentage = false
+
+[node name="PortraitXpLabel" type="Label" parent="InfoFrame/CenterPanel/InfoBody/DetailCol/PortraitXpRow"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.98, 0.94, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SpecialLines" type="Label" parent="InfoFrame/CenterPanel/InfoBody/DetailCol"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 2
+
+[node name="MultiSelectStrip" type="HBoxContainer" parent="InfoFrame/CenterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="BuildProgressRow" type="VBoxContainer" parent="InfoFrame/CenterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="BuildProgressLabel" type="Label" parent="InfoFrame/CenterPanel/BuildProgressRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.82, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "建造 0%"
+
+[node name="BuildProgressBar" type="ProgressBar" parent="InfoFrame/CenterPanel/BuildProgressRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+show_percentage = false
+
+[node name="TrainQueueRow" type="VBoxContainer" parent="InfoFrame/CenterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TrainQueueHeader" type="HBoxContainer" parent="InfoFrame/CenterPanel/TrainQueueRow"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainQueueTitle" type="Label" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = "训练"
+
+[node name="TrainQueueCount" type="Label" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainQueueHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.68, 1)
+theme_override_font_sizes/font_size = 11
+text = "0/7"
+
+[node name="TrainActiveRow" type="HBoxContainer" parent="InfoFrame/CenterPanel/TrainQueueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TrainActiveIcon" type="Button" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+focus_mode = 0
+flat = true
+expand_icon = true
+
+[node name="TrainActiveBarHost" type="Control" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TrainActiveBar" type="ProgressBar" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+show_percentage = false
+
+[node name="TrainActiveLabel" type="Label" parent="InfoFrame/CenterPanel/TrainQueueRow/TrainActiveRow/TrainActiveBarHost"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.98, 0.96, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.05, 0.05, 0.85)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 13
+text = "剩余 0s"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TrainQueueStrip" type="HBoxContainer" parent="InfoFrame/CenterPanel/TrainQueueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TrainQueueHint" type="Label" parent="InfoFrame/CenterPanel/TrainQueueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.58, 0.55, 1)
+theme_override_font_sizes/font_size = 10
+text = "点击图标取消 · 全额退款"
+
+[node name="UnitBuffStrip" parent="InfoFrame/CenterPanel" instance=ExtResource("4_buff_strip")]
+unique_name_in_owner = true
+layout_mode = 2

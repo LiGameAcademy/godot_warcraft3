@@ -1,0 +1,57 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://client/hud/panels/resource_bar.gd" id="1_script"]
+
+[node name="ResourceBar" type="PanelContainer"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -308.0
+offset_bottom = 36.0
+grow_horizontal = 0
+script = ExtResource("1_script")
+
+[node name="ResRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 2
+
+[node name="Gold" type="HBoxContainer" parent="ResRow"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="GoldCaption" type="Label" parent="ResRow/Gold"]
+layout_mode = 2
+text = "金"
+
+[node name="GoldValue" type="Label" parent="ResRow/Gold"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+
+[node name="Lumber" type="HBoxContainer" parent="ResRow"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LumberCaption" type="Label" parent="ResRow/Lumber"]
+layout_mode = 2
+text = "木"
+
+[node name="LumberValue" type="Label" parent="ResRow/Lumber"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+
+[node name="Food" type="HBoxContainer" parent="ResRow"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="FoodCaption" type="Label" parent="ResRow/Food"]
+layout_mode = 2
+text = "人口"
+
+[node name="FoodValue" type="Label" parent="ResRow/Food"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0/0"

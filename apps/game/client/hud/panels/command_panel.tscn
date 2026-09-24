@@ -1,0 +1,99 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://client/hud/panels/command_panel.gd" id="1_script"]
+
+[node name="CommandPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(232, 0)
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("1_script")
+
+[node name="Inner" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="CommandTitle" type="Label" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "指令"
+
+[node name="CommandGrid" type="GridContainer" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 4
+
+[node name="Cmd0" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd1" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd2" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd3" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd4" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd5" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd6" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd7" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd8" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd9" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd10" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Cmd11" type="Button" parent="Inner/CommandGrid"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
