@@ -137,6 +137,12 @@ func refresh_dynamic_pathing() -> void:
 
 
 func _flush_dynamic_pathing() -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_flush_dynamic_pathing()
+	MatchHotpathMetrics.finish(&"dynamic_pathing_flush", started)
+
+
+func _measured_flush_dynamic_pathing() -> void:
 	_pathing_refresh_queued = false
 	if _map_root == null:
 		return

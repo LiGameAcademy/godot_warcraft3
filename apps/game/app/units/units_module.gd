@@ -109,6 +109,15 @@ func _register_entity(node: Node, creation_number: int) -> void:
 func spawn_trained(
 	unit_id: String, site_wc3: Vector2, owner_id: int, from_building: Node3D = null
 ) -> Node3D:
+	var started: int = MatchHotpathMetrics.begin()
+	var result: Node3D = _measured_spawn_trained(unit_id, site_wc3, owner_id, from_building)
+	MatchHotpathMetrics.finish(&"unit_spawn", started)
+	return result
+
+
+func _measured_spawn_trained(
+	unit_id: String, site_wc3: Vector2, owner_id: int, from_building: Node3D = null
+) -> Node3D:
 	if _map_root == null or _heightfield == null:
 		return null
 	var corner_xy := TrainSpawn.exit_xy_for_building(from_building, site_wc3)
@@ -135,7 +144,7 @@ func spawn_trained(
 		teleport_wc3(node, final_xy)
 	ensure_combat_ai(node)
 	ensure_hero(node)
-	if _refresh_pathing.is_valid():
+	if _refresh_pathing.is_valid() and _map_root.unit_has_pathing_footprint(unit_id):
 		_refresh_pathing.call()
 	if _health_bar_manager != null:
 		if _health_bar_manager.has_method("ensure_for"):
@@ -200,7 +209,7 @@ func spawn_entry(entry: Dictionary, opts: Dictionary = {}) -> Node3D:
 		var food := BuildingCatalog.get_food_used(str(entry.get("typeId", "")))
 		if food > 0:
 			_add_food_used.call(int(entry.get("owner", 0)), food)
-	if do_pathing and _refresh_pathing.is_valid():
+	if do_pathing and _refresh_pathing.is_valid() and _map_root.unit_has_pathing_footprint(str(entry.get("typeId", ""))):
 		_refresh_pathing.call()
 	if _health_bar_manager != null:
 		if _health_bar_manager.has_method("ensure_for"):

@@ -297,6 +297,12 @@ func _ensure_pathing_map(hf: Wc3Heightfield) -> void:
 ## 按 Catalog.path_tex 把单位/建筑/装饰（含树木）脚印 OR 进动态寻路面。
 ## 注：部分地图 pathing.json（WPM）未烘焙树木脚印，必须以 doodads 动态 blit。
 func _apply_dynamic_pathing() -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_apply_dynamic_pathing()
+	MatchHotpathMetrics.finish(&"dynamic_pathing_blit", started)
+
+
+func _measured_apply_dynamic_pathing() -> void:
 	if _pathing_map == null or not _pathing_map.is_valid():
 		return
 	if _pathing_unit_entries.is_empty() and place_units and not map_dir.is_empty():
@@ -396,6 +402,11 @@ func is_units_batch_loading() -> bool:
 
 ## 编辑器/游戏增量放置一条单位。返回根节点；失败 null（bool 语境下仍可当成败用）。
 ## apply_pathing=false：仅登记 entry，由调用方随后一次性 refresh（避免训兵/开建同帧双次全量 blit）。
+func unit_has_pathing_footprint(type_id: String) -> bool:
+	var info: Dictionary = get_id_catalog().lookup(type_id)
+	return type_id != "sloc" and not bool(info.get("is_start_location", false)) and Wc3PathingTextures.is_valid_path_tex(str(info.get("path_tex", "")))
+
+
 func add_unit_instance(entry: Dictionary, hf: Dictionary, apply_pathing: bool = true) -> Node3D:
 	if _units == null:
 		return null
@@ -407,7 +418,7 @@ func add_unit_instance(entry: Dictionary, hf: Dictionary, apply_pathing: bool = 
 	if node != null:
 		_pathing_unit_entries.append(entry)
 		# 无论是否显示叠层，都必须 blit 动态脚印（建造合法性依赖）
-		if apply_pathing:
+		if apply_pathing and unit_has_pathing_footprint(str(entry.get("typeId", entry.get("id", "")))):
 			if show_pathing_ground:
 				_rebuild_pathing_overlay()
 			else:
@@ -420,11 +431,15 @@ func remove_unit_instance(creation_number: int) -> bool:
 		return false
 	var ok := _units.remove_by_creation_number(creation_number)
 	if ok:
+		var affects_pathing: bool = true # Unknown records retain conservative refresh.
 		for i in range(_pathing_unit_entries.size() - 1, -1, -1):
 			var e: Variant = _pathing_unit_entries[i]
 			if e is Dictionary and int((e as Dictionary).get("creationNumber", -2)) == creation_number:
+				affects_pathing = unit_has_pathing_footprint(str(e.get("typeId", e.get("id", ""))))
 				_pathing_unit_entries.remove_at(i)
 				break
+		if not affects_pathing:
+			return ok
 		if show_pathing_ground:
 			_rebuild_pathing_overlay()
 		else:

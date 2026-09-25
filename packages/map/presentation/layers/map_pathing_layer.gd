@@ -16,6 +16,9 @@ const COLOR_BOTH := Color(1.0, 0.2, 1.0, 0.9)
 var last_cell_count: int = 0
 var _tex: ImageTexture = null
 var _placeholder: ImageTexture = null
+var _image: Image = null
+var _static_snapshot: PackedByteArray = PackedByteArray()
+var _dynamic_snapshot: PackedByteArray = PackedByteArray()
 
 
 func _ready() -> void:
@@ -32,6 +35,9 @@ func set_visible_overlay(on: bool) -> void:
 func clear() -> void:
 	last_cell_count = 0
 	_tex = null
+	_image = null
+	_static_snapshot.clear()
+	_dynamic_snapshot.clear()
 	_apply_uniforms(false, null, Vector2.ZERO, Vector2.ONE, Wc3Coords.PATHING_CELL)
 
 
@@ -46,32 +52,47 @@ func rebuild(pathing: Wc3PathingMap, hf: Wc3Heightfield = null) -> void:
 
 	var w: int = pathing.width
 	var h: int = pathing.height
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var blocked := 0
-	for py in range(h):
-		for px in range(w):
-			var f: int = pathing.flag_at(px, py)
-			var no_walk: bool = (f & Wc3PathingMap.FLAG_NO_WALK) != 0
-			var no_build: bool = (f & Wc3PathingMap.FLAG_NO_BUILD) != 0
-			if not no_walk and not no_build:
+	var full: bool = _image == null or _image.get_width() != w or _image.get_height() != h
+	var changed: bool = full or _static_snapshot != pathing.cells or _dynamic_snapshot != pathing.cells_dynamic
+	if changed:
+		if full:
+			_image = Image.create(w, h, false, Image.FORMAT_RGBA8)
+			_image.fill(Color(0, 0, 0, 0))
+			last_cell_count = 0
+		for chunk in range(0, w * h, 1024):
+			var end: int = mini(chunk + 1024, w * h)
+			if not full and _static_snapshot.slice(chunk, end) == pathing.cells.slice(chunk, end) and _dynamic_snapshot.slice(chunk, end) == pathing.cells_dynamic.slice(chunk, end):
 				continue
-			var c: Color
-			if no_walk and no_build:
-				c = COLOR_BOTH
-			elif no_walk:
-				c = COLOR_NO_WALK
-			else:
-				c = COLOR_NO_BUILD
-			# Image y=0 在顶 → 翻转写入，采样时再翻回
-			img.set_pixel(px, h - 1 - py, c)
-			blocked += 1
-	last_cell_count = blocked
-	# 原地更新纹理：已绑在地表 shader 上的 ImageTexture 必须 set_image，否则叠层看起来不刷新
-	if _tex == null:
-		_tex = ImageTexture.create_from_image(img)
-	else:
-		_tex.set_image(img)
+			for index in range(chunk, end):
+				var flags: int = int(pathing.cells[index])
+				if index < pathing.cells_dynamic.size():
+					flags |= int(pathing.cells_dynamic[index])
+				flags &= Wc3PathingMap.FLAG_NO_WALK | Wc3PathingMap.FLAG_NO_BUILD
+				var previous: int = 0
+				if not full:
+					previous = int(_static_snapshot[index])
+					if index < _dynamic_snapshot.size():
+						previous |= int(_dynamic_snapshot[index])
+					previous &= Wc3PathingMap.FLAG_NO_WALK | Wc3PathingMap.FLAG_NO_BUILD
+				if flags == previous:
+					continue
+				last_cell_count += int(flags != 0) - int(previous != 0)
+				var color: Color = Color(0, 0, 0, 0)
+				if flags == (Wc3PathingMap.FLAG_NO_WALK | Wc3PathingMap.FLAG_NO_BUILD):
+					color = COLOR_BOTH
+				elif flags == Wc3PathingMap.FLAG_NO_WALK:
+					color = COLOR_NO_WALK
+				elif flags == Wc3PathingMap.FLAG_NO_BUILD:
+					color = COLOR_NO_BUILD
+				_image.set_pixel(index % w, h - 1 - int(index / w), color)
+		_static_snapshot = pathing.cells.duplicate()
+		_dynamic_snapshot = pathing.cells_dynamic.duplicate()
+		if _tex == null:
+			_tex = ImageTexture.create_from_image(_image)
+		elif full:
+			_tex.set_image(_image)
+		else:
+			_tex.update(_image)
 	_apply_uniforms(
 		true,
 		_tex,
@@ -83,7 +104,7 @@ func rebuild(pathing: Wc3PathingMap, hf: Wc3Heightfield = null) -> void:
 		AppLog.Layer.PRESENT,
 		"Pathing",
 		"overlay %dx%d blocked=%d origin=%s"
-		% [w, h, blocked, pathing.origin_wc3]
+		% [w, h, last_cell_count, pathing.origin_wc3]
 	)
 
 

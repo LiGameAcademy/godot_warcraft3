@@ -254,6 +254,12 @@ func _on_site_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int)
 
 ## 半成品入图 → 注册工地 → 调进度 / 暂停表现 → 让位其它单位。
 func on_construction_started(order: BuildOrder) -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_on_construction_started(order)
+	MatchHotpathMetrics.finish(&"construction_start", started)
+
+
+func _measured_on_construction_started(order: BuildOrder) -> void:
 	if order == null or _map_root == null or _heightfield == null:
 		return
 	var key := construction_key(order)

@@ -57,6 +57,12 @@ func bind_reservation(res: PathCellReservation) -> void:
 
 ## Build common movement grids during map setup, before the first player click.
 func prepare_navigation() -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_prepare_navigation()
+	MatchHotpathMetrics.finish(&"navigation_prepare", started)
+
+
+func _measured_prepare_navigation() -> void:
 	if not use_native_astar or not is_ready():
 		return
 	var saved := _clearance
@@ -449,11 +455,13 @@ func _native_grid() -> AStarGrid2D:
 	# Keep owned snapshots: packed arrays assigned from script fields share storage.
 	# Value comparison also catches
 	# direct cell edits by editor/tests without relying on a missed dirty notification.
-	if size != _native_size or pathing.cells != _native_static or pathing.cells_dynamic != _native_dynamic:
+	if size != _native_size or pathing.cells != _native_static:
 		_native_grids.clear()
 		_native_size = size
 		_native_static = pathing.cells.duplicate()
 		_native_dynamic = pathing.cells_dynamic.duplicate()
+	elif pathing.cells_dynamic != _native_dynamic:
+		_update_native_dynamic(size)
 	if _native_grids.has(_clearance):
 		return _native_grids[_clearance]
 	var grid := AStarGrid2D.new()
@@ -486,6 +494,48 @@ func _native_grid() -> AStarGrid2D:
 		grid.fill_solid_region(Rect2i(size.x - _clearance, 0, _clearance, size.y).intersection(grid.region))
 	_native_grids[_clearance] = grid
 	return grid
+
+
+## Dynamic edits preserve existing grids. Recompute only points whose clearance
+## neighborhood intersects a changed walk bit, including overlapping footprints.
+func _update_native_dynamic(size: Vector2i) -> void:
+	var changed: Rect2i = Rect2i()
+	var found: bool = false
+	# Packed comparisons run in native code; inspect only changed chunks in script.
+	for chunk in range(0, size.x * size.y, 1024):
+		var end: int = mini(chunk + 1024, size.x * size.y)
+		if _native_dynamic.slice(chunk, end) == pathing.cells_dynamic.slice(chunk, end):
+			continue
+		for index in range(chunk, end):
+			var before: int = int(_native_dynamic[index]) if index < _native_dynamic.size() else 0
+			var after: int = int(pathing.cells_dynamic[index]) if index < pathing.cells_dynamic.size() else 0
+			if ((before ^ after) & Wc3PathingMap.FLAG_NO_WALK) == 0:
+				continue
+			var point: Vector2i = Vector2i(index % size.x, int(index / size.x))
+			var cell_rect: Rect2i = Rect2i(point, Vector2i.ONE)
+			changed = changed.merge(cell_rect) if found else cell_rect
+			found = true
+	_native_dynamic = pathing.cells_dynamic.duplicate()
+	if not found:
+		return
+	# Large edits use the original full construction algorithm.
+	if changed.get_area() > size.x * size.y / 4:
+		_native_grids.clear()
+		return
+	for clearance: int in _native_grids:
+		var grid: AStarGrid2D = _native_grids[clearance]
+		var area: Rect2i = changed.grow(clearance).intersection(grid.region)
+		for y in range(area.position.y, area.end.y):
+			for x in range(area.position.x, area.end.x):
+				var solid: bool = false
+				for dy in range(-clearance, clearance + 1):
+					for dx in range(-clearance, clearance + 1):
+						if not pathing.can_walk_cell(x + dx, y + dy):
+							solid = true
+							break
+					if solid:
+						break
+				grid.set_point_solid(Vector2i(x, y), solid)
 
 
 func _native_astar(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
