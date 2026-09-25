@@ -3,6 +3,7 @@ import argparse, os, pathlib, re, subprocess, sys, json
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 SUITES={
 'game':[
+'unit/selftest_interaction_hotpaths.tscn','unit/selftest_portrait_warmup.tscn',
 'unit/selftest_c_combat_damage.gd','unit/selftest_c_combat_projectile.gd','unit/selftest_combat_module.tscn','unit/selftest_attack_chase_facing.tscn','unit/selftest_building_attack_range.tscn','unit/selftest_hero_combat_stats.tscn','unit/selftest_command_request.tscn','unit/selftest_entity_behavior.tscn','unit/selftest_content_snapshot.tscn','unit/selftest_item_system.tscn','unit/selftest_gas_healing.tscn','unit/selftest_command_card_module.tscn','unit/selftest_path_debug_module.tscn','unit/selftest_group_move.gd','integration/selftest_module_bindings_game.tscn','integration/selftest_match_end_game.tscn'],
 'map_editor':['unit/selftest_map_document.gd','unit/selftest_editor_map_file.gd','unit/selftest_editor_commands.gd','unit/selftest_editor_object_history.gd','unit/selftest_editor_map_import.gd','integration/selftest_editor_file_flow.tscn','integration/selftest_editor_preview.tscn','integration/selftest_editor_input_focus.tscn']}
 
