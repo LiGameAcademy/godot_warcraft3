@@ -91,7 +91,7 @@ class _FakeHud extends Node:
 	func update_combat_stat_chips(_atk: Dictionary, _armor: Dictionary) -> void:
 		pass
 
-	func bind_inventory(_inv) -> void:
+	func bind_inventory(_inv, _read_only: bool = false) -> void:
 		inventory_bound = true
 
 

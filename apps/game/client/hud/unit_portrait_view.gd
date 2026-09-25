@@ -39,6 +39,8 @@ var _pending_owner: int = 0
 ## path → Node3D（挂在本节点下离屏复用，避免反复 instantiate）
 var _pool: Dictionary = {}
 var _pool_host: Node = null
+var _warming: bool = false
+var _settled_gen: int = -1
 
 
 func _ready() -> void:
@@ -56,8 +58,56 @@ func _ready() -> void:
 
 
 func configure(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:
+	if _cache != cache or _catalog != catalog:
+		clear_portrait()
+		_warming = false
+		for model: Node3D in _pool.values():
+			if is_instance_valid(model):
+				model.queue_free()
+		_pool.clear()
 	_cache = cache
 	_catalog = catalog
+
+
+## Prepare actual portrait surfaces while the match is loading. An empty viewport
+## cannot precompile the model's pipelines. Hidden UI still renders offscreen.
+## The caller holds gameplay paused; no selection signals or commands are issued.
+func prepare_types(type_ids: PackedStringArray, owner_id: int) -> void:
+	if _warming or DisplayServer.get_name() == "headless" or _cache == null or _catalog == null or _is_closing():
+		return
+	_warming = true
+	var prepared: int = 0
+	for type_id in type_ids:
+		if prepared >= _POOL_MAX or _is_closing():
+			break
+		show_type(type_id, owner_id)
+		var generation: int = _load_gen
+		var deadline: int = Time.get_ticks_msec() + 15000
+		while generation == _load_gen and _settled_gen != generation and Time.get_ticks_msec() < deadline:
+			# Also works when the caller temporarily disables the game subtree.
+			if not _pending_path.is_empty():
+				_process(0.0)
+			await get_tree().process_frame
+			if _is_closing():
+				return
+		if generation != _load_gen:
+			_warming = false
+			_set_viewport_active(_model_root != null)
+			return
+		if _settled_gen != generation:
+			push_warning("Portrait preparation timed out: " + type_id)
+		else:
+			# Surface preparation happens after script callbacks, on the render side.
+			await RenderingServer.frame_post_draw
+			if _is_closing():
+				return
+		if generation != _load_gen:
+			_warming = false
+			_set_viewport_active(_model_root != null)
+			return
+		prepared += 1
+	clear_portrait()
+	_warming = false
 
 
 func clear_portrait() -> void:
@@ -103,6 +153,7 @@ func show_type(type_id: String, owner_id: int = 0) -> void:
 	if path.is_empty():
 		path = _catalog.converted_glb_path(tid)
 	if path.is_empty():
+		_settled_gen = gen
 		return
 	_pending_path = path
 	if _pool.has(path) or _cache.has_cached(path):
@@ -116,7 +167,9 @@ func _process(_delta: float) -> void:
 	if _pending_path.is_empty() or _cache == null:
 		set_process(false)
 		return
+	var started: int = MatchHotpathMetrics.begin()
 	_cache.poll_preloads(2)
+	MatchHotpathMetrics.finish(&"portrait_preload_poll", started)
 	if _cache.has_cached(_pending_path):
 		var gen := _load_gen
 		set_process(false)
@@ -129,6 +182,12 @@ func _process(_delta: float) -> void:
 
 
 func _try_attach_pending(gen: int) -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_try_attach_pending(gen)
+	MatchHotpathMetrics.finish(&"portrait_attach", started)
+
+
+func _measured_try_attach_pending(gen: int) -> void:
 	if gen != _load_gen or _is_closing():
 		return
 	if _pending_path.is_empty() or _cache == null or _world == null:
@@ -139,6 +198,7 @@ func _try_attach_pending(gen: int) -> void:
 	_pending_path = ""
 	var inst := _acquire_model(path)
 	if inst == null:
+		_settled_gen = gen
 		_apply_team_bg(tid, owner_id)
 		return
 	if gen != _load_gen:
@@ -151,11 +211,17 @@ func _try_attach_pending(gen: int) -> void:
 			inst.get_parent().remove_child(inst)
 		_world.add_child(inst)
 	inst.visible = true
-	# 队色 + 相机 + 动画放到下一帧，摊开主线程尖峰
+	# 延迟队色、相机和动画设置；deferred 不保证跨帧，耗时单独计量。
 	call_deferred("_finish_portrait_setup", gen, tid, owner_id, path)
 
 
 func _finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_finish_portrait_setup(gen, tid, owner_id, path)
+	MatchHotpathMetrics.finish(&"portrait_setup", started)
+
+
+func _measured_finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) -> void:
 	if gen != _load_gen or _is_closing():
 		return
 	if _model_root == null or not is_instance_valid(_model_root):
@@ -171,6 +237,7 @@ func _finish_portrait_setup(gen: int, tid: String, owner_id: int, path: String) 
 	_ensure_portrait_meshes_visible()
 	_fit_camera(_model_root, path)
 	_set_viewport_active(true)
+	_settled_gen = gen
 
 
 ## 延迟头像任务不能在宿主已请求卸载后继续创建渲染资源。
@@ -187,6 +254,7 @@ func _is_closing() -> bool:
 
 
 func _exit_tree() -> void:
+	_warming = false
 	_load_gen += 1
 	_pending_path = ""
 	set_process(false)
@@ -361,7 +429,7 @@ func _set_model_cameras_current(root: Node, on: bool) -> void:
 
 func _set_viewport_active(active: bool) -> void:
 	if _vp_host != null:
-		_vp_host.visible = active
+		_vp_host.visible = active and not _warming
 	if _vp == null:
 		return
 	_vp.render_target_update_mode = (

@@ -6,6 +6,7 @@ extends Node
 
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready
+signal session_preparation_progress(stage: String, progress: float)
 
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
@@ -57,6 +58,9 @@ var _cam_min := Vector2(-6912.0, -5376.0)
 var _cam_max := Vector2(6912.0, 4864.0)
 var _rng := RandomNumberGenerator.new()
 var _bootstrapped: bool = false
+var _presentation_ready: bool = false
+## Disabled only by diagnostic scenes comparing the cold selection path.
+@export var prepare_starting_portraits: bool = true
 var _session: GameSession = null
 ## 导航服务只读兼容入口；实例和生命周期统一归 NavigationModule。
 var _path_query: PathQuery:
@@ -159,7 +163,7 @@ func get_session() -> GameSession:
 
 
 func is_session_ready() -> bool:
-	return _bootstrapped
+	return _bootstrapped and _presentation_ready
 
 
 ## 按本地玩家种族切换光标图集（human/orc/undead/nightelf）。
@@ -367,6 +371,18 @@ func _on_map_loaded() -> void:
 	if map_root != null:
 		map_root.set_view_grid_level(view_grid_level)
 	_setup_match_end()
+	if prepare_starting_portraits and DisplayServer.get_name() != "headless":
+		var game_root: Node = get_parent()
+		var previous_mode: ProcessMode = game_root.process_mode
+		game_root.process_mode = Node.PROCESS_MODE_DISABLED
+		session_preparation_progress.emit("准备单位显示…", 0.98)
+		var started: int = Time.get_ticks_usec()
+		await _ensure_selection_hud_module().prepare_starting_portraits(local_player)
+		if not is_inside_tree() or is_queued_for_deletion() or not is_instance_valid(game_root) or game_root.is_queued_for_deletion():
+			return
+		game_root.process_mode = previous_mode
+		AppLog.info(AppLog.Layer.LOAD, "Portrait", "Starting portraits prepared in %.1f ms" % ((Time.get_ticks_usec() - started) / 1000.0))
+	_presentation_ready = true
 	session_ready.emit()
 
 
@@ -1308,6 +1324,12 @@ func _on_command_action(
 
 
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_on_selection_changed(primary, selected)
+	MatchHotpathMetrics.finish(&"selection_event", started)
+
+
+func _measured_on_selection_changed(primary: Node3D, selected: Array) -> void:
 	_ensure_selection_hud_module().bind_inventory_for(primary)
 	_ensure_interaction_module().on_selection_changed(primary, selected)
 

@@ -53,6 +53,8 @@ func _wire_signals() -> void:
 	if map_root != null and not map_root.load_progress.is_connected(_on_load_progress):
 		map_root.load_progress.connect(_on_load_progress)
 	if game_director != null:
+		if not game_director.session_preparation_progress.is_connected(_on_load_progress):
+			game_director.session_preparation_progress.connect(_on_load_progress)
 		if not game_director.session_ready.is_connected(_on_session_ready):
 			game_director.session_ready.connect(_on_session_ready)
 	elif map_root != null and not map_root.map_loaded.is_connected(_on_map_loaded_fallback):
