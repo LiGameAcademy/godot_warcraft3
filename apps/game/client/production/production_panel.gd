@@ -13,9 +13,13 @@ var unit_selector: Node
 var game_hud: GameHud
 var unit_host: Node
 var model_cache: MapModelCache
+var _pending_queues: Dictionary = {}
+var _ui_refresh_queued: bool = false
 
 func configure(session: GameSession, commands: CommandRouter, selector: Node,
 		hud: GameHud, host: Node, cache: MapModelCache) -> void:
+	if _session != session:
+		_pending_queues.clear()
 	_session = session
 	_command_router = commands
 	unit_selector = selector
@@ -43,6 +47,12 @@ func on_research_completed(_id: String, _owner: int) -> void:
 	command_refresh_requested.emit()
 
 func request_train(unit_id: String) -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_measured_request_train(unit_id)
+	MatchHotpathMetrics.finish(&"train_request", started)
+
+
+func _measured_request_train(unit_id: String) -> void:
 	if _command_router == null or unit_selector == null or not unit_selector.has_method("get_primary"):
 		return
 	var primary: Node3D = unit_selector.call("get_primary") as Node3D
@@ -111,8 +121,7 @@ func request_train(unit_id: String) -> void:
 	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
 	if production != null:
 		production.watch(queue)
-	command_card_requested.emit(primary, building_id)
-	selection_refresh_requested.emit()
+	on_queue_changed(queue)
 	var n := queue.queue_count() if queue != null else 1
 	show_feedback("已加入训练队列：%s（%d/%d）" % [uid, n, TrainQueue.MAX_QUEUE])
 
@@ -191,8 +200,7 @@ func request_research(upgrade_id: String) -> void:
 		return
 	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
 	production.watch(queue)
-	command_card_requested.emit(primary, building_id)
-	selection_refresh_requested.emit()
+	on_queue_changed(queue)
 	if game_hud:
 		var n := queue.queue_count() if queue != null else 1
 		game_hud.set_status("已加入研究队列：%s（%d/%d）" % [TechPresence.display_name(uid), n, TrainQueue.MAX_QUEUE])
@@ -261,8 +269,7 @@ func request_building_upgrade(target_id: String) -> void:
 		return
 	var queue := primary.get_node_or_null("TrainQueue") as TrainQueue
 	production.watch(queue)
-	command_card_requested.emit(primary, building_id)
-	selection_refresh_requested.emit()
+	on_queue_changed(queue)
 	if game_hud:
 		var n := queue.queue_count() if queue != null else 1
 		game_hud.set_status("已加入升本队列：%s（%d/%d）" % [TechPresence.display_name(to_id), n, TrainQueue.MAX_QUEUE])
@@ -365,6 +372,27 @@ func _sync_building_train_visual(building: Node3D) -> void:
 	BuildingVisual.apply_phase(cache, building, tid, phase)
 
 func on_queue_changed(queue: TrainQueue = null) -> void:
+	if is_instance_valid(queue):
+		_pending_queues[queue.get_instance_id()] = weakref(queue)
+	if _ui_refresh_queued:
+		return
+	_ui_refresh_queued = true
+	call_deferred("_flush_queue_ui")
+
+
+func _flush_queue_ui() -> void:
+	var started: int = MatchHotpathMetrics.begin()
+	_ui_refresh_queued = false
+	for reference: WeakRef in _pending_queues.values():
+		var queue: TrainQueue = reference.get_ref() as TrainQueue
+		if is_instance_valid(queue):
+			_sync_building_train_visual(queue.get_parent() as Node3D)
+	_pending_queues.clear()
+	_measured_on_queue_changed(null)
+	MatchHotpathMetrics.finish(&"production_ui", started)
+
+
+func _measured_on_queue_changed(queue: TrainQueue = null) -> void:
 	if queue != null and is_instance_valid(queue):
 		_sync_building_train_visual(queue.get_parent() as Node3D)
 	selection_refresh_requested.emit()

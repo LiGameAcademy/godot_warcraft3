@@ -35,7 +35,6 @@ func watch(queue: TrainQueue) -> void:
 		[queue.training_cancelled, _on_training_cancelled.bind(queue)],
 		[queue.queue_changed, _on_queue_changed.bind(queue)],
 		[queue.progress_changed, _on_progress_changed.bind(queue)],
-		[queue.training_started, _on_training_started.bind(queue)],
 		[queue.tree_exiting, _forget_queue.bind(queue.get_instance_id())],
 	]
 	_queues[queue.get_instance_id()] = {"queue": weakref(queue), "links": links}
@@ -73,9 +72,6 @@ func _on_queue_changed(queue: TrainQueue) -> void:
 
 func _on_progress_changed(_progress: float, _remaining: float, queue: TrainQueue) -> void:
 	progress_changed.emit(queue)
-
-func _on_training_started(_id: String, _time: float, queue: TrainQueue) -> void:
-	queue_changed.emit(queue)
 
 func _stock_for_owner(owner_id: int) -> PlayerStock:
 	return _session.stocks.get(owner_id) as PlayerStock if _session != null else null
