@@ -1,4 +1,13 @@
 using Rts.Kernel;
+using Rts.Content;
+
+if (args.Length == 2 && args[0] == "--map")
+{
+    var pathing = ParsedTerrainReader.ReadPathing(File.ReadAllText(Path.Combine(args[1], "pathing.json")));
+    var heights = ParsedTerrainReader.ReadHeights(File.ReadAllText(Path.Combine(args[1], "terrain-heightfield.json")));
+    Console.WriteLine($"terrain loaded: pathing={pathing.Width}x{pathing.Height} cell={pathing.CellSize} heights={heights.Width}x{heights.Height} tile={heights.TileSize}; raw static terrain only");
+    return;
+}
 
 var match = new RtsMatch(MatchConfig.Default, seed: 0xC0FFEEUL);
 match.SubmitCommand(CommandEnvelope.Spawn(1, playerId: 0, sequence: 0, new SimVector2(128, 256)));

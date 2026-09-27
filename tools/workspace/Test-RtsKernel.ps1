@@ -13,7 +13,7 @@ $projects = @(
 Push-Location $repositoryRoot
 try {
     foreach ($project in $projects) {
-        dotnet restore $project --ignore-failed-sources -p:NuGetAudit=false
+        dotnet restore $project --ignore-failed-sources -p:NuGetAudit=false -m:1
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet restore failed: $project"
         }

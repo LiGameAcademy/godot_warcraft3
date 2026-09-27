@@ -1,4 +1,6 @@
 using Rts.Kernel;
+using Rts.Content;
+using Rts.Kernel.Navigation;
 
 var checks = 0;
 
@@ -87,5 +89,24 @@ rejected.Step();
 var rejectionEvent = rejected.DrainEvents().Single();
 Check(rejectionEvent.Kind == MatchEventKind.CommandRejected, "execution rejection is an event");
 Check(rejectionEvent.Frame == 1, "event carries simulation frame");
+
+var rawFlags = new byte[] { 0, 2, 4, 8 };
+var grid = new PathingGrid(2, 2, 32, new SimVector2(-32, -32), rawFlags, new byte[] { 2, 0, 0, 0 });
+rawFlags[2] = 2;
+Check(!grid.IsWalkable(new GridCell(0, 0)), "obstacle flags combined");
+Check(grid.IsWalkable(new GridCell(0, 1)), "no-fly flag permits walking and input buffers are copied");
+Check(!grid.IsWalkable(new GridCell(2, 0)), "out of bounds blocked");
+Check(grid.TryWorldToCell(new SimVector2(-0.01, -0.01), out var cell) && cell == new GridCell(0, 0), "negative origin and floor semantics");
+Check(!grid.TryWorldToCell(new SimVector2(32, 0), out _), "upper edge excluded");
+Check(!grid.TryWorldToCell(new SimVector2(double.NaN, 0), out _), "nonfinite coordinate rejected");
+var fromArray = ParsedTerrainReader.ReadPathing("""{"width":2,"height":2,"cells":[0,2,4,8]}""");
+var fromBase64 = ParsedTerrainReader.ReadPathing("""{"width":2,"height":2,"cellsBase64":"AAIECA=="}""");
+Check(fromArray.FlagsAt(new GridCell(1, 1)) == fromBase64.FlagsAt(new GridCell(1, 1)), "pathing encodings equivalent");
+CheckThrows<ArgumentException>(() => new PathingGrid(2, 2, 32, default, new byte[3]), "truncated map rejected");
+var terrain = ParsedTerrainReader.ReadHeights("""{"tilepointWidth":2,"tilepointHeight":2,"tileSize":128,"centerOffset":{"x":-128,"y":-128},"heights":[0,10,20,30]}""");
+Check(terrain.TrySample(new SimVector2(-64, -64), out var altitude) && altitude == 15, "bilinear height sample");
+Check(terrain.TrySample(SimVector2.Zero, out altitude) && altitude == 30, "last corner samples final quad");
+Check(!terrain.TrySample(new SimVector2(1, 0), out _), "height outside map explicitly missing");
+CheckThrows<ArgumentException>(() => new TerrainHeights(2, 2, 128, default, new double[] {0, 0, 0, double.NaN}), "nonfinite height rejected");
 
 Console.WriteLine($"Rts.Kernel.Tests PASS ({checks} checks)");

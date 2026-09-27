@@ -7,6 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../packages/rts_content/Rts.Content.csproj" />
     <ProjectReference Include="..\..\packages\rts_kernel\Rts.Kernel.csproj" />
   </ItemGroup>
 </Project>
