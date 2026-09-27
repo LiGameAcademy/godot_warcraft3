@@ -11,6 +11,21 @@ void Check(bool condition, string message)
     }
 }
 
+void CheckThrows<TException>(Action action, string message) where TException : Exception
+{
+    checks++;
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException(message);
+}
+
 RtsMatch CreateMovingMatch()
 {
     var match = new RtsMatch(MatchConfig.Default, 1234);
@@ -33,6 +48,21 @@ var snapshotJson = SnapshotJson.Serialize(original.CaptureSnapshot());
 var restored = RtsMatch.Restore(SnapshotJson.Deserialize(snapshotJson));
 Check(original.ComputeStateHash() == restored.ComputeStateHash(), "snapshot round trip hash");
 Check(original.Rng.NextUInt64() == restored.Rng.NextUInt64(), "random state restored");
+var canonicalSnapshot = original.CaptureSnapshot();
+Check(SnapshotDiff.FindFirst(canonicalSnapshot, canonicalSnapshot) is null, "identical snapshots have no diff");
+Check(SnapshotDiff.FindFirst(canonicalSnapshot, canonicalSnapshot with { Frame = canonicalSnapshot.Frame + 1 })?.Path == "frame", "frame diff path");
+var changedEntities = canonicalSnapshot.Entities.ToArray();
+changedEntities[0] = changedEntities[0] with { PositionX = changedEntities[0].PositionX + 1 };
+Check(SnapshotDiff.FindFirst(canonicalSnapshot, canonicalSnapshot with { Entities = changedEntities })?.Path == "entities[0].positionX", "entity field diff path");
+var changedPending = canonicalSnapshot.PendingCommands.ToArray();
+changedPending[0] = changedPending[0] with
+{
+    Command = changedPending[0].Command with { ExecuteFrame = changedPending[0].Command.ExecuteFrame + 1 },
+};
+Check(SnapshotDiff.FindFirst(canonicalSnapshot, canonicalSnapshot with { PendingCommands = changedPending })?.Path == "pendingCommands[0].executeFrame", "command field diff path");
+CheckThrows<InvalidDataException>(
+    () => RtsMatch.Restore(canonicalSnapshot with { NextEntityId = 1 }),
+    "non-canonical next entity id rejected");
 
 for (var i = 0; i < 20; i++)
 {

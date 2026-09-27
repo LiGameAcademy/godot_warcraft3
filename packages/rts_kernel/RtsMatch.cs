@@ -103,10 +103,7 @@ public sealed class RtsMatch
 
     public static RtsMatch Restore(MatchSnapshot snapshot)
     {
-        if (snapshot.FormatVersion != SnapshotJson.CurrentFormatVersion)
-        {
-            throw new InvalidDataException($"Unsupported snapshot version: {snapshot.FormatVersion}.");
-        }
+        SnapshotValidator.Validate(snapshot);
 
         var match = new RtsMatch(new MatchConfig(snapshot.TickRate), snapshot.RngState)
         {
