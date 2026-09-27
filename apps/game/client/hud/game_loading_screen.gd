@@ -2,11 +2,8 @@ class_name GameLoadingScreen
 extends CanvasLayer
 
 ## 进局全屏 Loading（表现层）。遮罩地图装配过程，session_ready 后淡出。
+## 依赖由 GameMain.setup() 显式注入；不再从节点树反查。
 
-@export var map_root: MapLoader
-@export var game_director: GameDirector
-@export var game_hud: CanvasLayer
-@export var health_bar_manager: CanvasLayer
 @export var map_title: String = ""
 @export var fade_out_sec: float = 0.35
 @export var min_visible_sec: float = 0.4
@@ -17,15 +14,30 @@ extends CanvasLayer
 @onready var _bar: ProgressBar = %ProgressBar
 @onready var _pct: Label = %PercentLabel
 
+var map_root: MapLoader
+var game_director: GameDirector
+var game_hud: CanvasLayer
+var health_bar_manager: CanvasLayer
+
 var _finished: bool = false
 var _shown_msec: int = 0
-## _wire_signals 是否已经执行过一次，用于 inject 在 _ready 后补信号。
+## _wire_signals 是否已经执行过一次。
 var _signals_wired: bool = false
 
 func _enter_tree() -> void:
 	layer = 100
 
-func setup() -> void:
+## 由 GameMain 在子节点装配最末端调用。map_root 与 game_director 二选一；都为空则无信号可订阅。
+func setup(
+	p_map_root: MapLoader,
+	p_game_director: GameDirector,
+	p_game_hud: CanvasLayer,
+	p_health_bar_manager: CanvasLayer
+) -> void:
+	map_root = p_map_root
+	game_director = p_game_director
+	game_hud = p_game_hud
+	health_bar_manager = p_health_bar_manager
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_shown_msec = Time.get_ticks_msec()
 	_apply_styles()
@@ -47,7 +59,6 @@ func _wire_signals() -> void:
 	elif map_root != null and not map_root.map_loaded.is_connected(_on_map_loaded_fallback):
 		map_root.map_loaded.connect(_on_map_loaded_fallback)
 	_signals_wired = true
-
 
 func _try_finish_if_already_ready() -> void:
 	if _finished:

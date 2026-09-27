@@ -133,17 +133,49 @@ var _wired_selector: Node
 var _ui_bridge: Node
 
 
+## 由 GameMain 在 _ready 中按拓扑顺序调用。
+## 节点引用就绪后才触发 _boot_match（仅触发一次）。
+func setup(
+	p_map_root: MapLoader,
+	p_rts_camera: RtsCamera,
+	p_game_hud: GameHud,
+	p_unit_selector: Node,
+	p_game_cursor: Node,
+	p_health_bar_manager: HealthBarManager,
+	p_game_loading_screen: Node
+) -> void:
+	map_root = p_map_root
+	rts_camera = p_rts_camera
+	game_hud = p_game_hud
+	unit_selector = p_unit_selector
+	game_cursor = p_game_cursor
+	health_bar_manager = p_health_bar_manager
+	game_loading_screen = p_game_loading_screen
+	if _bootstrapped:
+		return
+	_boot_match()
+
+
 func _ready() -> void:
 	var assets := get_node_or_null("/root/AssetProvider")
 	if assets != null:
 		assets.seal_runtime_content()
 	_rng.randomize()
 	AppLog.reload_config()
-	_resolve_exports()
+	# GameMain 的 _ready 在本节点之后（Godot bottom-up _ready 顺序）；
+	# 等一帧让 GameMain._ready 把 setup() 跑完，再触发 _boot_match。
 	if map_root == null:
-		push_error("GameDirector: 未绑定 map_root")
-		return
-	_inject_loading_screen()
+		await get_tree().process_frame
+		if map_root == null:
+			push_warning(
+				"GameDirector: setup() 未在首帧后注入；GameMain._ready 必须调 setup(...)"
+			)
+			return
+	_boot_match()
+
+
+## 原 _ready 后半段 + _configure_map_root / _wire_hud / _load_camera_bounds / _configure_camera / _inject_loading_screen 集中到 setup() 内调一次。
+func _boot_match() -> void:
 	_configure_map_root()
 	var debug := _ensure_debug_tools_module()
 	debug.ensure_gm_panel()
@@ -171,60 +203,9 @@ func is_session_ready() -> bool:
 
 
 ## 按本地玩家种族切换光标图集（human/orc/undead/nightelf）。
+## game_cursor 由 GameMain.setup() 注入；运行时无需二次解析。
 func _apply_cursor_race(race_id: String) -> void:
-	if game_cursor == null:
-		_resolve_exports()
 	_ensure_interaction_module().set_cursor_race(race_id)
-
-
-func _resolve_exports() -> void:
-	var parent_n := get_parent()
-	if map_root == null:
-		map_root = get_node_or_null("../MapRoot") as MapLoader
-		if map_root == null and parent_n != null:
-			map_root = parent_n.get_node_or_null("MapRoot") as MapLoader
-	if rts_camera == null:
-		rts_camera = get_node_or_null("../RtsCamera") as RtsCamera
-		if rts_camera == null and parent_n != null:
-			rts_camera = parent_n.get_node_or_null("RtsCamera") as RtsCamera
-	if game_hud == null:
-		game_hud = get_node_or_null("../GameHud") as GameHud
-		if game_hud == null and parent_n != null:
-			game_hud = parent_n.get_node_or_null("GameHud") as GameHud
-	if unit_selector == null:
-		if parent_n != null:
-			unit_selector = parent_n.get_node_or_null("UnitSelector")
-			if unit_selector == null:
-				unit_selector = parent_n.find_child("UnitSelector", true, false)
-		if unit_selector == null:
-			unit_selector = get_node_or_null("../UnitSelector")
-	if game_cursor == null:
-		game_cursor = get_node_or_null("../GameCursor")
-		if game_cursor == null and parent_n != null:
-			game_cursor = parent_n.get_node_or_null("GameCursor")
-			if game_cursor == null:
-				game_cursor = parent_n.get_node_or_null("HumanCursor")
-	if health_bar_manager == null:
-		health_bar_manager = get_node_or_null("../HealthBarManager") as HealthBarManager
-		if health_bar_manager == null and parent_n != null:
-			health_bar_manager = parent_n.get_node_or_null("HealthBarManager") as HealthBarManager
-	if game_loading_screen == null:
-		game_loading_screen = get_node_or_null("../GameLoadingScreen")
-		if game_loading_screen == null and parent_n != null:
-			game_loading_screen = parent_n.get_node_or_null("GameLoadingScreen")
-	AppLog.info(
-		AppLog.Layer.GAME,
-		"GameDirector",
-		"bind map=%s cam=%s hud=%s sel=%s cursor=%s hpbar=%s"
-		% [
-			map_root != null,
-			rts_camera != null,
-			game_hud != null,
-			unit_selector != null,
-			game_cursor != null,
-			health_bar_manager != null,
-		]
-	)
 
 
 func _configure_map_root() -> void:
@@ -274,22 +255,11 @@ func _apply_camera_world_bounds() -> void:
 
 
 func _wire_hud() -> void:
-	var callbacks := {
-		"item_use": _on_item_use, "item_drop": _on_item_drop, "item_swap": _on_item_swap,
-		"minimap_clicked": _on_minimap_clicked, "command_pressed": _on_command_pressed,
-		"command_action": _on_command_action, "command_action_rclick": _on_command_action_rclick,
-		"multi_select_clicked": _on_multi_select_clicked, "train_queue_cancel": _on_train_queue_cancel,
-	}
-	if is_instance_valid(_wired_hud) and _wired_hud != game_hud:
-		for event: String in callbacks:
-			if _wired_hud.is_connected(event, callbacks[event]):
-				_wired_hud.disconnect(event, callbacks[event])
+	# M2 完成后，HUD 事件统一经 UiManager.intent → UiGameplayBridge 分发。
+	# Director 不再直连 HUD signal；保留此处仅做轻量配置（map_dir / set_status）+ 触发桥绑定。
 	_wired_hud = game_hud
 	if game_hud == null:
 		return
-	for event: String in callbacks:
-		if game_hud.has_signal(event) and not game_hud.is_connected(event, callbacks[event]):
-			game_hud.connect(event, callbacks[event])
 	if not map_dir.is_empty():
 		game_hud.map_dir = map_dir
 	game_hud.set_status(_map_display_name())
@@ -300,34 +270,13 @@ func _setup_portrait_hud() -> void:
 	_ensure_selection_hud_module().setup_portrait()
 
 
-## 显式把对局组件注入 GameLoadingScreen。_resolve_exports 之后调用。
-## duck-type：仅当 loading_screen 实现 inject_dependencies 时才注入。
-func _inject_loading_screen() -> void:
-	if not is_instance_valid(game_loading_screen):
-		return
-	if not game_loading_screen.has_method("inject_dependencies"):
-		push_warning("GameDirector: loading_screen 不支持 inject_dependencies，跳过注入")
-		return
-	game_loading_screen.call(
-		"inject_dependencies",
-		{
-			"map_root": map_root,
-			"game_director": self,
-			"game_hud": game_hud,
-			"health_bar_manager": health_bar_manager,
-		}
-	)
-
-
 ## 把对局作用域的依赖注入 UiGameplayBridge：UiManager intent → 玩法分发。
 ## 重复调用安全：仅替换字段、不重复订阅 UiManager.intent。
+## 依赖以 Callable 注入，与 CommandCardModule / BuildModule 同款；
+## bridge 不再需要拿到 director / selector / camera 等具体 Node 引用。
 func _bind_ui_bridge() -> void:
 	if not is_instance_valid(_ui_bridge):
-		var BridgeScript := load("res://client/ui/ui_gameplay_bridge.gd") as GDScript
-		if BridgeScript == null:
-			push_warning("GameDirector: 找不到 UiGameplayBridge 脚本，UI 桥未创建")
-			return
-		_ui_bridge = BridgeScript.new()
+		_ui_bridge = UiGameplayBridge.new()
 		_ui_bridge.name = "UiGameplayBridge"
 		add_child(_ui_bridge)
 	# production_panel / items_module / command_router 必须已存在；未初始化则跳过。
@@ -335,27 +284,44 @@ func _bind_ui_bridge() -> void:
 		_ensure_production_module()
 	if not is_instance_valid(_items):
 		_ensure_items_module()
-	_ui_bridge.call(
-		"bind",
-		self,
-		_command_router,
-		_production_panel,
-		_items,
-		unit_selector,
-		rts_camera,
-		_heightfield,
-		_cam_min,
-		_cam_max,
-		game_hud
-	)
+	# M3：presenter 挂在 bridge 子节点（bridge 释放即随之释放；不堆在 Autoload）。
+	_ensure_resource_presenter().attach(_session.local_stock() if _session != null else null)
+	_ensure_selection_presenter().attach(unit_selector)
+	_ui_bridge.bind({
+		UiGameplayBridge.DEP_DISPATCH_COMMAND: Callable(_ensure_command_card_module(), "dispatch_action"),
+		UiGameplayBridge.DEP_DISPATCH_COMMAND_RCLICK: Callable(_ensure_command_card_module(), "dispatch_action_rclick"),
+		UiGameplayBridge.DEP_CANCEL_TRAIN_SLOT: Callable(_production_panel, "cancel_selected"),
+		UiGameplayBridge.DEP_USE_ITEM: Callable(_items, "use_slot"),
+		UiGameplayBridge.DEP_DROP_ITEM: Callable(_items, "drop_slot"),
+		UiGameplayBridge.DEP_SWAP_ITEMS: Callable(_items, "swap_slots"),
+		UiGameplayBridge.DEP_SET_PRIMARY: Callable(unit_selector, "set_primary"),
+		UiGameplayBridge.DEP_FOCUS_CAMERA: Callable(rts_camera, "focus_on_position"),
+		UiGameplayBridge.DEP_UV_TO_WORLD_FALLBACK: _make_uv_to_world_callable(),
+	})
 
 
-func _on_multi_select_clicked(instance_id: int) -> void:
-	if unit_selector == null or instance_id == 0:
-		return
-	var obj := instance_from_id(instance_id)
-	if obj is Node3D:
-		unit_selector.set_primary(obj as Node3D)
+func _ensure_resource_presenter() -> ResourcePresenter:
+	if not is_instance_valid(_ui_bridge):
+		_bind_ui_bridge()
+	var child := _ui_bridge.get_node_or_null("ResourcePresenter")
+	if child != null:
+		return child as ResourcePresenter
+	var p := ResourcePresenter.new()
+	p.name = "ResourcePresenter"
+	_ui_bridge.add_child(p)
+	return p
+
+
+func _ensure_selection_presenter() -> SelectionPresenter:
+	if not is_instance_valid(_ui_bridge):
+		_bind_ui_bridge()
+	var child := _ui_bridge.get_node_or_null("SelectionPresenter")
+	if child != null:
+		return child as SelectionPresenter
+	var p := SelectionPresenter.new()
+	p.name = "SelectionPresenter"
+	_ui_bridge.add_child(p)
+	return p
 
 
 func _setup_selector() -> void:
@@ -456,8 +422,6 @@ func _setup_opponent_economy() -> void:
 
 
 func _setup_health_bars() -> void:
-	if health_bar_manager == null:
-		_resolve_exports()
 	if health_bar_manager == null or map_root == null or rts_camera == null:
 		return
 	var cam := rts_camera.get_camera()
@@ -958,6 +922,18 @@ func gm_hero_max_level() -> void:
 	_ensure_debug_tools_module().hero_max_level()
 
 
+## 构造 uv → world 的 Callable：heightfield 可用时走其 minimap_uv_to_world，
+## 否则按 _cam_min / _cam_max 线性映射。Bridge 不直接持有 Heightfield / Camera。
+func _make_uv_to_world_callable() -> Callable:
+	return func(uv: Vector2) -> Vector3:
+		var hf := _heightfield
+		if hf != null and is_instance_valid(hf) and hf.is_valid():
+			return MapMinimapUtils.minimap_uv_to_world(uv, hf, 0.0)
+		var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
+		var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
+		return Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
+
+
 ## 用 1 点自动学第一个可学技能（或升级已有）。
 func gm_hero_learn_one_point() -> void:
 	_ensure_debug_tools_module().hero_learn_one_point()
@@ -1258,11 +1234,6 @@ func _wire_train_queue(queue: TrainQueue) -> void:
 ## 训练中切 Stand Work（门开 + 门光）；队列空回 Stand。
 
 
-func _on_train_queue_cancel(slot_index: int) -> void:
-	_ensure_production_module()
-	_production_panel.cancel_selected(slot_index)
-
-
 func _apply_revived_hero_state(unit: Node3D, completed: Dictionary) -> void:
 	_ensure_production_module().apply_revived_hero_state(unit, completed)
 
@@ -1355,40 +1326,6 @@ func _ground_at_screen(screen_pos: Vector2) -> Vector3:
 	return _ensure_world_picker().ground_at_screen(screen_pos)
 
 
-func _on_minimap_clicked(uv: Vector2) -> void:
-	if rts_camera == null:
-		return
-	var world: Vector3
-	if _heightfield != null and _heightfield.is_valid():
-		world = MapMinimapUtils.minimap_uv_to_world(uv, _heightfield, 0.0)
-	else:
-		var wx := lerpf(_cam_min.x, _cam_max.x, uv.x)
-		var wy := lerpf(_cam_max.y, _cam_min.y, uv.y)
-		world = Wc3Coords.wc3_xy_to_godot(wx, wy, 0.0)
-	rts_camera.focus_on_position(world)
-	if game_hud:
-		var inv := 1.0 / Wc3Coords.WORLD_SCALE
-		game_hud.set_status(
-			"镜头 → (%.0f, %.0f)" % [world.x * inv, -world.z * inv]
-		)
-
-
-func _on_command_pressed(_slot: int) -> void:
-	# 有 action_id 时由 _on_command_action 处理；纯文字占位格仍提示
-	if game_hud != null and game_hud.has_method("set_status"):
-		pass
-
-
-func _on_command_action_rclick(action_id: String) -> void:
-	_ensure_command_card_module().dispatch_action_rclick(action_id)
-
-
-func _on_command_action(
-	action_id: String, source: int = UnitOrder.Source.PANEL
-) -> void:
-	_ensure_command_card_module().dispatch_action(action_id, source)
-
-
 func _on_selection_changed(primary: Node3D, selected: Array) -> void:
 	var started: int = MatchHotpathMetrics.begin()
 	_measured_on_selection_changed(primary, selected)
@@ -1475,18 +1412,6 @@ func _on_inventory_changed() -> void:
 	_ensure_items_module().on_inventory_changed()
 
 
-func _on_item_use(slot: int) -> void:
-	_ensure_items_module().use_slot(slot)
-
-
-func _on_item_drop(slot: int) -> void:
-	_ensure_items_module().drop_slot(slot)
-
-
-func _on_item_swap(a: int, b: int) -> void:
-	_ensure_items_module().swap_slots(a, b)
-
-
 ## GM：只生成测试物品，不修改地图掉落或普通开局。
 func gm_item_test_kit() -> void:
 	_ensure_debug_tools_module().item_test_kit()
@@ -1514,7 +1439,8 @@ func _ensure_debug_tools_module() -> DebugToolsModule:
 	if _bound_modules.get(&"debug_tools", -1) == _binding_epoch:
 		return _debug_tools
 	if game_hud == null or unit_selector == null:
-		_resolve_exports()
+		push_warning("GameDirector: DebugToolsModule 绑定跳过（hud/selector 未注入）")
+		return _debug_tools
 	_debug_tools.configure({
 		"map_root": map_root,
 		"host_parent": get_parent(),
@@ -1600,7 +1526,8 @@ func _ensure_match_bootstrap_module() -> MatchBootstrapModule:
 	if _bound_modules.get(&"match_bootstrap", -1) == _binding_epoch:
 		return _match_bootstrap
 	if game_hud == null or rts_camera == null:
-		_resolve_exports()
+		push_warning("GameDirector: MatchBootstrapModule 绑定跳过（hud/camera 未注入）")
+		return _match_bootstrap
 	_match_bootstrap.configure({
 		"map_root": map_root,
 		"map_dir": map_dir,
@@ -1627,7 +1554,8 @@ func _ensure_path_debug_module() -> PathDebugModule:
 	if _bound_modules.get(&"path_debug_mod", -1) == _binding_epoch:
 		return _path_debug_mod
 	if unit_selector == null:
-		_resolve_exports()
+		push_warning("GameDirector: PathDebugModule 绑定跳过（selector 未注入）")
+		return _path_debug_mod
 	_path_debug_mod.configure({
 		"map_root": map_root,
 		"heightfield": _heightfield,
@@ -1646,7 +1574,8 @@ func _ensure_selection_hud_module() -> SelectionHudModule:
 		_selection_hud.name = "SelectionHudModule"
 		add_child(_selection_hud)
 	if game_hud == null or unit_selector == null:
-		_resolve_exports()
+		push_warning("GameDirector: SelectionHudModule 绑定跳过（hud/selector 未注入）")
+		return _selection_hud
 	if _selection_hud.matches_dependencies(game_hud, unit_selector, map_root):
 		return _selection_hud
 	_selection_hud.configure({
@@ -1666,7 +1595,8 @@ func _ensure_command_card_module() -> CommandCardModule:
 		_command_card.name = "CommandCardModule"
 		add_child(_command_card)
 	if game_hud == null or unit_selector == null:
-		_resolve_exports()
+		push_warning("GameDirector: CommandCardModule 绑定跳过（hud/selector 未注入）")
+		return _command_card
 	if _command_card.matches_dependencies(game_hud, unit_selector, _command_router, _session, enable_move_command):
 		return _command_card
 	_command_card.configure({
@@ -1717,7 +1647,8 @@ func _ensure_interaction_module() -> InteractionModule:
 	if _bound_modules.get(&"interaction", -1) == _binding_epoch:
 		return _interaction
 	if game_cursor == null:
-		_resolve_exports()
+		push_warning("GameDirector: InteractionModule 绑定跳过（cursor 未注入）")
+		return _interaction
 	_interaction.configure({
 		"cursor": game_cursor as Wc3GameCursor,
 		"unit_selector": unit_selector,
@@ -1747,7 +1678,8 @@ func _ensure_smart_command_module() -> SmartCommandModule:
 	if _bound_modules.get(&"smart_command", -1) == _binding_epoch:
 		return _smart_command
 	if unit_selector == null or rts_camera == null:
-		_resolve_exports()
+		push_warning("GameDirector: SmartCommandModule 绑定跳过（selector/camera 未注入）")
+		return _smart_command
 	# ground_items 可能在 ItemsModule 之后才就绪
 	if _ground_items == null and is_instance_valid(_items):
 		_ground_items = _items.ground_host()
@@ -1775,7 +1707,8 @@ func _ensure_command_input_module() -> CommandInputModule:
 	if _bound_modules.get(&"command_input", -1) == _binding_epoch:
 		return _command_input
 	if unit_selector == null or rts_camera == null:
-		_resolve_exports()
+		push_warning("GameDirector: CommandInputModule 绑定跳过（selector/camera 未注入）")
+		return _command_input
 	_command_input.configure({
 		"command_router": _command_router,
 		"unit_selector": unit_selector,

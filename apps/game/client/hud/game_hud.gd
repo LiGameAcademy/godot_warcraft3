@@ -3,18 +3,15 @@ extends CanvasLayer
 
 ## 现代底栏 HUD 外壳：组装各功能面板，转发展示 API 与操作意图。
 ## 面板职责见 docs/design/game/HUD_WIDGET_CATALOG.md。
-
-signal command_pressed(slot: int)
-signal command_action(action_id: String)
-signal command_action_rclick(action_id: String)
-signal minimap_clicked(uv: Vector2)
-signal multi_select_clicked(instance_id: int)
-signal train_queue_cancel(slot_index: int)
-signal item_use(slot: int)
-signal item_drop(slot: int)
-signal item_swap(a: int, b: int)
+##
+## M4：HUD 不再 emit 旧信号（如 command_action）；统一经 UiManager.emit_intent → UiGameplayBridge。
+## Director 不再订阅本类 signal（GameDirector._wire_hud 已是空接线）。
 
 var inventory_panel: InventoryPanel
+## GameMain.setup() 注入的引用缓存；UI Bridge 可通过这些字段查询选中 / Director 状态。
+var _unit_selector: Node = null
+var _game_director: GameDirector = null
+var _health_bar_manager: HealthBarManager = null
 
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 底栏高度偏好占比；实际会被 HudLayout 按视口夹紧（小窗不会超过约 26%）。
@@ -38,11 +35,10 @@ func _ready() -> void:
 	inventory_panel = InventoryPanel.new()
 	inventory_panel.name = "InventoryPanel"
 	$Root.add_child(inventory_panel)
-	inventory_panel.use_requested.connect(func(slot: int) -> void: item_use.emit(slot))
+	# M4：inventory 三个信号统一走 UiManager.emit_intent → UiGameplayBridge。
+	# 不再 emit 旧 item_* 信号。
 	inventory_panel.use_requested.connect(_emit_intent_use)
-	inventory_panel.drop_requested.connect(func(slot: int) -> void: item_drop.emit(slot))
 	inventory_panel.drop_requested.connect(_emit_intent_drop)
-	inventory_panel.swap_requested.connect(func(a: int, b: int) -> void: item_swap.emit(a, b))
 	inventory_panel.swap_requested.connect(_emit_intent_swap)
 	if _command_panel != null:
 		_command_panel.resized.connect(_layout_inventory_panel)
@@ -79,6 +75,17 @@ func _wire_panel_signals() -> void:
 			_selection.multi_select_clicked.connect(_on_multi_select_clicked)
 		if not _selection.train_queue_cancel.is_connected(_on_train_queue_cancel):
 			_selection.train_queue_cancel.connect(_on_train_queue_cancel)
+
+
+## 由 GameMain 在 _ready 中按拓扑顺序调用。仅缓存引用；本节点原有 _ready 自动装配不变。
+func setup(
+	p_unit_selector: Node,
+	p_game_director: GameDirector,
+	p_health_bar_manager: HealthBarManager
+) -> void:
+	_unit_selector = p_unit_selector
+	_game_director = p_game_director
+	_health_bar_manager = p_health_bar_manager
 
 
 ## Director：注入 heightfield / 单位层 / 相机，并加载 war3mapMap。
@@ -346,35 +353,32 @@ func set_minimap_texture(tex: Texture2D) -> void:
 
 
 func _on_command_pressed(slot: int) -> void:
-	command_pressed.emit(slot)
+	# 占位格按下：仅占位（无 action_id），未来若需要提示语可走 set_status。
+	# 不再 emit command_pressed 信号；Director 也不再订阅。
+	pass
 
 
 func _on_command_action(action_id: String) -> void:
-	command_action.emit(action_id)
 	if is_instance_valid(UiManager):
 		UiManager.emit_intent(UiIntent.COMMAND, {"action_id": action_id})
 
 
 func _on_command_action_rclick(action_id: String) -> void:
-	command_action_rclick.emit(action_id)
 	if is_instance_valid(UiManager):
 		UiManager.emit_intent(UiIntent.COMMAND_RCLICK, {"action_id": action_id})
 
 
 func _on_minimap_clicked(uv: Vector2) -> void:
-	minimap_clicked.emit(uv)
 	if is_instance_valid(UiManager):
 		UiManager.emit_intent(UiIntent.MINIMAP_CLICK, {"uv": uv})
 
 
 func _on_multi_select_clicked(instance_id: int) -> void:
-	multi_select_clicked.emit(instance_id)
 	if is_instance_valid(UiManager):
 		UiManager.emit_intent(UiIntent.MULTI_SELECT, {"instance_id": instance_id})
 
 
 func _on_train_queue_cancel(slot_index: int) -> void:
-	train_queue_cancel.emit(slot_index)
 	if is_instance_valid(UiManager):
 		UiManager.emit_intent(UiIntent.TRAIN_CANCEL, {"slot_index": slot_index})
 

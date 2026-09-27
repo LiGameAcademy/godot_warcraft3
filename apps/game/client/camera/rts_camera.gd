@@ -69,9 +69,18 @@ var _pan_velocity: Vector3 = Vector3.ZERO
 var _focus_tween: Tween
 var _zoom_tween: Tween
 var _heightfield: Wc3Heightfield
+## GameMain.setup() 注入的地图根（仅引用，不直接持有；MapRoot 装配由 MapLoader 自己负责）
+var _map_root_ref: MapLoader = null
 
 
 func _ready() -> void:
+	apply_export_tuning()
+
+
+## 由 GameMain 在 _ready 中按拓扑顺序调用。
+## map_root 用于地形跟随 / 镜头边界；不修改 @export，由 GameDirector._configure_camera 写入。
+func setup(p_map_root: MapLoader) -> void:
+	_map_root_ref = p_map_root
 	apply_export_tuning()
 
 

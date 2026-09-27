@@ -49,12 +49,20 @@ var _active: bool = false
 var _race_id: String = "human"
 ## true：MOVE 动画循环直至取消（行动面板瞄准），不自动回 IDLE
 var _move_sticky: bool = false
+## GameMain.setup() 注入的 UnitSelector 引用（仅缓存；本节点不直接消费）
+var _unit_selector_ref: Node = null
 
 
 func _ready() -> void:
 	if not enabled:
 		return
 	set_race(race)
+
+
+## 由 GameMain 在 _ready 中按拓扑顺序调用。光标本节点不直接调 selector，
+## 仅保留引用便于调试 / 未来闪选联动（InteractionModule 已通过 GameDirector 注入）。
+func setup(p_unit_selector: Node) -> void:
+	_unit_selector_ref = p_unit_selector
 
 
 func _unhandled_input(event: InputEvent) -> void:
