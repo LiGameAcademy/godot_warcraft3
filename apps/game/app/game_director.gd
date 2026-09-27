@@ -1,11 +1,33 @@
+## 游戏总管（对标 MapEditor）。
+##
+## 职责：
+## [br]- 场景配置：把 @export 配置（map_dir / 相机 / 寻路 / 移动 / GM 等）写入运行时状态。
+## [br]- 对局启动：装配地图 / 寻路 / 战斗 / 单位 / 物品 / 交互等 12+ 子模块。
+## [br]- 模块绑定：把 [GameMain.setup] 注入的 7 个依赖转发给各模块
+## （CombatModule / BuildModule / UnitsModule / ItemsModule / InteractionModule 等）。
+## [br]- HUD 协调：_wire_hud 留作空接线（M4 后走 UiManager.intent → UiGameplayBridge）。
+##
+## ---- 依赖注入 ----
+## [br]运行时依赖由 [GameMain._setup_game_director] 在子节点装配第 6 步调
+## [method setup] 注入；本节点不再 [code]get_node_or_null[/code] 反查节点树。
+## 历史兜底 [code]_resolve_exports()[/code] 已删除（v1.3 SCENE_BOOTSTRAP）。
+##
+## ---- 生命周期 ----
+## [br][code]_ready[/code] 首段：sealing AssetProvider / 随机种子 / 重载 AppLog。
+## [br]若 [member map_root] 已就绪（被 setup 注入），立即触发 [method _boot_match]；
+## 否则 await 一帧等 GameMain._ready 完成注入。
+##
+## ---- 信号 ----
+## [br]- [signal session_ready]：地图装配 + Melee/寻路/小地图 bootstrap 完成
+## （Loading 屏据此淡出）。
+## [br]- [signal session_preparation_progress]：开局肖像预热阶段进度
+## （Loading 屏同步推进度条）。
 class_name GameDirector
 extends Node
 
-## 游戏总管（对标 MapEditor）。
-## 职责：场景配置、对局启动、模块绑定及尚待迁移的建造/HUD 协调。
-
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready
+## 开局肖像预热阶段进度（stage 文本 + 0.0–1.0 进度）。
 signal session_preparation_progress(stage: String, progress: float)
 
 @export var map_root: MapLoader
@@ -133,8 +155,22 @@ var _wired_selector: Node
 var _ui_bridge: Node
 
 
-## 由 GameMain 在 _ready 中按拓扑顺序调用。
-## 节点引用就绪后才触发 _boot_match（仅触发一次）。
+## 由 [GameMain] 在子节点装配第 6 步调 [method setup] 注入。
+##
+## 7 个依赖写入对应 @export 字段；引用就绪后立刻触发 [method _boot_match]
+## （仅触发一次，[member _bootstrapped] 守卫防止重复）。
+##
+## 形参顺序固定：map_root → rts_camera → game_hud → unit_selector → game_cursor
+## → health_bar_manager → game_loading_screen，与 GameMain._setup_game_director 一致。
+##
+## [param p_map_root] 地图根（装配 MapLoader.configure_unit_runtime）。
+## [param p_rts_camera] RTS 相机（_configure_camera 写入 zoom/fov）。
+## [param p_game_hud] 底栏 HUD（_wire_hud 留作空接线；走 UiManager.intent）。
+## [param p_unit_selector] UnitSelector（_setup_selector 挂 selection_changed）。
+## [param p_game_cursor] 鼠标光标（InteractionModule 注入 cursor）。
+## [param p_health_bar_manager] 血条（BuildModule / CombatModule 同步 resync）。
+## [param p_game_loading_screen] Loading（保留 compat 字段；实际由
+## GameLoadingScreen.setup 直接订阅 director.session_ready）。
 func setup(
 	p_map_root: MapLoader,
 	p_rts_camera: RtsCamera,
@@ -156,6 +192,14 @@ func setup(
 	_boot_match()
 
 
+## Godot 生命周期钩子。
+##
+## [br]首段（AssetProvider seal / RNG / AppLog）无条件执行。
+## [br]若 [member map_root] 已就绪（[method setup] 在 _ready 之前被 GameMain 调用），
+## 立即触发 [method _boot_match]。
+## [br]否则 await 一帧 [code]get_tree().process_frame[/code]（GameMain._ready 在
+## 子节点 _ready 之后），等 setup 注入完成后再触发 [method _boot_match]。
+## 仍未注入则 push_warning 早退。
 func _ready() -> void:
 	var assets := get_node_or_null("/root/AssetProvider")
 	if assets != null:
@@ -174,7 +218,12 @@ func _ready() -> void:
 	_boot_match()
 
 
-## 原 _ready 后半段 + _configure_map_root / _wire_hud / _load_camera_bounds / _configure_camera / _inject_loading_screen 集中到 setup() 内调一次。
+## 对局启动入口（仅触发一次，由 [member _bootstrapped] 守卫）。
+##
+## 把原 _ready 后半段 / [method _configure_map_root] / [method _wire_hud] /
+## [method _load_camera_bounds] / [method _configure_camera] / 旧 [method _inject_loading_screen]
+## 集中到此；selftest 可手动 [code]GameDirector.new() + setup() + _boot_match()[/code]
+## 全链路跑通而无需挂入 GameMain.tscn。
 func _boot_match() -> void:
 	_configure_map_root()
 	var debug := _ensure_debug_tools_module()

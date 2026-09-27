@@ -69,7 +69,9 @@ var _pan_velocity: Vector3 = Vector3.ZERO
 var _focus_tween: Tween
 var _zoom_tween: Tween
 var _heightfield: Wc3Heightfield
-## GameMain.setup() 注入的地图根（仅引用，不直接持有；MapRoot 装配由 MapLoader 自己负责）
+## GameMain.setup() 注入的地图根（仅引用，不直接持有；MapRoot 装配由 MapLoader 自己负责）。
+## [br]当前仅缓存；具体地形采样 / 边界夹紧仍由 GameDirector._configure_camera 写入
+## [member set_heightfield] 与 [member set_boundaries]。
 var _map_root_ref: MapLoader = null
 
 
@@ -77,8 +79,13 @@ func _ready() -> void:
 	apply_export_tuning()
 
 
-## 由 GameMain 在 _ready 中按拓扑顺序调用。
-## map_root 用于地形跟随 / 镜头边界；不修改 @export，由 GameDirector._configure_camera 写入。
+## 由 [GameMain] 在子节点装配第 4 步调 [method setup] 注入。
+##
+## [code]p_map_root[/code] 仅写入 [member _map_root_ref] 字段（未来地形跟随用）；
+## 不修改任何 @export 字段。具体的 zoom / fov / 边界参数由
+## [GameDirector._configure_camera] 在 [method GameDirector._boot_match] 中按需写入。
+##
+## [param p_map_root] 地图根（用于缓存引用，便于后续地形 / 边界注入）。
 func setup(p_map_root: MapLoader) -> void:
 	_map_root_ref = p_map_root
 	apply_export_tuning()

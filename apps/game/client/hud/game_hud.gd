@@ -1,32 +1,76 @@
+## 现代底栏 HUD 外壳：组装各功能面板，转发展示 API 与操作意图。
+##
+## 职责：
+## [br]- 转发 CommandPanel / SelectionDetailsPanel / MinimapDock / InventoryPanel 等子面板的本地信号。
+## [br]- 通过 UiManager.emit_intent 把交互意图发给玩法侧（UiGameplayBridge）。
+## [br]- 作为 UiSurface 注册到 UiManager，外部（Selftest / Debug / GM）可通过
+## [method push_status] / [method show_tip] / [method push_resources] 等推送内容。
+##
+## 面板职责见 docs/design/game/HUD_WIDGET_CATALOG.md。
+##
+## ---- 版本演进 ----
+## [br]M1：注册为 UiManager Surface（见 docs/design/game/UI_FRAMEWORK.md）。
+## [br]M4：HUD 不再 emit 旧信号（如 command_action）；统一经
+## [code]UiManager.emit_intent[/code] → UiGameplayBridge。Director 不再订阅本类 signal
+## （GameDirector._wire_hud 已是空接线）。
+##
+## ---- 依赖注入 ----
+## [br]运行时依赖由 [GameMain._setup_game_hud] 在子节点装配第 5 步调
+## [method setup] 注入；本节点 _ready 不反查节点树。
 class_name GameHud
 extends CanvasLayer
 
-## 现代底栏 HUD 外壳：组装各功能面板，转发展示 API 与操作意图。
-## 面板职责见 docs/design/game/HUD_WIDGET_CATALOG.md。
-##
-## M4：HUD 不再 emit 旧信号（如 command_action）；统一经 UiManager.emit_intent → UiGameplayBridge。
-## Director 不再订阅本类 signal（GameDirector._wire_hud 已是空接线）。
-
+## 物品栏面板（运行时构造于 _ready）。
+## [br]持有 inventory 引用，供外部（GM / selftest）查询物品栏状态。
 var inventory_panel: InventoryPanel
-## GameMain.setup() 注入的引用缓存；UI Bridge 可通过这些字段查询选中 / Director 状态。
+
+## GameMain.setup() 注入的引用缓存：UnitSelector（弱类型，避免 class_name 缓存依赖）。
+## [br]UI Bridge 可通过该字段查询当前选中集合。
 var _unit_selector: Node = null
+
+## GameMain.setup() 注入的引用缓存：GameDirector（强类型，便于类型查询）。
+## [br]仅用于调试 / selftest 写入；正常指令流走 UiManager.intent。
 var _game_director: GameDirector = null
+
+## GameMain.setup() 注入的引用缓存：HealthBarManager（强类型）。
+## [br]用于 GM / 调试面板查询血条层可见性。
 var _health_bar_manager: HealthBarManager = null
 
+## 地图目录（用于 minimap 加载 war3mapMap）。
+## [br]留作 @export 以便编辑器直接指定；运行时由 GameDirector.configure_minimap 覆盖。
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
+
 ## 底栏高度偏好占比；实际会被 HudLayout 按视口夹紧（小窗不会超过约 26%）。
 @export var console_height_ratio: float = 0.2
+
+## 是否显示 debug 状态栏与提示 Label（开发期开关）。
 @export var show_dev_hint: bool = true
 
+## 资源条（金 / 木 / 食 / 食上限）。
 @onready var _resource_bar: ResourceBar = %ResourceBar
+
+## 活动流（队列/科技/购买提示等）。
 @onready var _activity_feed: ActivityFeedPanel = %ActivityFeedPanel
+
+## 小地图 dock（背景 + 点击信号）。
 @onready var _minimap_dock: MinimapDock = %MinimapDock
+
+## 选中详情面板（肖像 / 详情 / 训练队列 / 建造进度）。
 @onready var _selection: SelectionDetailsPanel = %SelectionDetailsPanel
+
+## 命令卡（按钮 + 二级菜单）。
 @onready var _command_panel: CommandPanel = %CommandPanel
+
+## 命令卡 dock 容器（用于 responsive layout 计算）。
 @onready var _command_dock: Control = $Root/MarginContainer3
+
+## Debug 状态栏 Label（受 [member show_dev_hint] 控制）。
 @onready var _status: Label = %DebugStatusLabel
+
+## 调试提示 Label（受 [member show_dev_hint] 控制）。
 @onready var _hint: Label = %HintLabel
 
+## 上一次 _apply_responsive_layout 计算出的布局参数；供子面板按需回查。
 var _layout_metrics: HudLayout.Metrics = null
 
 
@@ -77,7 +121,15 @@ func _wire_panel_signals() -> void:
 			_selection.train_queue_cancel.connect(_on_train_queue_cancel)
 
 
-## 由 GameMain 在 _ready 中按拓扑顺序调用。仅缓存引用；本节点原有 _ready 自动装配不变。
+## 由 [GameMain] 在子节点装配第 5 步调 [method setup] 注入。
+##
+## 仅缓存引用（写至 [member _unit_selector] / [member _game_director] /
+## [member _health_bar_manager]）；本节点原有 [code]_ready[/code] 自动装配不变。
+## [br]幂等：重复调用会覆盖字段（不会断信号）。
+##
+## [param p_unit_selector] UnitSelector 节点（弱类型，规避 class_name 缓存依赖）。
+## [param p_game_director] GameDirector 节点（强类型，便于类型查询）。
+## [param p_health_bar_manager] HealthBarManager 节点（强类型）。
 func setup(
 	p_unit_selector: Node,
 	p_game_director: GameDirector,

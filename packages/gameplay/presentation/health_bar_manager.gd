@@ -35,6 +35,8 @@ const BONE_CANDIDATES := [
 
 var _camera: Camera3D = null
 var _unit_host: Node = null
+## GameMain.setup() 注入的 MapLoader 引用（仅缓存，便于 GameDirector._setup_health_bars() 走兼容路径时按需取 unit_layer）。
+var _map_root_ref: MapLoader = null
 var _root: Control = null
 ## instance_id → { bar, fill, bg, name, node, bone_idx, skeleton }
 var _entries: Dictionary = {}
@@ -54,6 +56,22 @@ func _ready() -> void:
 	set_process(true)
 
 
+## 由 [GameMain] 在子节点装配第 3 步调 [method setup] 注入。
+##
+## 缓存 MapLoader 引用并调 [method configure] 完成实际相机 + 单位层绑定；
+## MapRoot 缺位时 [code]unit_host[/code] 为 null（configure 内部 short-circuit）。
+##
+## [param camera] 跟随相机（来自 RtsCamera 子节点）。
+## [param map_root] 地图根；内部调 [code]get_unit_layer()[/code] 取单位层。
+func setup(camera: Camera3D, map_root: MapLoader) -> void:
+	_map_root_ref = map_root
+	configure(camera, map_root.get_unit_layer() if map_root != null else null)
+
+
+## 低层入口：直接绑相机 + 单位层（unit_host = map_root.get_unit_layer()）。
+## [br]GameDirector._setup_health_bars 仍走此路径（兼容旧 setup pipeline）。
+## [br][param camera] 跟随相机。
+## [br][param unit_host] 单位层 Node（通常是 MapRoot 下的 Units 子节点）。
 func configure(camera: Camera3D, unit_host: Node) -> void:
 	_camera = camera
 	_unit_host = unit_host
