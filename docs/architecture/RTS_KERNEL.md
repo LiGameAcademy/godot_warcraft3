@@ -1,292 +1,170 @@
-# RTS Kernel — Godot 无关的内核抽象
+# RTS Kernel — 纯 C# 模拟内核设计
 
-> 状态：定稿 v1.0（design-only，待批准后实施）
-> 关联：[GAMEPLAY_TARGET_ARCHITECTURE.md](GAMEPLAY_TARGET_ARCHITECTURE.md) · [GAMEPLAY_MODULE_BOUNDARIES.md](GAMEPLAY_MODULE_BOUNDARIES.md) · [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) · [ROADMAP.md](../roadmap/ROADMAP.md)
+日期：2026-09-27。状态：讨论确认后的设计基线，尚未实施。
 
-## 0. 目标与边界
+本文替代原 v1.0 GDScript + Callable 方案。最终确认采用普通 C#/.NET 内核，而不是先抽取 GDScript 内核再移植；渐进迁移原则保留。历史版本可从 Git 查阅。
 
-**目标**：把 `packages/gameplay/` 中除表现层外的代码抽象成 **不依赖 Godot 引擎 API** 的 RTS 内核（用 GDScript 编写，只使用 `RefCounted` / `Signal` / `Callable` / 内置类型），通过**端口**与 Godot 适配层（`packages/gameplay/adapters/` 或 `apps/game/`）解耦。
+配套文档：[开发路线图](../roadmap/RTS_KERNEL_ROADMAP.md) · [迁移与验收](RTS_KERNEL_MIGRATION.md) · [技能系统](RTS_ABILITY_SYSTEM.md)。
+背景：[Gameplay 总体架构](GAMEPLAY_TARGET_ARCHITECTURE.md) · [模块边界](GAMEPLAY_MODULE_BOUNDARIES.md) · [历史分层策划](GAMEPLAY_REFACTOR_PLAN.md)。本轮内核语言、状态权威、推进方式、AI 范围及快照要求以本文为准；旧文中的 Node 组件执行、AI 暂不迁移等提案不再作为本轮目标。
 
-**内核可见**：
-- `RefCounted` / `Object`（GDScript 基础，但 Godot 引擎自带的，无 Node / Resource）
-- `Signal`、`Callable`、`Dictionary`、`Array`、`String`、`int`、`float`、`Vector2`、`Vector3`（数值类型，仍允许）
-- 数学运算 `min/max/abs/clamp/lerp`（基础库）
+## 1. 已确认目标与非目标
 
-**内核不可见**（仅适配器可见）：
-- `Node` / `Node3D` / `CanvasLayer` / `Control` 等场景树节点
-- `Resource` / `Texture2D` / `PackedScene` 等资源类型
-- `SceneTree` / `Viewport` / `Input` 等引擎运行时
-- `preload("res://...")` 资源相对引用（内核只能用 `const Foo := preload(...)` 引用同包内的脚本——但脚本本身体只能声明 RefCounted 子类，**不能 extend Node/Resource**）
+- 为当前游戏构建可脱离 Godot 运行的 RTS 模拟内核，以 WC3 风格战术与操作细节为抓手，逐步积累复用能力，不先设计通用 RTS 框架。
+- C# 为新增模拟逻辑主要语言；内核无 Godot 引用，可由普通 .NET 命令行程序创建、推进、测试和恢复。
+- Windows 优先。最多 10 名玩家；300 个活跃单位为常规场景，500 个为压力场景。100 人口/玩家是玩法规模参考，不等于固定实体上限；建筑、召唤物、资源节点、物品和弹道另计。
+- 完整迁移现有模拟：命令、移动、战斗、技能、英雄、经济、采集、建造、生产、已有科技、物品、单位 AI、玩家 AI 与胜负。
+- 固定逻辑步长、单对局单线程；30 Hz 为首轮验证起点，画面独立插值。冻结后的步长属于对局配置，不允许中途变化。
+- 确定性验收限同一代码、内容、地图与限定运行环境；记录 .NET 版本、平台、架构及构建配置。尚不承诺跨平台/跨运行时确定性。
+- 未来联网以命令帧同步为方向；本轮完成命令记录、帧快照、恢复与状态校验，不实现网络调度、预测、回滚、重连或房间服务。
+- Godot 网络适配器与无窗口 Godot 服务端是未来允许的宿主；普通 .NET 联机服务端不是本轮交付要求。
+- 不引入 ECS 框架，作为长期约束；使用普通类型化对象、能力状态组合与明确的功能系统，不自建通用 ECS。
+- 不新增战争迷雾、隐身/反隐体系、通用触发器平台、Mod API、配置热更新或跨版本存档迁移。
+- 不重写资源管线。例外是已确认的技能 JSON 加载、Schema、示例和校验入口。
+- 先迁移现有规则，后处理规则优化；允许必要的固定步长变化和等价寻路路线差异，其他行为改动记录并单独评审。
 
-## 1. 已具备的纯内核
+## 2. 依赖与工程组织
 
-| 模块 | 现状 | 评估 |
-|---|---|---|
-| `PlayerStock` | `RefCounted`，仅 signal / 值字段 | ✅ 已内核 |
-| `GameSession` | `RefCounted` + `signal match_finished` | ✅ 已内核 |
-| `UnitOrder` | `RefCounted` 值对象 | ✅ 已内核 |
-| `UnitLife` | `RefCounted`，但「挂在 Node3D meta 上」——外耦 | ⚠️ meta 改为 `EntityStore` 字典 |
-| `EntityRegistry` | `node is Node3D` 检查 | ❌ 需端口化 |
-| `EntityId` | int ID | ✅ 已内核 |
-
-## 2. 内核改造目标
-
-### 2.1 实体身份：EntityHandle
-
-**核心抽象**：内核只见 `EntityHandle`（int），不见 `Node3D`。
-
-```gdscript
-class_name EntityHandle
-extends RefCounted
-
-## 内核级的实体身份。不持有 Node 引用——Node 由适配层维护在 EntityStore 里。
-## 构造时可附带 owner / type / 列表等元数据；运行时不再变化。
-var id: int
-var owner_id: int = 0
-var archetype: StringName = &""  ## 单位类型 / 建筑类型
-var kind: int = Kind.UNIT
-
-enum Kind { UNIT = 0, BUILDING = 1, ITEM = 2, RESOURCE_NODE = 3 }
-
-static func unit(id: int, owner: int = 0) -> EntityHandle:
-    return _build(id, owner, &"", Kind.UNIT)
-# ...
-```
-
-### 2.2 实体仓库：EntityStore
-
-```gdscript
-class_name EntityStore
-extends RefCounted
-
-## 内核与适配层共享的实体仓库：handle ↔ 表现层 Node 引用。
-## 内核**不读** node 字段；适配层**不写**内核数据（除了把变更同步过来）。
-var _by_id: Dictionary = {}    ## int → EntityHandle
-var _node: Dictionary = {}     ## int → Node3D（适配层独占读写）
-var _positions: Dictionary = {} ## int → Vector3（适配层写、内核读）
-
-func register(handle: EntityHandle, node: Node3D) -> void
-func unregister(id: int) -> void
-func get_handle(id: int) -> EntityHandle
-func get_position(id: int) -> Vector3
-func get_owner(id: int) -> int
-func is_valid(id: int) -> bool
-func list_by_owner(owner: int) -> Array[int]
-
-# 适配层独占
-func set_node(id: int, node: Node3D) -> void  ## @internal
-func set_position(id: int, pos: Vector3) -> void  ## @internal
-func attach_node(handle: EntityHandle, node: Node3D) -> void
-func detach_node(id: int) -> void
-```
-
-### 2.3 命令路由：CommandRouter 改造
-
-现状：`32KB`，60+ 处 `Node3D` 入参，所有命令方法都接 `Array[Node3D]`。
-
-目标：所有方法接 `Array[int]`（EntityHandle id）。UnitNavigator / HarvestController / BuildController 注入改为 `Callable` 形式（已经是 Callable 风格）。
-
-```gdscript
-## 改造前
-func issue_move_to_wc3(units: Array[Node3D], goal: Vector2, source: int) -> int:
-    var n: Node3D = units[0]
-    var nav := UnitNavigator.of(n)
-    nav.move_to_wc3(goal)
-
-## 改造后
-func issue_move_to_wc3(unit_ids: Array[int], goal: Vector2, source: int) -> int:
-    var id: int = unit_ids[0]
-    var nav_getter: Callable = _navigator_getter
-    var nav = nav_getter.call(id)  ## 适配层：返回 UnitNavigator（Node）
-    nav.move_to_wc3(goal)
-```
-
-迁移步骤：
-1. 把所有 `Array[Node3D]` 入参改为 `Array[int]`（entity ids）。
-2. `_navigator_getter`、`_harvester_getter` 等保留为 `Callable`；适配层实现该 Callable：内部用 `EntityStore.get_node(id)` 拿到 Node → 转回 Navigator。
-3. 内核方法签名脱 Node 化。
-
-### 2.4 战斗查询：CombatQuery 改造
-
-现状：`static func in_attack_range(attacker: Node3D, target: Node3D, ...)` 大量 Node3D 入参。
-
-目标：所有静态方法改 `int` 入参 + `EntityStore` 静态访问。
-
-```gdscript
-## 内核顶层持有一个 EntityStore（外部注入）
-static var _store: EntityStore
-
-func configure(store: EntityStore) -> void:
-    _store = store
-
-static func in_attack_range(attacker_id: int, target_id: int, hysteresis: float = 0.0) -> bool:
-    if _store == null or not _store.is_valid(target_id):
-        return false
-    var a := _store.get_position(attacker_id)
-    var b := _store.get_position(target_id)
-    return a.distance_to(b) <= range_wc3(attacker_id, target_id) + hysteresis
-```
-
-### 2.5 端口（Callable 注入）清单
-
-下列 Callable 是适配层向内核暴露的端口。每条都「内核只声明 + 适配层实现」：
-
-| 端口（Callable 字段） | 内核用途 | 适配层实现 |
-|---|---|---|
-| `_navigator_of(id) -> Node` | 拿到 UnitNavigator（执行移动） | `EntityStore.get_node(id).get_node("UnitNavigator")` |
-| `_harvester_of(id) -> Node` | 拿到 HarvestController | 同模式 |
-| `_builder_of(id) -> Node` | 拿到 BuildController | 同模式 |
-| `_attacker_of(id) -> Node` | 拿到 AttackController | 同模式 |
-| `_unit_data(id) -> Dictionary` | 读 unit_data meta | `EntityStore.get_node(id).get_meta("unit_data")` |
-| `_unit_life(id) -> UnitLife` | 读生命 | 同模式 |
-| `_ability_host(id) -> Node` | 拿 AbilityRuntimeRegistry 宿主 | 同模式 |
-| `_damage_pipeline() -> DamagePipeline` | 单例伤害管道 | `app/damage_pipeline.gd` |
-| `_projectile_service() -> ProjectileService` | 单例弹道服务 | `app/projectile_service.gd` |
-| `_path_query() -> PathQuery` | 寻路查询 | `app/path_query.gd` |
-| `_is_pathable(wc3_xy) -> bool` | 可走性 | `MapRoot.get_pathing().is_pathable_at_wc3(...)` |
-| `_world_position(id) -> Vector3` | 实体位置（CombatQuery 重） | `EntityStore.get_position(id)` |
-
-### 2.6 适配层位置
-
-新增 `packages/gameplay/adapters/` 子树（按依赖包划分）：
+建议结构（待实施创建，不代表当前已有）：
 
 ```text
-packages/gameplay/adapters/
-├── godot/
-│   ├── godot_entity_store.gd       ## EntityStore 适配：EntityStore ↔ Node3D
-│   ├── godot_node_port.gd          ## 节点访问 Callable 集合（navigator_of / harvester_of …）
-│   ├── godot_visual_port.gd        ## 视觉 Callable（play_animation / fx_spawn …）
-│   └── godot_collision_port.gd     ## 碰撞 / 视野 / 射线 Callable
-├── world/
-│   └── godot_world_adapter.gd      ## 把 Godot 寻路 / 高度图包装成 Callable
-└── presentation/
-    ├── unit_model_adapter.gd       ## Wc3ModelScene 包装为 EntityVisualPort
-    ├── attack_fx_adapter.gd        ## AttackController 包装为 AttackPort
-    └── nav_adapter.gd              ## UnitNavigator 包装为 NavigatorPort
+packages/rts_kernel/              普通 .NET 类库，命名空间 Rts.Kernel
+  Match/ Entities/ Commands/ Navigation/ Combat/
+  Economy/ Harvest/ Build/ Production/ Technology/
+  Abilities/ Heroes/ Items/ AI/ Snapshots/
+packages/rts_content/             普通 .NET 内容转换/校验与 JSON 入口
+packages/gameplay/                迁移中保留旧逻辑；最终保留适配与表现
+  adapters/godot/                 C# 桥接及必要的 GDScript 接入
+apps/game/                       Godot 宿主、装配、输入与界面
+apps/kernel_cli/                 .NET 命令行测试、回放和性能宿主
+tests/kernel/                    .NET 模拟与契约测试
 ```
 
-适配层**只引用内核的端口签名**，不反向依赖内核具体实现。内核对适配层一无所知。
+目录按真实职责创建，不要求一个功能一个程序集。
 
-### 2.7 表现层端口
+依赖方向：Godot 适配层、CLI、测试 → 内核；内容转换层 → 内核定义契约。内核不反向引用适配层、应用、文件系统加载器、SLK 解析器或插件。
 
-`kernel-also-presentation` 这部分目标是：**AI/逻辑层不再直接调用动画/特效/Mesh**，而是通过"表现端口"Callable 触发：
+内核禁止 Godot.NET.Sdk/GodotSharp 引用、Node、Resource、Godot 向量/集合/信号、res:// 路径与 Godot 单例。空间值使用普通 C# 类型；对外契约使用 ID 和明确数据结构，不能返回节点、宿主控制器或可随意修改的内部集合。
 
-```gdscript
-## 内核侧声明（CombatQuery 装饰等）
-var _play_attack_anim: Callable = Callable()       ## (entity_id: int) -> void
-var _play_hit_fx: Callable = Callable()             ## (entity_id: int) -> void
-var _spawn_muzzle_flash: Callable = Callable()      ## (entity_id: int) -> void
-var _attach_buff_icon: Callable = Callable()        ## (entity_id: int, buff_id: String) -> void
-```
+具体 SDK/目标框架在首批验证时依据实际 Godot .NET 安装和官方支持锁定；现有 project.godot 的 assembly_name 不证明 C# 工具链已经可用。采用集中桥接，避免每个属性每帧跨语言调用。新增 C# 工程与共享包同步需验证 game/editor 两产品不相互污染。
 
-适配层 `godot_visual_port.gd` 实现：
+## 3. 状态权威与生命周期
 
-```gdscript
-func _play_attack_anim(entity_id: int) -> void:
-    var node: Node3D = _store.get_node(entity_id)
-    if node and node.has_node("Model"):
-        var model := node.get_node("Model")
-        if model.has_method("play_anim"):
-            model.call("play_anim", "Attack")
+### 3.1 实体与对局
 
-func attach_to(kernel: CombatQuery) -> void:
-    kernel._play_attack_anim = Callable(self, "_play_attack_anim")
-```
+EntityId 建议使用正整数 64 位值，0 表示无实体，同一对局内不复用；下一 ID 计数器进入快照。跨对局 ID 不具备全局含义。导入地图 creation number 通过明确映射处理，不能直接假定唯一，也不能使用 Godot instance_id。
 
-## 3. 路径：表现层也脱耦的具体子目录
+实体按需要组合生命、法力、移动、攻击、订单、背包、生产等类型化状态。身份只承担稳定标识；归属、形态、类型与在场性是可变状态。组件不是节点，也不依赖统一 ECS 查询框架。
 
-| 子目录 | 当前耦合 | 内核化方案 |
-|---|---|---|
-| `features/navigation/presentation/unit_navigator.gd` | `extends Node`，挂在 Unit 子节点 | 内核只声明 `NavigatorPort` Callable；适配层仍是 Node 子节点 |
-| `features/combat/actions/attack_controller.gd` | `extends Node`，state machine 持有 Node3D 引用 | state machine 持有 entity id；Node3D 通过 `EntityStore.get_node(id)` 拿 |
-| `features/build/logic/build_controller.gd` | `extends Node`，操作 BuildSite（Node3D） | 持有 build site id；BuildSite 元数据走 EntityStore |
-| `features/harvest/logic/harvest_controller.gd` | `extends Node`，peasant + gold mine Node3D | 持有 peasant id + mine id |
-| `presentation/health_bar_manager.gd` | `CanvasLayer`，订阅 Node3D set_selection | 订阅 `GameSession.stocks.changed` + EntityStore 内 entity_id 列表 |
-| `entities/presentation/unit.gd` | `extends Node3D`，所有元数据宿主 | 元数据迁到 EntityStore；Unit 仅剩视觉/输入适配 |
+每场对局持有自己的状态、逻辑帧、随机流、系统与事件队列。禁止可变 static 对局状态；不可变定义可安全共享。不交付多房间功能，但以两个实例交错推进的测试验证隔离和重开无残留。
 
-## 4. 边界：什么**不**内核化
+### 3.2 唯一写入责任
 
-| 模块 | 原因 |
-|---|---|
-| `MapLoader` (`extends Node3D`) | 表现层场景入口 |
-| `MapRoot` 场景树 | 表现层 |
-| 所有 `Layer` (`extends Node3D`) | 表现层 |
-| `HealthBarManager` (`extends CanvasLayer`) | 表现层 |
-| `Wc3ModelScene` / `Wc3AnimPlayer` | 表现层 |
-| `WorldMembership` (`extends Node`) | 接近 Node，但本质是 EntityStore 的早期形态，可保留为 Node 子节点代理 |
+- 实体生命周期服务负责分配/创建/移除；死亡立即影响合法性，尸体显示不延长战斗生命。
+- 导航系统拥有位置、朝向、路径、速度和预约状态；表现插值不得反写。
+- 伤害/生命服务拥有生命结算与死亡入口；技能、物品、攻击不得各自绕过结算改血。
+- 经济拥有库存、人口与支付；生产/建造拥有队列与进度，按明确事务请求经济及实体服务。
+- 技能拥有施法、冷却与状态实例，通过生命/属性等接口修改相关状态，不复制另一份插件属性。
+- 在场性保留进矿/施工等现有语义；不可见、暂不在场、死亡、移除不是同一概念。
+- UI 选择、控制组、相机、悬停、瞄准预览属于本地视图，不进入权威快照。
 
-表现层**不**进入内核。它们在 `apps/game/client/`、`packages/map/presentation/` 等位置存在。
+表现层维护 EntityId → Node 映射；节点释放不自动等于实体死亡，实体死亡也不要求当帧移除尸体节点。退出时停止接收命令，作废旧对局适配请求，释放订阅与映射。
 
-## 5. 迁移路线图（5 个批次）
+## 4. 对外契约
 
-### Batch 1：内核边界划定（无功能改动）
+建议入口名称（接口细节可在实现时调整，语义不可隐式改变）：
 
-- 新增 `packages/gameplay/kernel/` 子树：
-  - `kernel/entity_handle.gd`
-  - `kernel/entity_store.gd`
-  - `kernel/ports.gd`（Callable 字段集合 / 端口契约）
-- 现有 `PlayerStock` / `GameSession` / `UnitOrder` / `UnitLife` **不动**（已经是 RefCounted）。
-- 写 `selftest_entity_kernel.gd` 验证 EntityHandle/Store 的注册/查询。
+- CreateMatch(definitions, map, config, seed)：使用冻结数据构造对局。
+- SubmitCommand(envelope)：校验格式、提交者和帧，返回接收/拒绝结果；接收不等于最终执行成功。
+- Step()：完整推进一帧，宿主不能传入任意 delta 改变模拟。
+- ReadView()/ReadChanges()：返回可独立消费的只读视图或拷贝，不暴露可变内部对象。
+- DrainEvents()：获取带帧号、序号及实体 ID 的表现事实，不让消费者回调改变当前模拟。
+- CaptureSnapshot()/RestoreSnapshot()：帧边界捕获/校验并恢复；恢复失败不破坏正在运行的旧实例。
+- ComputeStateHash()：按规范顺序计算模拟校验值，并支持定位首个差异字段。
 
-### Batch 2：EntityStore 适配层 + Unit 元数据迁移
+命令包含玩家/控制方、执行帧、序列号、操作类型、实体 ID 与参数。当前单机调度将输入安排到下一可执行帧；未来网络调度负责形成各端相同的命令帧，不使用消息到达顺序决定执行。
 
-- 新增 `packages/gameplay/adapters/godot/godot_entity_store.gd`。
-- Unit / Building Node3D 在 `attach` 时往 EntityStore 写 handle + node + position + unit_data meta。
-- `unit_data` meta **保留**（向后兼容），但 EntityStore 是权威。
+执行时重新校验归属、存活/在场、目标、费用、科技与订单状态。请求失败不能留下部分扣费或半个订单。组命令保留成员顺序语义，返回逐实体结果；涉及共享费用的操作由具体用例定义原子提交边界。
 
-### Batch 3：CommandRouter 脱 Node
+玩家与玩家 AI 经相同命令校验入口。单位自动索敌等内部决策按统一订单优先级运行，不能覆盖尚有效的玩家命令。命令排序、重复请求及同帧覆盖规则纳入版本化契约。
 
-- `CommandRouter` 所有入参改 `Array[int]`。
-- 内核内的 NavigatorOf/HarvesterOf/BuilderOf 改为 Callable（已 Callable，加类型）。
-- 适配层 `godot_node_port.gd` 实现 Callable。
+## 5. 时间、顺序与确定性
 
-### Batch 4：CombatQuery / Harvest / Build 脱 Node
+### 5.1 帧与数值
 
-- 这三个是 80KB+ 的逻辑类；逐个方法改 `int` 入参。
-- 适配层补 NavAdapter / AttackAdapter / BuildAdapter。
+空间计算使用统一浮点精度，不引入定点库；工程默认提案为 double，禁止在内核中无意混用 Godot float 或 SIMD 的平台相关路径。它不构成跨平台确定性承诺，实际算法仍须重放测试。
 
-### Batch 5：表现层 Callable 端口
+时间采用整数帧。正持续时间转换默认向上取整且至少 1 帧，显式 0 时长允许同帧处理；边界样本需对照现有玩法验证。计时保存开始/结束帧，避免反复累减秒数。实际精度与换算结果在首批冻结并记录。
 
-- Combat 攻击动画/弹道壳 → `_play_attack_anim` / `_spawn_missile` 等 Callable。
-- HealthBarManager 订阅 EntityStore 的 `selection_changed` 而非 Unit Node3D 信号。
-- Unit 脚本瘦身到只剩视觉 / 输入。
+固定算法、可导出内部状态的伪随机流代替全局 randomize；随机数只由模拟消费，表现拥有独立随机源。流的算法版本、完整状态及消费顺序可追踪。禁止墙钟、渲染帧率、无序集合枚举或异步任务完成顺序影响规则。
 
-## 6. 验收标准
+### 5.2 每帧执行草案与冻结条件
 
-每个 Batch 完成后必须验证：
+默认顺序提案：
 
-- [ ] `selftest_entity_kernel.tscn` 全绿（内核纯 RefCounted，无 Node 引用）
-- [ ] `selftest_command_router.gd` 跑通（用 Callable stub，验证路由逻辑不依赖 Node）
-- [ ] `selftest_combat_query.gd` 跑通（EntityHandle 入参，验证距离/范围算法正确）
-- [ ] 启动主对局，所有原有 selftest（含 `selftest_tower_defense`、`selftest_unit_selection` 等）保持 PASS
-- [ ] Godot 进程**没有**新增 Node 子节点做端口实现（除适配层专门设计的 godot 节点）
-- [ ] `grep -rn "extends Node" packages/gameplay/` 在 Batch 5 后**仅**剩适配层 + 视觉层
+1. 取得本帧已冻结的命令，稳定排序并执行校验/订单提交。
+2. 推进到期状态与定时任务；更新已有命令允许的自动行为及移动意图。
+3. 处理导航请求、预约和移动，提交本帧位置/朝向。
+4. 推进攻击、施法、弹道与效果；按稳定队列顺序结算，生命耗尽即时置死，后续动作再次检查存活。
+5. 推进采集、建造、生产及科技，提交资源与生命周期变化。
+6. 完成清理和胜负检查；玩家 AI 为下一帧生成命令；形成状态变更与事件。
+7. 完成帧提交；允许校验和快照。
 
-## 7. 不在本轮范围
+该顺序是实施提案，不声称复现当前 Node 的调用顺序。第一批必须以同帧攻击/死亡、Buff 到期、取消施法、出生与阻挡变化用例确认，冻结为时序契约后再扩大迁移。
 
-- 不引入 C# / Rust / 其他语言内核（用户选择 GDScript）
-- 不拆 EntityStore 的并发模型（GDScript 单线程）
-- 不做 undo/redo 系统
-- 不做 Mod API 边界（与 Mod 系统的接缝留到下次架构迭代）
+同类系统采用稳定 ID 顺序；同代价路径节点采用稳定次级排序。新生成实体默认下一帧参与常规系统；同帧连锁效果通过显式有限队列处理，不能递归无限派发。效果队列需有确定的上限与失败诊断。
 
-## 8. 风险
+### 5.3 AI 与重放来源
 
-| 风险 | 缓解 |
-|---|---|
-| `Callable` 注入端口太多，每个内核类都带 10+ Callable 字段 | 引入 `PortSet` 聚合类，把相关 Callable 打包成单一对象 |
-| 调试时栈轨迹被 Callable 截断，难追踪 | 适配层 Callable 内部打 `AppLog.debug` 记录 caller |
-| 现有 `selftest_*` 大量直接构造 Node3D / Unit 测战斗；改成 EntityHandle 后要大改 | 渐进迁移：先 `EntityHandle` + `EntityStore` 双轨；旧 selftest 走 Node 路径直到 Batch 5 收尾 |
-| 玩家经济 AI (`player_economy_ai.gd`) 大量 Node 引用 | 推到 Batch 4 后处理，本轮**不**触及 PlayerEconomyAI / UnitAI |
-| Godot 4 `class_name` 全局缓存：批量新增 `class_name` 可能让 `class_name` 解析失败 | 每次新增 `class_name` 后用 `tools/workspace/sync_packages.py` 同步，强制 Godot 重新扫描；不要绕过 |
+完整重放默认重新运行确定性 AI，只注入外部玩家命令；内部 AI 命令保留诊断日志，但不得再次注入。另可提供禁用 AI、注入全部已记录命令的诊断模式，两种模式必须明确标识，不能混用导致双重执行。
 
-## 9. 后续可选方向（不在本轮）
+慢帧宿主可减少绘制或暂停追赶，不能丢弃模拟帧、扩大 delta 或用现实耗时决定寻路结果。首批寻路采用同步确定性处理；若以后分帧，按固定工作量而非毫秒预算推进，队列和进度进入快照。
 
-- 把内核 `.gd` 抽取成独立 Godot 项目 `packages/gameplay_kernel/`，仅靠 GDScript 标准库即可编译；用作单元测试子项目。
-- 用 GDScript-to-Rust / -C# 转换，把热路径（如寻路）落地到 C#/.NET（C# 程序集本项目已配置 `project/assembly_name="godot_warcraft3"`）。
-- 用同样的内核写一个 CLI 跑回放（headless replay viewer），用 Godot 进程但**只**依赖适配层 stub。
+## 6. 地图、寻路与表现边界
 
-## 10. 总结
+现有地图与内容管线继续解析数据，在边界转换为冻结地图查询数据和定义。内核自行处理高度采样、可走性、单位尺寸、动态阻挡、预约、避让、转向减速及弹道命中。
 
-本轮设计把 RTS 内核从 Godot 引擎 API 解耦，方法签名用 `EntityHandle` (int) 替代 `Node3D`，通过 `Callable` 端口与适配层通讯。`PlayerStock` / `GameSession` / `UnitOrder` / `UnitLife` 已经具备内核形态；剩余工作是把 `CommandRouter` / `CombatQuery` / `HarvestController` / `BuildController` / `AttackController` 等"系统集成层"从 Node3D 切换到 `int + Callable`。
+保留 WC3 平面 XY 和高度 Z 的数值语义；Godot 的轴向、缩放和模型偏移在适配层转换。高度对坡度速度等规则的影响属于内核；纯视觉悬浮、模型摆动属于表现。
 
-5 个批次渐进迁移；每批次独立可发布（现有 selftest 保持 PASS）。
+现有 PathQuery 默认使用 Godot AStarGrid2D，保留的 GDScript A* 可作算法参考，但都不是现成纯 .NET 实现。迁移须比较可达性、障碍边角、净空、动态占地和路径质量；允许等价路线拐点不同，不允许穿墙或明显响应退化。
+
+现有 ProjectileService 已自行推进命中，但持有节点引用；改成实体状态查询。视觉弹道与逻辑弹道区分，视觉结束/丢失不能触发或取消伤害。
+
+表现仅消费视图和事实事件。动画丢帧、资源加载失败或未创建模型都不能改变模拟。持续表现从当前状态重建；一次性效果按事件身份去重，读档不补播全部历史事件。
+
+## 7. 帧快照、存档与校验
+
+快照定义为第 N 帧所有系统提交完成后的完整可恢复状态，恢复从 N+1 帧继续；不是每帧必须写磁盘。初始状态用帧 0 表示。
+
+快照包括对局配置、玩家/队伍、实体与全部状态组件、ID 计数器、订单、进行中的攻击/施法/生产/采集、逻辑弹道、动态阻挡/预约、AI 状态、待执行定时任务、随机流及已接受但未执行的命令。
+
+程序行为由行为 ID/版本重建，运行进度是明确数据；不能保存 Node、Delegate、Task、闭包或订阅。路径可保存当前路点与推进进度；缓存只有证明重建不影响模拟行为后才能排除。恢复时重建索引与依赖，不能重新扣费、触发出生副作用或再次施放技能。
+
+头部包含快照格式、代码/模拟版本、有效内容哈希、地图数据哈希、逻辑频率及环境兼容标识。本轮不支持跨版本恢复；未知行为、字段版本不匹配或内容不符明确拒绝。不可变地图/定义通过精确引用加载，不要求在每份快照重复存储资产。
+
+序列化格式在首批验证后锁定；技能配置使用 JSON 不意味着快照必须同格式。快照要求完整往返与浮点精度保留，不要求压缩或最小体积。
+
+校验按固定字段、稳定 ID 顺序和明确数值编码生成，不能使用对象 GetHashCode 或默认字典遍历顺序。诊断日志、视图事件消费位置和可重建缓存不参与权威状态哈希。未执行命令仍须保存；网络阶段比较时须约定相同命令窗口，避免各端预收队列差异造成误报。
+
+验证：连续运行到 M 帧，与 N 帧捕获、销毁实例、重新创建并恢复后运行到 M 帧的结果逐帧一致；重放和双实例交错推进也满足一致性。
+
+## 8. 联网边界
+
+联机宿主负责连接、身份认证、命令帧编排、等待/超时及传输；内核只消费确定的命令帧。不能把未来 Godot peer ID 直接等同于内核玩家身份。
+
+未来可用 Godot C# 的 ENetMultiplayerPeer/RPC 承载消息，网络节点留在适配层。客户端和无窗口 Godot 服务端可加载同一个内核。普通 .NET 服务端需独立网络适配；不承诺兼容 Godot 高层 RPC 私有协议。
+
+本轮不实现预测、回滚补算、视效撤销、掉线恢复或反作弊系统。能捕获快照不等于已具备回滚联机。无迷雾版本也不承诺隐藏信息安全。
+
+参考：[Godot 高层联机](https://docs.godotengine.org/en/stable/tutorials/networking/high_level_multiplayer.html)、[MultiplayerAPI](https://docs.godotengine.org/en/stable/classes/class_multiplayerapi.html)、[跨语言接入](https://docs.godotengine.org/en/stable/tutorials/scripting/cross_language_scripting.html)。
+
+## 9. 工程行为规范
+
+- 模拟禁止依赖场景树；表现合理使用节点和场景，自包含并显式注入外部依赖。
+- 请求返回结果，已发生事实发事件；禁止可重入的表现订阅修改模拟。
+- 先保持规则并建立行为测试，再调整玩法；不为测试通过偷偷改变预期。
+- 每批建立状态所有权清单，禁止旧节点 meta 和 C# 对同一字段双向写入。
+- 需要兼容时只做单向镜像或明确命令转换，标明退出批次；验证通过删除旧路径，不长期保留两套运行入口。
+- 每项规则改进使用有编号 TODO，记录现状、建议、原因、影响、测试及处理阶段。确定性/可恢复性必需修复不得作为无限期 TODO 留下。
+- 不把所有功能做成接口或全局服务；只在真实宿主边界、替代实现或测试隔离处增加契约。
+
+文档描述设计约束，不自动新增仓库级规则文件；本次交付不修改 gameplay 实现。
