@@ -1,6 +1,6 @@
 # RTS 内核迁移与验收
 
-日期：2026-09-27。状态：设计基线，所有批次均未实施、未验收。
+日期：2026-09-27（设计基线）；状态更新 2026-09-28：Batch 1 的最小移动战斗闭环未完成，但 Batch 1 的工程脚手架（双宿主 / 命令 / 帧 / 快照 / 状态哈希）已落地——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。其余 Batch 仍均未实施、未验收。
 
 主设计：[RTS_KERNEL.md](RTS_KERNEL.md)。技能设计：[RTS_ABILITY_SYSTEM.md](RTS_ABILITY_SYSTEM.md)。
 
@@ -147,4 +147,4 @@
 
 不能延期的事项：双重状态权威、非确定输入、无法恢复的运行进度、失败操作部分提交。可延期事项：更聪明的 AI、更好的队形、重新平衡攻击或技能参数等。
 
-本轮只形成文档；未执行构建、游戏回归、性能测试或插件删除，未开始 C# 实现。
+本节原文写作于 2026-09-27；2026-09-28 更新：构建已发生过一次（`packages/rts_kernel/obj/`、`apps/kernel_cli/obj/`、`tests/kernel/obj/` Debug 产物可见）；CLI 与 Godot 桥接 selftest 互验哈希 `016e7546154597ff8ef859ee879e5a1ee22f3e5e4de5c2925cdcefae35ecfdea` 已实现；M2 ~ M7 / 旧 gameplay 迁移 / 性能基线 / 旧插件清理均未开始。

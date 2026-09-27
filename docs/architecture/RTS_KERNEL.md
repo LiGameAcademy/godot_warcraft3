@@ -1,6 +1,6 @@
 # RTS Kernel — 纯 C# 模拟内核设计
 
-日期：2026-09-27。状态：讨论确认后的设计基线，尚未实施。
+日期：2026-09-27（设计基线）；状态更新 2026-09-28：M1 最小骨架已落地（见 [RTS_KERNEL_ROADMAP.md](../roadmap/RTS_KERNEL_ROADMAP.md) 顶部与 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`）。本文契约约束不变，仅承认代码现状。
 
 本文替代原 v1.0 GDScript + Callable 方案。最终确认采用普通 C#/.NET 内核，而不是先抽取 GDScript 内核再移植；渐进迁移原则保留。历史版本可从 Git 查阅。
 

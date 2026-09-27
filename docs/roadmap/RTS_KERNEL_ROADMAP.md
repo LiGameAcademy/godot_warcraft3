@@ -1,6 +1,6 @@
 # RTS 内核重构开发路线图
 
-日期：2026-09-27。状态：开发计划，M0–M7 均未开始；本文完成不代表实现完成。
+日期：2026-09-27（计划定稿）；状态更新 2026-09-28：M0 工具链验证（部分）+ M1 双宿主骨架最小形态**已落地**——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。M2 真实移动与之后均未开始；本文完成仍不代表实现完成，文档与代码仍按 §11 工作包规则同步。
 
 设计依据：[内核契约](../architecture/RTS_KERNEL.md)、[迁移与验收](../architecture/RTS_KERNEL_MIGRATION.md)、[技能系统](../architecture/RTS_ABILITY_SYSTEM.md)。本文细化执行顺序与工作包，不替代上述约束。
 
@@ -20,11 +20,11 @@
 
 **成果：知道迁移什么，以及如何识别退化。依赖：无。**
 
-- [x] R00.1 冻结源码版本、现有启动流程、可用真实地图和数据版本；首轮关键测试结果见 `docs/verification/rts_kernel/M0/BASELINE.md`，全量套件仍在 G0 前补跑。
-- [x] R00.2 枚举首轮功能与状态写入者；当前权威、目标权威和切换批次见 `docs/verification/rts_kernel/M0/STATE_OWNERSHIP.md`，后续工作包持续补充具体函数。
-- [x] R00.3 建立现有行为到目标测试的初版映射，见 `docs/verification/rts_kernel/M0/TEST_MATRIX.md`；未覆盖的同帧语义在 M2/M3 冻结。
+- [x] R00.1 已冻结首轮源码、启动流程、地图数据和关键回归；原 `M0/BASELINE.md` 已按用户确认移出工作树，可从提交 `f02cb50` 查阅。后续实测记录见 `M0/PRODUCT_LAYOUT.md`，全量 game 套件仍待补跑。
+- [x] R00.2 已枚举首轮功能与状态写入者；原 `M0/STATE_OWNERSHIP.md` 已移出工作树，可从提交 `f02cb50` 查阅，后续迁移需继续维护权威映射。
+- [x] R00.3 已建立现有行为到目标测试的初版映射；原 `M0/TEST_MATRIX.md` 已移出工作树，可从提交 `f02cb50` 查阅；未覆盖的同帧语义在 M2/M3 冻结。
 - [ ] R00.4 采集当前 300/500 单位的移动/战斗基线；记录机器、构建、地图、单位组成、渲染开关。此时是旧游戏基线，不冒充纯内核耗时。
-- [ ] R00.5 检查 Godot .NET 与 SDK 可用性、共享包同步与 game/editor 构建布局；已确认 .NET SDK 10.0.301 可编译 net8 内核，Godot 4.7.2 Mono 可加载实际桥接项目。尚需完成 editor 产品布局和 Windows 导出验证。
+- [ ] R00.5 已验证 .NET SDK 10.0.301 编译 net8 内核、Godot 4.7.2 Mono 桥接加载及 editor 产品隔离（8 个回归通过）。Windows 导出缺少 4.7.2 模板及导出配置，尚未验证。见 `docs/verification/rts_kernel/M0/PRODUCT_LAYOUT.md`。
 
 **退出门 G0：** 存在版本化的功能、权威状态、测试映射和性能基线记录；实际地图路径与哈希明确；工具链路线可行。每个已知失败有处置分类，不要求先修复所有无关历史问题。
 
@@ -34,7 +34,7 @@
 
 **成果：一个实体由同一个内核驱动，可在 CLI 和 Godot 中运行。依赖：G0。**
 
-- [x] R01.1 创建普通 .NET 类库、CLI 与测试工程；内核锁定 net8，当前 PC 的宿主锁定 net10。直接 Godot 引用已禁止，传递引用架构门禁仍需补充。
+- [x] R01.1 创建普通 .NET 类库、CLI 与测试工程；内核锁定 net8，当前 PC 的宿主锁定 net10。`check_kernel_layout.py` 检查直接及传递 Godot 依赖，负面夹具已验证。
 - [x] R01.2 实现首版对局实例、EntityId、最小状态、命令接收/执行结果、固定 Step、稳定随机流与事件身份。
 - [x] R01.3 实现最小帧快照、恢复、规范化校验与字段级首差异报告；覆盖下一 ID、随机流和已接受未执行命令。
 - [x] R01.4 创建集中 Godot C# 桥接；隔离场景由 GDScript 提交生成、速度和停止命令，节点只消费批量位置镜像，无模型时仍能推进。验证记录见 `docs/verification/rts_kernel/M1/GODOT_BRIDGE.md`。
