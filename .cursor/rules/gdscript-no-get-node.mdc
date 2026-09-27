@@ -1,0 +1,78 @@
+---
+description: GDScript 避免 get_node 反查场景树——降低节点结构耦合
+globs: **/*.gd
+alwaysApply: false
+---
+
+# GDScript 避免 get_node 反查场景树
+
+GDScript 子节点之间的依赖，**禁止**用 `get_node(...)` / `get_node_or_null(...)` / `$Path` / `%Name` 从场景树反查得到。
+
+## 反模式
+
+```gdscript
+# ❌ 字符串路径：场景结构改了立刻断
+var map_root := get_node_or_null("../MapRoot") as MapLoader
+var hud := get_node("/root/GameMain/GameHud")
+
+# ❌ 短路径：依赖父节点是 Xxx
+var camera := get_parent().get_node_or_null("RtsCamera")
+
+# ❌ find_child 模糊搜索：性能差 + 不可靠
+var hpbar := find_child("HealthBarManager", true, false)
+```
+
+## 为什么禁止
+
+1. **场景结构是隐式契约**：重构 / 重命名 / 重挂点会立刻断 N 个调用方。
+2. **运行时类型不安全**：`as MapLoader` cast 失败只返回 null，运行后才崩。
+3. **违反单一事实来源**：同一个节点被多处字符串引用，编辑期无提示。
+4. **selftest / 复用困难**：拼场景树才能跑，难以隔离单测。
+
+## 正确做法：显式依赖注入
+
+子节点的依赖由 **场景根 / 装配器** 在 [code]_ready[/code] 阶段按拓扑序注入：
+
+```gdscript
+# ✅ 场景根统一编排（见 docs/design/game/SCENE_BOOTSTRAP.md）
+func _ready() -> void:
+    var director := get_node("GameDirector")
+    director.setup(map_root, rts_camera, game_hud, unit_selector, game_cursor, health_bar_manager)
+
+# ✅ 子节点接收强类型 setup 入参
+class_name GameDirector extends Node:
+    var map_root: MapLoader
+    func setup(p_map_root: MapLoader, ...) -> void:
+        map_root = p_map_root
+```
+
+- **场景根** 可以用 [code]%Name[/code]（unique_name_in_owner）取其直接子节点，但仅限 root 自己。
+- **跨子节点** 依赖必须通过 [method setup] / @export 字段 / 信号传递，**不得**再次反查。
+
+## 例外（必须保留）
+
+仅以下场景允许 [code]get_node[/code]：
+
+| 场景 | 原因 |
+|---|---|
+| [code]get_node("/root/AssetProvider")[/code] 等 Autoload 单例 | 全局唯一，路径稳定 |
+| [code]get_tree()[/code] | SceneTree 入口，无依赖 |
+| 调试 / GM 工具动态查找 | 临时场景，不参与主流程 |
+| UI 控件内部的 [code]$Button[/code] / [code]%ProgressBar[/code] | 同一 Control 子树，编辑器内拖拽，结构性绑定 |
+
+## 与 GameMain 强类型 setup 编排的协作
+
+本仓库已经在 [GameMain._boot_scene] 中按拓扑序调 [code]setup(...)[/code] 注入所有子节点依赖。
+新增子节点时：
+
+1. 给子节点加 `func setup(p_dep: Type) -> void` 公开方法（强类型）。
+2. 在 [GameMain] 里加对应的 `_setup_xxx(p_dep)` 私有方法，按拓扑序插入 [code]_boot_scene[/code]。
+3. 子节点脚本**不得**再调 [code]get_node[/code] 反查兄弟节点。
+
+## 自检
+
+- 写 `get_node` / `get_node_or_null` / `find_child` / `has_node` 时停一下。
+  - 若在场景根或 UI 控件内部 → 保留。
+  - 若在跨子节点反查 → 改成 [method setup] 注入或信号。
+- `grep -rn "get_node_or_null" apps/game/` 仅应剩 GameMain / UI 控件本地查找。
+- 任何 `parent.get_node(...)` 一律改 setup 注入。

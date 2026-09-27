@@ -8,8 +8,13 @@
 ## 最短展示 [code]min_visible_sec[/code] 秒后淡出。
 ##
 ## ---- 依赖注入 ----
-## [br]所有运行时依赖由 [GameMain._setup_game_loading_screen] 在子节点装配最末端
-## 调 [method setup] 显式注入。本节点不再 [code]get_node_or_null[/code] 反查节点树。
+## [br]两种装配模式：
+## [br]1. **legacy 4 参 setup**：自检 / 嵌入场景时用；同步注入 map_root / director / hud / hpbar。
+## [br]2. **独立 peer 模式（v1.4 默认）**：本场景与 [code]game_main.tscn[/code] 并列，
+## 由 [code]boot.gd[/code] 先 [code]add_child[/code] 到 root，再
+## [code]begin_async[/code] 启动显示，[code]bind_director[/code] 在 game_main 加载完成后
+## 补订 [code]session_ready[/code] / [code]session_preparation_progress[/code]。
+## [br]本节点不再 [code]get_node_or_null[/code] 反查节点树。
 ##
 ## ---- 生命周期 ----
 ## [br][code]_enter_tree[/code] 设置 [code]layer = 100[/code]（顶层 HUD 层）。
@@ -111,6 +116,74 @@ func setup(
 	call_deferred("_try_finish_if_already_ready")
 
 
+## 独立 peer 模式入口（v1.4）：由 [code]boot.gd[/code] 在 add_child 后立即调用。
+##
+## 同步完成：
+## [br]- 设 process_mode 为 ALWAYS。
+## [br]- 应用样式、设标题（[param p_title] 非空时优先；否则回退 "Loading"）。
+## [br]- 进度推到 0、文案为「正在加载资源…」。
+## [br]- 不订阅任何信号（game_main 尚未加载）。
+##
+## 后续步骤由 [code]boot.gd[/code] 调用 [method set_async_progress] 推进进度，
+## 在 [code]game_main.tscn[/code] instantiate 之后调 [method bind_director] 补订
+## [code]session_ready[/code]。
+##
+## [param p_title] 地图标题（如 "Echo Isles"）；为空时使用 "Loading"。
+func begin_async(p_title: String) -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_shown_msec = Time.get_ticks_msec()
+	_apply_styles()
+	if p_title.strip_edges() != "":
+		map_title = p_title.strip_edges()
+	_set_title_text()
+	_set_progress("正在加载资源…", 0.0)
+
+
+## 独立 peer 模式：每帧由 [code]boot.gd[/code] 把 [code]ResourceLoader.load_threaded_get_status[/code]
+## 返回的 0.0–1.0 进度推到这里（保留前 50% 给资源加载，避免与 session 阶段重叠）。
+##
+## [param p_progress] 0.0–1.0；超出范围被 clampf。
+func set_async_progress(p_progress: float) -> void:
+	if _finished:
+		return
+	_set_progress("正在加载资源…", clampf(p_progress, 0.0, 0.5))
+
+
+## 独立 peer 模式：在 [code]game_main.tscn[/code] 已 instantiate + add_child 之后调。
+##
+## 缓存 director / game_hud / health_bar_manager 引用，
+## 并订阅 [code]session_preparation_progress[/code] / [code]session_ready[/code]。
+## 当 director 已经 is_session_ready() 时立即走 finish。
+##
+## [param p_director] GameDirector（或 duck-type 兼容 stub：需有
+## session_preparation_progress / session_ready 信号与 is_session_ready()）。
+## [param p_hud] game_main.tscn 的 %GameHud（用于 loading 期间隐藏）。
+## [param p_health_bar] game_main.tscn 的 %HealthBarManager（用于 loading 期间隐藏）。
+func bind_director(
+	p_director: Node,
+	p_hud: CanvasLayer,
+	p_health_bar: CanvasLayer
+) -> void:
+	if p_director == null:
+		return
+	game_director = p_director as GameDirector
+	game_hud = p_hud
+	health_bar_manager = p_health_bar
+	_hide_game_ui(true)
+	# 不重复连信号；bind_director 是 boot 阶段的唯一补订点。
+	if p_director.has_signal("session_preparation_progress") \
+			and not p_director.is_connected("session_preparation_progress", _on_load_progress):
+		p_director.connect("session_preparation_progress", _on_load_progress)
+	if p_director.has_signal("session_ready") \
+			and not p_director.is_connected("session_ready", _on_session_ready):
+		p_director.connect("session_ready", _on_session_ready)
+	if p_director.has_method("is_session_ready") and p_director.is_session_ready():
+		_on_session_ready()
+		return
+	# session_preparation_progress 还未发出的兜底：直接拉到 0.55 让 session 阶段接管。
+	_set_progress("正在进入战场…", 0.55)
+
+
 ## 连线订阅（幂等：重复调用不会重复挂信号）。
 ## [br]订阅顺序：
 ## [br]- [code]map_root.load_progress[/code] → [method _on_load_progress]（优先）。
@@ -201,8 +274,23 @@ func _hide_game_ui(should_hide: bool) -> void:
 		health_bar_manager.visible = not should_hide
 
 
+## 更新进度条 / 阶段文案 / 百分比 Label。
+## [br][param stage] 阶段文案。
+## [br][param progress] 0.0–1.0；超出范围会被 clampf 到 [0, 1]。
+func _set_progress(stage: String, progress: float) -> void:
+	_ensure_ui_refs()
+	var p := clampf(progress, 0.0, 1.0)
+	if _stage:
+		_stage.text = stage
+	if _bar:
+		_bar.value = p * 100.0
+	if _pct:
+		_pct.text = "%d%%" % int(round(p * 100.0))
+
+
 ## 写入标题文本（按 [code]map_title[/code] → map_root.map_dir → "Loading" 顺序回退）。
 func _set_title_text() -> void:
+	_ensure_ui_refs()
 	if _title == null:
 		return
 	var title := map_title.strip_edges()
@@ -225,23 +313,25 @@ func _pretty_map_name(dir: String) -> String:
 	return base.capitalize()
 
 
-## 更新进度条 / 阶段文案 / 百分比 Label。
-## [br][param stage] 阶段文案。
-## [br][param progress] 0.0–1.0；超出范围会被 clampf 到 [0, 1]。
-func _set_progress(stage: String, progress: float) -> void:
-	var p := clampf(progress, 0.0, 1.0)
-	if _stage:
-		_stage.text = stage
-	if _bar:
-		_bar.value = p * 100.0
-	if _pct:
-		_pct.text = "%d%%" % int(round(p * 100.0))
+## 懒解析 UI 引用（@onready / %UniqueName 在独立 peer 实例化时偶发未就绪）。
+func _ensure_ui_refs() -> void:
+	if _root == null:
+		_root = get_node_or_null("Root") as Control
+	if _title == null:
+		_title = get_node_or_null("Root/Center/Panel/VBox/TitleLabel") as Label
+	if _stage == null:
+		_stage = get_node_or_null("Root/Center/Panel/VBox/StageLabel") as Label
+	if _bar == null:
+		_bar = get_node_or_null("Root/Center/Panel/VBox/BarRow/ProgressBar") as ProgressBar
+	if _pct == null:
+		_pct = get_node_or_null("Root/Center/Panel/VBox/BarRow/PercentLabel") as Label
 
 
 ## 应用样式（panel 边框 + 进度条 fill/background 颜色）。
-## [br]每次 setup 调用时执行一次（运行期样式覆盖不会持久化）。
+## [br]每次 setup / begin_async 调用时执行一次（运行期样式覆盖不会持久化）。
 func _apply_styles() -> void:
-	var panel := $Root/Center/Panel as PanelContainer
+	_ensure_ui_refs()
+	var panel := get_node_or_null("Root/Center/Panel") as PanelContainer
 	if panel != null:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(0.06, 0.07, 0.1, 0.96)

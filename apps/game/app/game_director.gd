@@ -36,7 +36,6 @@ signal session_preparation_progress(stage: String, progress: float)
 @export var unit_selector: Node
 @export var game_cursor: Node
 @export var health_bar_manager: HealthBarManager
-@export var game_loading_screen: Node # GameLoadingScreen（弱类型避免 class_name 缓存依赖）
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -157,11 +156,11 @@ var _ui_bridge: Node
 
 ## 由 [GameMain] 在子节点装配第 6 步调 [method setup] 注入。
 ##
-## 7 个依赖写入对应 @export 字段；引用就绪后立刻触发 [method _boot_match]
+## 6 个依赖写入对应 @export 字段；引用就绪后立刻触发 [method _boot_match]
 ## （仅触发一次，[member _bootstrapped] 守卫防止重复）。
 ##
 ## 形参顺序固定：map_root → rts_camera → game_hud → unit_selector → game_cursor
-## → health_bar_manager → game_loading_screen，与 GameMain._setup_game_director 一致。
+## → health_bar_manager，与 GameMain._setup_game_director 一致。
 ##
 ## [param p_map_root] 地图根（装配 MapLoader.configure_unit_runtime）。
 ## [param p_rts_camera] RTS 相机（_configure_camera 写入 zoom/fov）。
@@ -169,8 +168,8 @@ var _ui_bridge: Node
 ## [param p_unit_selector] UnitSelector（_setup_selector 挂 selection_changed）。
 ## [param p_game_cursor] 鼠标光标（InteractionModule 注入 cursor）。
 ## [param p_health_bar_manager] 血条（BuildModule / CombatModule 同步 resync）。
-## [param p_game_loading_screen] Loading（保留 compat 字段；实际由
-## GameLoadingScreen.setup 直接订阅 director.session_ready）。
+## [br]v1.4 起不再注入 game_loading_screen：Loading 已独立为 peer scene，由 [code]boot.gd[/code]
+## 直接持有并订阅本节点的 [signal session_ready]。
 func setup(
 	p_map_root: MapLoader,
 	p_rts_camera: RtsCamera,
@@ -178,7 +177,6 @@ func setup(
 	p_unit_selector: Node,
 	p_game_cursor: Node,
 	p_health_bar_manager: HealthBarManager,
-	p_game_loading_screen: Node
 ) -> void:
 	map_root = p_map_root
 	rts_camera = p_rts_camera
@@ -186,7 +184,6 @@ func setup(
 	unit_selector = p_unit_selector
 	game_cursor = p_game_cursor
 	health_bar_manager = p_health_bar_manager
-	game_loading_screen = p_game_loading_screen
 	if _bootstrapped:
 		return
 	_boot_match()
@@ -221,8 +218,8 @@ func _ready() -> void:
 ## 对局启动入口（仅触发一次，由 [member _bootstrapped] 守卫）。
 ##
 ## 把原 _ready 后半段 / [method _configure_map_root] / [method _wire_hud] /
-## [method _load_camera_bounds] / [method _configure_camera] / 旧 [method _inject_loading_screen]
-## 集中到此；selftest 可手动 [code]GameDirector.new() + setup() + _boot_match()[/code]
+## [method _load_camera_bounds] / [method _configure_camera] 集中到此；
+## selftest 可手动 [code]GameDirector.new() + setup() + _boot_match()[/code]
 ## 全链路跑通而无需挂入 GameMain.tscn。
 func _boot_match() -> void:
 	_configure_map_root()

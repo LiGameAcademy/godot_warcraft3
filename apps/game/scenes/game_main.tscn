@@ -8,7 +8,6 @@
 [ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://scenes/game_hud.tscn" id="5_hud"]
 [ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://client/selection/unit_selector.tscn" id="6_sel"]
 [ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://addons/rts_gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
-[ext_resource type="PackedScene" path="res://scenes/game_loading_screen.tscn" id="8_loading"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -84,7 +83,3 @@ prepare_starting_portraits = null
 [node name="GameCursor" type="Node" parent="." unique_id=1503412235]
 unique_name_in_owner = true
 script = ExtResource("4_cursor")
-
-[node name="GameLoadingScreen" parent="." unique_id=1817649303 instance=ExtResource("8_loading")]
-unique_name_in_owner = true
-map_title = "Echo Isles"
