@@ -97,3 +97,8 @@ apps/*/.godot/
 apps/*/logs/
 apps/*/tmp/
 **/__pycache__/
+
+# .NET / IDE generated output
+**/bin/
+**/obj/
+**/.idea/
