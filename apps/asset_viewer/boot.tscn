@@ -1,0 +1,206 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://viewer.gd" id="1"]
+[sub_resource type="Environment" id="Environment"]
+background_mode = 1
+background_color = Color(0.055, 0.07, 0.09, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.6
+ambient_light_sky_contribution = 0.0
+[sub_resource type="PlaneMesh" id="Ground"]
+size = Vector2(20, 20)
+[sub_resource type="StandardMaterial3D" id="GroundMaterial"]
+albedo_color = Color(0.12, 0.15, 0.16, 1)
+roughness = 1.0
+
+[node name="AssetViewer" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Layout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+[node name="Title" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "资产查看器 · Warcraft III"
+[node name="Subtitle" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+text = "浏览现有烘焙场景与审计证据。当前产物尚未区分保真与增强；视觉验收以原作游戏为准。"
+
+[node name="Actions" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+[node name="Reload" type="Button" parent="Margin/Layout/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "刷新审计报告"
+[node name="OpenReport" type="Button" parent="Margin/Layout/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "打开其他报告…"
+[node name="Scan" type="Button" parent="Margin/Layout/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "仅浏览已烘焙资源"
+[node name="Count" type="Label" parent="Margin/Layout/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+
+[node name="Split" type="HSplitContainer" parent="Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 390
+[node name="Browser" type="VBoxContainer" parent="Margin/Layout/Split"]
+custom_minimum_size = Vector2(330, 0)
+layout_mode = 2
+[node name="Search" type="LineEdit" parent="Margin/Layout/Split/Browser"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "搜索路径、分类或问题（如 Priest）"
+clear_button_enabled = true
+[node name="BrowserControls" type="HBoxContainer" parent="Margin/Layout/Split/Browser"]
+layout_mode = 2
+[node name="BrowserMode" type="OptionButton" parent="Margin/Layout/Split/Browser/BrowserControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="ExpandTree" type="Button" parent="Margin/Layout/Split/Browser/BrowserControls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "展开"
+tooltip_text = "展开全部目录"
+[node name="CollapseTree" type="Button" parent="Margin/Layout/Split/Browser/BrowserControls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "折叠"
+tooltip_text = "折叠全部目录"
+[node name="Filters" type="HBoxContainer" parent="Margin/Layout/Split/Browser"]
+layout_mode = 2
+[node name="BakedOnly" type="CheckButton" parent="Margin/Layout/Split/Browser/Filters"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "已烘焙"
+[node name="Severity" type="OptionButton" parent="Margin/Layout/Split/Browser/Filters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="Models" type="ItemList" parent="Margin/Layout/Split/Browser"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 240)
+layout_mode = 2
+size_flags_vertical = 3
+text_overrun_behavior = 3
+[node name="ModelTree" type="Tree" parent="Margin/Layout/Split/Browser"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 240)
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+allow_reselect = true
+
+[node name="Preview" type="VBoxContainer" parent="Margin/Layout/Split"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="Toolbar" type="HBoxContainer" parent="Margin/Layout/Split/Preview"]
+layout_mode = 2
+[node name="Animations" type="OptionButton" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="Pause" type="Button" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "暂停"
+toggle_mode = true
+[node name="Restart" type="Button" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "重播"
+[node name="Fit" type="Button" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "适应模型"
+[node name="Team" type="OptionButton" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="GroundToggle" type="CheckButton" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "地面"
+[node name="LightBackground" type="CheckButton" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "浅背景"
+
+[node name="ViewportContainer" type="SubViewportContainer" parent="Margin/Layout/Split/Preview"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(500, 300)
+layout_mode = 2
+size_flags_vertical = 3
+stretch = true
+[node name="Viewport" type="SubViewport" parent="Margin/Layout/Split/Preview/ViewportContainer"]
+unique_name_in_owner = true
+own_world_3d = true
+size = Vector2i(960, 540)
+render_target_update_mode = 4
+[node name="World" type="Node3D" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport"]
+[node name="ModelsRoot" type="Node3D" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport/World"]
+unique_name_in_owner = true
+[node name="Environment" type="WorldEnvironment" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport/World"]
+unique_name_in_owner = true
+environment = SubResource("Environment")
+[node name="Light" type="DirectionalLight3D" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport/World"]
+rotation_degrees = Vector3(-55, -30, 0)
+[node name="Ground" type="MeshInstance3D" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport/World"]
+unique_name_in_owner = true
+visible = false
+mesh = SubResource("Ground")
+material_override = SubResource("GroundMaterial")
+[node name="Camera" type="Camera3D" parent="Margin/Layout/Split/Preview/ViewportContainer/Viewport/World"]
+unique_name_in_owner = true
+current = true
+near = 0.01
+far = 10000.0
+[node name="Hint" type="Label" parent="Margin/Layout/Split/Preview"]
+layout_mode = 2
+text = "拖动旋转 · 滚轮缩放 · 重播会重建实例及粒子；不会改写资源文件"
+[node name="Details" type="RichTextLabel" parent="Margin/Layout/Split/Preview"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 190)
+layout_mode = 2
+selection_enabled = true
+text = "从左侧选择模型。"
+
+[node name="Status" type="Label" parent="Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+
+[node name="ReportDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "选择资产审计 report.json"
+size = Vector2i(900, 600)
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.json ; 审计报告")

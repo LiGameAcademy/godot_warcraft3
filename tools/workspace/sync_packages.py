@@ -1,7 +1,7 @@
 """Copy canonical packages into independent Godot applications without rewriting references."""
 import argparse, hashlib, json, pathlib, shutil, subprocess
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PACKAGES = {"game": ("foundation", "content", "map", "gameplay"), "map_editor": ("foundation", "content", "map")}
+PACKAGES = {"game": ("foundation", "content", "map", "gameplay"), "map_editor": ("foundation", "content", "map"), "asset_viewer": ("foundation", "content", "map")}
 
 def safe_path(app, relative):
     relative = pathlib.Path(relative)
@@ -35,6 +35,12 @@ def sync(name):
     for rel in filter(None, assets):
         p = ROOT / rel
         if p.is_file() and p.suffix != '.import': sources[rel] = p
+    # Shader files are runtime dependencies. Include local additions before their
+    # first commit so a fresh app sync can validate them as well.
+    shader_root = ROOT / 'assets' / 'shaders'
+    if shader_root.exists():
+        for p in shader_root.glob('*.gdshader'):
+            if p.is_file(): sources[p.relative_to(ROOT).as_posix()] = p
     if name == 'game':
         for p in (ROOT / 'tools/godot').rglob('*'):
             if p.is_file(): sources[p.relative_to(ROOT).as_posix()] = p

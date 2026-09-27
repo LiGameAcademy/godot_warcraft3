@@ -1441,7 +1441,12 @@ func _is_team_glow_material(sm: StandardMaterial3D) -> bool:
 func _make_team_glow_shader_material(
 	glow_tex: Texture2D, team_color: Color, intensity: float, billboard: bool
 ) -> ShaderMaterial:
-	var sh: Shader = load("res://assets/shaders/wc3_team_glow.gdshader") as Shader
+	var shader_path := (
+		"res://assets/shaders/wc3_team_glow.gdshader"
+		if billboard
+		else "res://assets/shaders/wc3_team_glow_ground.gdshader"
+	)
+	var sh: Shader = load(shader_path) as Shader
 	var out := ShaderMaterial.new()
 	out.shader = sh
 	out.set_shader_parameter("glow_tex", glow_tex)
@@ -1466,6 +1471,7 @@ func _make_team_glow_billboard_material(glow_tex: Texture2D, team_color: Color) 
 
 const META_GLOW_PRESENTED := "wc3_team_glow_presented"
 const META_GLOW_BILLBOARD := "wc3_team_glow_billboard"
+const META_GLOW_CATEGORY := "wc3_team_glow_category"
 ## 三角法线 |Y| 大于此值 → 脚底贴地盘；其余视为杖尖/武器平行面片。
 const TEAM_GLOW_FOOT_NY := 0.65
 
@@ -1511,6 +1517,7 @@ func _present_team_glow_mesh(
 		tip_bb.mesh = quad
 		tip_bb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		tip_bb.set_meta(META_GLOW_BILLBOARD, true)
+		tip_bb.set_meta(META_GLOW_CATEGORY, "weapon_socket")
 		tip_bb.set_surface_override_material(0, _make_team_glow_billboard_material(glow_tex, team_color))
 		var tip := host.get_node_or_null("Tip") as Node3D
 		if tip != null:
@@ -1524,15 +1531,18 @@ func _present_team_glow_mesh(
 		return
 	if has_foot:
 		mi.mesh = foot_mesh
+		mi.set_meta(META_GLOW_CATEGORY, "hero_ground")
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
 		mi.visible = true
 	elif has_tip:
 		# 无武器挂点的 tip-only（少见）：保留 mesh，避免光晕直接消失
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
+		mi.set_meta(META_GLOW_CATEGORY, "floating_orb_fallback")
 		mi.visible = true
 	else:
 		# 肖像背景板等
 		mi.set_surface_override_material(0, _make_team_glow_material(src_mat, team_color))
+		mi.set_meta(META_GLOW_CATEGORY, "unclassified_team_glow")
 		mi.visible = true
 
 

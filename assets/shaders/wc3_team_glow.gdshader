@@ -8,7 +8,7 @@ render_mode blend_add, depth_draw_never, depth_test_disabled, cull_disabled, uns
 uniform sampler2D glow_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 team_color : source_color = vec4(1.0, 0.1, 0.1, 1.0);
 uniform float intensity : hint_range(0.5, 8.0) = 2.4;
-uniform bool use_billboard = false;
+uniform bool use_billboard = true;
 
 void vertex() {
 	if (use_billboard) {
@@ -25,5 +25,5 @@ void vertex() {
 void fragment() {
 	vec4 tex = texture(glow_tex, UV);
 	ALBEDO = team_color.rgb * tex.rgb * intensity;
-	ALPHA = 1.0;
+	ALPHA = tex.a;
 }

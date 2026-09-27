@@ -2,6 +2,10 @@
 
 当前双产品入口与源码目录见 [完整目录迁移记录](architecture/DIRECTORY_CUTOVER_2026_09_24.md)；同步和验证见 [workspace 工具](../tools/workspace/README.md)。历史文档中的旧路径可通过 `tools/workspace/source-layout.json` 查找新位置。
 
+资源管线下一步见 [统一导入管线执行策划案](design/asset-convert/UNIFIED_IMPORT_EXECUTION_PLAN.md)：全量审计优先，保真基座与可选增强分离，游戏和地图编辑器共用资源。
+
+已实现的首批结果见 [全量审计与查看器交付](design/asset-convert/AUDIT_BASELINE_2026_09_27.md)；独立工具入口见 [资产查看器](../apps/asset_viewer/README.md)。
+
 > Godot 4.6 复刻《魔兽争霸 3》玩法的实验项目。  
 >
 > 总纲：[architecture/LAYERED_ARCHITECTURE.md](architecture/LAYERED_ARCHITECTURE.md)  

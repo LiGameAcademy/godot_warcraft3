@@ -1,9 +1,10 @@
 """Static ownership gate for canonical source (not generated app addons)."""
 import pathlib,re,json,sys,subprocess
+from sync_packages import PACKAGES
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 
 def main():
-    files=[p for folder in ['packages','apps/game','apps/map_editor'] for p in (ROOT/folder).rglob('*.gd') if not any(x in p.relative_to(ROOT).parts for x in ['addons','.godot','assets','tests']) and not p.is_relative_to(ROOT/'apps/game/tools')]
+    files=[p for folder in ['packages',*[f'apps/{app}' for app in PACKAGES]] for p in (ROOT/folder).rglob('*.gd') if not any(x in p.relative_to(ROOT).parts for x in ['addons','.godot','assets','tests']) and not p.is_relative_to(ROOT/'apps/game/tools')]
     classes={};errors=[]
     for p in files:
         m=re.search(r'^class_name\s+(\w+)',p.read_text('utf-8-sig'),re.M)
@@ -27,7 +28,7 @@ def main():
     for old,new in layout['moves'].items():
         if (ROOT/old).is_file():errors.append('Old source remains: '+old)
         if not (ROOT/new).is_file():errors.append('Missing source: '+new)
-    for app in ['game','map_editor']:
+    for app in PACKAGES:
         manifest=ROOT/'apps'/app/'.workspace-sync.json'
         if manifest.exists():
             import hashlib
@@ -38,7 +39,7 @@ def main():
                     if not dest.exists() or dest.read_bytes()!=src.read_bytes():errors.append('Stale synchronized file: '+str(dest.relative_to(ROOT)))
                 elif not dest.exists() or hashlib.sha256(dest.read_bytes()).hexdigest()!=row['sha256']:
                     errors.append('Invalid generated redirect: '+row['path'])
-                if app=='map_editor' and any(x in row['path'] for x in ['rts_gameplay','godot_ability_system','/client/']):errors.append('Game dependency shipped to editor: '+row['path'])
+                if app!='game' and any(x in row['path'] for x in ['rts_gameplay','godot_ability_system','/client/']):errors.append('Game dependency shipped to '+app+': '+row['path'])
     print(f'Layout: {len(files)} scripts, {len(layout["moves"])} moves, {len(errors)} violations')
     for e in errors:print(e)
     return bool(errors)

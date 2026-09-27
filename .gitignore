@@ -86,6 +86,7 @@ assets/model-experiments/
 apps/*/addons/
 apps/*/assets/
 apps/*/icon.svg
+apps/*/icon.svg.import
 apps/*/.workspace-sync.json
 apps/*/override.cfg
 apps/*/tests/

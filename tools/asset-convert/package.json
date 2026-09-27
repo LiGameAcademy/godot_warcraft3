@@ -8,6 +8,8 @@
     "node": ">=18"
   },
   "scripts": {
+    "audit": "node src/audit-cli.mjs",
+    "test:audit": "node src/asset-audit.test.mjs",
     "convert": "node src/cli.js",
     "convert:textures": "node src/cli.js --textures-only",
     "convert:models": "node src/cli.js --models-only",

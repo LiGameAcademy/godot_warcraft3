@@ -1,13 +1,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$Godot,
-    [ValidateSet("all", "game", "map_editor")][string]$App = "all"
+    [ValidateSet("all", "game", "map_editor", "asset_viewer")][string]$App = "all"
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 & (Join-Path $PSScriptRoot "Sync-Packages.ps1") -App $App
 $logRoot = Join-Path $repoRoot "tmp/app-validation"
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
-$selected = if ($App -eq "all") { @("game", "map_editor") } else { @($App) }
+$selected = if ($App -eq "all") { @("game", "map_editor", "asset_viewer") } else { @($App) }
 foreach ($name in $selected) {
     $appRoot = Join-Path $repoRoot "apps/$name"
     foreach ($phase in @("import", "boot")) {
