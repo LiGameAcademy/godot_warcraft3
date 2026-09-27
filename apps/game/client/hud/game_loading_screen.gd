@@ -19,16 +19,15 @@ extends CanvasLayer
 
 var _finished: bool = false
 var _shown_msec: int = 0
-
+## _wire_signals 是否已经执行过一次，用于 inject 在 _ready 后补信号。
+var _signals_wired: bool = false
 
 func _enter_tree() -> void:
 	layer = 100
 
-
-func _ready() -> void:
+func setup() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_shown_msec = Time.get_ticks_msec()
-	_resolve_refs()
 	_apply_styles()
 	_set_title_text()
 	_set_progress("正在进入战场…", 0.0)
@@ -36,19 +35,7 @@ func _ready() -> void:
 	_wire_signals()
 	call_deferred("_try_finish_if_already_ready")
 
-
-func _resolve_refs() -> void:
-	var parent_n := get_parent()
-	if map_root == null and parent_n != null:
-		map_root = parent_n.get_node_or_null("MapRoot") as MapLoader
-	if game_director == null and parent_n != null:
-		game_director = parent_n.get_node_or_null("GameDirector") as GameDirector
-	if game_hud == null and parent_n != null:
-		game_hud = parent_n.get_node_or_null("GameHud") as CanvasLayer
-	if health_bar_manager == null and parent_n != null:
-		health_bar_manager = parent_n.get_node_or_null("HealthBarManager") as CanvasLayer
-
-
+# 连接信号
 func _wire_signals() -> void:
 	if map_root != null and not map_root.load_progress.is_connected(_on_load_progress):
 		map_root.load_progress.connect(_on_load_progress)
@@ -59,6 +46,7 @@ func _wire_signals() -> void:
 			game_director.session_ready.connect(_on_session_ready)
 	elif map_root != null and not map_root.map_loaded.is_connected(_on_map_loaded_fallback):
 		map_root.map_loaded.connect(_on_map_loaded_fallback)
+	_signals_wired = true
 
 
 func _try_finish_if_already_ready() -> void:
