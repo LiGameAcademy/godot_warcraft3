@@ -206,6 +206,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 		_set_button_auto_cast(btn, false, false)
 		_set_button_level_badge(btn, 0)
 		_set_button_cooldown(btn, 0.0)
+		_set_button_lock_veil(btn, false)
 		btn.set_meta("_cmd_blocked", false)
 		btn.set_meta("_passive_cmd", false)
 		return
@@ -240,6 +241,7 @@ func _apply_command_button(btn: Button, slot: int, entry: Dictionary) -> void:
 	_set_button_auto_cast(btn, auto_cast, autocast_capable)
 	_set_button_level_badge(btn, int(entry.get("badge_level", 0)))
 	_set_button_cooldown(btn, cd_ratio)
+	_set_button_lock_veil(btn, soft_blocked and not keep_icon_on_cd)
 	btn.modulate = Color.WHITE
 	btn.set_meta("_passive_cmd", passive)
 	btn.set_meta("_cmd_blocked", soft_blocked)
@@ -300,6 +302,30 @@ func _set_button_cooldown(btn: Button, ratio: float) -> void:
 		overlay.offset_bottom = 0.0
 	if overlay.has_method("set_cooldown_ratio"):
 		overlay.call("set_cooldown_ratio", r)
+
+
+## 依赖未满足：半透明黑罩（对齐原作 DISBTN 观感；有 DIS 图时叠在上面加深锁定感）。
+func _set_button_lock_veil(btn: Button, locked: bool) -> void:
+	if btn == null:
+		return
+	var veil := btn.get_node_or_null("LockVeil") as ColorRect
+	if not locked:
+		if veil != null:
+			veil.visible = false
+		return
+	if veil == null:
+		veil = ColorRect.new()
+		veil.name = "LockVeil"
+		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		veil.color = Color(0.0, 0.0, 0.0, 0.55)
+		veil.z_index = 8
+		btn.add_child(veil)
+		veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		veil.offset_left = 0.0
+		veil.offset_top = 0.0
+		veil.offset_right = 0.0
+		veil.offset_bottom = 0.0
+	veil.visible = true
 
 
 func _set_button_auto_cast(btn: Button, active: bool, capable: bool = false) -> void:

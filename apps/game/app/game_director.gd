@@ -14,6 +14,7 @@ signal session_preparation_progress(stage: String, progress: float)
 @export var unit_selector: Node
 @export var game_cursor: Node
 @export var health_bar_manager: HealthBarManager
+@export var game_loading_screen: Node # GameLoadingScreen（弱类型避免 class_name 缓存依赖）
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
 ## 开发期：0 无 / 1 大黄 / 2 大+中 / 3 大+中+小灰(32)
 @export_range(0, 3) var view_grid_level: int = 3
@@ -49,7 +50,8 @@ signal session_preparation_progress(stage: String, progress: float)
 @export var camera_min_distance: float = 11.0
 @export var camera_max_distance: float = 16.5
 @export var camera_initial_pitch_deg: float = -56.0
-@export var camera_fov: float = 70.0
+## Godot 垂直视野角；试验值，待原作同场景对拍校准。
+@export var camera_fov: float = 50.0
 @export var use_wc3_zoom_curve: bool = true
 @export var apply_camera_bounds: bool = true
 
@@ -128,6 +130,7 @@ var _bound_modules: Dictionary = {}
 var _binding_counts: Dictionary = {}
 var _wired_hud: GameHud
 var _wired_selector: Node
+var _ui_bridge: Node
 
 
 func _ready() -> void:
@@ -140,6 +143,7 @@ func _ready() -> void:
 	if map_root == null:
 		push_error("GameDirector: 未绑定 map_root")
 		return
+	_inject_loading_screen()
 	_configure_map_root()
 	var debug := _ensure_debug_tools_module()
 	debug.ensure_gm_panel()
@@ -204,6 +208,10 @@ func _resolve_exports() -> void:
 		health_bar_manager = get_node_or_null("../HealthBarManager") as HealthBarManager
 		if health_bar_manager == null and parent_n != null:
 			health_bar_manager = parent_n.get_node_or_null("HealthBarManager") as HealthBarManager
+	if game_loading_screen == null:
+		game_loading_screen = get_node_or_null("../GameLoadingScreen")
+		if game_loading_screen == null and parent_n != null:
+			game_loading_screen = parent_n.get_node_or_null("GameLoadingScreen")
 	AppLog.info(
 		AppLog.Layer.GAME,
 		"GameDirector",
@@ -285,10 +293,61 @@ func _wire_hud() -> void:
 	if not map_dir.is_empty():
 		game_hud.map_dir = map_dir
 	game_hud.set_status(_map_display_name())
+	_bind_ui_bridge()
 
 
 func _setup_portrait_hud() -> void:
 	_ensure_selection_hud_module().setup_portrait()
+
+
+## 显式把对局组件注入 GameLoadingScreen。_resolve_exports 之后调用。
+## duck-type：仅当 loading_screen 实现 inject_dependencies 时才注入。
+func _inject_loading_screen() -> void:
+	if not is_instance_valid(game_loading_screen):
+		return
+	if not game_loading_screen.has_method("inject_dependencies"):
+		push_warning("GameDirector: loading_screen 不支持 inject_dependencies，跳过注入")
+		return
+	game_loading_screen.call(
+		"inject_dependencies",
+		{
+			"map_root": map_root,
+			"game_director": self,
+			"game_hud": game_hud,
+			"health_bar_manager": health_bar_manager,
+		}
+	)
+
+
+## 把对局作用域的依赖注入 UiGameplayBridge：UiManager intent → 玩法分发。
+## 重复调用安全：仅替换字段、不重复订阅 UiManager.intent。
+func _bind_ui_bridge() -> void:
+	if not is_instance_valid(_ui_bridge):
+		var BridgeScript := load("res://client/ui/ui_gameplay_bridge.gd") as GDScript
+		if BridgeScript == null:
+			push_warning("GameDirector: 找不到 UiGameplayBridge 脚本，UI 桥未创建")
+			return
+		_ui_bridge = BridgeScript.new()
+		_ui_bridge.name = "UiGameplayBridge"
+		add_child(_ui_bridge)
+	# production_panel / items_module / command_router 必须已存在；未初始化则跳过。
+	if not is_instance_valid(_production_panel):
+		_ensure_production_module()
+	if not is_instance_valid(_items):
+		_ensure_items_module()
+	_ui_bridge.call(
+		"bind",
+		self,
+		_command_router,
+		_production_panel,
+		_items,
+		unit_selector,
+		rts_camera,
+		_heightfield,
+		_cam_min,
+		_cam_max,
+		game_hud
+	)
 
 
 func _on_multi_select_clicked(instance_id: int) -> void:
@@ -357,6 +416,8 @@ func _on_map_loaded() -> void:
 	_bootstrapped = true
 	_hide_start_locations()
 	_ensure_navigation_module().initialize(map_root, Callable(_unit_presenter(), "ensure_visual"))
+	if rts_camera != null:
+		rts_camera.set_heightfield(_heightfield)
 	_bootstrap_melee()
 	_setup_selector()
 	_bind_match_modules()
@@ -1108,7 +1169,12 @@ func _on_build_started(order: BuildOrder) -> void:
 
 
 func _on_build_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
-	_ensure_build_module().on_construction_completed(order, site_wc3, player_owner)
+	var building: Node3D = _ensure_build_module().on_construction_completed(
+		order, site_wc3, player_owner
+	)
+	## 守卫塔等有武器建筑：完工后 HOLD 站桩开火。
+	if building != null:
+		_ensure_units_module().ensure_combat_ai(building)
 	_refresh_command_card()
 	_sync_selection_info_panel()
 
@@ -2113,6 +2179,8 @@ func _ensure_match_input() -> MatchInputController:
 	})
 	_bound_modules[&"match_input"] = _binding_epoch
 	_binding_counts[&"match_input"] = int(_binding_counts.get(&"match_input", 0)) + 1
+	# 等到所有可能注入的模块就绪后，再把 UiBridge 字段刷新一次
+	_bind_ui_bridge()
 	return _match_input
 
 func _toggle_path_debug() -> void:

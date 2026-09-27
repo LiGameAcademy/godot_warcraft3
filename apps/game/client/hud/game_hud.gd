@@ -39,8 +39,11 @@ func _ready() -> void:
 	inventory_panel.name = "InventoryPanel"
 	$Root.add_child(inventory_panel)
 	inventory_panel.use_requested.connect(func(slot: int) -> void: item_use.emit(slot))
+	inventory_panel.use_requested.connect(_emit_intent_use)
 	inventory_panel.drop_requested.connect(func(slot: int) -> void: item_drop.emit(slot))
+	inventory_panel.drop_requested.connect(_emit_intent_drop)
 	inventory_panel.swap_requested.connect(func(a: int, b: int) -> void: item_swap.emit(a, b))
+	inventory_panel.swap_requested.connect(_emit_intent_swap)
 	if _command_panel != null:
 		_command_panel.resized.connect(_layout_inventory_panel)
 	call_deferred("_layout_inventory_panel")
@@ -55,6 +58,10 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_apply_responsive_layout)
 	if not map_dir.is_empty():
 		setup_minimap_map(map_dir)
+	## M1：注册为 UiManager Surface（见 docs/design/game/UI_FRAMEWORK.md）。
+	var ui_mgr := get_node_or_null("/root/UiManager")
+	if ui_mgr != null and ui_mgr.has_method("register_surface"):
+		ui_mgr.call("register_surface", &"match_hud", self)
 
 
 func _wire_panel_signals() -> void:
@@ -290,6 +297,45 @@ func show_command_tip(text: String) -> void:
 		_command_panel.show_tip(text)
 
 
+## region ========== UiSurface（UiManager） ==========
+
+
+func surface_id() -> StringName:
+	return &"match_hud"
+
+
+func push_status(text: String) -> void:
+	set_status(text)
+
+
+func show_tip(text: String) -> void:
+	show_command_tip(text)
+
+
+func push_command_card(entries: Array) -> void:
+	set_command_card(entries)
+
+
+func push_resources(vm: Dictionary) -> void:
+	if vm.is_empty():
+		return
+	set_resources(
+		int(vm.get("gold", 0)),
+		int(vm.get("lumber", 0)),
+		int(vm.get("food_used", 0)),
+		int(vm.get("food_cap", 0))
+	)
+
+
+func push_selection(vm: Dictionary) -> void:
+	if vm.is_empty():
+		return
+	set_selection_info(vm)
+
+
+## endregion
+
+
 func set_portrait_texture(_tex: Texture2D) -> void:
 	pass
 
@@ -305,19 +351,44 @@ func _on_command_pressed(slot: int) -> void:
 
 func _on_command_action(action_id: String) -> void:
 	command_action.emit(action_id)
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.COMMAND, {"action_id": action_id})
 
 
 func _on_command_action_rclick(action_id: String) -> void:
 	command_action_rclick.emit(action_id)
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.COMMAND_RCLICK, {"action_id": action_id})
 
 
 func _on_minimap_clicked(uv: Vector2) -> void:
 	minimap_clicked.emit(uv)
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.MINIMAP_CLICK, {"uv": uv})
 
 
 func _on_multi_select_clicked(instance_id: int) -> void:
 	multi_select_clicked.emit(instance_id)
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.MULTI_SELECT, {"instance_id": instance_id})
 
 
 func _on_train_queue_cancel(slot_index: int) -> void:
 	train_queue_cancel.emit(slot_index)
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.TRAIN_CANCEL, {"slot_index": slot_index})
+
+
+func _emit_intent_use(slot: int) -> void:
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.ITEM_USE, {"slot": slot})
+
+
+func _emit_intent_drop(slot: int) -> void:
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.ITEM_DROP, {"slot": slot})
+
+
+func _emit_intent_swap(a: int, b: int) -> void:
+	if is_instance_valid(UiManager):
+		UiManager.emit_intent(UiIntent.ITEM_SWAP, {"a": a, "b": b})

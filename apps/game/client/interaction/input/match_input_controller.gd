@@ -18,6 +18,7 @@ var _ability_targeting_svc: AbilityTargetingService:
 		return _abilities.targeting if is_instance_valid(_abilities) else null
 
 func configure(deps: Dictionary) -> void:
+	var previous_selector := unit_selector
 	_commands = deps.get("commands") as CommandInputModule
 	_interaction = deps.get("interaction") as InteractionModule
 	_abilities = deps.get("abilities") as AbilitiesModule
@@ -26,6 +27,11 @@ func configure(deps: Dictionary) -> void:
 	_debug = deps.get("debug") as DebugToolsModule
 	_feedback = deps.get("feedback") as InteractionFeedback
 	unit_selector = deps.get("selector") as Node
+	if is_instance_valid(previous_selector) and previous_selector != unit_selector and previous_selector.has_method("set_external_input"):
+		# 已退役的接收器可能还留在树中，不能重新抢走新接收器的输入。
+		previous_selector.set_external_input(true)
+	if is_instance_valid(unit_selector) and unit_selector != previous_selector and unit_selector.has_method("set_external_input"):
+		unit_selector.set_external_input(true)
 	game_hud = deps.get("hud") as GameHud
 	_commit_build = deps.get("commit_build", Callable()) as Callable
 	_cancel_build = deps.get("cancel_build", Callable()) as Callable
