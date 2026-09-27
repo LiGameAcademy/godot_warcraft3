@@ -343,4 +343,13 @@ func _test_building_upgrade_chain() -> void:
 	if up_cas.is_empty() or not bool(up_cas.get("enabled", false)):
 		_fail("有祭坛时升 Castle 应可点")
 		return
+	if TechPresence.building_upgrade_target("hwtw") != "hgtw":
+		_fail("hwtw Upgrade 竖切目标应为 hgtw")
+		return
+	var tower_card := CommandCard.for_unit(
+		"hwtw", {"include_locomotion": false, "owned_buildings": {"hwtw": 1, "hlum": 1}}
+	)
+	if _card_entry(tower_card, "upgrade:hgtw").is_empty():
+		_fail("瞭望塔命令卡应有升守卫塔按钮")
+		return
 	print("  building_upgrade_chain OK")

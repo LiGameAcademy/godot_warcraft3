@@ -15,7 +15,8 @@ const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0
 @export var pan_sprint_mult: float = 2.5
 @export var edge_pan_margin: int = 28
 @export var edge_pan_enabled: bool = true
-@export var pan_smoothing: float = 12.0
+## 0：立即响应并停止；正数：指数平滑速率（每秒）。
+@export var pan_smoothing: float = 0.0
 ## 游戏场景关闭 WASD（与停止/移动等热键冲突）；方向键与边缘滚动仍可用。
 @export var wasd_pan_enabled: bool = false
 @export var arrow_pan_enabled: bool = true
@@ -35,8 +36,16 @@ const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0
 @export var min_distance: float = 11.0
 @export var max_distance: float = 16.5
 @export var initial_distance: float = 16.5
-## WC3 FOV=70
-@export var camera_fov: float = 70.0
+## Godot 垂直 FOV。50 是本轮视觉校准起点，不是 WC3 参数的直接换算。
+@export var camera_fov: float = 50.0
+@export_range(0.0, 1.0, 0.01) var zoom_duration: float = 0.18
+
+@export_group("地形")
+@export var terrain_follow_enabled: bool = true
+## 空间采样半径（Godot 单位），避免小地形起伏直接传给镜头。
+@export var terrain_sample_radius: float = 1.28
+@export var terrain_height_smoothing: float = 10.0
+@export var target_height_offset: float = 0.0
 
 @export_group("边界")
 ## 世界 XZ（Godot）；未设置时不夹紧。可由 GameDirector 按地图 extent 注入。
@@ -45,7 +54,8 @@ const WC3_ZOOM_AOA_DEG: Array[float] = [304.0, 311.0, 318.0, 325.0, 332.0, 339.0
 @export var use_boundaries: bool = false
 
 @export_group("聚焦")
-@export var focus_duration: float = 0.45
+## 默认小地图定位立即生效；开场等显式传入 duration 的调用保留动画。
+@export var focus_duration: float = 0.0
 
 @onready var _pivot: Node3D = $Pivot
 @onready var _camera: Camera3D = $Pivot/Camera3D
@@ -57,6 +67,8 @@ var _zoom_index: int = 0
 var _orbit_dragging: bool = false
 var _pan_velocity: Vector3 = Vector3.ZERO
 var _focus_tween: Tween
+var _zoom_tween: Tween
+var _heightfield: Wc3Heightfield
 
 
 func _ready() -> void:
@@ -65,7 +77,9 @@ func _ready() -> void:
 
 ## 把 @export 缩放/俯仰同步到运行时内部状态（Director 可在 _ready 后再调）。
 func apply_export_tuning() -> void:
+	_kill_zoom_tween()
 	if _camera:
+		_camera.keep_aspect = Camera3D.KEEP_HEIGHT
 		_camera.fov = camera_fov
 	if use_wc3_zoom_curve:
 		_rebuild_wc3_distance_limits()
@@ -93,11 +107,18 @@ func get_zoom_index() -> int:
 	return _zoom_index
 
 
-## 瞬间落到观察点（XZ）；Y 保持当前高度（默认贴地平面）。
+## 地图就绪后注入；未绑定时维持原有固定高度行为。
+func set_heightfield(heightfield: Wc3Heightfield) -> void:
+	_heightfield = heightfield
+	_update_terrain_height(0.0, true)
+
+
+## 瞬间定位时同步地形高度，避免切到高地后再慢慢抬升。
 func snap_to(world_pos: Vector3) -> void:
 	_kill_focus_tween()
 	global_position = Vector3(world_pos.x, global_position.y, world_pos.z)
 	_clamp_to_bounds()
+	_update_terrain_height(0.0, true)
 	_pan_velocity = Vector3.ZERO
 
 
@@ -109,10 +130,20 @@ func focus_on_position(world_pos: Vector3, duration: float = -1.0) -> void:
 		target.x = clampf(target.x, boundary_min.x, boundary_max.x)
 		target.z = clampf(target.z, boundary_min.y, boundary_max.y)
 	var dur: float = focus_duration if duration < 0.0 else duration
+	if dur <= 0.0:
+		snap_to(target)
+		return
 	_focus_tween = create_tween()
 	_focus_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_focus_tween.tween_property(self, "global_position", target, dur)
+	# 只动画 XZ，避免 Tween 每帧覆盖地形跟随的 Y。
+	_focus_tween.tween_method(_set_focus_xz, Vector2(global_position.x, global_position.z), Vector2(target.x, target.z), dur)
 	_pan_velocity = Vector3.ZERO
+
+
+func _set_focus_xz(value: Vector2) -> void:
+	global_position.x = value.x
+	global_position.z = value.y
+	_clamp_to_bounds()
 
 
 func set_boundaries(min_xz: Vector2, max_xz: Vector2) -> void:
@@ -127,6 +158,9 @@ func clear_boundaries() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not _camera_input_allowed():
+		_orbit_dragging = false
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_MIDDLE and allow_manual_orbit:
@@ -141,6 +175,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_adjust_zoom(-1)
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _orbit_dragging and allow_manual_orbit:
+		_kill_zoom_tween()
 		var mm := event as InputEventMouseMotion
 		_yaw -= mm.relative.x * look_sensitivity
 		_pitch -= mm.relative.y * look_sensitivity
@@ -161,15 +196,20 @@ func _process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_SHIFT):
 			speed *= pan_sprint_mult
 		desired *= speed
-	var t: float = clampf(delta * pan_smoothing, 0.0, 1.0)
+	var t: float = 1.0 if pan_smoothing <= 0.0 else 1.0 - exp(-delta * pan_smoothing)
 	_pan_velocity = _pan_velocity.lerp(desired, t)
 	if _pan_velocity.length_squared() > 0.0001:
 		_kill_focus_tween()
 		global_position += _pan_velocity * delta
 		_clamp_to_bounds()
+	_update_terrain_height(delta)
 
 
 func _get_pan_input() -> Vector2:
+	if not _camera_input_allowed():
+		_pan_velocity = Vector3.ZERO
+		_orbit_dragging = false
+		return Vector2.ZERO
 	var kb := Vector2.ZERO
 	if arrow_pan_enabled:
 		if Input.is_key_pressed(KEY_LEFT):
@@ -200,6 +240,8 @@ func _get_pan_input() -> Vector2:
 		return Vector2.ZERO
 	if not get_window().has_focus():
 		return Vector2.ZERO
+	if not Rect2(Vector2.ZERO, vp).has_point(mouse_pos):
+		return Vector2.ZERO
 	var edge := Vector2.ZERO
 	var m := float(edge_pan_margin)
 	if mouse_pos.x < m:
@@ -211,6 +253,37 @@ func _get_pan_input() -> Vector2:
 	elif mouse_pos.y > vp.y - m:
 		edge.y = 1.0
 	return edge.normalized()
+
+
+func _camera_input_allowed() -> bool:
+	if not get_window().has_focus():
+		return false
+	var focus := get_viewport().gui_get_focus_owner()
+	return not (focus is LineEdit or focus is TextEdit)
+
+
+func _sample_terrain_height(world_xz: Vector2) -> float:
+	var wc3 := Vector2(world_xz.x, -world_xz.y) / Wc3Coords.WORLD_SCALE
+	var lo := _heightfield.center_offset
+	# Heightfield 的插值需要右上邻点，采样保持在最后一格内部。
+	var hi := lo + Vector2(_heightfield.width - 1, _heightfield.height - 1) * _heightfield.tile_size - Vector2.ONE * 0.01
+	wc3 = wc3.clamp(lo, hi)
+	return _heightfield.interpolated_height(wc3.x, wc3.y) * Wc3Coords.WORLD_SCALE
+
+
+func _update_terrain_height(delta: float, instant: bool = false) -> void:
+	if not terrain_follow_enabled or _heightfield == null or not _heightfield.is_valid():
+		return
+	if _heightfield.width < 2 or _heightfield.height < 2:
+		return
+	var center := Vector2(global_position.x, global_position.z)
+	var height := _sample_terrain_height(center) * 4.0
+	var radius := maxf(terrain_sample_radius, 0.0)
+	for offset in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+		height += _sample_terrain_height(center + offset * radius)
+	height = height / 8.0 + target_height_offset
+	var weight := 1.0 if instant or terrain_height_smoothing <= 0.0 else 1.0 - exp(-delta * terrain_height_smoothing)
+	global_position.y = lerpf(global_position.y, height, weight)
 
 
 func _adjust_zoom(direction: int) -> void:
@@ -225,10 +298,24 @@ func _adjust_zoom(direction: int) -> void:
 		_apply()
 
 
-func _apply_zoom_level(index: int, _animate: bool) -> void:
+func _apply_zoom_level(index: int, animate: bool) -> void:
+	_kill_zoom_tween()
 	_zoom_index = clampi(index, 0, WC3_ZOOM_DISTANCES_WC3.size() - 1)
-	_distance = _wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[_zoom_index])
-	_pitch = deg_to_rad(_aoa_to_pitch_deg(WC3_ZOOM_AOA_DEG[_zoom_index]))
+	var target := Vector2(
+		_wc3_distance_to_godot(WC3_ZOOM_DISTANCES_WC3[_zoom_index]),
+		deg_to_rad(_aoa_to_pitch_deg(WC3_ZOOM_AOA_DEG[_zoom_index]))
+	)
+	if animate and zoom_duration > 0.0:
+		_zoom_tween = create_tween()
+		_zoom_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		_zoom_tween.tween_method(_set_zoom_state, Vector2(_distance, _pitch), target, zoom_duration)
+	else:
+		_set_zoom_state(target)
+
+
+func _set_zoom_state(value: Vector2) -> void:
+	_distance = value.x
+	_pitch = value.y
 	_apply()
 
 
@@ -270,6 +357,12 @@ func _kill_focus_tween() -> void:
 	if _focus_tween != null and _focus_tween.is_valid():
 		_focus_tween.kill()
 	_focus_tween = null
+
+
+func _kill_zoom_tween() -> void:
+	if _zoom_tween != null and _zoom_tween.is_valid():
+		_zoom_tween.kill()
+	_zoom_tween = null
 
 
 func _apply() -> void:

@@ -132,7 +132,7 @@ Tooltip 限制在视口内，优先避开当前目标与命令按钮，空间不
 
 ## 9. UI 代码模块与分波次落地
 
-View 只负责控件，Presenter/ViewModel 负责订阅、格式化和局部更新，Gameplay 提供只读快照与命令结果。模块包括 HudLayout、SelectionDetails、CommandPanel、HeroRoster、InventoryView、ProductionOverview、ControlGroupBar、Minimap、Notifications、Tooltip、Settings/InputBindings。共享 Theme/控件，不创建万能 UIManager。
+View 只负责控件，Presenter/ViewModel 负责订阅、格式化和局部更新，Gameplay 提供只读快照与命令结果。模块包括 HudLayout、SelectionDetails、CommandPanel、HeroRoster、InventoryView、ProductionOverview、ControlGroupBar、Minimap、Notifications、Tooltip、Settings/InputBindings。共享 Theme/控件；允许 **壳级** Autoload `UiManager`（注册 Surface、推送展示、意图路由），**禁止**把玩法合法性/扣费塞进 UI 单例。详见 [UI_FRAMEWORK.md](UI_FRAMEWORK.md)。
 
 | 阶段 | 工作 | 验收 |
 |---|---|---|

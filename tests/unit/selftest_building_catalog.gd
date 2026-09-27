@@ -3,12 +3,12 @@ extends SceneTree
 ## godot --headless --path . -s res://tests/unit/selftest_building_catalog.gd
 ##
 ## 验证：
-## 1. 竖切 5 建筑（含 hlum/hbla）is_building=true + exists
+## 1. 竖切可造 = 人族 Melee Builds 全集（主城/农舍/兵营/…/秘法塔）
 ## 2. 核心建筑 goldcost/lumbercost > 0
 ## 3. hhou 唯独提供人口（fmade=6）；halt/hbar fmade=0
 ## 4. hpea（农民）/ hfoo（步兵）is_building=false
 ## 5. 3 建筑 footprint 解析非 0
-## 6. VERTICAL_BUILDING_IDS 含 F2 三件套 + 伐木场/铁匠
+## 6. VERTICAL_BUILDING_IDS 含 Builds 全集且均为建筑
 ##
 ## 不硬编码具体数值（防 SLK 漂移；只验"非零/合法范围"）。
 
@@ -39,16 +39,25 @@ func _fail(msg: String) -> void:
 	push_error(msg)
 
 
-# 1. 竖切可造表
+# 1. 竖切可造表（人族 Melee Builds 全集）
 func _test_vertical_ids() -> void:
-	if BuildingCatalog.VERTICAL_BUILDING_IDS.size() != 5:
-		_fail("VERTICAL_BUILDING_IDS 应为 5 个，实际 %d" % BuildingCatalog.VERTICAL_BUILDING_IDS.size())
+	var expect := [
+		"htow", "hhou", "hbar", "hbla", "hwtw", "halt", "harm", "hars", "hlum", "hgra", "hvlt",
+	]
+	if BuildingCatalog.VERTICAL_BUILDING_IDS.size() != expect.size():
+		_fail(
+			"VERTICAL_BUILDING_IDS 应为 %d 个，实际 %d"
+			% [expect.size(), BuildingCatalog.VERTICAL_BUILDING_IDS.size()]
+		)
 		return
-	for id in ["hhou", "halt", "hbar", "hlum", "hbla"]:
+	for id in expect:
 		if not BuildingCatalog.VERTICAL_BUILDING_IDS.has(id):
 			_fail("VERTICAL_BUILDING_IDS 缺 %s" % id)
 			return
-	print("  vertical_ids OK")
+		if not BuildingCatalog.is_building(id):
+			_fail("VERTICAL_BUILDING_IDS 含非建筑 %s" % id)
+			return
+	print("  vertical_ids OK (%d)" % expect.size())
 
 
 # 2. 3 建筑 is_building + exists + 造价 > 0

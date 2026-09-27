@@ -4,25 +4,40 @@ extends RefCounted
 ## 玩家已完工建筑/单位存在性（供 Requires 判定）。
 ## 升级链：需要 htow 时，hkee/hcas 也算满足（经典 Melee）。
 
-## 人族竖切：祭坛训四英雄；兵营只训步兵/火枪手。
+## 人族竖切：祭坛训四英雄；兵营只训步兵/火枪手；主城训农民。
+## 表中有键的建筑：只显示列出的 id（可为空 = 暂不开放训兵）。
+## 无键：放行 SLK 全表（兼容未列入竖切的中立/临时建筑）。
 const VERTICAL_TRAINS := {
 	"halt": ["Hamg", "Hmkg", "Hpal", "Hblm"],
 	"hbar": ["hfoo", "hrif"],
 	"htow": ["hpea"],
 	"hkee": ["hpea"],
 	"hcas": ["hpea"],
+	## 已上建造菜单、玩法未竖切的建筑：先锁空，避免露出未接线单位。
+	"hwtw": [],
+	"harm": [],
+	"hars": [],
+	"hgra": [],
+	"hvlt": [],
 }
 
-## 人族竖切：主城升本链。
+## 人族竖切：主城升本链；瞭望塔 → 守卫塔（炮塔/秘法塔后置三选一 UI）。
 const VERTICAL_BUILDING_UPGRADES := {
 	"htow": "hkee",
 	"hkee": "hcas",
+	"hwtw": "hgtw",
 }
 
 ## 人族竖切：兵营顶盾；铁匠武器/护甲（近战+远程各一条）。
+## 表中有键且为空：暂不开放研究钮（已造出的伐木场等仍按原表）。
 const VERTICAL_RESEARCHES := {
 	"hbar": ["Rhde"],
 	"hbla": ["Rhme", "Rhar", "Rhla", "Rhra"],
+	"hwtw": [],
+	"harm": [],
+	"hars": [],
+	"hgra": [],
+	"hvlt": [],
 }
 
 ## rarm 在 UpgradeData 里常为 "-"；经典人族护甲升级每级 +2。

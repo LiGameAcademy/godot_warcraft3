@@ -1,15 +1,16 @@
 class_name UnitSelector
 extends Node
-## 点选/框选中央裁决（输入 + 2D 脚底圆查询）。
+## 点选/框选中央裁决（模型表面优先，脚底容错）。
 ## 选中环 / 拾取半径数据在 SelectableComponent；交互闪环在 InteractableComponent。
 ##
-## 输入：专用全屏 Control（gui_input），挂在低于 HUD 的 CanvasLayer。
+## 游戏输入由 MatchInputController 转发；独立使用时启用自身 _input。
 
 ## 建筑略大半径惩罚：同点多圆重叠时优先小单位 / 近圆心
 const BUILDING_RADIUS_SCORE_MUL := 0.35
-## 射线近乎水平时：脚底屏幕像素兜底
-const FOOT_FALLBACK_UNIT_PX := 52.0
-const FOOT_FALLBACK_BUILDING_PX := 28.0
+const PickVolume := preload("res://client/selection/unit_pick_volume.gd")
+## 小幅脚底容错，不能让离鼠标几十像素的单位抢走建筑命中。
+const FOOT_FALLBACK_UNIT_PX := 10.0
+const FOOT_FALLBACK_BUILDING_PX := 8.0
 
 ## 兼容旧 API
 enum RingKind {
@@ -19,7 +20,13 @@ enum RingKind {
 
 signal selection_changed(primary: Node3D, selected: Array)
 
-@export var enabled: bool = true
+@export var enabled: bool = true:
+	set(value):
+		enabled = value
+		if not value and _marquee != null:
+			_cancel_gesture()
+			_clear_hover()
+@export var click_slop_px: float = 8.0
 ## ≥0 时只可选该 owner；-1 不限（点选可观察敌方/中立；下达指令看可控过滤）
 @export var owner_filter: int = -1
 ## 框选（多选）仅保留该玩家单位/建筑；-1 不限。对齐原作：敌对/中立不可框选。
@@ -45,6 +52,8 @@ var _primary: Node3D = null
 var _ring_hosts: Array[Node3D] = []
 ## 当前悬停预览宿主（未选中单位/建筑；不含树木）
 var _hover_host: Node3D = null
+var _press_picked: Node3D = null
+var _external_input := false
 
 
 func _ready() -> void:
@@ -60,10 +69,16 @@ func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = nu
 	unit_host = p_unit_host
 	if p_overlay_parent != null:
 		overlay_parent = p_overlay_parent
-	set_process_input(true)
+	set_process_input(not _external_input)
 	# 预热表，避免首次点选 ensure_table 尖峰
 	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
 	Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)
+	# 地图装配阶段建立静态模型包围盒，避免把全图首次扫描放在第一次点击里。
+	if unit_host != null:
+		for child in unit_host.get_children():
+			var model := child.get_node_or_null("Model") as Node3D
+			if model != null:
+				PickVolume.model_bounds(model)
 	if camera != null and not camera.is_inside_tree():
 		pass
 	elif camera != null:
@@ -107,7 +122,7 @@ func _try_autobind() -> void:
 		if unit_host == null:
 			unit_host = scene.find_child("Units", true, false)
 	if camera != null and unit_host != null:
-		set_process_input(true)
+		set_process_input(not _external_input)
 		_ensure_input_layer()
 		_ensure_overlay()
 		AppLog.info(
@@ -258,8 +273,10 @@ func _is_tree_like(n: Node3D) -> bool:
 	return false
 
 
-## 主输入：全屏层 gui_input（可靠）。`_unhandled_input` 仅作无层时的兜底。
+## 独立嵌入时的 GUI 兜底；正式对局输入由中央路由独占。
 func _on_world_gui_input(event: InputEvent) -> void:
+	if _external_input:
+		return
 	_try_autobind()
 	if not enabled or camera == null or unit_host == null:
 		return
@@ -292,9 +309,23 @@ func _on_world_gui_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# 自身也会收；主路径由 GameDirector.handle 转发（更稳）。此处仅兜底。
+	# 仅独立使用时启用；中央路由绑定后 set_external_input 会停用此入口。
 	if handle_pointer_event(event):
 		get_viewport().set_input_as_handled()
+
+
+## MatchInputController 绑定后独占路由；独立使用时恢复自身输入。
+func set_external_input(value: bool) -> void:
+	_external_input = value
+	set_process_input(not value)
+	_cancel_gesture()
+
+
+func _cancel_gesture() -> void:
+	_marqueeing = false
+	_press_picked = null
+	_marquee.cancel()
+	set_process(false)
 
 
 func _process(_delta: float) -> void:
@@ -304,12 +335,11 @@ func _process(_delta: float) -> void:
 
 
 ## screen_pos 是否落在会吃世界点击的 HUD 上。
-## include_edge_bands：框选/点选用 true（hovered 偶发为空时兜底挡底栏/资源条）。
-## 建造落点确认须传 false——底栏上方仍有可点地图，粗条带会把确认左键静默吞掉。
-func _hud_blocks_screen(screen_pos: Vector2, include_edge_bands: bool = true) -> bool:
+## 保留第二参数兼容命令/建造调用；只按实际可见控件，不屏蔽整条屏幕。
+func _hud_blocks_screen(screen_pos: Vector2, _include_edge_bands: bool = true) -> bool:
 	# _input 先于 GUI 更新悬停状态；动态背包可能位于底栏之外。
 	for panel in get_tree().get_nodes_in_group("world_input_blockers"):
-		if panel is Control and panel.is_visible_in_tree() and panel.get_global_rect().has_point(screen_pos):
+		if panel is Control and panel.get_viewport() == get_viewport() and panel.is_visible_in_tree() and panel.get_global_rect().has_point(screen_pos):
 			return true
 	# 注意：框选进行中不要调用此函数拦截松手（见 handle_pointer_event）。
 	# 主判据：鼠标下已有接事件的 Control（HUD / GM / 命令卡 / Option 弹出项）。
@@ -318,17 +348,7 @@ func _hud_blocks_screen(screen_pos: Vector2, include_edge_bands: bool = true) ->
 	if viewport == null:
 		return false
 	var hovered := viewport.gui_get_hovered_control()
-	if hovered != null and _is_ui_control_blocking(hovered):
-		return true
-	if not include_edge_bands:
-		return false
-	# 兜底：底栏 / 右上资源条（hovered 偶发为空时）
-	var vp := viewport.get_visible_rect().size
-	if vp.y <= 1.0:
-		return false
-	if screen_pos.y >= vp.y * 0.78:
-		return true
-	if screen_pos.y <= 52.0 and screen_pos.x >= vp.x - 340.0:
+	if hovered != null and hovered.is_visible_in_tree() and hovered.get_global_rect().has_point(screen_pos) and _is_ui_control_blocking(hovered):
 		return true
 	return false
 
@@ -366,7 +386,14 @@ func _on_press(screen_pos: Vector2) -> void:
 	_clear_hover()
 	_marqueeing = true
 	set_process(true)
+	_marquee.drag_threshold_px = click_slop_px
 	_marquee.begin(screen_pos)
+	_press_picked = _pick_at(screen_pos)
+	if _press_picked == null and pick_extra.is_valid():
+		_press_picked = pick_extra.call(screen_pos) as Node3D
+	# 按下即反馈；松开时不重新拾取已经移动的目标。
+	if _press_picked != null:
+		_set_selection([_press_picked])
 
 
 func _on_release(screen_pos: Vector2) -> void:
@@ -379,13 +406,9 @@ func _on_release(screen_pos: Vector2) -> void:
 	if rect.size.x >= 0.5 and rect.size.y >= 0.5:
 		_select_in_rect(rect)
 	else:
-		var picked := _pick_at(screen_pos)
-		if picked == null and pick_extra.is_valid():
-			picked = pick_extra.call(screen_pos) as Node3D
-		if picked != null:
-			_set_selection([picked])
-		else:
+		if not is_instance_valid(_press_picked):
 			clear_selection()
+	_press_picked = null
 
 
 ## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。不含树木（树走 TreeRegistry）。
@@ -403,9 +426,7 @@ func screen_foot_distance(node: Node3D, screen_pos: Vector2) -> float:
 	return camera.unproject_position(node.global_position).distance_to(screen_pos)
 
 
-## 点选：射线 ∩ 脚底水平面，世界 XZ 落在拾取圆内即命中（无高度胶囊）。
-## 半径：UnitBalance.collision → UnitUI.scale → 有限 mesh 放宽。
-## 优先级：单位圆 > 建筑圆；同分取距圆心更近 / 半径更小。
+## 包围盒只做初筛，取实际模型表面的最近命中；无身体命中再采用脚底容错。
 ## 注意：热路径不调用 InteractionSetup.attach——否则首次点击会给全图单位实例化 SelectionRing。
 func _pick_at(screen_pos: Vector2) -> Node3D:
 	if camera == null or unit_host == null:
@@ -420,8 +441,14 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 	var best_unit_score := INF
 	var best_bldg: Node3D = null
 	var best_bldg_score := INF
+	var best_body: Node3D = null
+	var best_body_distance := INF
 
 	for n in _iter_unit_nodes():
+		var body_distance := PickVolume.ray_distance(n, origin, dir)
+		if body_distance < best_body_distance:
+			best_body_distance = body_distance
+			best_body = n
 		var is_bldg := _node_is_building(n)
 		var radius := _pick_radius_of(n)
 		var hit := _ray_foot_plane_hit(origin, dir, n.global_position)
@@ -456,6 +483,8 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 			best_unit_score = score
 			best_unit = n
 
+	if best_body != null:
+		return best_body
 	if best_unit != null:
 		return best_unit
 	return best_bldg
@@ -538,7 +567,7 @@ func _iter_unit_nodes() -> Array[Node3D]:
 			continue
 		var n := c as Node3D
 		# 离场单位（进矿 / 工地 / 训练中）不可点选、不可框选
-		if not WorldMembership.is_in_world(n):
+		if not WorldMembership.is_in_world(n) or not n.is_visible_in_tree() or n.is_queued_for_deletion():
 			continue
 		if not n.has_meta("unit_data"):
 			continue
@@ -627,10 +656,14 @@ func _allows_marquee(n: Node3D) -> bool:
 func _set_selection(nodes: Array) -> void:
 	# 故意不设原作 12 人框选上限：选中集合可任意大。
 	_clear_hover()
-	_selected.clear()
+	var next: Array[Node3D] = []
 	for n in nodes:
 		if n is Node3D and is_instance_valid(n):
-			_selected.append(n as Node3D)
+			next.append(n as Node3D)
+	# 重复点击同一目标不重建命令卡、详情、肖像与集结反馈。
+	if next == _selected:
+		return
+	_selected = next
 	if _selected.is_empty():
 		_primary = null
 	else:

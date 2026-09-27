@@ -284,14 +284,18 @@ func ensure_hero(unit: Node3D) -> void:
 		_ensure_hero_passives.call(unit)
 
 
-## 可战斗非建筑单位挂 UnitAI + AttackController；中立 → 入营。
+## 可战斗单位挂 UnitAI + AttackController；有武器建筑走 HOLD 站桩开火（不追击）。
 func ensure_combat_ai(unit: Node3D) -> UnitAI:
 	if unit == null or not is_instance_valid(unit):
 		return null
 	if not CombatQuery.has_weapon(unit):
 		return null
+	if UnitLife.is_under_construction(unit):
+		return null
 	var tid := CombatQuery.type_id_of(unit)
-	if BuildingCatalog.is_building(tid) or BuildingVisual.is_building(tid):
+	var is_structure := BuildingCatalog.is_building(tid) or BuildingVisual.is_building(tid)
+	if is_structure:
+		_ensure_structure_hold_fire(unit)
 		return null
 	if _ensure_attack_controller.is_valid():
 		_ensure_attack_controller.call(unit)
@@ -309,6 +313,17 @@ func ensure_combat_ai(unit: Node3D) -> UnitAI:
 	_attach_to_camp_if_neutral(unit, ai)
 	ai.captures_home_from_body()
 	return ai
+
+
+## 防御塔等有武器建筑：AttackController.HOLD，只打出手射程内，不寻路追击。
+func _ensure_structure_hold_fire(unit: Node3D) -> void:
+	if not _ensure_attack_controller.is_valid():
+		return
+	var ac: Variant = _ensure_attack_controller.call(unit)
+	if ac == null or not is_instance_valid(ac as Object):
+		return
+	if ac.has_method("start_hold"):
+		ac.call("start_hold")
 
 
 ## 地图已有单位 + 开局刷兵：批量挂 AI / 英雄，并聚类营地。

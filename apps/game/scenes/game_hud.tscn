@@ -20,7 +20,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="ResourceBar" parent="Root" unique_id=1184083641 instance=ExtResource("2_resource")]
+[node name="ResourceBar" parent="Root" unique_id=1184083641 groups=["world_input_blockers"] instance=ExtResource("2_resource")]
 unique_name_in_owner = true
 
 [node name="HintLabel" type="Label" parent="Root" unique_id=2071819172]
@@ -44,16 +44,16 @@ grow_vertical = 0
 theme_override_colors/font_color = Color(0.75, 0.78, 0.7, 0.85)
 theme_override_font_sizes/font_size = 12
 
-[node name="ActivityFeedPanel" parent="Root" unique_id=1877575420 instance=ExtResource("3_activity")]
+[node name="ActivityFeedPanel" parent="Root" unique_id=1877575420 groups=["world_input_blockers"] instance=ExtResource("3_activity")]
 unique_name_in_owner = true
 
-[node name="MinimapDock" parent="Root" unique_id=365075673 instance=ExtResource("4_minimap")]
+[node name="MinimapDock" parent="Root" unique_id=365075673 groups=["world_input_blockers"] instance=ExtResource("4_minimap")]
 unique_name_in_owner = true
 
-[node name="SelectionDetailsPanel" parent="Root" unique_id=962073525 instance=ExtResource("5_selection")]
+[node name="SelectionDetailsPanel" parent="Root" unique_id=962073525 groups=["world_input_blockers"] instance=ExtResource("5_selection")]
 unique_name_in_owner = true
 
-[node name="MarginContainer3" type="MarginContainer" parent="Root" unique_id=1626222547]
+[node name="MarginContainer3" type="MarginContainer" parent="Root" unique_id=1626222547 groups=["world_input_blockers"]]
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0

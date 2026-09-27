@@ -24,10 +24,28 @@ var _saved_scale: Vector3 = Vector3.ONE
 func _ready() -> void:
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ensure_mesh_mat()
-	position = Vector3(0.0, Y_BIAS, 0.0)
-	if not visible:
-		# 默认隐藏，等 Selectable 选中再显示
-		pass
+	# 圈的直径和抬高量都是世界单位，不继承模型缩放/转向。
+	top_level = true
+	global_basis = Basis.IDENTITY
+	_sync_position()
+	visibility_changed.connect(_on_visibility_changed)
+	_on_visibility_changed()
+
+
+func _on_visibility_changed() -> void:
+	set_process(is_visible_in_tree())
+	if is_visible_in_tree():
+		_sync_position()
+
+
+func _process(_delta: float) -> void:
+	_sync_position()
+
+
+func _sync_position() -> void:
+	var host := get_parent() as Node3D
+	if host != null and is_inside_tree():
+		global_position = host.global_position + Vector3.UP * Y_BIAS
 
 
 func _ensure_mesh_mat() -> void:
@@ -47,6 +65,8 @@ func _ensure_mesh_mat() -> void:
 			_mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 			_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+			# 选中反馈覆盖地形。render_priority 只排序透明物体，不能绕过深度测试。
+			_mat.no_depth_test = true
 			_mat.render_priority = 20
 			var tex: Texture2D = RuntimeAssets.load_converted_texture(SEL_CIRCLE_TEX)
 			if tex != null:
@@ -60,6 +80,7 @@ func configure(diameter: float, color: Color, render_priority: int = 20) -> void
 	set_ring_color(color)
 	_mat.render_priority = render_priority
 	scale = Vector3.ONE
+	_sync_position()
 	visible = true
 
 

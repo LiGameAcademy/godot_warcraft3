@@ -147,6 +147,9 @@ func apply_building_upgrade(building: Node3D, new_type_id: String) -> bool:
 	if stock != null and new_food != old_food:
 		stock.add_food_cap(new_food - old_food)
 	_presenter.apply_building_phase(building, want)
+	## 瞭望塔升守卫塔等：换 typeId 后按新武器挂 HOLD 开火。
+	if is_instance_valid(_units):
+		_units.ensure_combat_ai(building)
 	changed.emit(building)
 	return true
 

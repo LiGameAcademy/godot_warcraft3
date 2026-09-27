@@ -4,7 +4,7 @@
 
 ## 1. 四级组织
 
-基础控件 → 组合控件 → HUD 功能面板 → 布局外壳。控件只消费展示数据、发出操作意图；Presenter 负责订阅、查询和调用命令。状态权威保留在 Gameplay，不把 Node、GameDirector 或可写业务组件作为所有控件的万能上下文。
+基础控件 → 组合控件 → HUD 功能面板 → 布局外壳。控件只消费展示数据、发出操作意图；Presenter 负责订阅、查询和调用命令。状态权威保留在 Gameplay，不把 Node、GameDirector 或可写业务组件作为所有控件的万能上下文。对局壳经 Autoload [`UiManager`](UI_FRAMEWORK.md) 注册 Surface / 推送 VM / 路由 `UiIntent`；`UiManager` 不做 Requires/扣费。
 
 当前落地目录：`apps/game/client/hud/panels/`（功能面板）+ 既有 `client/hud/` 基础件（肖像、Buff、冷却、背包、小地图）。`GameHud`（`scenes/game_hud.tscn`）仅组装与转发，不再内嵌各区逻辑。
 

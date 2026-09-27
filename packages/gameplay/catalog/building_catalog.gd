@@ -14,7 +14,11 @@ extends RefCounted
 ## 命令卡 = UnitFunc Builds ∩ 本表；科技升级建筑后置。
 
 ## 人族竖切可造建筑（Builds ∩ 本表）。
-const VERTICAL_BUILDING_IDS := ["hhou", "halt", "hbar", "hlum", "hbla"]
+## 顺序对齐 HumanUnitFunc `hpea` Builds，便于命令卡槽位稳定。
+## 二线训兵/塔升本/商店货架仍可分项打开；未进 VERTICAL_TRAINS 的建筑默认不露训兵钮。
+const VERTICAL_BUILDING_IDS := [
+	"htow", "hhou", "hbar", "hbla", "hwtw", "halt", "harm", "hars", "hlum", "hgra", "hvlt",
+]
 ## 兼容旧名（= VERTICAL_BUILDING_IDS）。
 const F2_BUILDING_IDS := VERTICAL_BUILDING_IDS
 

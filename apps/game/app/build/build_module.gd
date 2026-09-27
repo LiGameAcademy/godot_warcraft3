@@ -320,12 +320,12 @@ func _measured_on_construction_started(order: BuildOrder) -> void:
 		_game_hud.set_status("开工：%s" % order.building_id)
 
 
-func on_construction_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> void:
+func on_construction_completed(order: BuildOrder, site_wc3: Vector2, player_owner: int) -> Node3D:
 	if order == null:
-		return
+		return null
 	var key := construction_key(order)
 	if not _active_construction.has(key):
-		return
+		return null
 	var rec: Dictionary = _active_construction[key]
 	var building_node: Node3D = rec.get("node") as Node3D
 	_active_construction.erase(key)
@@ -337,7 +337,7 @@ func on_construction_completed(order: BuildOrder, site_wc3: Vector2, player_owne
 			BuildingVisual.apply_phase(cache, building_node, order.building_id, BuildingVisual.Phase.IDLE)
 	elif _map_root != null and _heightfield != null:
 		var entry := build_entry_for(order.building_id, site_wc3, player_owner, _alloc_cn())
-		_map_root.add_unit_instance(entry, _heightfield.as_dict_view())
+		building_node = _map_root.add_unit_instance(entry, _heightfield.as_dict_view()) as Node3D
 		_refresh_dynamic_pathing()
 	if _session != null:
 		var stock := _session.stocks.get(player_owner) as PlayerStock
@@ -353,6 +353,7 @@ func on_construction_completed(order: BuildOrder, site_wc3: Vector2, player_owne
 	if _resync_health_bars.is_valid():
 		_resync_health_bars.call()
 	construction_completed.emit(order, site_wc3, player_owner)
+	return building_node if is_instance_valid(building_node) else null
 
 
 func on_construction_cancelled(order: BuildOrder) -> void:

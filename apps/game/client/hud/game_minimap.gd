@@ -110,8 +110,9 @@ func set_background_texture(tex: Texture2D) -> void:
 func _process(_delta: float) -> void:
 	if _camera == null or _hf == null or not _hf.is_valid():
 		return
+	# 游戏按实际视野估算；共享工具的 40 度默认值仅用于编辑器导航示意。
 	_viewport_quad = MapMinimapUtils.compute_camera_minimap_uv_quad(
-		_camera, _camera_rig if _camera_rig != null else _camera, _hf
+		_camera, _camera_rig if _camera_rig != null else _camera, _hf, 1.0, 0.0
 	)
 	if _overlay != null:
 		_overlay.queue_redraw()

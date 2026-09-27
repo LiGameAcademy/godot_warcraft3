@@ -146,9 +146,6 @@ func ring_diameter_world() -> float:
 		is_bldg = is_building()
 	var diam_wc3 := Wc3IdCatalog.selection_diameter_wc3(info)
 	var diam := diam_wc3 * Wc3Coords.WORLD_SCALE
-	var sx := absf(h.scale.x)
-	if sx > 1e-6 and sx < 0.5:
-		diam /= sx
 	if not is_bldg:
 		diam *= UNIT_RING_SLK_MUL
 		var mesh_d := _mesh_xz_diameter(h)
@@ -234,7 +231,8 @@ func _mesh_xz_diameter(node: Node3D) -> float:
 		var local := vi.get_aabb()
 		if local.size.length() < 1e-5:
 			continue
-		var xf: Transform3D = node.global_transform.affine_inverse() * vi.global_transform
+		# 本函数返回世界尺度，选中环已独立于宿主缩放。
+		var xf: Transform3D = vi.global_transform
 		var box := xf * local
 		if first:
 			aabb = box
