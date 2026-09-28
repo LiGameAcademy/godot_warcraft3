@@ -76,6 +76,10 @@ func _ready() -> void:
 	report_path = str(ProjectSettings.get_setting("warcraft3/audit_report", asset_root.trim_suffix("/").get_base_dir().path_join(".cache/asset-audit/latest/report.json")))
 	load_catalog(report_path)
 	_update_camera()
+	var arguments: PackedStringArray = OS.get_cmdline_user_args()
+	var preview_index: int = arguments.find("--preview-scene")
+	if preview_index >= 0 and preview_index + 1 < arguments.size():
+		preview_scene(arguments[preview_index + 1])
 	print("AssetViewer: ready (%d models)" % catalog.records.size())
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		_smoke_test.call_deferred()
@@ -88,6 +92,17 @@ func _input(event: InputEvent) -> void:
 
 
 #region Public interface
+func preview_scene(file_path: String) -> bool:
+	if not file_path.is_absolute_path() or file_path.get_extension().to_lower() != "scn":
+		status.text = "预览需要 .scn 文件的绝对路径。"
+		return false
+	selected_record = {"logical_path": file_path.get_file(), "scn_path": file_path.get_file(), "preview_absolute_path": file_path, "severity": "unknown", "issues": []}
+	_reload_model()
+	fit_model()
+	print("AssetViewer: external preview %s loaded=%s" % [file_path, current_model != null])
+	return current_model != null
+
+
 func load_catalog(file_path: String) -> void:
 	report_path = file_path
 	_clear_model()
@@ -302,7 +317,7 @@ func _reload_model() -> void:
 	if relative.is_empty():
 		status.text = "该模型尚无 .scn，显示审计信息。查看器不会自动转换或烘焙。"
 		return
-	var scene_path: String = RuntimeAssets.converted_path(relative)
+	var scene_path: String = str(selected_record.get("preview_absolute_path", RuntimeAssets.converted_path(relative)))
 	var packed: PackedScene = RuntimeAssets.load_packed_scene(scene_path)
 	if packed == null:
 		status.text = "场景无法加载或引用不兼容：" + relative

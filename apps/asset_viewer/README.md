@@ -31,6 +31,14 @@ python tools/workspace/sync_packages.py --app asset_viewer
 
 ## 当前功能
 
+开发产物可直接指定绝对路径预览，无需覆盖现有资产库：
+
+```powershell
+& $env:GODOT --path apps/asset_viewer -- --preview-scene "D:/path/to/result.scn"
+```
+
+该入口仍只读，默认使用原烘焙队色。重播会重新加载指定文件；选择左侧其他资产后恢复常规目录浏览。新 worker 产物尚未完成材质与特效迁移时，预览画面不代表最终交付效果。
+
 - 默认按路径显示树状目录，可切换平面列表；支持全部展开／折叠，搜索时展开匹配路径。两种视图共用筛选与选择，切换不会重载模型或中断动画。
 - 路径、类别、问题文字搜索；按最高严重等级及是否已 bake 筛选。
 - 无 `.scn` 的模型仍可查看审计问题；无报告时可只浏览已有 `.scn`。
