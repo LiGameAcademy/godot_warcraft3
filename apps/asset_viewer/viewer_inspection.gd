@@ -16,7 +16,7 @@ func clear() -> void:
 	_inspected_nodes.clear()
 	current_model = null
 
-func _collect(model: Node) -> Array[Node]:
+static func collect_nodes(model: Node) -> Array[Node]:
 	var nodes: Array[Node] = [model]
 	var index: int = 0
 	while index < nodes.size():
@@ -27,7 +27,7 @@ func _collect(model: Node) -> Array[Node]:
 func rebuild(model: Node3D) -> void:
 	current_model = model
 	tree.clear()
-	_inspected_nodes = _collect(current_model)
+	_inspected_nodes = collect_nodes(current_model)
 	var items: Dictionary = {}
 	for index: int in range(_inspected_nodes.size()):
 		var node: Node = _inspected_nodes[index]

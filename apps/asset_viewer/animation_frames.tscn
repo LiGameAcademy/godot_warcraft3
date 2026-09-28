@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://animation_frames.gd" id="1"]
+
+[node name="AnimationFrames" type="HBoxContainer"]
+script = ExtResource("1")
+tooltip_text = "按预览采样率显示帧号，从 0 开始，末帧为动画结束。输入帧号并回车定位；自动暂停，不改写资产。粒子模拟不支持倒放定位。"
+
+[node name="FrameRate" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+text = "帧（30 FPS）"
+
+[node name="CurrentFrame" type="SpinBox" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+max_value = 0.0
+step = 1.0
+rounded = true
+editable = false
+
+[node name="MaximumFrame" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+text = "/ 0"

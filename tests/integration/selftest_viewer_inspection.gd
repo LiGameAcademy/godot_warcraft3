@@ -10,6 +10,32 @@ func _run() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	assert(args.size() > 0, "Provide a real .scn absolute path")
 	assert(viewer.preview_scene(args[0]))
+	var frame_panel: HBoxContainer = _named(viewer, "AnimationFrames")
+	var frame_input: SpinBox = _named(frame_panel, "CurrentFrame")
+	assert(frame_input.editable and frame_input.max_value == 45)
+	frame_input.value = 15
+	assert(viewer.pause_button.button_pressed)
+	assert(is_equal_approx(viewer.player.current_animation_position, 0.5))
+	frame_input.value = frame_input.max_value
+	assert(is_equal_approx(viewer.player.current_animation_position, 1.5))
+	viewer.set_paused(false)
+	viewer.player.advance(2.0)
+	frame_panel._process(0.0)
+	assert(frame_input.value == 45)
+	viewer.player.seek(0.2, true)
+	frame_panel._process(0.0)
+	assert(frame_input.value == 6)
+	for index: int in range(viewer.animations.item_count):
+		if viewer.animations.get_item_text(index) == "DecayBone":
+			viewer.animations.select(index)
+			viewer._play_animation(index)
+	frame_input.value = 1800
+	for index: int in range(viewer.animations.item_count):
+		if viewer.animations.get_item_text(index) == "Stand-1":
+			viewer.animations.select(index)
+			viewer._play_animation(index)
+	assert(frame_input.value == 0 and frame_input.max_value == 45)
+	assert(not viewer.pause_button.button_pressed)
 	(_named(viewer, "ShowReport") as CheckButton).button_pressed = false
 	assert(not viewer.details.visible)
 	(_named(viewer, "ShowReport") as CheckButton).button_pressed = true
@@ -34,6 +60,7 @@ func _run() -> void:
 	viewer._restart()
 	assert(nodes.get_root() != null)
 	viewer._clear_model()
+	assert(not frame_input.editable and frame_input.value == 0 and frame_input.max_value == 0)
 	assert(nodes.get_root() == null)
 	assert((_named(viewer, "AnimationInfo") as RichTextLabel).text == "无动画。")
 	assert(viewer.preview_scene(args[0]))
@@ -51,7 +78,7 @@ func _run() -> void:
 	if "--capture" in args:
 		await RenderingServer.frame_post_draw
 		get_root().get_texture().get_image().save_png(args[0].get_base_dir().path_join("viewer-inspection.png"))
-	print("PASS: scene tree, animation metadata, six views, reset, reload and clear")
+	print("PASS: frame display/seek/end/switch/clear, scene tree, animation metadata, six views and reload")
 	quit(0)
 
 func _named(start: Node, wanted: String) -> Node:

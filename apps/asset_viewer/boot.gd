@@ -41,12 +41,18 @@ var _expanded_folders: Dictionary = {}
 var _building_tree: bool = false
 var _syncing_selection: bool = false
 const Inspection: GDScript = preload("res://viewer_inspection.gd")
+const Frames: GDScript = preload("res://animation_frames.gd")
+@onready var frame_controls: Frames = %AnimationFrames
 const TeamMaterial: GDScript = preload("res://viewer_team_material.gd")
 var _inspection: RefCounted
 
 
 #region Lifecycle
 func _ready() -> void:
+	frame_controls.pause_requested.connect(set_paused.bind(true))
+	frame_controls.time_requested.connect(func(seconds: float) -> void:
+		if is_instance_valid(player):
+			player.seek(seconds, true))
 	_inspection = Inspection.new(%SceneNodes, %NodeInfo, %AnimationInfo)
 	(%ShowReport as CheckButton).toggled.connect(func(enabled: bool) -> void: details.visible = enabled)
 	(%ResetCamera as Button).pressed.connect(reset_camera)
@@ -317,6 +323,7 @@ func _select_index(index: int) -> void:
 
 
 func _clear_model() -> void:
+	frame_controls.bind_animation(null)
 	(%SceneNodes as Tree).clear()
 	_inspection.clear()
 	(%NodeInfo as RichTextLabel).text = "选择节点查看只读属性。"
@@ -390,6 +397,7 @@ func _play_animation(index: int) -> void:
 	set_paused(false)
 	player.play(animations.get_item_text(index))
 	player.advance(0.0)
+	frame_controls.bind_animation(player)
 	_animation_info()
 
 
@@ -418,12 +426,7 @@ func _is_glow_card(mesh_node: MeshInstance3D) -> bool:
 
 
 func _nodes(root: Node) -> Array[Node]:
-	var result: Array[Node] = [root]
-	var index: int = 0
-	while index < result.size():
-		result.append_array(result[index].get_children())
-		index += 1
-	return result
+	return Inspection.collect_nodes(root)
 
 
 func _preview_input(event: InputEvent) -> void:

@@ -1,7 +1,8 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://boot.gd" id="1"]
 [ext_resource type="PackedScene" path="res://axis_gizmo.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://animation_frames.tscn" id="3"]
 [sub_resource type="Environment" id="Environment"]
 background_mode = 1
 background_color = Color(0.055, 0.07, 0.09, 1)
@@ -157,6 +158,10 @@ text = "地面"
 unique_name_in_owner = true
 layout_mode = 2
 text = "浅背景"
+
+[node name="AnimationFrames" parent="Margin/Layout/Split/Preview" instance=ExtResource("3")]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="ViewportContainer" type="SubViewportContainer" parent="Margin/Layout/Split/Preview"]
 unique_name_in_owner = true
