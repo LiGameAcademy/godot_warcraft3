@@ -1,8 +1,9 @@
 extends RefCounted
+const Curves: GDScript = preload("import_geoset_curves.gd")
 ## Exact binary, non-global GeosetAnim alpha. Continuous alpha needs composition
 ## with material-layer alpha and must not be silently reduced to a boolean.
 static func compile(scene: Node, ir: Dictionary) -> Dictionary:
-	var result: Dictionary = {"meshes": 0, "visibility_tracks": 0, "diagnostics": []}
+	var result: Dictionary = {"meshes": 0, "visibility_tracks": 0, "curve_tracks": 0, "diagnostics": []}
 	var payload: Dictionary = ir.get("animations", {}).get("payload", {})
 	var meshes: Dictionary = {}
 	var players: Array[AnimationPlayer] = []
@@ -21,9 +22,16 @@ static func compile(scene: Node, ir: Dictionary) -> Dictionary:
 		if mesh == null:
 			_warn(result, "geoset_binding_missing", id)
 			continue
+		var alpha: Dictionary = entry.get("alpha", {}) if entry.get("alpha") is Dictionary else {}
+		var sequences: Array = payload.get("sequences", [])
+		if (not _supported(alpha) or int(entry.get("flags", 0)) & 2) and players.size() == 1 and _clips_supported(players[0], sequences):
+			var curves: Dictionary = Curves.compile(mesh, players[0], entry, sequences)
+			if curves.ok:
+				result.meshes += 1
+				result.curve_tracks += curves.tracks
+				continue
 		if int(entry.get("flags", 0)) & 2:
 			_warn(result, "geoset_color_pending", id)
-		var alpha: Dictionary = entry.get("alpha", {}) if entry.get("alpha") is Dictionary else {}
 		if not _supported(alpha):
 			_warn(result, "geoset_alpha_pending", id)
 			continue
@@ -31,7 +39,6 @@ static func compile(scene: Node, ir: Dictionary) -> Dictionary:
 			mesh.visible = _scalar(alpha.get("static", 1.0)) > 0.0
 			result.meshes += 1
 			continue
-		var sequences: Array = payload.get("sequences", [])
 		if players.size() != 1 or not _clips_supported(players[0], sequences):
 			_warn(result, "geoset_animation_layout_pending", id)
 			continue

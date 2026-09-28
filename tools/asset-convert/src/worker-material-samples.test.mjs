@@ -14,7 +14,7 @@ const scratch = path.join(repo, 'tools/asset-convert/tmp');
 fs.mkdirSync(scratch, { recursive: true });
 const output = fs.mkdtempSync(path.join(scratch, 'material-samples-'));
 fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Material Samples"\n');
-for (const name of ['import_worker', 'import_skeleton_compiler', 'import_material_compiler', 'import_material_animation', 'import_team_material', 'import_geoset_visibility']) {
+for (const name of ['import_worker', 'import_skeleton_compiler', 'import_material_compiler', 'import_material_animation', 'import_team_material', 'import_geoset_visibility', 'import_geoset_curves']) {
   fs.copyFileSync(path.join(repo, `tools/godot/${name}.gd`), path.join(output, `${name}.gd`));
 }
 for (const logical of ['Units/Human/Priest/Priest.mdx', 'Units/Human/HeroArchMage/HeroArchMage.mdx']) {

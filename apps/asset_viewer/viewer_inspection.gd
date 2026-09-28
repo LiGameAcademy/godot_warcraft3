@@ -24,6 +24,17 @@ static func collect_nodes(model: Node) -> Array[Node]:
 		index += 1
 	return nodes
 
+static func release_model(model: Node) -> void:
+	# Keep material RIDs alive until the renderer's owning nodes are gone.
+	var materials: Array[Material] = []
+	for node: Node in collect_nodes(model):
+		if node is MeshInstance3D and node.mesh != null:
+			for surface: int in range(node.mesh.get_surface_count()):
+				var material: Material = node.get_active_material(surface)
+				if material != null:
+					materials.append(material)
+	model.free()
+
 func rebuild(model: Node3D) -> void:
 	current_model = model
 	tree.clear()

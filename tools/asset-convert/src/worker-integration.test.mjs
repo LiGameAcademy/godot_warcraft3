@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[applica
 fs.copyFileSync(path.join(repo, 'tools/godot/import_worker.gd'), path.join(output, 'import_worker.gd'));
 fs.copyFileSync(path.join(repo, 'tools/godot/import_skeleton_compiler.gd'), path.join(output, 'import_skeleton_compiler.gd'));
 fs.copyFileSync(path.join(repo, 'tools/godot/import_material_compiler.gd'), path.join(output, 'import_material_compiler.gd'));
-for (const name of ['import_material_animation.gd', 'import_team_material.gd', 'import_geoset_visibility.gd']) {
+for (const name of ['import_material_animation.gd', 'import_team_material.gd', 'import_geoset_visibility.gd', 'import_geoset_curves.gd']) {
   fs.copyFileSync(path.join(repo, 'tools/godot', name), path.join(output, name));
 }
 await convertOneMdx(path.join(source, logical), logical, source, output);
@@ -249,6 +249,12 @@ assert.ifError(verify.error);
 assert.equal(verify.status, 0, verify.stdout + verify.stderr);
 assert.doesNotMatch(verify.stdout + verify.stderr, /ERROR:/);
 assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output, 'verified.json'), 'utf8')), success.result.inventory);
+fs.copyFileSync(path.join(repo, 'tests/integration/selftest_geoset_curves.gd'), path.join(output, 'curve-check.gd'));
+const curves = spawnSync(godot, ['--minimized', '--resolution', '128x128', '--path', output, '--log-file', path.join(output, 'curves.log'), '-s', 'res://curve-check.gd'], {encoding: 'utf8', windowsHide: true, timeout: 120000});
+assert.ifError(curves.error);
+assert.equal(curves.status, 0, curves.stdout + curves.stderr);
+assert.doesNotMatch(curves.stdout + curves.stderr, /ERROR:/);
+assert.match(curves.stdout, /PASS: continuous Geoset/);
 // Invalid IR must fail before touching the previously generated scene.
 const saved = fs.readFileSync(path.join(output, 'result.scn'));
 const irPath = path.join(output, `${stem}.ir.json`);

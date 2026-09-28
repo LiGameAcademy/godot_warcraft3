@@ -26,7 +26,9 @@ Footman 实测：5 个表面完成材质编译，其中 1 个队色表面，13 �
 
 Geoset 显隐进展：worker 从 IR 内嵌的原始 `geoset_anims` 载荷直接编译非全局序列的二值离散显隐，不对旧 33ms 采样结果二次量化。每个动作写入初始值；无该动作关键帧时恢复默认可见，有延迟首帧时按现有源采样规则继承前值。Footman 的 5 个网格 × 13 个动作生成 65 条轨道；新进程验证 Stand-1、Death、DecayFlesh 的 0.1／0.2 秒、DecayBone、Stand-4 和切回 Stand-1。查看器实际渲染确认普通站立不再混入其他动作的网格。连续插值、全局序列或非二值 Alpha 的负向测试确认保留 `geoset_alpha_pending`，不会静默按阈值切换显隐。
 
-当前仍不支持任意多层组合、单轴重复采样、全局／Hermite／Bezier 材质动画、动画纹理切换及 UV 动画。无法编译的组合保留诊断和旧 GLTF 回退。连续 Geoset Alpha 与材质层 Alpha 的相乘、Geoset 颜色、粒子、Ribbon 与游戏内原作对照验收也未完成。因此保持 `deliverable=false`，不宣称整模型保真通过。下一批处理连续 Geoset Alpha 与颜色，再进入特效消费者。
+连续曲线进展：对已编译的普通单层 Blend 材质，支持非全局序列的静态、阶梯和线性 Geoset Alpha／RGB。编译器将材质层 Alpha、Geoset Alpha 和颜色分为独立着色器参数，最终透明度为纹理 Alpha × 层 Alpha × Geoset Alpha；原层动画轨道保留关键帧并迁移到独立参数。每个动作写入默认值，切回无曲线动作恢复 Alpha=1、RGB=白色。合成 Blend 场景验证了重载后中点层 Alpha=0.6、Geoset Alpha=0.5、RGB=(0.5,0.5,0)，实际渲染颜色、切换复位及 A/B 材质隔离。此测试已纳入 `worker-integration.test.mjs`，并不替代真实特效的原作视觉对照。
+
+当前仍不支持任意多层组合、单轴重复采样、全局／Hermite／Bezier 材质动画、动画纹理切换及 UV 动画。遮罩、不透明及多层队色材质的连续 Geoset Alpha／颜色仍保留诊断，不将其直接改为普通 Blend。粒子、Ribbon 与游戏内原作对照验收也未完成。因此保持 `deliverable=false`，不宣称整模型保真通过。下一批扩展真实特效样本，核对不同混合模式的曲线规则，再进入特效消费者。
 
 真实资源测试（需要本地解包资产及 `$env:GODOT`；集成隔离检查会启动最小化渲染窗口）：
 

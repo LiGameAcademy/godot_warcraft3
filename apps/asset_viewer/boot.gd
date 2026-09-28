@@ -50,6 +50,7 @@ var _inspection: RefCounted
 #region Lifecycle
 func _ready() -> void:
 	frame_controls.pause_requested.connect(set_paused.bind(true))
+	frame_controls.loop_changed.connect(_animation_info)
 	frame_controls.time_requested.connect(func(seconds: float) -> void:
 		if is_instance_valid(player):
 			player.seek(seconds, true))
@@ -331,7 +332,7 @@ func _clear_model() -> void:
 	player = null
 	if is_instance_valid(current_model):
 		models_root.remove_child(current_model)
-		current_model.free()
+		Inspection.release_model(current_model)
 	current_model = null
 	animations.clear()
 	pause_button.set_pressed_no_signal(false)

@@ -13,6 +13,18 @@ func _run() -> void:
 	var frame_panel: HBoxContainer = _named(viewer, "AnimationFrames")
 	var frame_input: SpinBox = _named(frame_panel, "CurrentFrame")
 	assert(frame_input.editable and frame_input.max_value == 45)
+	var loop_toggle: CheckButton = _named(frame_panel, "Loop")
+	var template: PackedScene = load(args[0])
+	var other: Node = template.instantiate()
+	var other_player: AnimationPlayer = AnimPlayback.find_animation_player(other)
+	var source_loop: int = other_player.get_animation("Stand-1").loop_mode
+	loop_toggle.button_pressed = true
+	viewer.player.advance(1.7)
+	assert(viewer.player.current_animation_position < 1.5)
+	assert(other_player.get_animation("Stand-1").loop_mode == source_loop)
+	loop_toggle.button_pressed = false
+	viewer.player.seek(0.0, true)
+	load("res://viewer_inspection.gd").release_model(other)
 	frame_input.value = 15
 	assert(viewer.pause_button.button_pressed)
 	assert(is_equal_approx(viewer.player.current_animation_position, 0.5))
@@ -61,6 +73,7 @@ func _run() -> void:
 	assert(nodes.get_root() != null)
 	viewer._clear_model()
 	assert(not frame_input.editable and frame_input.value == 0 and frame_input.max_value == 0)
+	assert(loop_toggle.disabled and not loop_toggle.button_pressed)
 	assert(nodes.get_root() == null)
 	assert((_named(viewer, "AnimationInfo") as RichTextLabel).text == "无动画。")
 	assert(viewer.preview_scene(args[0]))

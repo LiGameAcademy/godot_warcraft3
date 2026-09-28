@@ -24,3 +24,10 @@ editable = false
 unique_name_in_owner = true
 layout_mode = 2
 text = "/ 0"
+
+[node name="Loop" type="CheckButton" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+text = "循环"
+tooltip_text = "仅改变当前动画的预览循环，不保存到资产；重载恢复原始设置。"
+disabled = true
