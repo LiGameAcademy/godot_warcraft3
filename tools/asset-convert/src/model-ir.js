@@ -96,7 +96,7 @@ export function validateModelIr(value) {
       }
     }
   }
-  for (const [index, diagnostic] of (ir.diagnostics ?? []).entries()) {
+  for (const [index, diagnostic] of (Array.isArray(ir.diagnostics) ? ir.diagnostics : []).entries()) {
     if (!diagnostic || typeof diagnostic !== "object") {
       errors.push(`diagnostics[${index}] must be an object`);
       continue;

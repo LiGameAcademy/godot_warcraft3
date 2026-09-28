@@ -4,6 +4,16 @@
 分支：`codex/asset-pipeline-rebuild`  
 日期：2026-09-28
 
+## 当前实现与验证边界（2026-09-28）
+
+已建立 IR 摘要旁路、bake 任务协议和几何编译 worker。当前 IR 仍是统计与旧 sidecar 引用集合，不是完整、独立的语义中间格式；worker 读取其版本和资产身份，但尚未消费特效等载荷。
+
+真实 Footman 已通过源 MDX 转换、worker 保存、同进程结构比较及全新 Godot 进程重载：10 个节点、5 个网格/表面、40 根骨骼、13 条动画。缺失 IR 的失败测试确认旧输出未被覆盖。此结果只证明几何保存重载链路；不证明材质、挂点、特效或动画画面保真。worker 返回 `scope=geometry_roundtrip`、`deliverable=false`。
+
+复现：设置 `GODOT` 为引擎可执行文件，执行 `node tools/asset-convert/src/worker-integration.test.mjs`。默认源目录为 `assets/.staging/wc3-assets`，可用 `ASSET_SOURCE` 覆盖。测试在 `tools/asset-convert/tmp/worker-*` 创建独立无 Autoload 的 Godot 项目，保留产物与日志；缺少引擎或真实源文件会失败，不自动跳过。
+
+下一步：将 IR 从摘要升级为保留源语义的载荷，迁移材质、骨骼姿态和挂点消费者，再处理粒子与 Ribbon。原生核心与玩家导入流程尚未实现。玩家端能否直接用导出运行时生成/保存 Godot 资源，应通过导出版本实测决定，不应仅因未安装编辑器便预先排除 `.scn` 缓存。
+
 ## 1. 目标
 
 项目最终需要作为独立游戏发布。玩家启动游戏时可以选择本机的 Warcraft III 原版资产目录，游戏随后完成资源检查、导入和缓存；玩家不需要安装 Godot 编辑器、Godot 命令行或 Node.js。

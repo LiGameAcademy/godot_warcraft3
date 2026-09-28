@@ -54,7 +54,7 @@ func _run() -> void:
 		_fail(result, "task_read_failed", "无法读取任务文件：%s" % _task_path)
 		_finish(result, 2)
 		return
-	var parsed = JSON.parse_string(task_text)
+	var parsed: Variant = JSON.parse_string(task_text)
 	if not parsed is Dictionary:
 		_fail(result, "task_json_invalid", "任务文件不是 JSON 对象")
 		_finish(result, 2)
@@ -70,6 +70,11 @@ func _run() -> void:
 	var gltf_path := _as_resource_path(str(task["geometry_path"]))
 	var output_path := _as_resource_path(str(task["output_scene"]))
 	var ir_path := str(task["ir_path"])
+	var ir: Variant = JSON.parse_string(FileAccess.get_file_as_string(_as_resource_path(ir_path)))
+	if not ir is Dictionary or ir.get("schema_version") != 1 or ir.get("identity", {}).get("asset_id") != task["asset_id"]:
+		_fail(result, "ir_invalid", "IR 缺失、版本不支持或资产身份不匹配")
+		_finish(result, 2)
+		return
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
 	var append_error := doc.append_from_file(gltf_path, state)
@@ -92,6 +97,7 @@ func _run() -> void:
 	root.set_meta("wc3_import_profile", str(task["profile"]))
 	root.set_meta("wc3_model_ir_path", ir_path)
 	root.set_meta("wc3_import_worker_version", "1")
+	var before: Dictionary = _inventory(root)
 
 	var packed := PackedScene.new()
 	var pack_error := packed.pack(root)
@@ -114,10 +120,20 @@ func _run() -> void:
 		_fail(result, "scene_reload_failed", "无法重新加载生成的 PackedScene")
 		_finish(result, 1)
 		return
+	var instance: Node = (reloaded as PackedScene).instantiate()
+	var after: Dictionary = _inventory(instance)
+	instance.free()
+	if before != after:
+		_fail(result, "scene_structure_changed", "保存重载后节点、网格或动画数量变化")
+		_finish(result, 1)
+		return
 	result["ok"] = true
+	result["scope"] = "geometry_roundtrip"
+	result["deliverable"] = false
+	result["inventory"] = after
 	result["output_scene"] = output_path
 	result["profile"] = str(task["profile"])
-	result["diagnostics"] = [{"code": "worker_scene_reload_ok", "severity": "info"}]
+	result["diagnostics"] = [{"code": "geometry_only", "severity": "warning", "message": "仅验证几何重载；尚未编译 IR 材质、挂点和特效，不能视为保真验收通过"}]
 	_finish(result, 0)
 
 
@@ -139,7 +155,25 @@ func _as_resource_path(value: String) -> String:
 		return value
 	if value.is_absolute_path():
 		return ProjectSettings.localize_path(value)
-	return "res://" + value.trim_prefix("/")
+	return _task_path.get_base_dir().path_join(value).simplify_path()
+
+
+func _inventory(scene: Node) -> Dictionary:
+	var counts: Dictionary = {"nodes": 0, "meshes": 0, "surfaces": 0, "bones": 0, "animations": 0}
+	var pending: Array[Node] = [scene]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		counts.nodes += 1
+		if node is MeshInstance3D and node.mesh != null:
+			counts.meshes += 1
+			counts.surfaces += node.mesh.get_surface_count()
+		if node is Skeleton3D:
+			counts.bones += node.get_bone_count()
+		if node is AnimationPlayer:
+			counts.animations += node.get_animation_list().size()
+		for child: Node in node.get_children():
+			pending.append(child)
+	return counts
 
 
 func _fail(result: Dictionary, code: String, message: String) -> void:
@@ -155,4 +189,7 @@ func _finish(result: Dictionary, exit_code: int) -> void:
 		if file:
 			file.store_string(JSON.stringify(result, "  ") + "\n")
 			file.close()
+		else:
+			push_error("import_worker: 无法写入结果文件")
+			exit_code = 2
 	quit(exit_code)

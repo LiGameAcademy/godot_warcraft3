@@ -1426,11 +1426,7 @@ function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
   const ribbons = pe2.replace(/\.pe2\.json$/i, ".ribbon.json");
   const nodes = Array.isArray(model.Nodes) ? model.Nodes : Object.values(model.Nodes ?? {});
   const replaceableIds = [...new Set(
-    (model.Materials ?? []).flatMap((material) =>
-      (material?.Layers ?? [])
-        .map((layer) => Number(layer?.TextureId ?? 0))
-        .filter((id) => id > 0),
-    ),
+    (model.Textures ?? []).map((texture) => Number(texture.ReplaceableId ?? 0)).filter((id) => id > 0),
   )];
   const ir = createModelIr({
     asset_id: logicalPath.replace(/\.(mdx|mdl)$/i, "").toLowerCase(),
@@ -1442,12 +1438,12 @@ function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
       gltf,
       node_count: nodes.length,
       geoset_count: (model.Geosets ?? []).length,
-      vertex_count: (model.Geosets ?? []).reduce((total, geoset) => total + (geoset?.Vertices?.length ?? 0), 0),
+      vertex_count: (model.Geosets ?? []).reduce((total, geoset) => total + (geoset?.Vertices?.length ?? 0) / 3, 0),
     },
     skeleton: {
       bone_count: (model.Bones ?? []).length,
       helper_count: (model.Helpers ?? []).length,
-      bone_rest,
+      bone_rest: boneRest,
     },
     animations: {
       sequence_count: (model.Sequences ?? []).length,
