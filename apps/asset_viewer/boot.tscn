@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://viewer.gd" id="1"]
+[ext_resource type="Script" path="res://axis_gizmo.gd" id="2"]
 [sub_resource type="Environment" id="Environment"]
 background_mode = 1
 background_color = Color(0.055, 0.07, 0.09, 1)
@@ -141,6 +142,10 @@ text = "重播"
 unique_name_in_owner = true
 layout_mode = 2
 text = "适应模型"
+[node name="ResetCamera" type="Button" parent="Margin/Layout/Split/Preview/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "重置视角"
 [node name="Team" type="OptionButton" parent="Margin/Layout/Split/Preview/Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -155,7 +160,7 @@ text = "浅背景"
 
 [node name="ViewportContainer" type="SubViewportContainer" parent="Margin/Layout/Split/Preview"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(500, 300)
+custom_minimum_size = Vector2(450, 240)
 layout_mode = 2
 size_flags_vertical = 3
 stretch = true
@@ -182,12 +187,56 @@ unique_name_in_owner = true
 current = true
 near = 0.01
 far = 10000.0
+[node name="Axes" type="Control" parent="Margin/Layout/Split/Preview/ViewportContainer"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 148.0
+offset_bottom = 148.0
+tooltip_text = "点击坐标轴切换视图：+Z 前、−Z 后、+X 右、−X 左、+Y 顶、−Y 底"
+script = ExtResource("2")
+[node name="InspectionControls" type="HBoxContainer" parent="Margin/Layout/Split/Preview"]
+layout_mode = 2
+[node name="ShowNodes" type="CheckButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "节点树"
+[node name="ShowAnimation" type="CheckButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "动画元数据"
+[node name="Views" type="OptionButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="Inspection" type="HBoxContainer" parent="Margin/Layout/Split/Preview"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(0, 150)
+[node name="SceneNodes" type="Tree" parent="Margin/Layout/Split/Preview/Inspection"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="NodeInfo" type="RichTextLabel" parent="Margin/Layout/Split/Preview/Inspection"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+selection_enabled = true
+[node name="AnimationInfo" type="RichTextLabel" parent="Margin/Layout/Split/Preview/Inspection"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+selection_enabled = true
 [node name="Hint" type="Label" parent="Margin/Layout/Split/Preview"]
 layout_mode = 2
 text = "拖动旋转 · 滚轮缩放 · 重播会重建实例及粒子；不会改写资源文件"
 [node name="Details" type="RichTextLabel" parent="Margin/Layout/Split/Preview"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 190)
+custom_minimum_size = Vector2(0, 110)
 layout_mode = 2
 selection_enabled = true
 text = "从左侧选择模型。"

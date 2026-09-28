@@ -40,10 +40,23 @@ var _folder_items: Dictionary = {}
 var _expanded_folders: Dictionary = {}
 var _building_tree: bool = false
 var _syncing_selection: bool = false
+var _inspected_nodes: Array[Node] = []
 
 
 #region Lifecycle
 func _ready() -> void:
+	(%ResetCamera as Button).pressed.connect(reset_camera)
+	(%ShowNodes as CheckButton).toggled.connect(func(_value: bool) -> void: _inspection_visibility())
+	(%ShowAnimation as CheckButton).toggled.connect(func(_value: bool) -> void: _inspection_visibility())
+	(%SceneNodes as Tree).item_selected.connect(_inspect_node)
+	for label: String in ["自由视角", "前视 +Z", "后视 −Z", "右视 +X", "左视 −X", "顶视 +Y", "底视 −Y"]:
+		(%Views as OptionButton).add_item(label)
+	(%Views as OptionButton).item_selected.connect(func(index: int) -> void:
+		if index == 0:
+			reset_camera()
+		else:
+			set_camera_view([Vector3.BACK, Vector3.FORWARD, Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN][index - 1]))
+	(%Axes as Control).connect("view_selected", set_camera_view)
 	browser_mode.add_item("树状目录")
 	browser_mode.add_item("列表")
 	browser_mode.item_selected.connect(set_browser_mode)
@@ -300,6 +313,10 @@ func _select_index(index: int) -> void:
 
 
 func _clear_model() -> void:
+	(%SceneNodes as Tree).clear()
+	_inspected_nodes.clear()
+	(%NodeInfo as RichTextLabel).text = "选择节点查看只读属性。"
+	(%AnimationInfo as RichTextLabel).text = "无动画。"
 	player = null
 	if is_instance_valid(current_model):
 		models_root.remove_child(current_model)
@@ -350,6 +367,7 @@ func _reload_model() -> void:
 		if animations.item_count > 0:
 			_play_animation(animations.selected)
 	status.text = "已加载：" + RuntimeAssets.project_abs(scene_path) + " · 当前烘焙结果，保真未验收"
+	_rebuild_scene_nodes()
 
 
 func _restart() -> void:
@@ -367,6 +385,7 @@ func _play_animation(index: int) -> void:
 	set_paused(false)
 	player.play(animations.get_item_text(index))
 	player.advance(0.0)
+	_animation_info()
 
 
 func _show_details() -> void:
@@ -422,6 +441,7 @@ func _preview_input(event: InputEvent) -> void:
 			_distance = clampf(_distance * (0.88 if button.button_index == MOUSE_BUTTON_WHEEL_UP else 1.14), 0.1, 5000.0)
 			_update_camera()
 	elif event is InputEventMouseMotion and _dragging:
+		(%Views as OptionButton).select(0)
 		var motion: InputEventMouseMotion = event as InputEventMouseMotion
 		_yaw -= motion.relative.x * 0.008
 		_pitch = clampf(_pitch + motion.relative.y * 0.008, -1.4, 1.4)
@@ -430,7 +450,91 @@ func _preview_input(event: InputEvent) -> void:
 
 func _update_camera() -> void:
 	camera.position = _target + Vector3(sin(_yaw) * cos(_pitch), sin(_pitch), cos(_yaw) * cos(_pitch)) * _distance
-	camera.look_at(_target)
+	camera.look_at(_target, Vector3.BACK if absf(cos(_pitch)) < 0.001 else Vector3.UP)
+	camera.size = _distance
+	(%Axes as Control).set("camera_basis", camera.global_basis)
+	(%Axes as Control).queue_redraw()
+
+
+func reset_camera() -> void:
+	_yaw = 0.65
+	_pitch = 0.4
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	(%Views as OptionButton).select(0)
+	fit_model()
+
+
+func set_camera_view(direction: Vector3) -> void:
+	_yaw = atan2(direction.x, direction.z)
+	_pitch = asin(direction.y)
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	var directions: Array[Vector3] = [Vector3.BACK, Vector3.FORWARD, Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN]
+	(%Views as OptionButton).select(directions.find(direction) + 1)
+	_update_camera()
+
+
+func _inspection_visibility() -> void:
+	var nodes_on: bool = (%ShowNodes as CheckButton).button_pressed
+	var animation_on: bool = (%ShowAnimation as CheckButton).button_pressed
+	(%Inspection as Control).visible = nodes_on or animation_on
+	(%SceneNodes as Control).visible = nodes_on
+	(%NodeInfo as Control).visible = nodes_on
+	(%AnimationInfo as Control).visible = animation_on
+	_animation_info()
+
+
+func _rebuild_scene_nodes() -> void:
+	var tree: Tree = %SceneNodes
+	tree.clear()
+	_inspected_nodes = _nodes(current_model)
+	var items: Dictionary = {}
+	for index: int in range(_inspected_nodes.size()):
+		var node: Node = _inspected_nodes[index]
+		var item: TreeItem = tree.create_item(items.get(node.get_parent()))
+		item.set_text(0, "%s · %s" % [node.name, node.get_class()])
+		item.set_tooltip_text(0, "%s · %s" % [current_model.get_path_to(node), node.get_class()])
+		item.set_metadata(0, index)
+		items[node] = item
+
+
+func _inspect_node() -> void:
+	var selected: TreeItem = (%SceneNodes as Tree).get_selected()
+	if selected == null:
+		return
+	var node: Node = _inspected_nodes[int(selected.get_metadata(0))]
+	if not is_instance_valid(node):
+		return
+	var lines: PackedStringArray = [str(node.name), "类型：" + node.get_class(), "路径：" + str(current_model.get_path_to(node))]
+	if node is Node3D:
+		lines.append("可见：%s\n位置：%s" % [node.is_visible_in_tree(), node.position])
+	if node is MeshInstance3D and node.mesh != null:
+		lines.append("表面数：%d" % node.mesh.get_surface_count())
+		for surface: int in range(node.mesh.get_surface_count()):
+			var material: Material = node.get_active_material(surface)
+			lines.append("材质 %d：%s" % [surface, material.resource_name if material != null else "无"])
+	if node is BoneAttachment3D:
+		lines.append("骨骼：%s" % node.bone_name)
+	if node.get_script() != null:
+		lines.append("脚本：" + str(node.get_script().resource_path))
+	for key: StringName in node.get_meta_list():
+		lines.append("%s = %s" % [key, node.get_meta(key)])
+	(%NodeInfo as RichTextLabel).text = "\n".join(lines)
+
+
+func _animation_info() -> void:
+	if player == null or animations.selected < 0:
+		(%AnimationInfo as RichTextLabel).text = "无动画。"
+		return
+	var name: String = animations.get_item_text(animations.selected)
+	var animation: Animation = player.get_animation(name)
+	var lines: PackedStringArray = [name, "时长：%.3f 秒" % animation.length, "循环：%s" % ["无", "循环", "往返"][animation.loop_mode], "轨道数：%d" % animation.get_track_count()]
+	for key: StringName in animation.get_meta_list():
+		lines.append("%s = %s" % [key, animation.get_meta(key)])
+	for index: int in range(animation.get_track_count()):
+		var types: Array[String] = ["属性", "位移", "旋转", "缩放", "混合形状", "方法", "曲线", "音频", "动画"]
+		var track_type: int = animation.track_get_type(index)
+		lines.append("%s · %s · %d 关键帧" % [animation.track_get_path(index), types[track_type] if track_type < types.size() else str(track_type), animation.track_get_key_count(index)])
+	(%AnimationInfo as RichTextLabel).text = "\n".join(lines)
 
 
 func _smoke_test() -> void:
