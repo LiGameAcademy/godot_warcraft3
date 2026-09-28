@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 
 export const MODEL_IR_SCHEMA_VERSION = 1;
@@ -119,4 +120,9 @@ export function writeModelIr(destination, value) {
   const temporary = `${destination}.tmp-${process.pid}`;
   fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   fs.renameSync(temporary, destination);
+}
+
+/** @param {Buffer} bytes */
+export function sha256Bytes(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
 }

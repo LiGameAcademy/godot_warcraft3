@@ -119,6 +119,15 @@ export function mdxLogicalToCollision(logicalPath) {
   return `${gltf}.collision.json`;
 }
 
+/** Map a model logical path to the versioned unified Model IR sidecar. */
+export function mdxLogicalToModelIr(logicalPath) {
+  const gltf = mdxLogicalToGltf(logicalPath);
+  if (gltf.toLowerCase().endsWith(".gltf")) {
+    return `${gltf.slice(0, -5)}.ir.json`;
+  }
+  return `${gltf}.ir.json`;
+}
+
 /**
  * 从模型逻辑路径到贴图逻辑路径的相对 URI（posix，供 glTF images[].uri）。
  * WC3 路径大小写混乱：公共前缀按不敏感匹配，下行段保留 pngLogical 原大小写。

@@ -29,6 +29,7 @@ import {
   mdxLogicalToBoneRest,
   mdxLogicalToCameras,
   mdxLogicalToCollision,
+  mdxLogicalToModelIr,
   mdxLogicalToGeosetVis,
   mdxLogicalToGltf,
   mdxLogicalToPe2,
@@ -37,6 +38,7 @@ import {
 } from "./paths.js";
 import { walkFiles } from "./walk.js";
 import { atomicWriteSync, atomicWriteBytesSync } from "./atomic-write.js";
+import { createModelIr, sha256Bytes, writeModelIr } from "./model-ir.js";
 import { getLog } from "../../pipeline-log.mjs";
 
 const MODEL_SCALE = 0.01;
@@ -1404,13 +1406,107 @@ function collapseConstantScaleTrack(track) {
 }
 
 /**
+ * Write the first unified Model IR sidecar without changing the legacy GLTF
+ * and individual sidecars. This is intentionally a loss-reporting envelope;
+ * later compiler stages will tighten feature payloads from these sources.
+ * @param {object} model
+ * @param {string} logicalPath
+ * @param {Buffer} sourceBytes
+ * @param {string} outDir
+ */
+function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
+  const irLogical = mdxLogicalToModelIr(logicalPath);
+  const destination = path.join(outDir, ...irLogical.split("/"));
+  const gltf = mdxLogicalToGltf(logicalPath);
+  const pe2 = mdxLogicalToPe2(logicalPath);
+  const attachments = mdxLogicalToAttachments(logicalPath);
+  const animkeys = mdxLogicalToAnimKeys(logicalPath);
+  const geosetvis = mdxLogicalToGeosetVis(logicalPath);
+  const boneRest = mdxLogicalToBoneRest(logicalPath);
+  const ribbons = pe2.replace(/\.pe2\.json$/i, ".ribbon.json");
+  const nodes = Array.isArray(model.Nodes) ? model.Nodes : Object.values(model.Nodes ?? {});
+  const replaceableIds = [...new Set(
+    (model.Materials ?? []).flatMap((material) =>
+      (material?.Layers ?? [])
+        .map((layer) => Number(layer?.TextureId ?? 0))
+        .filter((id) => id > 0),
+    ),
+  )];
+  const ir = createModelIr({
+    asset_id: logicalPath.replace(/\.(mdx|mdl)$/i, "").toLowerCase(),
+    logical_path: logicalPath,
+    source_format: path.extname(logicalPath).slice(1).toLowerCase(),
+    source_path: logicalPath,
+    source_hash: sha256Bytes(sourceBytes),
+    geometry: {
+      gltf,
+      node_count: nodes.length,
+      geoset_count: (model.Geosets ?? []).length,
+      vertex_count: (model.Geosets ?? []).reduce((total, geoset) => total + (geoset?.Vertices?.length ?? 0), 0),
+    },
+    skeleton: {
+      bone_count: (model.Bones ?? []).length,
+      helper_count: (model.Helpers ?? []).length,
+      bone_rest,
+    },
+    animations: {
+      sequence_count: (model.Sequences ?? []).length,
+      animkeys,
+    },
+    materials: {
+      material_count: (model.Materials ?? []).length,
+      replaceable_ids: replaceableIds,
+    },
+    textures: { texture_count: (model.Textures ?? []).length },
+    geoset_visibility: { sidecar: geosetvis },
+    texture_animations: {
+      retained_in_gltf: false,
+      status: "diagnostic",
+    },
+    particles: {
+      count: (model.ParticleEmitters2 ?? []).length,
+      sidecar: pe2,
+    },
+    ribbons: {
+      count: (model.RibbonEmitters ?? []).length,
+      sidecar: ribbons,
+    },
+    attachments: {
+      count: (model.Attachments ?? []).length,
+      sidecar: attachments,
+    },
+    events: {
+      count: (model.EventObjects ?? []).length,
+      animkeys,
+    },
+    dependencies: [gltf, pe2, ribbons, geosetvis, attachments, animkeys, boneRest],
+    diagnostics: [],
+    feature_status: {
+      geometry: "exported",
+      skeleton: "exported",
+      animations: "exported",
+      materials: "approximated",
+      texture_animations: "fallback",
+      geoset_visibility: "exported",
+      particles: (model.ParticleEmitters2 ?? []).length ? "exported" : "parsed",
+      ribbons: (model.RibbonEmitters ?? []).length ? "exported" : "parsed",
+      attachments: "exported",
+      events: (model.EventObjects ?? []).length ? "exported" : "parsed",
+    },
+  });
+  writeModelIr(destination, ir);
+  return destination;
+}
+
+/**
  * @param {string} absPath
  * @param {string} logicalPath
  * @param {string} inDir
  * @param {string} outDir
  */
 export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
-  const model = parseModel(fs.readFileSync(absPath), logicalPath);
+  const sourceBytes = fs.readFileSync(absPath);
+  const model = parseModel(sourceBytes, logicalPath);
   const document = new Document();
   const buffer = document.createBuffer();
 
@@ -1945,6 +2041,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     outDir,
     ...mdxLogicalToBoneRest(logicalPath).split("/"),
   );
+  const irDest = path.join(outDir, ...mdxLogicalToModelIr(logicalPath).split("/"));
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   // 直接写最终路径（避免 .partial.bin 写进 buffers[].uri）。
@@ -1958,6 +2055,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writeAnimKeysSidecar(model, logicalPath, outDir);
     writeCollisionSidecar(model, logicalPath, outDir);
     writeBoneRestSidecar(skinAnimNodes, bindWorlds, jointList, logicalPath, outDir);
+    writeModelIrSidecar(model, logicalPath, sourceBytes, outDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {
@@ -1971,6 +2069,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     unlinkQuiet(animKeysDest);
     unlinkQuiet(collisionDest);
     unlinkQuiet(boneRestDest);
+    unlinkQuiet(irDest);
     throw err;
   }
   return dest;
@@ -2005,6 +2104,7 @@ export async function convertMdxBatch(options) {
       outDir,
       ...mdxLogicalToCollision(file.logicalPath).split("/"),
     );
+    const irDest = path.join(outDir, ...mdxLogicalToModelIr(file.logicalPath).split("/"));
 
     if (
       !force &&
@@ -2012,7 +2112,8 @@ export async function convertMdxBatch(options) {
       fs.existsSync(pe2Dest) &&
       fs.existsSync(geosetVisDest) &&
       fs.existsSync(camDest) &&
-      fs.existsSync(collisionDest)
+      fs.existsSync(collisionDest) &&
+      fs.existsSync(irDest)
     ) {
       const srcStat = fs.statSync(file.absPath);
       const dstStat = fs.statSync(dest);
@@ -2028,7 +2129,8 @@ export async function convertMdxBatch(options) {
         pe2Stat.mtimeMs >= srcStat.mtimeMs &&
         visStat.mtimeMs >= srcStat.mtimeMs &&
         camStat.mtimeMs >= srcStat.mtimeMs &&
-        collisionStat.mtimeMs >= srcStat.mtimeMs
+        collisionStat.mtimeMs >= srcStat.mtimeMs &&
+        fs.statSync(irDest).mtimeMs >= srcStat.mtimeMs
       ) {
         skipped += 1;
         processed += 1;
