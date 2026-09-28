@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-wc3.local/schemas/bake-task.schema.json",
+  "title": "Godot bake task",
+  "type": "object",
+  "required": ["task_version", "asset_id", "ir_path", "geometry_path", "output_scene", "profile", "dependencies"],
+  "properties": {
+    "task_version": { "const": 1 },
+    "asset_id": { "type": "string", "minLength": 1 },
+    "ir_path": { "type": "string", "minLength": 1 },
+    "geometry_path": { "type": "string", "minLength": 1 },
+    "output_scene": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["fidelity", "enhanced"] },
+    "rules_version": { "type": "string" },
+    "expected_signature": { "type": "string" },
+    "dependencies": { "type": "array" }
+  },
+  "additionalProperties": true
+}
