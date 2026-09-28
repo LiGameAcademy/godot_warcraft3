@@ -142,7 +142,7 @@ func _run() -> void:
 	result["inventory"] = after
 	result["output_scene"] = output_path
 	result["profile"] = str(task["profile"])
-	result["diagnostics"] = compiled.diagnostics + [{"code": "partial_compile", "severity": "warning", "message": "材质、挂点显隐动画及特效尚未完整编译"}]
+	result["diagnostics"] = compiled.diagnostics + [{"code": "partial_compile", "severity": "warning", "message": "材质和特效尚未完整编译；挂点仅支持非全局序列的离散显隐"}]
 	_finish(result, 0)
 
 

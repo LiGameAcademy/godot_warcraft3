@@ -43,16 +43,22 @@ assert.ok(success.result.inventory.bones > 0);
 assert.ok(success.result.inventory.animations > 0);
 assert.equal(success.result.skeleton_compile.rests, 40);
 assert.equal(success.result.skeleton_compile.sockets, 9);
+assert.equal(success.result.skeleton_compile.visibility_tracks, 91);
 fs.writeFileSync(path.join(output, 'verify.gd'), `extends SceneTree
 func _initialize() -> void:
+ call_deferred("_verify")
+func _verify() -> void:
  var packed: PackedScene = load("res://result.scn")
  if packed == null:
   quit(1)
   return
  var instance: Node = packed.instantiate()
+ root.add_child(instance)
  var ir: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://${stem}.ir.json"))
  var queue: Array[Node] = [instance]
  var counts: Dictionary = {"nodes": 0, "meshes": 0, "surfaces": 0, "bones": 0, "animations": 0}
+ var player: AnimationPlayer
+ var weapon: Marker3D
  while not queue.is_empty():
   var node: Node = queue.pop_back()
   counts.nodes += 1
@@ -77,6 +83,8 @@ func _initialize() -> void:
     quit(1)
     return
   if node.has_meta("import_socket"):
+   if node.get_meta("import_socket") == "Weapon Ref":
+    weapon = node
    for entry: Dictionary in ir.attachments.payload.attachments:
     if entry.name == node.get_meta("import_socket"):
      var p: Array = entry.pivot
@@ -88,9 +96,41 @@ func _initialize() -> void:
       quit(1)
       return
   if node is AnimationPlayer:
+   player = node
    counts.animations += node.get_animation_list().size()
   for child: Node in node.get_children():
    queue.append(child)
+ if player == null or weapon == null:
+  quit(1)
+  return
+ player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+ for sample: Array in [["Stand-1", 0.0, true], ["DecayBone", 0.1, false], ["Stand-1", 0.0, true]]:
+  player.play(sample[0])
+  player.seek(sample[1], true)
+  if weapon.visible != sample[2]:
+   push_error("Socket visibility playback mismatch")
+   quit(1)
+   return
+ var positions: Array[Vector3] = []
+ var socket: BoneAttachment3D = weapon.get_parent()
+ var skeleton: Skeleton3D = socket.get_parent()
+ player.play("Attack-1")
+ for time: float in [0.0, 0.3, 0.7]:
+  player.seek(time, true)
+  skeleton.force_update_all_bone_transforms()
+  await process_frame
+  # process_frame fires before node processing; allow deferred skeleton updates.
+  await process_frame
+  var expected: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(socket.bone_idx) * weapon.position
+  if not weapon.global_position.is_equal_approx(expected):
+   push_error("Socket failed to follow animated bone: actual=%s expected=%s" % [weapon.global_position, expected])
+   quit(1)
+   return
+  positions.append(weapon.global_position)
+ if positions[0].is_equal_approx(positions[1]) and positions[1].is_equal_approx(positions[2]):
+  push_error("Attack socket did not move")
+  quit(1)
+  return
  var file: FileAccess = FileAccess.open("res://verified.json", FileAccess.WRITE)
  file.store_string(JSON.stringify(counts))
  file.close()
@@ -121,4 +161,4 @@ assert.notEqual(failure.child.status, 0);
 assert.equal(failure.result.ok, false);
 assert.equal(failure.result.diagnostics[0].code, 'ir_invalid');
 assert.deepEqual(fs.readFileSync(path.join(output, 'result.scn')), saved);
-console.log(JSON.stringify({output, inventory: success.result.inventory, skeleton: success.result.skeleton_compile, checks: ['real_model_roundtrip', 'fresh_process_reload', 'rest_and_socket_transforms', 'missing_bone_preserves_scene', 'missing_ir_preserves_scene']}, null, 2));
+console.log(JSON.stringify({output, inventory: success.result.inventory, skeleton: success.result.skeleton_compile, checks: ['real_model_roundtrip', 'fresh_process_reload', 'rest_and_socket_transforms', 'visibility_clip_switch', 'animated_socket_follow', 'missing_bone_preserves_scene', 'missing_ir_preserves_scene']}, null, 2));

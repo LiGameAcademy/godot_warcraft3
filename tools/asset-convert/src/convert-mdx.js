@@ -1449,6 +1449,7 @@ function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
     animations: {
       sequence_count: (model.Sequences ?? []).length,
       animkeys,
+      payload: JSON.parse(fs.readFileSync(path.join(outDir, animkeys), "utf8")),
     },
     materials: {
       material_count: (model.Materials ?? []).length,
