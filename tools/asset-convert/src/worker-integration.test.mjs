@@ -18,6 +18,7 @@ fs.mkdirSync(scratch, {recursive: true});
 const output = fs.mkdtempSync(path.join(scratch, 'worker-'));
 fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Import Worker Test"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
 fs.copyFileSync(path.join(repo, 'tools/godot/import_worker.gd'), path.join(output, 'import_worker.gd'));
+fs.copyFileSync(path.join(repo, 'tools/godot/import_skeleton_compiler.gd'), path.join(output, 'import_skeleton_compiler.gd'));
 await convertOneMdx(path.join(source, logical), logical, source, output);
 const stem = logical.slice(0, -4);
 const task = createBakeTask({asset_id: stem.toLowerCase(), ir_path: `${stem}.ir.json`, geometry_path: `${stem}.gltf`, output_scene: 'result.scn'});
@@ -40,6 +41,8 @@ assert.equal(success.result.deliverable, false);
 assert.ok(success.result.inventory.meshes > 0);
 assert.ok(success.result.inventory.bones > 0);
 assert.ok(success.result.inventory.animations > 0);
+assert.equal(success.result.skeleton_compile.rests, 40);
+assert.equal(success.result.skeleton_compile.sockets, 9);
 fs.writeFileSync(path.join(output, 'verify.gd'), `extends SceneTree
 func _initialize() -> void:
  var packed: PackedScene = load("res://result.scn")
@@ -47,6 +50,7 @@ func _initialize() -> void:
   quit(1)
   return
  var instance: Node = packed.instantiate()
+ var ir: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://${stem}.ir.json"))
  var queue: Array[Node] = [instance]
  var counts: Dictionary = {"nodes": 0, "meshes": 0, "surfaces": 0, "bones": 0, "animations": 0}
  while not queue.is_empty():
@@ -57,6 +61,32 @@ func _initialize() -> void:
    counts.surfaces += node.mesh.get_surface_count()
   if node is Skeleton3D:
    counts.bones += node.get_bone_count()
+   for entry: Dictionary in ir.skeleton.rest_payload.bones:
+    var index: int = node.find_bone(entry.name)
+    var t: Array = entry.translation
+    var r: Array = entry.rotation
+    var s: Array = entry.scale
+    var expected: Transform3D = Transform3D(Basis(Quaternion(r[0], r[1], r[2], r[3])).scaled(Vector3(s[0], s[1], s[2])), Vector3(t[0], t[1], t[2]))
+    if index < 0 or not node.get_bone_rest(index).is_equal_approx(expected):
+     push_error("Rest transform mismatch")
+     quit(1)
+     return
+  if node is BoneAttachment3D:
+   if node.bone_idx < 0 or node.get_parent().get_bone_name(node.bone_idx) != node.bone_name:
+    push_error("Socket bone mapping mismatch")
+    quit(1)
+    return
+  if node.has_meta("import_socket"):
+   for entry: Dictionary in ir.attachments.payload.attachments:
+    if entry.name == node.get_meta("import_socket"):
+     var p: Array = entry.pivot
+     var expected: Vector3 = Vector3(p[0], p[1], p[2])
+     if node.get_parent() is BoneAttachment3D:
+      expected /= 0.01
+     if not node.position.is_equal_approx(expected):
+      push_error("Socket position mismatch")
+      quit(1)
+      return
   if node is AnimationPlayer:
    counts.animations += node.get_animation_list().size()
   for child: Node in node.get_children():
@@ -74,6 +104,16 @@ assert.doesNotMatch(verify.stdout + verify.stderr, /ERROR:/);
 assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output, 'verified.json'), 'utf8')), success.result.inventory);
 // Invalid IR must fail before touching the previously generated scene.
 const saved = fs.readFileSync(path.join(output, 'result.scn'));
+const irPath = path.join(output, `${stem}.ir.json`);
+const validIr = fs.readFileSync(irPath);
+const invalidIr = JSON.parse(validIr);
+invalidIr.skeleton.rest_payload.bones[0].name = 'missing_bone';
+fs.writeFileSync(irPath, JSON.stringify(invalidIr));
+const mappingFailure = run();
+assert.notEqual(mappingFailure.child.status, 0);
+assert.equal(mappingFailure.result.diagnostics[0].code, 'bone_mapping_failed');
+assert.deepEqual(fs.readFileSync(path.join(output, 'result.scn')), saved);
+fs.writeFileSync(irPath, validIr);
 task.ir_path = 'missing.ir.json';
 writeBakeTask(taskPath, task);
 const failure = run();
@@ -81,4 +121,4 @@ assert.notEqual(failure.child.status, 0);
 assert.equal(failure.result.ok, false);
 assert.equal(failure.result.diagnostics[0].code, 'ir_invalid');
 assert.deepEqual(fs.readFileSync(path.join(output, 'result.scn')), saved);
-console.log(JSON.stringify({output, inventory: success.result.inventory, checks: ['real_model_roundtrip', 'fresh_process_reload', 'missing_ir_preserves_scene']}, null, 2));
+console.log(JSON.stringify({output, inventory: success.result.inventory, skeleton: success.result.skeleton_compile, checks: ['real_model_roundtrip', 'fresh_process_reload', 'rest_and_socket_transforms', 'missing_bone_preserves_scene', 'missing_ir_preserves_scene']}, null, 2));

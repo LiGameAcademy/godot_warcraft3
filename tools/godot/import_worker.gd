@@ -1,5 +1,7 @@
 extends SceneTree
 
+const SkeletonCompiler = preload("import_skeleton_compiler.gd")
+
 ## 无状态 Godot 编译后端的第一版。
 ##
 ## 用法：
@@ -97,6 +99,13 @@ func _run() -> void:
 	root.set_meta("wc3_import_profile", str(task["profile"]))
 	root.set_meta("wc3_model_ir_path", ir_path)
 	root.set_meta("wc3_import_worker_version", "1")
+	var compiled: Dictionary = SkeletonCompiler.compile(root, ir)
+	if not compiled.ok:
+		result["diagnostics"] = compiled.diagnostics
+		root.free()
+		_finish(result, 1)
+		return
+	result["skeleton_compile"] = compiled
 	var before: Dictionary = _inventory(root)
 
 	var packed := PackedScene.new()
@@ -128,12 +137,12 @@ func _run() -> void:
 		_finish(result, 1)
 		return
 	result["ok"] = true
-	result["scope"] = "geometry_roundtrip"
+	result["scope"] = "geometry_skeleton_sockets"
 	result["deliverable"] = false
 	result["inventory"] = after
 	result["output_scene"] = output_path
 	result["profile"] = str(task["profile"])
-	result["diagnostics"] = [{"code": "geometry_only", "severity": "warning", "message": "仅验证几何重载；尚未编译 IR 材质、挂点和特效，不能视为保真验收通过"}]
+	result["diagnostics"] = compiled.diagnostics + [{"code": "partial_compile", "severity": "warning", "message": "材质、挂点显隐动画及特效尚未完整编译"}]
 	_finish(result, 0)
 
 

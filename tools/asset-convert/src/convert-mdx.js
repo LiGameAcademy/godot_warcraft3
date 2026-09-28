@@ -1444,6 +1444,7 @@ function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
       bone_count: (model.Bones ?? []).length,
       helper_count: (model.Helpers ?? []).length,
       bone_rest: boneRest,
+      rest_payload: JSON.parse(fs.readFileSync(path.join(outDir, boneRest), "utf8")),
     },
     animations: {
       sequence_count: (model.Sequences ?? []).length,
@@ -1470,6 +1471,7 @@ function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir) {
     attachments: {
       count: (model.Attachments ?? []).length,
       sidecar: attachments,
+      payload: JSON.parse(fs.readFileSync(path.join(outDir, attachments), "utf8")),
     },
     events: {
       count: (model.EventObjects ?? []).length,
