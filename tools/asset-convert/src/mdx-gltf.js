@@ -363,7 +363,7 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writeAnimKeysSidecar(model, logicalPath, outDir);
     writeCollisionSidecar(model, logicalPath, outDir);
     writeBoneRestSidecar(skinAnimNodes, bindWorlds, jointList, logicalPath, outDir);
-    writeModelIrSidecar(model, logicalPath, sourceBytes, outDir);
+    writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir);
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {

@@ -37,6 +37,15 @@ func _run() -> void:
 	assert(nodes.get_root() == null)
 	assert((_named(viewer, "AnimationInfo") as RichTextLabel).text == "无动画。")
 	assert(viewer.preview_scene(args[0]))
+	var team: OptionButton = _named(viewer, "Team")
+	team.select(2)
+	team.item_selected.emit(2)
+	for node: Node in viewer._nodes(viewer.current_model):
+		if node is MeshInstance3D and node.mesh != null:
+			for surface: int in range(node.mesh.get_surface_count()):
+				var material: Material = node.get_active_material(surface)
+				if material is ShaderMaterial and material.has_meta("import_team_underlay"):
+					assert(material.get_shader_parameter("use_team_texture") or material.get_shader_parameter("team_color_fallback") == MapPlaceholders.PLAYER_COLORS[1])
 	await process_frame
 	await process_frame
 	if "--capture" in args:

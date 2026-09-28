@@ -82,6 +82,8 @@ CLI：存在源解析失败时仍完成报告并退出 1；命令／I/O 失败�
 
 ## 验证
 
+新 worker 的双层队色材质已支持玩家颜色预览；原始烘队色使用 `.scn` 内嵌纹理。切换玩家颜色只替换当前预览实例的材质，关闭／重载不会写回资产。当前材质透明度随所选动画播放。该支持不代表整模型验收完成：worker 尚未完整处理 Geoset 显隐，腐烂／残骸网格可能在其他动作中出现，仍需后续修复并以游戏内参考验收。
+
 ```powershell
 npm --prefix tools/asset-convert run test:audit
 python tools/workspace/test_apps.py --godot $env:GODOT --app asset_viewer

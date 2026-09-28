@@ -41,6 +41,7 @@ var _expanded_folders: Dictionary = {}
 var _building_tree: bool = false
 var _syncing_selection: bool = false
 const Inspection: GDScript = preload("res://viewer_inspection.gd")
+const TeamMaterial: GDScript = preload("res://viewer_team_material.gd")
 var _inspection: RefCounted
 
 
@@ -359,6 +360,7 @@ func _reload_model() -> void:
 			node.set_meta("viewer_speed_scale", (node as CPUParticles3D).speed_scale)
 	if team.selected > 0:
 		_team_cache.apply_team_color(current_model, team.selected - 1)
+		TeamMaterial.apply(current_model, team.selected - 1)
 	player = AnimPlayback.find_animation_player(current_model)
 	if player != null:
 		for animation: StringName in player.get_animation_list():

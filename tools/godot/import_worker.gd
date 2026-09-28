@@ -107,7 +107,7 @@ func _run() -> void:
 		_finish(result, 1)
 		return
 	result["skeleton_compile"] = compiled
-	var material_result: Dictionary = MaterialCompiler.compile(root, ir)
+	var material_result: Dictionary = MaterialCompiler.compile(root, ir, ir_path.get_base_dir())
 	result["material_compile"] = material_result
 	compiled.diagnostics.append_array(material_result.diagnostics)
 	var before: Dictionary = _inventory(root)
@@ -134,6 +134,13 @@ func _run() -> void:
 		_finish(result, 1)
 		return
 	var instance: Node = (reloaded as PackedScene).instantiate()
+	# Keep overrides alive until their owning rendering instances finish teardown.
+	var retained_materials: Array[Material] = []
+	for mesh: MeshInstance3D in instance.find_children("*", "MeshInstance3D", true, false):
+		for surface: int in range(mesh.mesh.get_surface_count()):
+			var material: Material = mesh.get_active_material(surface)
+			if material != null:
+				retained_materials.append(material)
 	var after: Dictionary = _inventory(instance)
 	instance.free()
 	if before != after:
