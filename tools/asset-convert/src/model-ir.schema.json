@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-wc3.local/schemas/model-ir.schema.json",
+  "title": "Warcraft 3 project Model IR",
+  "type": "object",
+  "required": ["schema_version", "identity", "source", "profile", "dependencies", "diagnostics", "feature_status"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "identity": {
+      "type": "object",
+      "required": ["asset_id", "logical_path", "source_format"],
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "logical_path": { "type": "string", "minLength": 1 },
+        "source_format": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "source": { "type": "object", "additionalProperties": true },
+    "profile": { "enum": ["fidelity", "enhanced"] },
+    "dependencies": { "type": "array" },
+    "diagnostics": { "type": "array" },
+    "feature_status": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "additionalProperties": true
+}
