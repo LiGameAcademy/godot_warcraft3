@@ -80,6 +80,7 @@ func _run() -> void:
 		_finish(result, 2)
 		return
 	var doc: GLTFDocument = GLTFDocument.new()
+	result["source_sha256"] = str(ir.get("source", {}).get("source_hash", ""))
 	var state: GLTFState = GLTFState.new()
 	var append_error: Error = doc.append_from_file(gltf_path, state)
 	if append_error != OK:
@@ -155,7 +156,8 @@ func _run() -> void:
 	result["scope"] = "geometry_skeleton_sockets"
 	result["deliverable"] = false
 	result["inventory"] = after
-	result["output_scene"] = output_path
+	result["output_scene"] = ProjectSettings.globalize_path(output_path)
+	result["output_sha256"] = FileAccess.get_sha256(output_path)
 	result["profile"] = str(task["profile"])
 	result["diagnostics"] = compiled.diagnostics + [{"code": "partial_compile", "severity": "warning", "message": "材质和特效尚未完整编译；挂点仅支持非全局序列的离散显隐"}]
 	_finish(result, 0)
