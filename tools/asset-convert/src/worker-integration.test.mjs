@@ -19,6 +19,7 @@ const output = fs.mkdtempSync(path.join(scratch, 'worker-'));
 fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Import Worker Test"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
 fs.copyFileSync(path.join(repo, 'tools/godot/import_worker.gd'), path.join(output, 'import_worker.gd'));
 fs.copyFileSync(path.join(repo, 'tools/godot/import_skeleton_compiler.gd'), path.join(output, 'import_skeleton_compiler.gd'));
+fs.copyFileSync(path.join(repo, 'tools/godot/import_material_compiler.gd'), path.join(output, 'import_material_compiler.gd'));
 await convertOneMdx(path.join(source, logical), logical, source, output);
 const stem = logical.slice(0, -4);
 const task = createBakeTask({asset_id: stem.toLowerCase(), ir_path: `${stem}.ir.json`, geometry_path: `${stem}.gltf`, output_scene: 'result.scn'});
@@ -44,6 +45,8 @@ assert.ok(success.result.inventory.animations > 0);
 assert.equal(success.result.skeleton_compile.rests, 40);
 assert.equal(success.result.skeleton_compile.sockets, 9);
 assert.equal(success.result.skeleton_compile.visibility_tracks, 91);
+assert.ok(success.result.material_compile.compiled_surfaces > 0);
+assert.ok(success.result.material_compile.diagnostics.some(d => d.code === 'multilayer_pending'));
 fs.writeFileSync(path.join(output, 'verify.gd'), `extends SceneTree
 func _initialize() -> void:
  call_deferred("_verify")
@@ -59,12 +62,21 @@ func _verify() -> void:
  var counts: Dictionary = {"nodes": 0, "meshes": 0, "surfaces": 0, "bones": 0, "animations": 0}
  var player: AnimationPlayer
  var weapon: Marker3D
+ var isolated_material: StandardMaterial3D
  while not queue.is_empty():
   var node: Node = queue.pop_back()
   counts.nodes += 1
   if node is MeshInstance3D and node.mesh != null:
    counts.meshes += 1
    counts.surfaces += node.mesh.get_surface_count()
+   for surface: int in range(node.mesh.get_surface_count()):
+    var material: Material = node.get_active_material(surface)
+    if material.has_meta("import_material_id"):
+     isolated_material = material
+     if material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR or not is_equal_approx(material.alpha_scissor_threshold, 0.75):
+      push_error("Material mapping lost after reload")
+      quit(1)
+      return
   if node is Skeleton3D:
    counts.bones += node.get_bone_count()
    for entry: Dictionary in ir.skeleton.rest_payload.bones:
@@ -131,6 +143,26 @@ func _verify() -> void:
   push_error("Attack socket did not move")
   quit(1)
   return
+ if isolated_material == null:
+  push_error("No compiled material survived reload")
+  quit(1)
+  return
+ isolated_material.albedo_color = Color.MAGENTA
+ for check: int in range(2):
+  var other: Node = packed.instantiate()
+  var other_nodes: Array[Node] = [other]
+  while not other_nodes.is_empty():
+   var node: Node = other_nodes.pop_back()
+   if node is MeshInstance3D and node.mesh != null:
+    for surface: int in range(node.mesh.get_surface_count()):
+     var material: Material = node.get_active_material(surface)
+     if material.has_meta("import_material_id") and (material == isolated_material or material.albedo_color == Color.MAGENTA):
+      push_error("Material mutation leaked across instances")
+      quit(1)
+      return
+   for child: Node in node.get_children():
+    other_nodes.append(child)
+  other.free()
  var file: FileAccess = FileAccess.open("res://verified.json", FileAccess.WRITE)
  file.store_string(JSON.stringify(counts))
  file.close()

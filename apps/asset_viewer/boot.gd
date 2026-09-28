@@ -40,11 +40,14 @@ var _folder_items: Dictionary = {}
 var _expanded_folders: Dictionary = {}
 var _building_tree: bool = false
 var _syncing_selection: bool = false
-var _inspected_nodes: Array[Node] = []
+const Inspection: GDScript = preload("res://viewer_inspection.gd")
+var _inspection: RefCounted
 
 
 #region Lifecycle
 func _ready() -> void:
+	_inspection = Inspection.new(%SceneNodes, %NodeInfo, %AnimationInfo)
+	(%ShowReport as CheckButton).toggled.connect(func(enabled: bool) -> void: details.visible = enabled)
 	(%ResetCamera as Button).pressed.connect(reset_camera)
 	(%ShowNodes as CheckButton).toggled.connect(func(_value: bool) -> void: _inspection_visibility())
 	(%ShowAnimation as CheckButton).toggled.connect(func(_value: bool) -> void: _inspection_visibility())
@@ -314,7 +317,7 @@ func _select_index(index: int) -> void:
 
 func _clear_model() -> void:
 	(%SceneNodes as Tree).clear()
-	_inspected_nodes.clear()
+	_inspection.clear()
 	(%NodeInfo as RichTextLabel).text = "选择节点查看只读属性。"
 	(%AnimationInfo as RichTextLabel).text = "无动画。"
 	player = null
@@ -409,18 +412,7 @@ func _show_details() -> void:
 
 
 func _is_glow_card(mesh_node: MeshInstance3D) -> bool:
-	if str(mesh_node.name).begins_with("TeamGlow"):
-		return true
-	for surface: int in range(mesh_node.mesh.get_surface_count()):
-		var material: Material = mesh_node.get_active_material(surface)
-		if material == null:
-			return false
-		var glow: bool = material.resource_name.contains("_rep2")
-		if material is ShaderMaterial and (material as ShaderMaterial).shader != null:
-			glow = glow or (material as ShaderMaterial).shader.resource_path.contains("team_glow")
-		if not glow:
-			return false
-	return true
+	return Inspection.is_glow_card(mesh_node)
 
 
 func _nodes(root: Node) -> Array[Node]:
@@ -483,58 +475,7 @@ func _inspection_visibility() -> void:
 	_animation_info()
 
 
-func _rebuild_scene_nodes() -> void:
-	var tree: Tree = %SceneNodes
-	tree.clear()
-	_inspected_nodes = _nodes(current_model)
-	var items: Dictionary = {}
-	for index: int in range(_inspected_nodes.size()):
-		var node: Node = _inspected_nodes[index]
-		var item: TreeItem = tree.create_item(items.get(node.get_parent()))
-		item.set_text(0, "%s · %s" % [node.name, node.get_class()])
-		item.set_tooltip_text(0, "%s · %s" % [current_model.get_path_to(node), node.get_class()])
-		item.set_metadata(0, index)
-		items[node] = item
 
-
-func _inspect_node() -> void:
-	var selected: TreeItem = (%SceneNodes as Tree).get_selected()
-	if selected == null:
-		return
-	var node: Node = _inspected_nodes[int(selected.get_metadata(0))]
-	if not is_instance_valid(node):
-		return
-	var lines: PackedStringArray = [str(node.name), "类型：" + node.get_class(), "路径：" + str(current_model.get_path_to(node))]
-	if node is Node3D:
-		lines.append("可见：%s\n位置：%s" % [node.is_visible_in_tree(), node.position])
-	if node is MeshInstance3D and node.mesh != null:
-		lines.append("表面数：%d" % node.mesh.get_surface_count())
-		for surface: int in range(node.mesh.get_surface_count()):
-			var material: Material = node.get_active_material(surface)
-			lines.append("材质 %d：%s" % [surface, material.resource_name if material != null else "无"])
-	if node is BoneAttachment3D:
-		lines.append("骨骼：%s" % node.bone_name)
-	if node.get_script() != null:
-		lines.append("脚本：" + str(node.get_script().resource_path))
-	for key: StringName in node.get_meta_list():
-		lines.append("%s = %s" % [key, node.get_meta(key)])
-	(%NodeInfo as RichTextLabel).text = "\n".join(lines)
-
-
-func _animation_info() -> void:
-	if player == null or animations.selected < 0:
-		(%AnimationInfo as RichTextLabel).text = "无动画。"
-		return
-	var name: String = animations.get_item_text(animations.selected)
-	var animation: Animation = player.get_animation(name)
-	var lines: PackedStringArray = [name, "时长：%.3f 秒" % animation.length, "循环：%s" % ["无", "循环", "往返"][animation.loop_mode], "轨道数：%d" % animation.get_track_count()]
-	for key: StringName in animation.get_meta_list():
-		lines.append("%s = %s" % [key, animation.get_meta(key)])
-	for index: int in range(animation.get_track_count()):
-		var types: Array[String] = ["属性", "位移", "旋转", "缩放", "混合形状", "方法", "曲线", "音频", "动画"]
-		var track_type: int = animation.track_get_type(index)
-		lines.append("%s · %s · %d 关键帧" % [animation.track_get_path(index), types[track_type] if track_type < types.size() else str(track_type), animation.track_get_key_count(index)])
-	(%AnimationInfo as RichTextLabel).text = "\n".join(lines)
 
 
 func _smoke_test() -> void:
@@ -542,3 +483,12 @@ func _smoke_test() -> void:
 	print("APP startup PASS: asset_viewer UI and shared catalog initialized")
 	get_tree().quit(0)
 #endregion
+
+func _rebuild_scene_nodes() -> void:
+	_inspection.rebuild(current_model)
+
+func _inspect_node() -> void:
+	_inspection.inspect_node()
+
+func _animation_info() -> void:
+	_inspection.animation_info(player, animations)

@@ -1,7 +1,7 @@
 [gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://viewer.gd" id="1"]
-[ext_resource type="Script" path="res://axis_gizmo.gd" id="2"]
+[ext_resource type="Script" path="res://boot.gd" id="1"]
+[ext_resource type="PackedScene" path="res://axis_gizmo.tscn" id="2"]
 [sub_resource type="Environment" id="Environment"]
 background_mode = 1
 background_color = Color(0.055, 0.07, 0.09, 1)
@@ -187,7 +187,7 @@ unique_name_in_owner = true
 current = true
 near = 0.01
 far = 10000.0
-[node name="Axes" type="Control" parent="Margin/Layout/Split/Preview/ViewportContainer"]
+[node name="Axes" parent="Margin/Layout/Split/Preview/ViewportContainer" instance=ExtResource("2")]
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 8.0
@@ -195,7 +195,6 @@ offset_top = 8.0
 offset_right = 148.0
 offset_bottom = 148.0
 tooltip_text = "点击坐标轴切换视图：+Z 前、−Z 后、+X 右、−X 左、+Y 顶、−Y 底"
-script = ExtResource("2")
 [node name="InspectionControls" type="HBoxContainer" parent="Margin/Layout/Split/Preview"]
 layout_mode = 2
 [node name="ShowNodes" type="CheckButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
@@ -209,6 +208,11 @@ text = "动画元数据"
 [node name="Views" type="OptionButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
 unique_name_in_owner = true
 layout_mode = 2
+[node name="ShowReport" type="CheckButton" parent="Margin/Layout/Split/Preview/InspectionControls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "审计信息"
+button_pressed = true
 [node name="Inspection" type="HBoxContainer" parent="Margin/Layout/Split/Preview"]
 unique_name_in_owner = true
 visible = false

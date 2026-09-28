@@ -10,6 +10,10 @@ func _run() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	assert(args.size() > 0, "Provide a real .scn absolute path")
 	assert(viewer.preview_scene(args[0]))
+	(_named(viewer, "ShowReport") as CheckButton).button_pressed = false
+	assert(not viewer.details.visible)
+	(_named(viewer, "ShowReport") as CheckButton).button_pressed = true
+	assert(viewer.details.visible)
 	var nodes: Tree = _named(viewer, "SceneNodes")
 	assert(nodes.get_root() != null)
 	nodes.get_root().select(0)
