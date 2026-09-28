@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[applica
 fs.copyFileSync(path.join(repo, 'tools/godot/import_worker.gd'), path.join(output, 'import_worker.gd'));
 fs.copyFileSync(path.join(repo, 'tools/godot/import_skeleton_compiler.gd'), path.join(output, 'import_skeleton_compiler.gd'));
 fs.copyFileSync(path.join(repo, 'tools/godot/import_material_compiler.gd'), path.join(output, 'import_material_compiler.gd'));
-for (const name of ['import_material_animation.gd', 'import_team_material.gd']) {
+for (const name of ['import_material_animation.gd', 'import_team_material.gd', 'import_geoset_visibility.gd']) {
   fs.copyFileSync(path.join(repo, 'tools/godot', name), path.join(output, name));
 }
 await convertOneMdx(path.join(source, logical), logical, source, output);
@@ -53,6 +53,8 @@ assert.ok(success.result.material_compile.compiled_surfaces > 0);
 assert.equal(success.result.material_compile.team_surfaces, 1);
 assert.equal(success.result.material_compile.alpha_tracks, 13);
 assert.deepEqual(success.result.material_compile.diagnostics, []);
+assert.equal(success.result.geoset_compile.visibility_tracks, 65);
+assert.deepEqual(success.result.geoset_compile.diagnostics, []);
 fs.writeFileSync(path.join(output, 'verify.gd'), `extends SceneTree
 func _initialize() -> void:
  call_deferred("_verify")
@@ -72,10 +74,12 @@ func _verify() -> void:
  var team_material: ShaderMaterial
  var team_mesh: MeshInstance3D
  var animated_material: StandardMaterial3D
+ var geosets: Dictionary = {}
  while not queue.is_empty():
   var node: Node = queue.pop_back()
   counts.nodes += 1
   if node is MeshInstance3D and node.mesh != null:
+   geosets[str(node.name)] = node
    counts.meshes += 1
    counts.surfaces += node.mesh.get_surface_count()
    for surface: int in range(node.mesh.get_surface_count()):
@@ -152,6 +156,14 @@ func _verify() -> void:
  alpha.LineType = 1
  alpha_compiler.compile(player, team_mesh, 0, alpha, ir, true)
  player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+ for sample: Array in [["Stand-1", 0.0, [true,true,false,false,false]], ["Death", 1.0, [true,true,false,false,false]], ["DecayFlesh", 0.1, [true,true,true,false,false]], ["DecayFlesh", 0.2, [true,true,true,false,true]], ["DecayBone", 0.1, [false,false,false,false,true]], ["Stand-4", 2.0, [true,true,true,true,false]], ["Stand-1", 0.0, [true,true,false,false,false]]]:
+  player.play(sample[0])
+  player.seek(sample[1], true)
+  for index: int in range(5):
+   if geosets["Geoset_%d" % index].visible != sample[2][index]:
+    push_error("Geoset visibility mismatch: %s mesh %d" % [sample[0], index])
+    quit(1)
+    return
  if animated_material == null or team_material == null:
   push_error("Missing team or animated material")
   quit(1)
@@ -241,6 +253,21 @@ assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output, 'verified.json'), 
 const saved = fs.readFileSync(path.join(output, 'result.scn'));
 const irPath = path.join(output, `${stem}.ir.json`);
 const validIr = fs.readFileSync(irPath);
+// Continuous/global alpha must not silently become thresholded visibility.
+const unsupportedIr = JSON.parse(validIr);
+unsupportedIr.animations.payload.geoset_anims[0].alpha.line_type = 1;
+unsupportedIr.animations.payload.geoset_anims[1].alpha.global_seq_id = 0;
+unsupportedIr.animations.payload.geoset_anims[2].alpha.keys[0].vector[0] = 0.5;
+fs.writeFileSync(irPath, JSON.stringify(unsupportedIr));
+task.output_scene = 'unsupported.scn';
+writeBakeTask(taskPath, task);
+const unsupported = run();
+assert.equal(unsupported.child.status, 0, unsupported.child.stdout + unsupported.child.stderr);
+assert.equal(unsupported.result.geoset_compile.diagnostics.filter(d => d.code === 'geoset_alpha_pending').length, 3);
+assert.equal(unsupported.result.geoset_compile.visibility_tracks, 26);
+assert.deepEqual(fs.readFileSync(path.join(output, 'result.scn')), saved);
+task.output_scene = 'result.scn';
+writeBakeTask(taskPath, task);
 const invalidIr = JSON.parse(validIr);
 invalidIr.skeleton.rest_payload.bones[0].name = 'missing_bone';
 fs.writeFileSync(irPath, JSON.stringify(invalidIr));
@@ -256,4 +283,4 @@ assert.notEqual(failure.child.status, 0);
 assert.equal(failure.result.ok, false);
 assert.equal(failure.result.diagnostics[0].code, 'ir_invalid');
 assert.deepEqual(fs.readFileSync(path.join(output, 'result.scn')), saved);
-console.log(JSON.stringify({output, inventory: success.result.inventory, skeleton: success.result.skeleton_compile, materials: success.result.material_compile, checks: ['real_model_roundtrip', 'fresh_process_reload', 'rest_and_socket_transforms', 'visibility_clip_switch', 'animated_socket_follow', 'team_textures_embedded', 'material_alpha_clip_switch', 'material_instance_isolation', 'missing_bone_preserves_scene', 'missing_ir_preserves_scene']}, null, 2));
+console.log(JSON.stringify({output, inventory: success.result.inventory, skeleton: success.result.skeleton_compile, materials: success.result.material_compile, geosets: success.result.geoset_compile, checks: ['real_model_roundtrip', 'fresh_process_reload', 'rest_and_socket_transforms', 'visibility_clip_switch', 'animated_socket_follow', 'team_textures_embedded', 'material_alpha_clip_switch', 'material_instance_isolation', 'geoset_clip_switch', 'unsupported_geoset_diagnostics', 'missing_bone_preserves_scene', 'missing_ir_preserves_scene']}, null, 2));

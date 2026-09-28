@@ -2,6 +2,7 @@ extends SceneTree
 
 const SkeletonCompiler: GDScript = preload("import_skeleton_compiler.gd")
 const MaterialCompiler: GDScript = preload("import_material_compiler.gd")
+const VisibilityCompiler: GDScript = preload("import_geoset_visibility.gd")
 
 ## 无状态 Godot 编译后端的第一版。
 ##
@@ -110,6 +111,9 @@ func _run() -> void:
 	var material_result: Dictionary = MaterialCompiler.compile(root, ir, ir_path.get_base_dir())
 	result["material_compile"] = material_result
 	compiled.diagnostics.append_array(material_result.diagnostics)
+	var visibility_result: Dictionary = VisibilityCompiler.compile(root, ir)
+	result["geoset_compile"] = visibility_result
+	compiled.diagnostics.append_array(visibility_result.diagnostics)
 	var before: Dictionary = _inventory(root)
 
 	var packed: PackedScene = PackedScene.new()
