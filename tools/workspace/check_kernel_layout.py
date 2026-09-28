@@ -36,7 +36,7 @@ def check(root=ROOT):
                 if "godot" in library.lower():
                     errors.append(f"Transitive Godot dependency in {project}: {library}")
 
-    kernel = root / "packages/rts_kernel/Rts.Kernel.csproj"
+    kernel = root / "external/rts_kernel/src/Rts.Kernel/Rts.Kernel.csproj"
     visit(kernel)
     game = root / "apps/game/godot_warcraft3.csproj"
     game_xml = ET.parse(game).getroot()
@@ -54,7 +54,7 @@ def check(root=ROOT):
         errors.append("Sync map_editor before checking its product boundary.")
     else:
         for row in json.loads(manifest.read_text(encoding="utf-8")):
-            if row.get("source", "").startswith(("packages/gameplay/", "packages/rts_kernel/")):
+            if row.get("source", "").startswith(("packages/gameplay/", "packages/rts_kernel/", "external/rts_kernel/")):
                 errors.append(f"Game-only source leaked into editor: {row['source']}")
     return errors
 

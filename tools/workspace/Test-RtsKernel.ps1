@@ -5,13 +5,18 @@ param(
 $ErrorActionPreference = "Stop"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $projects = @(
-    "packages/rts_kernel/Rts.Kernel.csproj",
+    "external/rts_kernel/src/Rts.Kernel/Rts.Kernel.csproj",
     "apps/kernel_cli/Rts.Kernel.Cli.csproj",
     "tests/kernel/Rts.Kernel.Tests.csproj"
 )
 
 Push-Location $repositoryRoot
 try {
+    $kernelTest = Join-Path $repositoryRoot "external/rts_kernel/Test.ps1"
+    if (-not (Test-Path $kernelTest)) {
+        throw "Kernel submodule missing. Run: git submodule update --init --recursive"
+    }
+    & $kernelTest -Configuration $Configuration
     foreach ($project in $projects) {
         dotnet restore $project --ignore-failed-sources -p:NuGetAudit=false -m:1
         if ($LASTEXITCODE -ne 0) {

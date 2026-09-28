@@ -24,19 +24,22 @@
 
 ## 2. 依赖与工程组织
 
-建议结构（待实施创建，不代表当前已有）：
+当前工程边界如下；内核功能子目录随迁移逐步创建，不代表全部已经实现。2026-09-28 已完成[独立仓库与子模块拆分](../verification/rts_kernel/REPOSITORY_SPLIT.md)。
 
 ```text
-packages/rts_kernel/              普通 .NET 类库，命名空间 Rts.Kernel
-  Match/ Entities/ Commands/ Navigation/ Combat/
-  Economy/ Harvest/ Build/ Production/ Technology/
-  Abilities/ Heroes/ Items/ AI/ Snapshots/
+external/rts_kernel/              独立开源仓库的 Git 子模块
+  src/Rts.Kernel/                 普通 .NET 类库，命名空间 Rts.Kernel
+    Match/ Entities/ Commands/ Navigation/ Combat/
+    Economy/ Harvest/ Build/ Production/ Technology/
+    Abilities/ Heroes/ Items/ AI/ Snapshots/
+  samples/Rts.Kernel.Cli/         无 Godot、无游戏资产的最小宿主
+  tests/Rts.Kernel.Tests/         纯内核模拟与契约测试
 packages/rts_content/             普通 .NET 内容转换/校验与 JSON 入口
 packages/gameplay/                迁移中保留旧逻辑；最终保留适配与表现
   adapters/godot/                 C# 桥接及必要的 GDScript 接入
 apps/game/                       Godot 宿主、装配、输入与界面
-apps/kernel_cli/                 .NET 命令行测试、回放和性能宿主
-tests/kernel/                    .NET 模拟与契约测试
+apps/kernel_cli/                 当前游戏的地图内容转换 CLI
+tests/kernel/                    游戏内容转换集成测试及依赖边界检查
 ```
 
 目录按真实职责创建，不要求一个功能一个程序集。

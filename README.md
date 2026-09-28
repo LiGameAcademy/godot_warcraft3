@@ -2,6 +2,14 @@
 
 用 **Godot 4.7.2** 复刻《魔兽争霸3》玩法的实验项目。
 
+纯 C# RTS 内核独立维护于 [rts_kernel_cs](https://github.com/Liweimin0512/rts_kernel_cs)，通过 `external/rts_kernel` 子模块固定版本。首次克隆后执行：
+
+```powershell
+git submodule update --init --recursive
+```
+
+游戏 C# 桥接需要 **Godot 4.7.2 .NET（Mono）版**；当前构建与测试使用 **.NET 10 SDK**，内核类库目标为 net8.0。在根目录运行 `./tools/workspace/Test-RtsKernel.ps1` 验证内核及游戏内容转换。职责边界、桥接验证和更新步骤见 [内核仓库拆分记录](docs/verification/rts_kernel/REPOSITORY_SPLIT.md)。内核仍处于早期开发阶段，尚未完成完整 RTS 玩法迁移。
+
 仓库**不含**暴雪游戏资产。开发前须自备正版**经典**客户端（含 `War3.mpq` / `War3x.mpq`，不是仅有 `Data/` 的现代 CASC）。合规说明：[docs/data/LEGAL.md](docs/data/LEGAL.md)。
 
 | 入口 | 场景 |

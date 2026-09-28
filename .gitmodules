@@ -4,3 +4,6 @@
 [submodule "addons/panku_console"]
 	path = addons/panku_console
 	url = https://github.com/Ark2000/panku_console
+[submodule "external/rts_kernel"]
+	path = external/rts_kernel
+	url = https://github.com/Liweimin0512/rts_kernel_cs.git

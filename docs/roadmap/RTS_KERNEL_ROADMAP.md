@@ -1,6 +1,6 @@
 # RTS 内核重构开发路线图
 
-日期：2026-09-27（计划定稿）；状态更新 2026-09-28：M0 工具链验证（部分）+ M1 双宿主骨架最小形态**已落地**——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。M2 真实移动与之后均未开始；本文完成仍不代表实现完成，文档与代码仍按 §11 工作包规则同步。
+日期：2026-09-27（计划定稿）；状态更新 2026-09-28：M0 工具链验证（部分）+ M1 双宿主骨架最小形态**已落地**——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。M2 的 R02.1 地图数据转换进行中，真实寻路与移动尚未实现；内核已完成[独立仓库与子模块拆分](../verification/rts_kernel/REPOSITORY_SPLIT.md)。本文完成仍不代表实现完成，文档与代码仍按 §11 工作包规则同步。
 
 设计依据：[内核契约](../architecture/RTS_KERNEL.md)、[迁移与验收](../architecture/RTS_KERNEL_MIGRATION.md)、[技能系统](../architecture/RTS_ABILITY_SYSTEM.md)。本文细化执行顺序与工作包，不替代上述约束。
 
