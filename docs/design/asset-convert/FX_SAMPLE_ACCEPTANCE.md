@@ -39,7 +39,33 @@ node tools/asset-convert/src/worker-fx-samples.test.mjs
 - 粒子为原生 `GPUParticles3D`，图集、三阶段颜色／尺寸和双头尾绘制随场景保存，没有运行时 JSON 读取。
 - 相机朝向使用 `.scn` 内嵌的 SkeletonModifier3D，保留动画后的中心和缩放；同一 Geoset 内的地面光晕不跟着镜头转。
 - 当前保留原作叠层光晕几何，没有宣称全部光晕已重构。朝向会替换来源骨骼旋转，尚未恢复绕法线自转；火球部分材质按无光照近似。粒子轨迹采样为 30 Hz，尾部为速度对齐面片，均有日志。
-- 动态速度／重力、全局控制轨、Squirt 爆发和锁轴 billboard 遇到时记录未支持。Ribbon 有明确诊断，本批三个模型不含 Ribbon，下一批仍需真实 Ribbon 样本。
+- 粒子的动态速度／重力、全局控制轨、Squirt 爆发和锁轴 billboard 遇到时记录未支持。新增 Ribbon 样本和边界见下节。
 - 技术检查覆盖独立项目重载、发射开关复位、朝向中心不漂移、地面骨骼不变及 A/B 材质和粒子参数隔离。渲染截图证明当前样本可显示，不能代替原作对照验收。
 
-下一步先收集本批视觉反馈，再处理 Ribbon 和绕法线旋转／拖尾误差，之后进入已规划的导出游戏内导入验证。
+## 第二批：Ribbon 拖带（2026-09-29）
+
+新 worker 增加回春术 `RejuvenationTarget`（3 条）、复活 `Resurrecttarget`（4 条）和碎片投射物 `FragMissile`（1 条）。IR 记录上下端点、父级运动、寿命、速率、颜色、透明度、显隐和图集槽；SCN 内嵌纹理、材质、动画和运行脚本，无需旧项目的 Ribbon 脚本或 JSON。
+
+在项目根目录 PowerShell 执行：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+node tools/asset-convert/src/ribbon-ir.test.mjs
+node tools/asset-convert/src/worker-ribbon-samples.test.mjs
+& $env:GODOT --path apps/asset_viewer -- --preview-report "$PWD/.cache/ribbon-preview/report.json"
+```
+
+建议先看 **RejuvenationTarget → Stand**，点击重播，观察绕行拖带，再测试暂停、继续、倒退帧和切换 Birth/Death。真实源模型的上下宽度分别沿发射器局部 Y 轴变换，不能改成面向摄像机的统一半宽。静止投射物不保证有可见长尾：FragMissile 必须移动才能留下世界空间路径，自动测试覆盖这一点。
+
+复活样本用来核对复杂父节点运动和动态宽度；其其他网格还有 `material_feature_pending` 和 `geoset_color_pending`，画面中可能有不透明片，**整个模型尚未视觉验收**。
+
+技术证据：592 个复活拖带端点与 `war3-model` 独立源渲染器比较，最大误差约 4.2e-7 米。独立项目仅复制 SCN 和测试脚本，覆盖动画驱动、世界空间历史、暂停、倒退、切换动画、停发寿命和双实例资源隔离。旧三项 FX 样本回归通过。
+
+当前限制明确记录为 `ribbon_sampling_approximation`：
+
+- 端点轨迹采样 30 Hz；发射点在相邻实际更新之间插值。
+- 暂停时间轴冻结历史；倒退、循环、切换动画或一次前跳超过 0.25 秒清空历史，避免连接无关姿态。小幅向前拖帧视为时间推进，不能重建跳过的精确历史；需要完整效果时重播。单次动画结束后历史随时间轴冻结，尚未实现独立于动画的收尾时钟。
+- Ribbon 全局控制轨、重力、多层材质、动态纹理／材质透明度和其他混合模式尚未支持，发射器跳过并记录 `ribbon_controls_pending`。父节点全局运动已经参与端点采样；支持 Blend、Additive、AddAlpha。
+- 不追加旧实现的假路径点、统一半宽、尾部额外淡出。旧牧师光球替换属于增强表现，不能混入 fidelity；独立 enhanced 编译仍待实现。
+
+下一步收集视觉反馈并处理朝向／拖尾剩余误差，然后进入导出游戏内创建、保存、重载资产的验证。上述技术通过不替代原作及游戏内验收。

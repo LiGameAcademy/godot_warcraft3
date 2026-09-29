@@ -4,6 +4,7 @@ import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, md
 import { createModelIr, sha256Bytes, writeModelIr } from "./model-ir.js";
 import { resolveTexturePng } from "./mdx-materials.js";
 import { billboardPayload, particlePayload } from './mdx-fx-ir.js';
+import { ribbonPayload } from './mdx-ribbon-ir.js';
 
 
 
@@ -81,6 +82,7 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
     ribbons: {
       count: (model.RibbonEmitters ?? []).length,
       sidecar: ribbons,
+      payload: ribbonPayload(model, resolvedTextures),
     },
     attachments: {
       count: (model.Attachments ?? []).length,

@@ -151,6 +151,10 @@ func _run() -> void:
 	# Keep overrides alive until their owning rendering instances finish teardown.
 	var retained_materials: Array[Material] = []
 	for mesh: MeshInstance3D in instance.find_children("*", "MeshInstance3D", true, false):
+		if mesh.material_override != null:
+			retained_materials.append(mesh.material_override)
+		if mesh.mesh == null:
+			continue
 		for surface: int in range(mesh.mesh.get_surface_count()):
 			var material: Material = mesh.get_active_material(surface)
 			if material != null:

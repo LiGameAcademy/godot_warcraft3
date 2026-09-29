@@ -1,6 +1,7 @@
 extends RefCounted
 const Particles: GDScript = preload("import_particle_compiler.gd")
 const BillboardPose: GDScript = preload("import_billboard_pose.gd")
+const Ribbons: GDScript = preload("import_ribbon_compiler.gd")
 
 static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dictionary:
 	var result: Dictionary = Particles.compile(scene, ir, texture_base)
@@ -25,6 +26,7 @@ static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dict
 			modifier.owner = scene
 			result.billboards = entries.size()
 			result.diagnostics.append({"code": "billboard_orientation_approximation", "severity": "info", "message": "Preserves animated pivot and scale; camera orientation replaces source bone rotation"})
-	if int(ir.get("ribbons", {}).get("count", 0)) > 0:
-		result.diagnostics.append({"code": "ribbon_compile_pending", "severity": "warning"})
+	var ribbons: Dictionary = Ribbons.compile(scene, ir, texture_base)
+	result["ribbons"] = ribbons.ribbons
+	result.diagnostics.append_array(ribbons.diagnostics)
 	return result
