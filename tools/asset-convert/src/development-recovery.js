@@ -1,7 +1,8 @@
 /** Exact logical names only: never pass archive-derived glob patterns to extraction. */
 export function missingSourceNames(manifest) {
   const names = new Map();
-  for (const asset of manifest.assets.filter(row => !row.available)) {
+  const requirements = (manifest.missing_definitions ?? []).map(logical_path => ({logical_path, reasons: []}));
+  for (const asset of [...manifest.assets.filter(row => !row.available), ...requirements]) {
     const candidates = [asset.logical_path, ...asset.reasons.flatMap(reason => reason.candidates ?? [])];
     for (const candidate of candidates) {
       const clean = candidate.replaceAll('\\', '/');

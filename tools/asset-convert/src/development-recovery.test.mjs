@@ -32,3 +32,16 @@ test('extraction failures and bounded runs never report success', () => {
   assert.equal(limited.status, 'pass_limit');
   assert.equal(recoverDevelopmentSources({build: () => ({assets: []}), extract: () => assert.fail()}).status, 'sources_available');
 });
+
+test('missing definition tables are recovered before resolving their object references', () => {
+  let ready = false;
+  const result = recoverDevelopmentSources({
+    build: () => ({assets: [], missing_definitions: ready ? [] : ['Units/AbilityBuffData.slk']}),
+    extract: names => { assert.deepEqual(names, ['Units/AbilityBuffData.slk']); ready = true; return {errors: 0}; },
+  });
+  assert.equal(result.status, 'sources_available');
+  assert.equal(result.passes.length, 1);
+  const missing = recoverDevelopmentSources({build: () => ({assets: [], missing_definitions: ['Units/AbilityBuffData.slk']}),
+    extract: () => ({errors: 0})});
+  assert.equal(missing.status, 'unresolved_sources');
+});

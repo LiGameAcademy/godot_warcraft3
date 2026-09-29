@@ -85,8 +85,9 @@ export function buildDevelopmentManifest(options) {
   }
   return {
     schema_version: 1, map: path.resolve(options.map), source_root: path.resolve(options.source),
-    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: 'tft', func_tables: 'base_Units_only'},
-    coverage: {complete: false, scope: 'placed_objects_and_base_table_reachable_models_textures', gaps: [
+    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: 'tft', func_tables: 'base_and_overlay_candidates'},
+    missing_definitions: collected.missingDefinitions, definition_conflicts: collected.definitionConflicts,
+    coverage: {complete: false, scope: 'placed_objects_and_table_candidate_models_textures', gaps: [
       'Runtime object overrides and Func overlay precedence are not yet unified.',
       'Dynamic script spawns, random drop tables and custom map objects require runtime tracing.',
       'Terrain, UI atlases, sound, portraits and all player-color variants are not a complete dependency closure.',
@@ -95,7 +96,8 @@ export function buildDevelopmentManifest(options) {
     inputs: collected.inputs, objects: collected.objects, unresolved_references: collected.unresolved,
     summary: {objects: collected.objects.length, models: assets.filter(row => row.kind === 'model').length,
       textures: assets.filter(row => row.kind === 'texture').length, missing_sources: assets.filter(row => !row.available).length,
-      unresolved_references: collected.unresolved.length},
+      unresolved_references: collected.unresolved.length, missing_definitions: collected.missingDefinitions.length,
+      definition_conflicts: collected.definitionConflicts.length},
     assets,
   };
 }

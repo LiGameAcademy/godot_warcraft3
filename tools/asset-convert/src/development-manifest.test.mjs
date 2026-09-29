@@ -38,6 +38,31 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.equal(model.reasons[0].object_id, 'hfoo');
     assert.ok(report.assets.find(row => row.id === 'missiles/bolt').available);
     assert.deepEqual(buildDevelopmentManifest(options), report, 'unchanged inputs must produce deterministic output');
+    assert.deepEqual(report.missing_definitions, ['Units/AbilityBuffData.slk']);
+
+    write('defs/Units/UnitAbilities.json', {records: [{unitAbilID: 'hfoo', abilList: 'Afoo'}]});
+    write('defs/Units/AbilityData.json', {records: [{alias: 'Afoo', BuffID1: 'Bfoo'}]});
+    write('source/Units/AbilityBuffData.slk', 'ID;PWXL;N;E\nB;X1;Y2\nC;X1;Y1;K"alias"\nC;X1;Y2;K"Bfoo"\nE\n');
+    write('defs/Melee_V0/Units/HumanUnitFunc.txt', '[hfoo]\nMissileart=Missiles/Overlay.mdl\n//Art=UI/Comment.blp\nArt=UI/Icon.tga\n');
+    write('source/UI/Icon.blp', 'fixture icon');
+    write('source/Missiles/Overlay.mdx', 'malformed model');
+    const supplemented = buildDevelopmentManifest(options);
+    assert.equal(supplemented.missing_definitions.length, 0);
+    assert.equal(supplemented.unresolved_references.length, 0);
+    assert.ok(supplemented.objects.some(row => row.id === 'Bfoo'));
+    assert.ok(supplemented.inputs.some(row => row.path.endsWith('AbilityBuffData.slk') && row.sha256));
+    assert.ok(supplemented.assets.find(row => row.id === 'missiles/bolt'), 'base candidate retained');
+    assert.equal(supplemented.assets.find(row => row.id === 'missiles/overlay').reasons[0].table,
+      'Melee_V0/Units/HumanUnitFunc.txt');
+    assert.equal(supplemented.definition_conflicts[0].object_id, 'hfoo');
+    assert.equal(supplemented.definition_conflicts[0].previous.source, 'Units/HumanUnitFunc.txt');
+    assert.ok(!supplemented.assets.some(row => row.logical_path.includes('Comment')));
+    assert.equal(supplemented.assets.find(row => row.id === 'ui/icon.blp').reasons[0].requested_path, 'UI/Icon.tga');
+    write('source/Units/AbilityBuffData.slk', 'invalid table');
+    assert.throws(() => buildDevelopmentManifest(options), /Invalid definition table/);
+    // Exported definitions are the configured authority when both formats exist.
+    write('defs/Units/AbilityBuffData.json', {records: [{alias: 'Bother'}]});
+    assert.ok(buildDevelopmentManifest(options).unresolved_references.some(row => row.target === 'Bfoo'));
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 
