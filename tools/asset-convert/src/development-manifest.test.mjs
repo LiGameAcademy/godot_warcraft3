@@ -27,7 +27,7 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     write('source/units/foo/FOO_V1.mdx', 'malformed model');
     write('source/Trees/Tree2.mdx', 'malformed model');
     write('source/Missiles/Bolt.mdx', 'malformed model');
-    const options = {map: path.join(root, 'map'), definitions: path.join(root, 'defs'), source: path.join(root, 'source'), seeds: []};
+    const options = {map: path.join(root, 'map'), definitions: path.join(root, 'defs'), source: path.join(root, 'source'), seeds: [], definitionProfile: 'candidates'};
     const report = buildDevelopmentManifest(options);
     assert.equal(report.summary.objects, 3);
     assert.equal(report.summary.models, 3);
@@ -58,6 +58,12 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.equal(supplemented.definition_conflicts[0].previous.source, 'Units/HumanUnitFunc.txt');
     assert.ok(!supplemented.assets.some(row => row.logical_path.includes('Comment')));
     assert.equal(supplemented.assets.find(row => row.id === 'ui/icon.blp').reasons[0].requested_path, 'UI/Icon.tga');
+    const baseOnly = buildDevelopmentManifest({...options, definitionProfile: 'base'});
+    assert.ok(!baseOnly.assets.some(row => row.id === 'missiles/overlay'));
+    const melee = buildDevelopmentManifest({...options, definitionProfile: 'melee_roc'});
+    assert.ok(!melee.assets.some(row => row.id === 'missiles/bolt'), 'overridden model must leave effective scope');
+    assert.ok(melee.assets.some(row => row.id === 'missiles/overlay'));
+    assert.equal(melee.configuration.definition_profile, 'melee_roc');
     write('source/Units/AbilityBuffData.slk', 'invalid table');
     assert.throws(() => buildDevelopmentManifest(options), /Invalid definition table/);
     // Exported definitions are the configured authority when both formats exist.

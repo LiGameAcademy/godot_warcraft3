@@ -1,6 +1,8 @@
 class_name UnitRequiresCatalog
 extends RefCounted
 
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
+
 ## 解析 *UnitFunc.txt 的 Requires=（AND 列表）。
 ## 数据权威：assets/slk-exported/Units/*UnitFunc.txt
 ##
@@ -52,38 +54,13 @@ func _ensure_file(file_name: String) -> void:
 	var full := FOLDER.path_join(file_name)
 	if _loaded_files.has(full):
 		return
-	var text := RuntimeAssets.read_utf8_text(full)
+	var rows: Dictionary = DefinitionLayers.read_rows("Units/" + file_name)
 	_loaded_files[full] = true
-	if text.is_empty():
-		return
-	_parse_file(text)
-
-
-func _parse_file(text: String) -> void:
-	var section := ""
-	for raw in text.split("\n"):
-		var line := String(raw).strip_edges()
-		if line.is_empty() or line.begins_with("//"):
-			continue
-		if line.begins_with("[") and line.ends_with("]"):
-			section = line.substr(1, line.length() - 2).strip_edges()
-			continue
-		if section.is_empty():
-			continue
-		# 只取键名恰好为 Requires（忽略 Requires1/Requires2/Requirescount）
-		var eq := line.find("=")
-		if eq <= 0:
-			continue
-		var key := line.substr(0, eq).strip_edges()
-		if key != "Requires":
-			continue
-		var raw_val := line.substr(eq + 1).strip_edges()
-		var list: Array = []
-		var seen: Dictionary = {}
-		for piece in raw_val.split(","):
-			var s := String(piece).strip_edges()
-			if s.is_empty() or seen.has(s):
-				continue
-			seen[s] = true
-			list.append(s)
-		_requires[section] = list
+	for id: String in rows:
+		var row: Dictionary = rows[id]
+		var requires: PackedStringArray = []
+		for piece: String in str(row.get("requires", "")).split(","):
+			var value: String = piece.strip_edges()
+			if not value.is_empty() and not requires.has(value):
+				requires.append(value)
+		_requires[id] = requires

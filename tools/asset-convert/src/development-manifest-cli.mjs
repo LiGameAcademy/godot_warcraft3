@@ -14,6 +14,7 @@ for (let i = 2; i < process.argv.length; i++) {
   if (!value || value.startsWith('--')) throw new Error(`Missing value for ${flag}`);
   if (flag === '--out') output = path.resolve(value);
   else if (flag === '--worker-result') options.results.push(path.resolve(value));
+  else if (flag === '--definition-profile') options.definitionProfile = value;
   else if (flag === '--seeds') options.seeds = value.split(',').filter(Boolean);
   else if (['--map', '--definitions', '--source'].includes(flag)) options[flag.slice(2)] = path.resolve(value);
   else throw new Error(`Unknown option ${flag}`);

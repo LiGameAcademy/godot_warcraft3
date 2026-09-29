@@ -1,6 +1,8 @@
 class_name ItemCatalog
 extends RefCounted
 
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
+
 ## 道具静态映射。数值读 ItemDef / AbilityDataDef；名称/图标读 ItemFunc+ItemStrings。
 ## 未实现效果不会冒充可用。
 
@@ -178,30 +180,10 @@ static func _ensure_ui() -> void:
 
 
 static func _merge_ini(res_path: String) -> void:
-	if not RuntimeAssets.file_exists(res_path):
-		return
-	var text := RuntimeAssets.read_utf8_text(res_path)
-	if text.is_empty():
-		return
-	if text.unicode_at(0) == 0xFEFF:
-		text = text.substr(1)
-	var section := ""
-	for raw in text.split("\n"):
-		var line := String(raw).strip_edges()
-		if line.is_empty() or line.begins_with("//"):
-			continue
-		if line.begins_with("[") and line.ends_with("]"):
-			section = line.substr(1, line.length() - 2).strip_edges()
-			if not _ui.has(section):
-				_ui[section] = {}
-			continue
-		if section.is_empty():
-			continue
-		var eq := line.find("=")
-		if eq <= 0:
-			continue
-		var key := line.substr(0, eq).strip_edges().to_lower()
-		var val := line.substr(eq + 1).strip_edges()
-		if val.begins_with("\"") and val.ends_with("\"") and val.length() >= 2:
-			val = val.substr(1, val.length() - 2)
-		(_ui[section] as Dictionary)[key] = val
+	var logical: String = res_path.trim_prefix("res://assets/slk-exported/")
+	var rows: Dictionary = DefinitionLayers.read_rows(logical)
+	for id: String in rows:
+		if not _ui.has(id):
+			_ui[id] = {}
+		var target: Dictionary = _ui[id]
+		target.merge(rows[id] as Dictionary, true)

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "default_profile": "base",
+  "profiles": {
+    "base": [""],
+    "melee_roc": ["", "Melee_V0/"],
+    "melee_tft": ["", "Melee_V1/"],
+    "custom_roc": ["", "Custom_V0/"],
+    "custom_tft": ["", "Custom_V1/"]
+  },
+  "audit_roots": ["", "Melee_V0/", "Melee_V1/", "Custom_V0/", "Custom_V1/"]
+}

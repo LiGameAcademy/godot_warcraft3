@@ -1,13 +1,20 @@
 # 开发地图资产引用清单
 
-此清单用于确定新管线迁移范围，当前是可追溯的静态候选清单，不是已验收的游戏发布清单。
+此清单用于确定新管线迁移范围，当前是可追溯的静态清单，不是已验收的游戏发布清单。默认按共享配置选择基础表；`--definition-profile candidates` 才扫描全部覆盖层候选。详见 [覆盖规则](DEFINITION_LAYERS.md)。
 
 ## 生成
 
 ```powershell
 node tools/asset-convert/src/development-manifest-cli.mjs
-node tools/asset-convert/src/development-manifest-cli.mjs --worker-result <success-result.json绝对路径>
 node tools/asset-convert/src/development-manifest.test.mjs
+```
+
+手动验收引用扫描时，直接运行上面的扫描命令即可，`--worker-result` 不是必填参数。只有需要核对某次模型编译证据时才追加它，并传入实际存在的结果文件路径（带空格的路径用引号包围，不要输入尖括号占位符）。
+
+本机 2026-09-29 已确认存在的 Footman 编译记录可这样使用；这是本地临时产物，其他机器或清理缓存后需使用重新编译生成的路径：
+
+```powershell
+node tools/asset-convert/src/development-manifest-cli.mjs --worker-result "tools/asset-convert/tmp/worker-UtoSMh/success-result.json"
 ```
 
 默认读取 `assets/map-parsed/echoisles`、`assets/slk-exported` 和 `.cache/wc3-assets`，以 `hpea,htow` 作为人族开局补充种子。种子依据 `MeleeRacePreview` 的人族配置；更改种族／开局配置时需显式传入 `--seeds`。支持 `--map`、`--definitions`、`--source`、`--out`。`--worker-result` 可重复，但同一资产有多份匹配证据时标记歧义，不擅自挑选成功记录。
@@ -19,7 +26,7 @@ node tools/asset-convert/src/development-manifest.test.mjs
 - 地图单位、装饰物及其放置变体；开始点 `sloc` 作为地图标记处理。
 - 人族开局种子及定义表中的建造、训练、升级、出售、技能、Buff／Effect 引用。
 - Buff 定义优先使用配置目录中的 `Units/AbilityBuffData.json`；缺少时直接解析源目录的 `Units/AbilityBuffData.slk`，记录原文件哈希。两者都不存在时报告 `missing_definitions`，补齐工具会按精确路径提取 SLK。损坏的表会报错，不按空表处理。
-- Func 表读取基础层及 `Melee_V0/`、`Melee_V1/`、`Custom_V0/`、`Custom_V1/`，保守保留各层候选。同一文件、对象、字段的值发生变化时记录 `definition_conflicts`，包含前后来源和值；这是逐层差异，**不是已决定生效值的合并表**。只输出可达对象的差异。
+- Func 表按 `configuration.definition_profile` 合并；`candidates` 模式读取全部五层并保留候选。字段键忽略大小写、对象 ID 区分大小写，后层覆盖前层，显式空值清空。`definition_conflicts` 保存覆盖历史，包括同文件重复字段，只输出可达对象的差异。
 - 已知对象 ID 的技能 Data 字段引用，保守纳入候选，包括可能召唤的单位。
 - 定义表明确写出的模型和纹理路径；MDL 引用可解析到磁盘上的 MDX，忽略路径大小写。
 - Func 的空行和整行注释不产生引用。`Art`／`Casterupgradeart` 图标的 `.tga` 引用优先找原路径，缺少时尝试同名 `.blp`，保留原请求与候选；不把此规则应用于寻路纹理。
@@ -75,7 +82,7 @@ node tools/asset-convert/src/development-recovery-cli.mjs --game-dir "D:/Program
    $report.coverage.complete
    ```
 
-   本机预期：`objects=347`、`models=276`、`textures=527`，三个缺失／未解析计数均为 0，`definition_conflicts=211`，`coverage.complete=False`。更换原版版本、定义表或地图后数量可以变化，不应为了匹配数量删掉引用。
+   当前默认 `base` 本机预期：`objects=339`、`models=275`、`textures=519`，三个缺失／未解析计数均为 0，`definition_conflicts=1`，`coverage.complete=False`。唯一差异为基础文件内 `nogm` 的重复 `Buttonpos`。更换配置、原版版本、定义表或地图后数量可以变化，不应为了匹配数量删掉引用。
 
 2. 核查 Buff 来源和冲突可追溯性：
 
@@ -85,7 +92,7 @@ node tools/asset-convert/src/development-recovery-cli.mjs --game-dir "D:/Program
    $report.definition_conflicts | Select-Object -First 3 | ConvertTo-Json -Depth 5
    ```
 
-   预期：五个 ID 都存在，原因可以追到技能的 Buff 字段；定义输入有路径和 SHA-256；冲突包含对象、字段、双方来源和值。冲突存在本身不是扫描失败，但在运行时覆盖策略统一前不能宣称完整范围已验收。
+   预期：五个 ID 都存在，原因可以追到技能的 Buff 字段；定义输入有路径和 SHA-256；冲突包含对象、字段、双方来源和值。冲突存在本身不是扫描失败，但在剩余运行时入口完成迁移前不能宣称完整范围已验收。
 
 3. 重跑补齐流程，确认已齐全时不再写入：
 

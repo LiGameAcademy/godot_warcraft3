@@ -1,6 +1,8 @@
 class_name CommandButtonCatalog
 extends RefCounted
 
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
+
 ## 命令卡资源映射：Command / Ability / Unit / Upgrade 的 Func+Strings → 图标路径、槽位、热键、Tip。
 ## 数据权威：assets/slk-exported/Units/{Command*,*Ability*,*Unit*,*Upgrade*}（经 passthrough，禁止读 .cache）。
 ##
@@ -397,92 +399,13 @@ func _load_pair(func_name: String, strings_name: String, into: Dictionary) -> vo
 
 
 func _merge_ini_file(res_path: String, into: Dictionary) -> void:
-	if not RuntimeAssets.file_exists(res_path):
-		return
-	var text := RuntimeAssets.read_utf8_text(res_path)
-	if text.is_empty():
-		return
-	# 去 BOM
-	if text.unicode_at(0) == 0xFEFF:
-		text = text.substr(1)
-	var section := ""
-	for raw in text.split("\n"):
-		var line := String(raw).strip_edges()
-		if line.is_empty() or line.begins_with("//"):
-			continue
-		if line.begins_with("[") and line.ends_with("]"):
-			section = line.substr(1, line.length() - 2).strip_edges()
-			if not into.has(section):
-				into[section] = {}
-			continue
-		if section.is_empty():
-			continue
-		var eq := line.find("=")
-		if eq <= 0:
-			continue
-		var key := line.substr(0, eq).strip_edges()
-		var val := line.substr(eq + 1).strip_edges()
-		val = _strip_quotes(val)
-		var row: Dictionary = into[section]
-		row[_normalize_key(key)] = val
-
-
-func _normalize_key(key: String) -> String:
-	var k := key.strip_edges()
-	# WC3 偶发 UnButtonpos
-	match k.to_lower():
-		"art":
-			return "art"
-		"unart":
-			return "unart"
-		"buttonpos":
-			return "buttonpos"
-		"researchbuttonpos":
-			return "researchbuttonpos"
-		"researchtip":
-			return "researchtip"
-		"researchubertip":
-			return "researchubertip"
-		"researchart":
-			return "researchart"
-		"unbuttonpos":
-			return "unbuttonpos"
-		"tip":
-			return "tip"
-		"untip":
-			return "untip"
-		"ubertip":
-			return "ubertip"
-		"unubertip":
-			return "unubertip"
-		"hotkey":
-			return "hotkey"
-		"unhotkey":
-			return "unhotkey"
-		"name":
-			return "name"
-		"order":
-			return "order"
-		"trains":
-			return "trains"
-		"researches":
-			return "researches"
-		"builds":
-			return "builds"
-		"upgrade":
-			return "upgrade"
-		_:
-			return k.to_lower()
-
-
-func _strip_quotes(val: String) -> String:
-	var v := val.strip_edges()
-	# 多等级 `"L1","L2","L3"` 整段保留，交给 Wc3TooltipText.pick_level_string
-	if v.contains('","'):
-		return v
-	if v.length() >= 2 and v.begins_with("\"") and v.ends_with("\""):
-		return v.substr(1, v.length() - 2)
-	return v
+	var logical: String = res_path.trim_prefix("res://assets/slk-exported/")
+	var rows: Dictionary = DefinitionLayers.read_rows(logical)
+	for id: String in rows:
+		if not into.has(id):
+			into[id] = {}
+		var target: Dictionary = into[id]
+		target.merge(rows[id] as Dictionary, true)
 
 
 func _split_csv(raw: String) -> PackedStringArray:

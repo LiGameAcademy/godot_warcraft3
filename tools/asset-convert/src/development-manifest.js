@@ -1,3 +1,4 @@
+import { layerPolicy, definitionRoots } from './definition-layers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { inventory, hash, modelKey } from './asset-audit.js';
@@ -85,7 +86,8 @@ export function buildDevelopmentManifest(options) {
   }
   return {
     schema_version: 1, map: path.resolve(options.map), source_root: path.resolve(options.source),
-    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: 'tft', func_tables: 'base_and_overlay_candidates'},
+    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: 'tft', definition_profile: options.definitionProfile ?? layerPolicy.default_profile,
+      definition_roots: definitionRoots(options.definitionProfile)},
     missing_definitions: collected.missingDefinitions, definition_conflicts: collected.definitionConflicts,
     coverage: {complete: false, scope: 'placed_objects_and_table_candidate_models_textures', gaps: [
       'Runtime object overrides and Func overlay precedence are not yet unified.',

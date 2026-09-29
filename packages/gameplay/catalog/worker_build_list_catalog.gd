@@ -1,6 +1,8 @@
 class_name WorkerBuildListCatalog
 extends RefCounted
 
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
+
 ## F2-D 数据驱动：解析 *UnitFunc.txt 里的 Builds= 字段。
 ## 数据权威：assets/slk-exported/Units/*UnitFunc.txt（同步自 sync-data-assets）。
 ##
@@ -68,7 +70,7 @@ func get_units() -> PackedStringArray:
 
 
 func _ensure_loaded(unit_id: String, race: String) -> void:
-	# 尝试多个文件前缀（Melee_V0/Custom_V0…），取第一个存在
+	# 按共享 profile 合并字段，一次缓存整张表。
 	var race_files := {
 		"Human": "HumanUnitFunc.txt",
 		"Orc": "OrcUnitFunc.txt",
@@ -82,39 +84,13 @@ func _ensure_loaded(unit_id: String, race: String) -> void:
 	var full_path := FOLDER.path_join(fn)
 	if _loaded.has(full_path):
 		return
-	var text := RuntimeAssets.read_utf8_text(full_path)
-	if text.is_empty():
-		return
+	var rows: Dictionary = DefinitionLayers.read_rows("Units/" + fn)
 	_loaded[full_path] = true
-	_parse_into(text, unit_id)
-
-
-## 极简 SLK 文本解析：定位 [unit_id] 段 → 找 Builds= 行
-func _parse_into(text: String, target_unit: String) -> void:
-	var in_section := false
-	var lines := text.split("\n")
-	for raw in lines:
-		var line := String(raw).strip_edges()
-		if line.is_empty():
-			continue
-		if line.begins_with("[") and line.ends_with("]"):
-			var section_id: String = line.substr(1, line.length() - 2).strip_edges()
-			in_section = (section_id == target_unit)
-			continue
-		if not in_section:
-			continue
-		if line.begins_with("Builds="):
-			var raw_val := line.substr("Builds=".length()).strip_edges()
-			# 去重 + 保持顺序
-			var seen: Dictionary = {}
-			var list: Array = []
-			for piece in raw_val.split(","):
-				var s := String(piece).strip_edges()
-				if s.is_empty():
-					continue
-				if seen.has(s):
-					continue
-				seen[s] = true
-				list.append(s)
-			_by_unit[target_unit] = list
-			return
+	for id: String in rows:
+		var row: Dictionary = rows[id]
+		var builds: PackedStringArray = []
+		for piece: String in str(row.get("builds", "")).split(","):
+			var value: String = piece.strip_edges()
+			if not value.is_empty() and not builds.has(value):
+				builds.append(value)
+		_by_unit[id] = builds

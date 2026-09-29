@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { inventory, hash } from './asset-audit.js';
+import { definitionRoots, layerPolicy, policyPath, mergeDefinitionLayers } from './definition-layers.js';
+import { fileURLToPath } from 'node:url';
 import { parseSlk } from '../../slk-export/src/parse-slk.js';
 
 const TABLES = {
@@ -13,16 +15,15 @@ const clean = value => String(value ?? '').trim().replaceAll('\\', '/').replace(
 const split = value => clean(value).split(',').map(s => s.trim()).filter(Boolean);
 const LINKS = /^(Builds|Trains|Upgrade|Sellunits|Sellitems|abilList|heroAbilList|auto|BuffID\d*|EfctID\d*|Data[A-I]\d*)$/i;
 
-/** Conservative union of Func layers; conflicts remain explicit until runtime
- * precedence is centralized. This is not a merged gameplay database. */
-export function collectDevelopmentReferences({map, definitions, source, seeds = []}) {
+/** Selected profile uses field-level winners; candidates mode retains audit alternatives. */
+export function collectDevelopmentReferences({map, definitions, source, seeds = [], definitionProfile = layerPolicy.default_profile}) {
   const inputs = [];
   const entities = new Map();
   const refs = [];
   const unresolved = [];
   const missingDefinitions = [];
   const definitionConflicts = [];
-  const funcFields = new Map();
+  inputs.push({path: fileURLToPath(policyPath), sha256: hash(fs.readFileSync(policyPath))});
   function read(root, logical) {
     const file = path.join(root, logical);
     const bytes = fs.readFileSync(file);
@@ -55,33 +56,29 @@ export function collectDevelopmentReferences({map, definitions, source, seeds = 
       if (row.alias) add(String(row.alias), row, `source:${buffSlk}`);
     }
   } else missingDefinitions.push(buffSlk);
-  const roots = ['', 'Melee_V0/', 'Melee_V1/', 'Custom_V0/', 'Custom_V1/'];
-  for (const root of roots) {
+  const files = new Map();
+  for (const root of definitionRoots(definitionProfile)) {
     for (const file of inventory(path.join(definitions, root, 'Units')).filter(f => /Func\.txt$/i.test(f))) {
-      let id = '';
-      let fields = {};
-      const source = `${root}Units/${file}`;
-      const flush = () => {
-        if (!id) return;
-        add(id, fields, source);
+      const logical = `${root}Units/${file}`;
+      const key = file.toLowerCase();
+      if (!files.has(key)) files.set(key, []);
+      files.get(key).push({source: logical, text: read(definitions, logical)});
+    }
+  }
+  for (const layers of files.values()) {
+    const merged = mergeDefinitionLayers(layers);
+    definitionConflicts.push(...merged.changes);
+    const selected = definitionProfile === 'candidates' ? layers.map(layer => mergeDefinitionLayers([layer])) : [merged];
+    for (const result of selected) {
+      for (const [id, fields] of Object.entries(result.rows)) {
+        const bySource = new Map();
         for (const [field, value] of Object.entries(fields)) {
-          const key = `${file.toLowerCase()}:${id}:${field.toLowerCase()}`;
-          const previous = funcFields.get(key);
-          if (previous && previous.value !== value) definitionConflicts.push({object_id: id, field, previous, candidate: {source, value}});
-          funcFields.set(key, {source, value});
+          const origin = result.origins[id][field];
+          if (!bySource.has(origin)) bySource.set(origin, {});
+          bySource.get(origin)[field] = value;
         }
-      };
-      for (const raw of read(definitions, source).split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('//') || line.startsWith(';')) continue;
-        const section = line.match(/^\[([^\]]+)\]$/);
-        if (section) { flush(); id = section[1]; fields = {}; }
-        else {
-          const pair = line.match(/^([^=]+)=(.*)$/);
-          if (pair && id) fields[pair[1].trim()] = pair[2].trim();
-        }
+        for (const [origin, values] of bySource) add(id, values, origin);
       }
-      flush();
     }
   }
   const queue = [];
