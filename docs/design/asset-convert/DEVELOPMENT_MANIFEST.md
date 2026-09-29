@@ -92,7 +92,7 @@ node tools/asset-convert/src/development-recovery-cli.mjs --game-dir "D:/Program
    $report.definition_conflicts | Select-Object -First 3 | ConvertTo-Json -Depth 5
    ```
 
-   预期：五个 ID 都存在，原因可以追到技能的 Buff 字段；定义输入有路径和 SHA-256；冲突包含对象、字段、双方来源和值。冲突存在本身不是扫描失败，但在剩余运行时入口完成迁移前不能宣称完整范围已验收。
+   预期：五个 ID 都存在，原因可以追到技能的 Buff 字段；定义输入有路径和 SHA-256；冲突包含对象、字段、双方来源和值。五个 Func／Strings 目录现已使用共享规则，但运行时 mod、动态脚本引用及 SLK 版本仍待核对，不能宣称完整范围已验收。
 
 3. 重跑补齐流程，确认已齐全时不再写入：
 

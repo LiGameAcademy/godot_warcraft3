@@ -90,7 +90,7 @@ export function buildDevelopmentManifest(options) {
       definition_roots: definitionRoots(options.definitionProfile)},
     missing_definitions: collected.missingDefinitions, definition_conflicts: collected.definitionConflicts,
     coverage: {complete: false, scope: 'placed_objects_and_table_candidate_models_textures', gaps: [
-      'Runtime object overrides and Func overlay precedence are not yet unified.',
+      'Runtime mod overrides and SLK table versions are not reconciled with scan inputs.',
       'Dynamic script spawns, random drop tables and custom map objects require runtime tracing.',
       'Terrain, UI atlases, sound, portraits and all player-color variants are not a complete dependency closure.',
       'Model version candidates currently follow TFT priority; configured edition must be reconciled with runtime.',
