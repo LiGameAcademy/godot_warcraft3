@@ -66,8 +66,10 @@ export function compileAnimations(model, document, buffer, restSeq, restStart, r
       const isMorphSeq = /^\s*morph\b/i.test(seqNameRaw.trim());
 
       for (const tMs of frames) {
-        const seqFrame =
-          looping && seqDur > 0 ? start + (tMs % seqDur) : start + tMs;
+        const wrapped = tMs % seqDur;
+        const seqFrame = looping
+          ? (tMs > 0 && wrapped < 0.000001 ? end : start + wrapped)
+          : start + tMs;
         const morphLerp =
           isMorphSeq && seqDur > 0
             ? Math.min(1, Math.max(0, (seqFrame - start) / seqDur))

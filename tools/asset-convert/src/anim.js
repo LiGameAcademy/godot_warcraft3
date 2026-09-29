@@ -1,3 +1,5 @@
+import { sampleAnimVector } from "./anim-interpolation.js";
+export { sampleAnimVector } from "./anim-interpolation.js";
 import {
   mat4FromRotationTranslationScaleOrigin,
   mat4Identity,
@@ -37,52 +39,6 @@ function pascalHyphenToken(token) {
       return seg.charAt(0).toUpperCase() + seg.slice(1);
     })
     .join("-");
-}
-
-/**
- * Interpolate AnimVector at frame (WC3 millis). Linear between keys; clamp outside.
- * Prefer {@link sampleAnimVectorInSequence} when baking a Sequence — WC3 only
- * honors keys inside the playing interval; outside keys must not clamp in
- * (Barracks Door00 only keys Stand Work → global clamp wrongly opens doors in Stand).
- * @param {import('war3-model').AnimVector | undefined} anim
- * @param {number} frame
- * @param {Float32Array} fallback
- * @returns {Float32Array}
- */
-export function sampleAnimVector(anim, frame, fallback) {
-  if (!anim?.Keys?.length) return fallback;
-  const keys = anim.Keys;
-  if (frame <= keys[0].Frame) return keys[0].Vector;
-  if (frame >= keys[keys.length - 1].Frame) return keys[keys.length - 1].Vector;
-
-  let i = 1;
-  while (i < keys.length && keys[i].Frame < frame) i += 1;
-  const a = keys[i - 1];
-  const b = keys[i];
-  const span = b.Frame - a.Frame || 1;
-  const t = (frame - a.Frame) / span;
-
-  const out = new Float32Array(a.Vector.length);
-  // Quaternions: nlerp (good enough for export)
-  if (a.Vector.length === 4) {
-    let ax = a.Vector[0], ay = a.Vector[1], az = a.Vector[2], aw = a.Vector[3];
-    let bx = b.Vector[0], by = b.Vector[1], bz = b.Vector[2], bw = b.Vector[3];
-    if (ax * bx + ay * by + az * bz + aw * bw < 0) {
-      bx = -bx; by = -by; bz = -bz; bw = -bw;
-    }
-    out[0] = ax + (bx - ax) * t;
-    out[1] = ay + (by - ay) * t;
-    out[2] = az + (bz - az) * t;
-    out[3] = aw + (bw - aw) * t;
-    const len = Math.hypot(out[0], out[1], out[2], out[3]) || 1;
-    out[0] /= len; out[1] /= len; out[2] /= len; out[3] /= len;
-    return out;
-  }
-
-  for (let c = 0; c < a.Vector.length; c += 1) {
-    out[c] = a.Vector[c] + (b.Vector[c] - a.Vector[c]) * t;
-  }
-  return out;
 }
 
 /**
@@ -433,6 +389,22 @@ export function collectBakeFrames(
       if (stride <= 0) break;
     }
   }
+
+  // LINEAR glTF tracks need a left-limit sample to preserve source jumps.
+  // Otherwise a DontInterp key becomes a ramp over the entire sample interval.
+  for (const node of nodes) {
+    for (const track of [node.Translation, node.Rotation, node.Scaling]) {
+      if (track?.LineType !== 0 || animGlobalSeqId(track) >= 0) continue;
+      for (const key of track.Keys ?? []) {
+        if (key.Frame <= seqStart || key.Frame > seqEnd) continue;
+        for (let t = key.Frame - seqStart; t <= cap; t += stride) {
+          times.add(Math.max(0, t - 0.001));
+        }
+      }
+    }
+  }
+  // Preserve the source end pose, then restart extended cycles just after it.
+  for (let t = stride; t < cap; t += stride) times.add(t + 0.001);
 
   return [...times].sort((a, b) => a - b);
 }

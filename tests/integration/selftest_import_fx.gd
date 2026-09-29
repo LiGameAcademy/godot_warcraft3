@@ -42,6 +42,7 @@ func _run() -> void:
 		player.play(stand)
 		player.advance(0)
 		await process_frame
+		_check_cycles(player, instance, stand)
 		_check_billboard(instance, camera)
 		_check_material_isolation(instance, other)
 		assert(not particles[0].emitting if stem == "PriestMissile" or stem == "HeroArchMage" else particles[0].emitting)
@@ -104,3 +105,21 @@ func _check_material_isolation(instance: Node3D, other: Node3D) -> void:
 			material.set_shader_parameter("layer_alpha", 0.123)
 			assert(is_equal_approx(float(other_material.get_shader_parameter("layer_alpha")), initial))
 			material.set_shader_parameter("layer_alpha", initial)
+
+func _check_cycles(player: AnimationPlayer, instance: Node3D, stand: String) -> void:
+	var skeleton: Skeleton3D = instance.find_children("*", "Skeleton3D", true, false)[0]
+	var callback: AnimationMixer.AnimationCallbackModeProcess = player.callback_mode_process
+	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	player.play(stand)
+	player.seek(0.137, true)
+	skeleton.force_update_all_bone_transforms()
+	var poses: Array[Transform3D] = []
+	for index: int in range(skeleton.get_bone_count()):
+		poses.append(skeleton.get_bone_global_pose(index))
+	for cycle: int in range(3):
+		player.advance(player.get_animation(stand).length)
+		skeleton.force_update_all_bone_transforms()
+		assert(absf(player.current_animation_position - 0.137) < 0.00001)
+		for index: int in range(skeleton.get_bone_count()):
+			assert(skeleton.get_bone_global_pose(index).is_equal_approx(poses[index]), "Bone drift after loop %d: %s" % [cycle, skeleton.get_bone_name(index)])
+	player.callback_mode_process = callback
