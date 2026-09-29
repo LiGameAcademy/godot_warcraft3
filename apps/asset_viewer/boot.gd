@@ -44,6 +44,7 @@ const Inspection: GDScript = preload("res://viewer_inspection.gd")
 const Frames: GDScript = preload("res://animation_frames.gd")
 @onready var frame_controls: Frames = %AnimationFrames
 const TeamMaterial: GDScript = preload("res://viewer_team_material.gd")
+const Launch: GDScript = preload("res://viewer_launch.gd")
 var _inspection: RefCounted
 
 
@@ -98,12 +99,12 @@ func _ready() -> void:
 	viewport_container.gui_input.connect(_preview_input)
 	var asset_root: String = RuntimeAssets.project_abs("res://assets/")
 	report_path = str(ProjectSettings.get_setting("warcraft3/audit_report", asset_root.trim_suffix("/").get_base_dir().path_join(".cache/asset-audit/latest/report.json")))
-	load_catalog(report_path)
+	load_catalog(Launch.report_path(report_path))
 	_update_camera()
-	var arguments: PackedStringArray = OS.get_cmdline_user_args()
-	var preview_index: int = arguments.find("--preview-scene")
-	if preview_index >= 0 and preview_index + 1 < arguments.size():
-		preview_scene(arguments[preview_index + 1])
+	if not Launch.argument("--preview-scene").is_empty():
+		preview_scene(Launch.argument("--preview-scene"))
+	elif not Launch.argument("--preview-report").is_empty() and not catalog.records.is_empty():
+		select_model(str(catalog.records[0].id))
 	print("AssetViewer: ready (%d models)" % catalog.records.size())
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		_smoke_test.call_deferred()
@@ -117,10 +118,11 @@ func _input(event: InputEvent) -> void:
 
 #region Public interface
 func preview_scene(file_path: String) -> bool:
-	if not file_path.is_absolute_path() or file_path.get_extension().to_lower() != "scn":
+	var record: Dictionary = Launch.preview_record(file_path)
+	if record.is_empty():
 		status.text = "预览需要 .scn 文件的绝对路径。"
 		return false
-	selected_record = {"logical_path": file_path.get_file(), "scn_path": file_path.get_file(), "preview_absolute_path": file_path, "severity": "unknown", "issues": []}
+	selected_record = record
 	_reload_model()
 	fit_model()
 	print("AssetViewer: external preview %s loaded=%s" % [file_path, current_model != null])
@@ -168,7 +170,7 @@ func set_paused(paused: bool) -> void:
 		return
 	current_model.process_mode = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
 	# GPU simulation is renderer-driven; disabling scene processing alone is insufficient.
-	for node: Node in _nodes(current_model):
+	for node: Node in Inspection.collect_nodes(current_model):
 		if node is GPUParticles3D:
 			(node as GPUParticles3D).speed_scale = 0.0 if paused else float(node.get_meta("viewer_speed_scale", 1.0))
 		elif node is CPUParticles3D:
@@ -182,13 +184,13 @@ func fit_model() -> void:
 		# Large glow cards should not make the visible body tiny. Pure FX still fit
 		# their cards on the second pass; hidden decay/alternate meshes are excluded.
 		for include_glow: bool in [false, true]:
-			for node: Node in _nodes(current_model):
+			for node: Node in Inspection.collect_nodes(current_model):
 				if not node is MeshInstance3D:
 					continue
 				var mesh_node: MeshInstance3D = node as MeshInstance3D
 				if mesh_node.mesh == null or not mesh_node.is_visible_in_tree():
 					continue
-				if not include_glow and _is_glow_card(mesh_node):
+				if not include_glow and Inspection.is_glow_card(mesh_node):
 					continue
 				var box: AABB = mesh_node.global_transform * mesh_node.get_aabb()
 				bounds = bounds.merge(box) if found else box
@@ -358,7 +360,7 @@ func _reload_model() -> void:
 		return
 	current_model = instance as Node3D
 	models_root.add_child(current_model)
-	for node: Node in _nodes(current_model):
+	for node: Node in Inspection.collect_nodes(current_model):
 		if node is GPUParticles3D:
 			var particle: GPUParticles3D = node as GPUParticles3D
 			particle.use_fixed_seed = true
@@ -420,14 +422,6 @@ func _show_details() -> void:
 	if selected_record.get("issues", []).is_empty():
 		lines.append("未列出静态问题不等于保真验收通过。")
 	details.text = "\n".join(lines)
-
-
-func _is_glow_card(mesh_node: MeshInstance3D) -> bool:
-	return Inspection.is_glow_card(mesh_node)
-
-
-func _nodes(root: Node) -> Array[Node]:
-	return Inspection.collect_nodes(root)
 
 
 func _preview_input(event: InputEvent) -> void:

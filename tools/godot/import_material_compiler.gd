@@ -2,6 +2,7 @@ extends RefCounted
 ## Unsupported combinations retain the GLTF fallback with diagnostics.
 const AlphaCompiler: GDScript = preload("import_material_animation.gd")
 const TeamCompiler: GDScript = preload("import_team_material.gd")
+const FxMaterial: GDScript = preload("import_fx_material.gd")
 
 static func compile(scene: Node, ir: Dictionary, texture_base: String = "") -> Dictionary:
 	var result: Dictionary = {"compiled_surfaces": 0, "team_surfaces": 0, "alpha_tracks": 0, "diagnostics": []}
@@ -53,13 +54,20 @@ static func compile(scene: Node, ir: Dictionary, texture_base: String = "") -> D
 					continue
 				result.team_surfaces += 1
 			else:
-				material = _single(original, layer)
+				if int(layer.get("FilterMode", 0)) in [3, 4]:
+					var texture_id: int = int(layer.TextureID)
+					var glow: bool = texture_id >= 0 and texture_id < textures.size() and int(textures[texture_id].get("ReplaceableId", 0)) == 2
+					material = FxMaterial.build(original, layer, glow)
+					if not int(layer.get("Shading", 0)) & 1:
+						_warn(result, "fx_unlit_approximation", id)
+				else:
+					material = _single(original, layer)
 			material.resource_local_to_scene = true
 			material.set_meta("import_material_id", id)
 			material.set_meta("import_filter_mode", int(layer.get("FilterMode", 0)))
 			mesh.set_surface_override_material(surface, material)
 			if animated:
-				result.alpha_tracks += AlphaCompiler.compile(players[0], mesh, surface, layer.Alpha, ir, team)
+				result.alpha_tracks += AlphaCompiler.compile(players[0], mesh, surface, layer.Alpha, ir, material is ShaderMaterial)
 			result.compiled_surfaces += 1
 	return result
 
@@ -69,7 +77,7 @@ static func _warn(result: Dictionary, code: String, id: int) -> void:
 static func _supported(layer: Dictionary) -> bool:
 	var flags: int = int(layer.get("Shading", 0))
 	var mode: int = int(layer.get("FilterMode", 0))
-	return not layer.get("TextureID") is Dictionary and layer.get("TVertexAnimId") == null and flags & ~17 == 0 and mode >= 0 and mode <= 2 and int(layer.get("CoordId", 0)) == 0
+	return not layer.get("TextureID") is Dictionary and layer.get("TVertexAnimId") == null and flags & ~17 == 0 and mode >= 0 and mode <= 4 and int(layer.get("CoordId", 0)) == 0
 
 static func _single(original: StandardMaterial3D, layer: Dictionary) -> StandardMaterial3D:
 	var material: StandardMaterial3D = original.duplicate()

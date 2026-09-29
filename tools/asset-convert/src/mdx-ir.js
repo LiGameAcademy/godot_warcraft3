@@ -3,6 +3,7 @@ import path from "node:path";
 import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, mdxLogicalToModelIr, mdxLogicalToGeosetVis, mdxLogicalToGltf, mdxLogicalToPe2 } from "./paths.js";
 import { createModelIr, sha256Bytes, writeModelIr } from "./model-ir.js";
 import { resolveTexturePng } from "./mdx-materials.js";
+import { billboardPayload, particlePayload } from './mdx-fx-ir.js';
 
 
 
@@ -53,6 +54,7 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
       helper_count: (model.Helpers ?? []).length,
       bone_rest: boneRest,
       rest_payload: JSON.parse(fs.readFileSync(path.join(outDir, boneRest), "utf8")),
+      billboards: billboardPayload(model),
     },
     animations: {
       sequence_count: (model.Sequences ?? []).length,
@@ -74,6 +76,7 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
     particles: {
       count: (model.ParticleEmitters2 ?? []).length,
       sidecar: pe2,
+      payload: particlePayload(model, JSON.parse(fs.readFileSync(path.join(outDir, pe2), 'utf8')), resolvedTextures),
     },
     ribbons: {
       count: (model.RibbonEmitters ?? []).length,

@@ -1,3 +1,4 @@
+import { prepareWorkerProject } from './prepare-worker-project.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,9 +15,7 @@ const scratch = path.join(repo, 'tools/asset-convert/tmp');
 fs.mkdirSync(scratch, { recursive: true });
 const output = fs.mkdtempSync(path.join(scratch, 'material-samples-'));
 fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Material Samples"\n');
-for (const name of ['import_worker', 'import_skeleton_compiler', 'import_material_compiler', 'import_material_animation', 'import_team_material', 'import_geoset_visibility', 'import_geoset_curves']) {
-  fs.copyFileSync(path.join(repo, `tools/godot/${name}.gd`), path.join(output, `${name}.gd`));
-}
+prepareWorkerProject(repo, output);
 for (const logical of ['Units/Human/Priest/Priest.mdx', 'Units/Human/HeroArchMage/HeroArchMage.mdx']) {
   assert.ok(fs.existsSync(path.join(source, logical)), `Required real source: ${logical}`);
   await convertOneMdx(path.join(source, logical), logical, source, output);

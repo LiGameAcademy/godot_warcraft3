@@ -1,3 +1,4 @@
+import { prepareWorkerProject } from './prepare-worker-project.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,12 +18,7 @@ const scratch = path.join(repo, 'tools/asset-convert/tmp');
 fs.mkdirSync(scratch, {recursive: true});
 const output = fs.mkdtempSync(path.join(scratch, 'worker-'));
 fs.writeFileSync(path.join(output, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Import Worker Test"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
-fs.copyFileSync(path.join(repo, 'tools/godot/import_worker.gd'), path.join(output, 'import_worker.gd'));
-fs.copyFileSync(path.join(repo, 'tools/godot/import_skeleton_compiler.gd'), path.join(output, 'import_skeleton_compiler.gd'));
-fs.copyFileSync(path.join(repo, 'tools/godot/import_material_compiler.gd'), path.join(output, 'import_material_compiler.gd'));
-for (const name of ['import_material_animation.gd', 'import_team_material.gd', 'import_geoset_visibility.gd', 'import_geoset_curves.gd']) {
-  fs.copyFileSync(path.join(repo, 'tools/godot', name), path.join(output, name));
-}
+prepareWorkerProject(repo, output);
 await convertOneMdx(path.join(source, logical), logical, source, output);
 const stem = logical.slice(0, -4);
 const task = createBakeTask({asset_id: stem.toLowerCase(), ir_path: `${stem}.ir.json`, geometry_path: `${stem}.gltf`, output_scene: 'result.scn'});

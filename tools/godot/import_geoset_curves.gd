@@ -9,11 +9,13 @@ static func compile(mesh: MeshInstance3D, player: AnimationPlayer, entry: Dictio
 		return result
 	for surface: int in range(mesh.mesh.get_surface_count()):
 		var original: Material = mesh.get_active_material(surface)
+		if original is ShaderMaterial and original.has_meta("import_fx_material"):
+			continue
 		if not original is StandardMaterial3D or int(original.get_meta("import_filter_mode", -1)) != 2:
 			return result
 	for surface: int in range(mesh.mesh.get_surface_count()):
-		var original: StandardMaterial3D = mesh.get_active_material(surface)
-		var material: ShaderMaterial = _material(original)
+		var original: Material = mesh.get_active_material(surface)
+		var material: ShaderMaterial = original if original is ShaderMaterial else _material(original)
 		mesh.set_surface_override_material(surface, material)
 		var prefix: String = str(player.get_parent().get_path_to(mesh)) + ":surface_material_override/%d:" % surface
 		for sequence: Dictionary in sequences:

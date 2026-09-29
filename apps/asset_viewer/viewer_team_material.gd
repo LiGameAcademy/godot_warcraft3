@@ -12,11 +12,14 @@ static func apply(root: Node, index: int) -> void:
 			continue
 		for surface: int in range(node.mesh.get_surface_count()):
 			var source: Material = node.get_active_material(surface)
-			if not source is ShaderMaterial or not source.has_meta("import_team_underlay"):
+			if not source is ShaderMaterial or not (source.has_meta("import_team_underlay") or source.has_meta("import_team_glow")):
 				continue
 			var material: ShaderMaterial = source.duplicate()
 			material.resource_local_to_scene = true
-			material.set_shader_parameter("use_team_texture", texture != null)
-			material.set_shader_parameter("team_color_tex", texture)
 			material.set_shader_parameter("team_color_fallback", fallback)
+			if source.has_meta("import_team_glow"):
+				material.set_shader_parameter("recolor", true)
+			else:
+				material.set_shader_parameter("use_team_texture", texture != null)
+				material.set_shader_parameter("team_color_tex", texture)
 			node.set_surface_override_material(surface, material)
