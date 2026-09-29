@@ -4,6 +4,7 @@ const SkeletonCompiler: GDScript = preload("import_skeleton_compiler.gd")
 const MaterialCompiler: GDScript = preload("import_material_compiler.gd")
 const VisibilityCompiler: GDScript = preload("import_geoset_visibility.gd")
 const EffectCompiler: GDScript = preload("import_effect_compiler.gd")
+const AnimationMetadata: GDScript = preload("import_animation_metadata.gd")
 
 ## 无状态 Godot 编译后端的第一版。
 ##
@@ -111,6 +112,9 @@ func _run() -> void:
 		return
 	result["skeleton_compile"] = compiled
 	compiled.diagnostics.append_array(ir.get("diagnostics", []))
+	var sequence_metadata: Dictionary = AnimationMetadata.compile(root, ir)
+	result["animation_metadata"] = sequence_metadata
+	compiled.diagnostics.append_array(sequence_metadata.diagnostics)
 	var material_result: Dictionary = MaterialCompiler.compile(root, ir, ir_path.get_base_dir())
 	result["material_compile"] = material_result
 	compiled.diagnostics.append_array(material_result.diagnostics)

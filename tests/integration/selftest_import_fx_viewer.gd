@@ -14,6 +14,7 @@ func _run() -> void:
 		assert(viewer.select_model(str(entry.id)))
 		assert(viewer.current_model.has_meta("wc3_import_worker_version"))
 		assert(viewer.models_root.get_child_count() == 1)
+		assert(viewer.frame_controls.loop_toggle.button_pressed)
 		viewer.team.select(3)
 		viewer.team.item_selected.emit(3)
 		viewer.set_camera_view(Vector3.UP)

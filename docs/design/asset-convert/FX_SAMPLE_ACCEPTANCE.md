@@ -18,6 +18,8 @@ node tools/asset-convert/src/worker-fx-samples.test.mjs
 
 ## 手动检查
 
+牧师的原始 MDX 本来包含鸟形网格、`Textures/Sentinel.blp` 和两组 owl 骨骼；不能把鸟形轮廓本身认定为导入变形。2026-09-29 根据截图反馈确认 `Stand` 循环标记此前未写入场景，现从 IR 恢复源动画循环设置：`Stand` 自动循环，`Birth/Death` 保持单次。最终帧静止截图不能替代连续播放及原作对照。此修正不等于宣布外观保真通过。
+
 1. **PriestMissile**：播放 `Stand`，检查蓝色发光体和拖尾，没有黑色贴图方块。切换 `Death` 检查短暂蓝色散射；回到 `Stand` 应恢复飞行效果。
 2. **FireBallMissile**：播放 `Stand`，检查火球、发光片和烟雾；切换 `Death`，飞行发射器关闭、爆炸发射器短暂开启；回到 `Stand` 应恢复。它是大法师攻击投射物，不是大法师单位模型。
 3. **HeroArchMage**：检查脚下地面光晕和杖尖光晕。旋转摄像机，地面光晕保持在地面平面，杖尖光晕保持可见。切换玩家颜色，两处光晕应一起变色。

@@ -36,6 +36,9 @@ func _run() -> void:
 		particles[0].process_material.gravity = original_gravity
 		var player: AnimationPlayer = instance.find_children("*", "AnimationPlayer", true, false)[0]
 		var stand: String = "Stand1" if stem == "HeroArchMage" else "Stand"
+		assert(player.get_animation(stand).loop_mode == Animation.LOOP_LINEAR)
+		assert(player.get_animation("Death").loop_mode == Animation.LOOP_NONE)
+		assert(player.get_animation(stand).get_meta("source_looping") == true)
 		player.play(stand)
 		player.advance(0)
 		await process_frame
