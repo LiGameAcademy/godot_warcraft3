@@ -21,6 +21,8 @@ git submodule update --init --recursive
 
 ---
 
+目录职责与公开文档范围见[仓库目录约定](docs/REPOSITORY_LAYOUT.md)。
+
 ## Godot 项目入口
 
 共享源码位于 `packages/{foundation,content,map,gameplay}`；应用源码位于 `apps/`。先运行 `python tools/workspace/sync_packages.py`（Python 3.12+），再打开对应项目。生成的 addons 不手工修改。首次同步配置本机外部资产路径。

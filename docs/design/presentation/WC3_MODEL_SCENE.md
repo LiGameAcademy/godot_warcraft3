@@ -3,7 +3,7 @@
 > 状态：**设计约定**（讨论落地，迁目录可另开 PR）  
 > 目标：把单位/建筑 **模型表现** 收进 bake 场景门面，策略层变薄；理清与 `scripts/map/` 地图表现的边界。  
 > 关联代码：`wc3_model_scene.gd` · `wc3_anim_player.gd` · `mdx_anim_events.gd` · `game/scripts/unit/unit.gd` · `building_visual.gd`  
-> 资产管线：[ATTACHMENTS_BAKE.md](../asset-convert/ATTACHMENTS_BAKE.md) · [tools/asset-convert/README.md](../../tools/asset-convert/README.md)  
+> 资产管线：[ATTACHMENTS_BAKE.md](../asset-convert/ATTACHMENTS_BAKE.md) · [tools/asset-convert/README.md](../../../tools/asset-convert/README.md)  
 > 最后更新：2026-08-21
 
 ---

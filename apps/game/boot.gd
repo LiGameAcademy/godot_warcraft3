@@ -114,6 +114,7 @@ func _async_start() -> void:
 		get_tree().quit(1)
 		return
 
+	loading.set_async_progress(1.0)
 	# 4. instantiate game_main 并接入 loading 屏。
 	var main_packed := ResourceLoader.load_threaded_get(GAME_MAIN_PATH) as PackedScene
 	if not is_instance_valid(main_packed):
@@ -121,16 +122,22 @@ func _async_start() -> void:
 		get_tree().quit(1)
 		return
 	var scene := main_packed.instantiate() as GameMain
+	# 必须先订阅再入树：MapRoot/Director 可能在 _ready 中上报进度。
+	# 此时 @onready 尚未解析，使用场景中已实例化的节点。
+	loading.bind_map(scene.get_node("MapRoot") as MapLoader)
+	var director := scene.get_node("GameDirector") as GameDirector
+	loading.bind_director(
+		director,
+		scene.get_node("GameHud") as CanvasLayer,
+		scene.get_node("HealthBarManager") as CanvasLayer,
+	)
 	get_tree().root.add_child(scene)
 	get_tree().current_scene = scene
-	# add_child 后 @onready 已解析；用 GameMain 强类型字段，避免字符串路径。
-	var director: GameDirector = scene.game_director
-	if director != null:
-		loading.bind_director(director, scene.game_hud, scene.health_bar_manager)
 
 	# 5. 等待 session_ready（fallback：180s 内未就绪则报错退出）。
 	var ready_deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
-	while is_instance_valid(director) and not director.is_session_ready() and Time.get_ticks_msec() < ready_deadline:
+	while is_instance_valid(director) and not director.is_session_ready() \
+			and Time.get_ticks_msec() < ready_deadline:
 		await get_tree().process_frame
 	if not is_instance_valid(director) or not director.is_session_ready():
 		push_error("boot: GameDirector session_ready 超时")

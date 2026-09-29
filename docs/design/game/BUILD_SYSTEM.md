@@ -1,7 +1,7 @@
 # 建造系统：四族非对称 · 数据驱动设计
 
 > 状态：**人族竖切可玩**（F2-A～F2-D + F2-C 多工加速已接线；兽/灵/亡 Strategy 仍为 stub）  
-> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [LAYERED_ARCHITECTURE.md](../architecture/LAYERED_ARCHITECTURE.md)  
+> 相关：[GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [LAYERED_ARCHITECTURE.md](../../architecture/LAYERED_ARCHITECTURE.md)  
 > 分支：`feature/building-system`  
 > 最后更新：2026-04-14
 
@@ -52,7 +52,7 @@
 
 `assets/slk-exported/Units/*UnitFunc.txt`
 
-（extract 源在 `.cache/wc3-assets/Units/`，仅工具管线使用；契约见 [ASSET_LANES.md](../architecture/ASSET_LANES.md)。）
+（extract 源在 `.cache/wc3-assets/Units/`，仅工具管线使用；契约见 [ASSET_LANES.md](../../architecture/ASSET_LANES.md)。）
 
 | 工人 | 文件 | 示例 |
 |------|------|------|

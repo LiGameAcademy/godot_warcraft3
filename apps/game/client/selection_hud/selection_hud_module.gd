@@ -37,7 +37,7 @@ func _exit_tree() -> void:
 
 
 ## Prime current local unit types during the loading screen, without selecting them.
-func prepare_starting_portraits(owner_id: int) -> void:
+func prepare_starting_portraits(owner_id: int, progress: Callable = Callable()) -> void:
 	if _game_hud == null or _map_root == null or not _game_hud.has_method("prepare_portraits"):
 		return
 	var host: Node = _map_root.call("get_unit_layer") as Node
@@ -50,7 +50,7 @@ func prepare_starting_portraits(owner_id: int) -> void:
 		var type_id: String = CombatQuery.type_id_of(unit)
 		if not type_id.is_empty() and not type_ids.has(type_id):
 			type_ids.append(type_id)
-	await _game_hud.call("prepare_portraits", type_ids, owner_id)
+	await _game_hud.call("prepare_portraits", type_ids, owner_id, progress)
 
 
 func setup_portrait() -> void:

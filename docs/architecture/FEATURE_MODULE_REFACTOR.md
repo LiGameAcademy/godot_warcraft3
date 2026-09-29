@@ -12,7 +12,7 @@
 
 ## 第一批：生产功能（已实现）
 
-目录见 [game/features](../../game/features/README.md)。
+目录见 [game/features](../../packages/gameplay/features/README.md)。
 
 ### 运行路径
 

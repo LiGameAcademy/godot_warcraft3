@@ -165,9 +165,9 @@ func set_unit_info(unit_name: String, hp: int, hp_max: int) -> void:
 	_set_resource_bar(_portrait_mana_row, _portrait_mana, _portrait_mana_label, 0, 0, false)
 
 
-func prepare_portraits(type_ids: PackedStringArray, owner_id: int) -> void:
+func prepare_portraits(type_ids: PackedStringArray, owner_id: int, progress: Callable = Callable()) -> void:
 	if _portrait != null:
-		await _portrait.prepare_types(type_ids, owner_id)
+		await _portrait.prepare_types(type_ids, owner_id, progress)
 
 
 func configure_portrait(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:

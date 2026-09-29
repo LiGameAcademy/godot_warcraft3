@@ -1,3 +1,6 @@
+class_name GameLoadingScreen
+extends CanvasLayer
+
 ## 进局全屏 Loading（表现层）。
 ##
 ## 职责：
@@ -12,8 +15,8 @@
 ## [br]1. **legacy 4 参 setup**：自检 / 嵌入场景时用；同步注入 map_root / director / hud / hpbar。
 ## [br]2. **独立 peer 模式（v1.4 默认）**：本场景与 [code]game_main.tscn[/code] 并列，
 ## 由 [code]boot.gd[/code] 先 [code]add_child[/code] 到 root，再
-## [code]begin_async[/code] 启动显示，[code]bind_director[/code] 在 game_main 加载完成后
-## 补订 [code]session_ready[/code] / [code]session_preparation_progress[/code]。
+## [code]begin_async[/code] 启动显示；主场景实例化后、入树前调用 bind_map / bind_director，
+## 订阅地图及对局准备进度，避免漏掉 _ready 中发出的事件。
 ## [br]本节点不再 [code]get_node_or_null[/code] 反查节点树。
 ##
 ## ---- 生命周期 ----
@@ -22,8 +25,14 @@
 ## [code]call_deferred("_try_finish_if_already_ready")[/code] 处理「调用 setup 时
 ## session 已就绪」的早退路径。
 ## [br][method _finish] 进入淡出流程；fade_out_sec ≤ 0 时直接 queue_free。
-class_name GameLoadingScreen
-extends CanvasLayer
+
+# 阶段权重表示工作进度，不是剩余时间估计。
+const RESOURCE_END := 0.30
+const MAP_END := 0.85
+const PREPARATION_END := 0.99
+var _display_progress := 0.0
+var _progress_phase := 0
+
 
 ## 地图标题（覆盖自动推导的 map_root.map_dir 文件名）。
 ## [br]为空时使用 map_root.map_dir 的 base name，再退化为 "Loading"。
@@ -140,16 +149,30 @@ func begin_async(p_title: String) -> void:
 
 
 ## 独立 peer 模式：每帧由 [code]boot.gd[/code] 把 [code]ResourceLoader.load_threaded_get_status[/code]
-## 返回的 0.0–1.0 进度推到这里（保留前 50% 给资源加载，避免与 session 阶段重叠）。
+## 返回的 0.0–1.0 进度推到这里（保留前 30% 给资源加载，避免与 session 阶段重叠）。
 ##
 ## [param p_progress] 0.0–1.0；超出范围被 clampf。
 func set_async_progress(p_progress: float) -> void:
-	if _finished:
+	if _finished or _progress_phase > 0:
 		return
-	_set_progress("正在加载资源…", clampf(p_progress, 0.0, 0.5))
+	_set_progress("正在加载资源…", clampf(p_progress, 0.0, 1.0) * RESOURCE_END)
 
 
-## 独立 peer 模式：在 [code]game_main.tscn[/code] 已 instantiate + add_child 之后调。
+## 在主场景入树之前连接，避免漏掉 MapRoot._ready 发出的早期进度。
+func bind_map(p_map: MapLoader) -> void:
+	map_root = p_map
+	if map_root != null and not map_root.load_progress.is_connected(_on_map_progress):
+		map_root.load_progress.connect(_on_map_progress)
+
+
+func _on_map_progress(stage: String, progress: float) -> void:
+	if _finished or _progress_phase > 1:
+		return
+	_progress_phase = 1
+	_set_progress(stage, lerpf(RESOURCE_END, MAP_END, clampf(progress, 0.0, 1.0)))
+
+
+## 独立 peer 模式：game_main 实例化后、add_child 之前连接；也兼容已就绪的对象。
 ##
 ## 缓存 director / game_hud / health_bar_manager 引用，
 ## 并订阅 [code]session_preparation_progress[/code] / [code]session_ready[/code]。
@@ -180,20 +203,21 @@ func bind_director(
 	if p_director.has_method("is_session_ready") and p_director.is_session_ready():
 		_on_session_ready()
 		return
-	# session_preparation_progress 还未发出的兜底：直接拉到 0.55 让 session 阶段接管。
-	_set_progress("正在进入战场…", 0.55)
+	# 尚未收到阶段事件时仅标记场景资源已加载，不虚构地图完成进度。
+	if _progress_phase == 0:
+		_set_progress("正在准备场景…", RESOURCE_END)
 
 
 ## 连线订阅（幂等：重复调用不会重复挂信号）。
 ## [br]订阅顺序：
-## [br]- [code]map_root.load_progress[/code] → [method _on_load_progress]（优先）。
+## [br]- [code]map_root.load_progress[/code] → [method _on_map_progress]（优先）。
 ## [br]- 若 game_director 非空：[code]session_preparation_progress[/code] → [method _on_load_progress]，
 ## [code]session_ready[/code] → [method _on_session_ready]。
 ## [br]- 若 game_director 为空但 map_root 非空：兜底订阅 [code]map_root.map_loaded[/code] →
 ## [method _on_map_loaded_fallback]。
 func _wire_signals() -> void:
-	if map_root != null and not map_root.load_progress.is_connected(_on_load_progress):
-		map_root.load_progress.connect(_on_load_progress)
+	if map_root != null and not map_root.load_progress.is_connected(_on_map_progress):
+		map_root.load_progress.connect(_on_map_progress)
 	if game_director != null:
 		if not game_director.session_preparation_progress.is_connected(_on_load_progress):
 			game_director.session_preparation_progress.connect(_on_load_progress)
@@ -216,13 +240,14 @@ func _try_finish_if_already_ready() -> void:
 		_on_map_loaded_fallback()
 
 
-## 进度信号回调（来自 map_root.load_progress 或 game_director.session_preparation_progress）。
+## 对局准备局部进度（0–1）映射到总进度 85%–99%。
 ## [br][param stage] 阶段文案（"正在加载资源…"、"准备单位显示…" 等）。
 ## [br][param progress] 进度 0.0–1.0（超出范围会被 clampf）。
 func _on_load_progress(stage: String, progress: float) -> void:
 	if _finished:
 		return
-	_set_progress(stage, progress)
+	_progress_phase = 2
+	_set_progress(stage, lerpf(MAP_END, PREPARATION_END, clampf(progress, 0.0, 1.0)))
 
 
 ## 兜底回调（game_director 为空时，仅 map_loaded 触发）。
@@ -279,7 +304,8 @@ func _hide_game_ui(should_hide: bool) -> void:
 ## [br][param progress] 0.0–1.0；超出范围会被 clampf 到 [0, 1]。
 func _set_progress(stage: String, progress: float) -> void:
 	_ensure_ui_refs()
-	var p := clampf(progress, 0.0, 1.0)
+	var p := maxf(_display_progress, clampf(progress, 0.0, 1.0))
+	_display_progress = p
 	if _stage:
 		_stage.text = stage
 	if _bar:

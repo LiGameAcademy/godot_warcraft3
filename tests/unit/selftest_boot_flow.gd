@@ -2,7 +2,7 @@ extends SceneTree
 
 ## Boot 流程自检（v1.4 独立 Loading + 异步 API）：
 ##   1. begin_async 写入标题与初始进度
-##   2. set_async_progress 把进度夹到 ≤ 0.5
+##   2. 资源 / 地图 / 对局进度分段映射，晚到事件不倒退
 ##   3. bind_director 订阅 session_ready 并触发 finish
 ##   4. GameMain 不再持有 game_loading_screen 字段
 ##   5. GameDirector.setup 接受 6 参（不含 loading）
@@ -46,21 +46,43 @@ func _test_begin_async_and_progress() -> void:
 		_fail("begin_async 未写入 map_title（got=%s）" % str(screen.get("map_title")))
 
 	screen.call("set_async_progress", 0.8)
-	# 资源阶段上限 0.5；PercentLabel 显示 "50%"
+	# 资源完成 80% 映射到总进度 24%，不是截断到固定上限。
 	var pct: Label = screen.get_node_or_null("Root/Center/Panel/VBox/BarRow/PercentLabel") as Label
 	var bar: ProgressBar = screen.get_node_or_null("Root/Center/Panel/VBox/BarRow/ProgressBar") as ProgressBar
-	if pct != null and pct.text == "50%":
-		_pass("set_async_progress 夹到 0.5（pct=50%）")
-	elif bar != null and is_equal_approx(bar.value, 50.0):
-		_pass("set_async_progress 夹到 0.5（bar=50）")
+	if pct != null and pct.text == "24%":
+		_pass("资源进度按比例映射到 24%")
+	elif bar != null and is_equal_approx(bar.value, 24.0):
+		_pass("资源进度按比例映射到 24%")
 	else:
-		_fail("set_async_progress 未夹到 0.5（pct=%s bar=%s）" % [
+		_fail("资源进度映射错误（pct=%s bar=%s）" % [
 			pct.text if pct else "null",
 			str(bar.value) if bar else "null",
 		])
 
+	# -s SceneTree 脚本编译早于 Autoload；运行时加载，避免提前编译地图依赖。
+	var map: Node = load("res://addons/rts_map/presentation/map_loader.gd").new()
+	screen.call("bind_map", map)
+	map.load_progress.emit("地图一半", 0.5)
+	_expect_bar(bar, 57.5, "接收地图进度并映射")
+	map.load_progress.emit("较早地图进度", 0.2)
+	_expect_bar(bar, 57.5, "同阶段不倒退")
+	screen.call("_on_load_progress", "对局一半", 0.5)
+	_expect_bar(bar, 92.0, "对局进度映射")
+	map.load_progress.emit("迟到地图", 1.0)
+	screen.call("set_async_progress", 1.0)
+	_expect_bar(bar, 92.0, "晚到的前序事件不覆盖后续阶段")
+	screen.call("_on_load_progress", "准备完成", 1.0)
+	_expect_bar(bar, 99.0, "未收到就绪不得显示 100%")
+	map.free()
 	screen.queue_free()
 	await process_frame
+
+
+func _expect_bar(bar: ProgressBar, value: float, label: String) -> void:
+	if bar != null and is_equal_approx(bar.value, value):
+		_pass(label)
+	else:
+		_fail(label)
 
 
 ## 3：bind_director → session_ready → finish
@@ -93,6 +115,8 @@ func _test_bind_director_finishes() -> void:
 
 	# 触发 session_ready → finish → queue_free（fade_out_sec=0）
 	stub.emit_signal("session_ready")
+	var bar := screen.get_node("Root/Center/Panel/VBox/BarRow/ProgressBar") as ProgressBar
+	_expect_bar(bar, 100.0, "就绪显示 100%")
 	await process_frame
 	await process_frame
 	if not is_instance_valid(screen):

@@ -761,7 +761,7 @@ func _load_all() -> void:
 
 	if place_doodads:
 		t0 = Time.get_ticks_msec()
-		_set_status("放置装饰物…", 0.72)
+		_set_status("准备装饰物…", 0.70)
 		await get_tree().process_frame
 		var dood_path: String = map_dir.path_join("doodads.json")
 		if FileAccess.file_exists(dood_path):
@@ -772,6 +772,8 @@ func _load_all() -> void:
 		)
 		# 装饰物唯一模型后台预载 .scn，避免 build 里同步解析拖到 10s+
 		await _preload_unique_doodad_models(_pathing_doodad_entries)
+		_set_status("放置装饰物…", 0.84)
+		await get_tree().process_frame
 		_doodads.build(ctx)
 		await get_tree().process_frame
 		timing["doodads"] = Time.get_ticks_msec() - t0
@@ -802,7 +804,7 @@ func _load_all() -> void:
 	_set_status(
 		"地形就绪（%d ms，留缝 %d，悬崖 %d，斜坡 %d，水面 %d，岸浪 %d，装饰 %d）"
 		% [ms, _terrain.last_gap_count, cliff_n, ramp_n, water_n, shore_n, doodad_n],
-		0.96
+		1.0
 	)
 	AppLog.info(
 		AppLog.Layer.LOAD,
@@ -857,7 +859,7 @@ func _preload_unique_doodad_models(entries: Array) -> void:
 		_cache.poll_preloads(6)
 		var left := _cache.preload_pending_count()
 		var done := paths.size() - left
-		_set_status("预载装饰物模型… %d/%d" % [clampi(done, 0, paths.size()), paths.size()], 0.70)
+		_set_status("预载装饰物模型… %d/%d" % [clampi(done, 0, paths.size()), paths.size()], 0.70 + 0.08 * clampf(float(done) / float(paths.size()), 0.0, 1.0))
 		await get_tree().process_frame
 		guard += 1
 	# 仍未进缓存的：主线程同步补一次（避免 build 里首次解析）

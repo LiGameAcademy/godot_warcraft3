@@ -40,7 +40,7 @@ assets/.staging/wc3-assets/        ← 临时（bootstrap 结束后删）
 遗留 `.cache/wc3-assets` 仅作回退（工具会警告）。
 ```
 
-特效（粒子 / Geoset 显隐 / 绑骨小件）如何从 MDX 旁路进 Godot，见对外说明：[docs/blog/04-wc3-effects-conversion.md](../blog/04-wc3-effects-conversion.md)。
+特效（粒子 / Geoset 显隐 / 绑骨小件）如何从 MDX 旁路进 Godot，见工程说明：[粒子转换](../design/asset-convert/PE2_GODOT.md)与[挂点拼装](../design/asset-convert/ATTACHMENTS_BAKE.md)。
 
 | 车道 | 路径 | 内容 |
 |------|------|------|

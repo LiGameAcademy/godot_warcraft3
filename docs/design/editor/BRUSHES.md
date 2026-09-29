@@ -2,9 +2,9 @@
 
 > 编辑器笔刷：地表/悬崖/坡笔刷的架构、与 Logic API 边界、加新笔刷流程。
 >
-> 实现：[`editor/scripts/tools/terrain_brush.gd`](../../../editor/scripts/tools/terrain_brush.gd)
-> 配合：[`editor/scripts/commands/`](../../../editor/scripts/commands/)（命令模式/撤销）
-> 配合：[`editor/scripts/map_document.gd`](../../../editor/scripts/map_document.gd)（Document）
+> 实现：[`editor/scripts/tools/terrain_brush.gd`](../../../apps/map_editor/tools/terrain_brush.gd)
+> 配合：[`editor/scripts/commands/`](COMMANDS.md)（命令模式/撤销）
+> 配合：[`editor/scripts/map_document.gd`](../../../apps/map_editor/documents/map_document.gd)（Document）
 
 ## 1. 总览
 
@@ -123,7 +123,7 @@ size 8  → 半径 7
 
 ## 6. 与 `MapDocument` 的关系
 
-`MapDocument`（[`editor/scripts/map_document.gd`](../../../editor/scripts/map_document.gd)）是**编辑器侧的 heightfield 包装**：
+`MapDocument`（[`editor/scripts/map_document.gd`](../../../apps/map_editor/documents/map_document.gd)）是**编辑器侧的 heightfield 包装**：
 
 - 持有 `Wc3Heightfield` + `Wc3TerrainLogic` + 笔刷上下文
 - 提供 `paint_texture(...)` / `paint_cliff(...)` / `paint_ramp(...)` 等高层 API

@@ -3,7 +3,7 @@
 > 海量树用 MultiMesh 摆件；**第一次需要「可交互呈现」时**提升为独立 Node。  
 > 伐木、投石车、选中黄环、死亡动画都走同一套 Runtime。  
 > 所属层：Data=`Wc3DoodadList` · Logic=`TreeRuntime` · Present=`MapDoodadLayer` promote。  
-> 相关：[SELECTION_RINGS.md](SELECTION_RINGS.md) · [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [doodad/README.md](../doodad/README.md) · [PATHFINDING_CHOICE.md](PATHFINDING_CHOICE.md)  
+> 相关：[SELECTION_RINGS.md](SELECTION_RINGS.md) · [GAMEPLAY_VERTICAL.md](GAMEPLAY_VERTICAL.md) · [doodad/README.md](../doodad/README.md) · [PATHFINDING_CHOICE.md](../pathfinding/CHOICE.md)  
 > 最后更新：2026-08-08
 
 ---

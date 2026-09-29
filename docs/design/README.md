@@ -1,7 +1,7 @@
 # design/ — 设计驱动文档
 
 > 11 个子系统按"专题"二级归类。  
-> 配合：[architecture/](../architecture/)（架构）· [data/](../data/)（数据流水线）· [roadmap/](../roadmap/)（路线图）· [test-cases/](../test-cases/)（测试用例）· [blog/](../blog/)  
+> 配合：[architecture/](../architecture/)（架构）· [data/](../data/)（数据流水线）· [roadmap/](../roadmap/)（路线图）· [test-cases/](../test-cases/)（测试用例）  
 > 最后更新：2026-08-10
 
 ## 目录结构
@@ -90,7 +90,6 @@ docs/design/
 | `roadmap/` | **路线图**（阶段 / 优先级 / 总览） | 阶段目标反向驱动 design/<topic>/ |
 | `test-cases/` | **测试用例**（手动验收 / 复刻对比） | design/<topic>/ 设计的可观察性验收 |
 | `tests/` | **测试索引**（headless 跑法） | 自动 selftest 速查（与 test-cases/ 互补） |
-| `blog/` | **blog 系列**（开发心得 / 对齐笔记） | 公开向；与设计文档互补 |
 
 ## docs 拍平原则
 

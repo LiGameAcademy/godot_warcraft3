@@ -34,7 +34,7 @@ RuntimeAssets / Wc3*Catalog / Wc3*Logic  → Map*Layer → 场景
 
 ### 阶段 1：解包（MPQ → 原始资产）
 
-工具：[`tools/mpq-extract/`](../../tools/mpq-extract/)
+工具：[`tools/mpq-extract/`](../../tools/README.md)
 
 ```bash
 cd tools/mpq-extract
@@ -191,7 +191,7 @@ node tools/sync-editor-assets.mjs
 
 ### 阶段 6：运行时解析（Autoload）
 
-实现：[`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd)（Autoload `AssetProvider`）
+实现：[`addons/asset_provider/asset_provider.gd`](../../packages/content/asset_provider/asset_provider.gd)（Autoload `AssetProvider`）
 
 ```gdscript
 # 推荐：经 RuntimeAssets（地图代码统一入口）
@@ -286,8 +286,8 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 - 改贴图 / 模型转换 → `tools/asset-convert/src/`
 - 改表解析 → `tools/slk-export/src/cli.js`
 - 改地图解析 → `tools/map-parse/src/`
-- 改路径解析 → [`addons/asset_provider/asset_provider.gd`](../../addons/asset_provider/asset_provider.gd)
-- 改加载顺序 / 开关 → [`scripts/map/presentation/map_loader.gd`](../../scripts/map/presentation/map_loader.gd)
+- 改路径解析 → [`addons/asset_provider/asset_provider.gd`](../../packages/content/asset_provider/asset_provider.gd)
+- 改加载顺序 / 开关 → [`scripts/map/presentation/map_loader.gd`](../../packages/map/presentation/map_loader.gd)
 
 ## 6. 后续（未实现）
 

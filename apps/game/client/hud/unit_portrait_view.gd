@@ -72,11 +72,14 @@ func configure(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:
 ## Prepare actual portrait surfaces while the match is loading. An empty viewport
 ## cannot precompile the model's pipelines. Hidden UI still renders offscreen.
 ## The caller holds gameplay paused; no selection signals or commands are issued.
-func prepare_types(type_ids: PackedStringArray, owner_id: int) -> void:
+func prepare_types(type_ids: PackedStringArray, owner_id: int, progress: Callable = Callable()) -> void:
 	if _warming or DisplayServer.get_name() == "headless" or _cache == null or _catalog == null or _is_closing():
 		return
 	_warming = true
 	var prepared: int = 0
+	var total := mini(type_ids.size(), _POOL_MAX)
+	if progress.is_valid():
+		progress.call(0, total)
 	for type_id in type_ids:
 		if prepared >= _POOL_MAX or _is_closing():
 			break
@@ -106,6 +109,8 @@ func prepare_types(type_ids: PackedStringArray, owner_id: int) -> void:
 			_set_viewport_active(_model_root != null)
 			return
 		prepared += 1
+		if progress.is_valid():
+			progress.call(prepared, total)
 	clear_portrait()
 	_warming = false
 

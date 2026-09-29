@@ -254,9 +254,9 @@ func set_selection_info(info: Dictionary) -> void:
 		_selection.set_selection_info(info)
 
 
-func prepare_portraits(type_ids: PackedStringArray, owner_id: int) -> void:
+func prepare_portraits(type_ids: PackedStringArray, owner_id: int, progress: Callable = Callable()) -> void:
 	if _selection != null:
-		await _selection.prepare_portraits(type_ids, owner_id)
+		await _selection.prepare_portraits(type_ids, owner_id, progress)
 
 
 func configure_portrait(cache: MapModelCache, catalog: Wc3IdCatalog) -> void:

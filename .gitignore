@@ -102,3 +102,17 @@ apps/*/tmp/
 **/bin/
 **/obj/
 **/.idea/
+
+# Teaching manuscripts and publishing assets live outside this open-source repo.
+# Ignore rules do not untrack files already committed to Git.
+/docs/blog/
+/docs/gameplay/
+/docs/dev-log/zhihu-*.md
+/docs/dev-log/images/
+/docs/dev-log/2026-09-28-startup-review/
+/docs/开发日志-视频-字幕/
+/docs/design/game/NAVIGATION_DEVLOG_SCRIPT_*.md
+/output/devlog-*/
+/output/devlog-*-materials.zip
+/tutorials/
+/_tutorials/

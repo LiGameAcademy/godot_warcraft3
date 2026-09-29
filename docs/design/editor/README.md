@@ -40,4 +40,4 @@
 - 加新命令（撤销/重做）→ [COMMANDS.md](COMMANDS.md) + `editor/scripts/commands/`
 - 加新字符串翻译 → [I18N.md](I18N.md) + `editor/locale/editor_strings.csv`
 - 改 UI 面板 → [UI.md](UI.md) + `editor/ui/`
-- 编辑器运行入口 → [`editor/scenes/editor_main.tscn`](../../../editor/scenes/editor_main.tscn)（F6）
+- 编辑器运行入口 → [`editor/scenes/editor_main.tscn`](../../../apps/map_editor/scenes/editor_main.tscn)（F6）

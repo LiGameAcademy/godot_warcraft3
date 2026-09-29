@@ -1,21 +1,20 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://dr84uf138y6ps"]
 
-[ext_resource type="Script" path="res://client/hud/game_loading_screen.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://cxfiyq6uj07qs" path="res://client/hud/game_loading_screen.gd" id="1_script"]
 
-[node name="GameLoadingScreen" type="CanvasLayer"]
+[node name="GameLoadingScreen" type="CanvasLayer" unique_id=933421007]
 layer = 100
 script = ExtResource("1_script")
 
-[node name="Root" type="Control" parent="."]
+[node name="Root" type="Control" parent="." unique_id=863611816]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 0
 
-[node name="Dim" type="ColorRect" parent="Root"]
+[node name="Dim" type="ColorRect" parent="Root" unique_id=1605630807]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -25,7 +24,7 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.03, 0.04, 0.06, 0.92)
 
-[node name="Vignette" type="ColorRect" parent="Root"]
+[node name="Vignette" type="ColorRect" parent="Root" unique_id=1474025448]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -35,7 +34,7 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.02, 0.02, 0.03, 0.35)
 
-[node name="Center" type="CenterContainer" parent="Root"]
+[node name="Center" type="CenterContainer" parent="Root" unique_id=946855301]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -44,23 +43,23 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Panel" type="PanelContainer" parent="Root/Center"]
+[node name="Panel" type="PanelContainer" parent="Root/Center" unique_id=1526445537]
 custom_minimum_size = Vector2(440, 0)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="VBox" type="VBoxContainer" parent="Root/Center/Panel"]
+[node name="VBox" type="VBoxContainer" parent="Root/Center/Panel" unique_id=1105055319]
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Brand" type="Label" parent="Root/Center/Panel/VBox"]
+[node name="Brand" type="Label" parent="Root/Center/Panel/VBox" unique_id=142453852]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.72, 0.58, 0.28, 0.9)
 theme_override_font_sizes/font_size = 14
 text = "WARCRAFT III · GODOT"
 horizontal_alignment = 1
 
-[node name="TitleLabel" type="Label" parent="Root/Center/Panel/VBox"]
+[node name="TitleLabel" type="Label" parent="Root/Center/Panel/VBox" unique_id=1028286835]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92, 0.9, 0.84, 1)
@@ -68,7 +67,7 @@ theme_override_font_sizes/font_size = 28
 text = "Echo Isles"
 horizontal_alignment = 1
 
-[node name="StageLabel" type="Label" parent="Root/Center/Panel/VBox"]
+[node name="StageLabel" type="Label" parent="Root/Center/Panel/VBox" unique_id=1299848877]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.72, 0.76, 1)
@@ -77,21 +76,19 @@ text = "正在进入战场…"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="BarRow" type="HBoxContainer" parent="Root/Center/Panel/VBox"]
+[node name="BarRow" type="HBoxContainer" parent="Root/Center/Panel/VBox" unique_id=576459743]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="ProgressBar" type="ProgressBar" parent="Root/Center/Panel/VBox/BarRow"]
+[node name="ProgressBar" type="ProgressBar" parent="Root/Center/Panel/VBox/BarRow" unique_id=1368422417]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 14)
 layout_mode = 2
 size_flags_horizontal = 3
-max_value = 100.0
 step = 0.1
-value = 0.0
 show_percentage = false
 
-[node name="PercentLabel" type="Label" parent="Root/Center/Panel/VBox/BarRow"]
+[node name="PercentLabel" type="Label" parent="Root/Center/Panel/VBox/BarRow" unique_id=1734935379]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(48, 0)
 layout_mode = 2
@@ -100,7 +97,7 @@ theme_override_font_sizes/font_size = 14
 text = "0%"
 horizontal_alignment = 2
 
-[node name="Hint" type="Label" parent="Root/Center/Panel/VBox"]
+[node name="Hint" type="Label" parent="Root/Center/Panel/VBox" unique_id=777813102]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.45, 0.48, 0.52, 1)
 theme_override_font_sizes/font_size = 12

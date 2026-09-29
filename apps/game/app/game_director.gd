@@ -28,6 +28,7 @@ extends Node
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready
 ## 开局肖像预热阶段进度（stage 文本 + 0.0–1.0 进度）。
+## 对局准备局部进度 0–1；由 Loading 映射到总进度区间。
 signal session_preparation_progress(stage: String, progress: float)
 
 @export var map_root: MapLoader
@@ -153,6 +154,7 @@ var _wired_hud: GameHud
 var _wired_selector: Node
 var _ui_bridge: Node
 
+var _start_requested: bool = false
 
 ## 由 [GameMain] 在子节点装配第 6 步调 [method setup] 注入。
 ##
@@ -170,24 +172,19 @@ var _ui_bridge: Node
 ## [param p_health_bar_manager] 血条（BuildModule / CombatModule 同步 resync）。
 ## [br]v1.4 起不再注入 game_loading_screen：Loading 已独立为 peer scene，由 [code]boot.gd[/code]
 ## 直接持有并订阅本节点的 [signal session_ready]。
-func setup(
-	p_map_root: MapLoader,
-	p_rts_camera: RtsCamera,
-	p_game_hud: GameHud,
-	p_unit_selector: Node,
-	p_game_cursor: Node,
+func setup(p_map_root: MapLoader, p_rts_camera: RtsCamera, 
+	p_game_hud: GameHud, p_unit_selector: Node, p_game_cursor: Node, 
 	p_health_bar_manager: HealthBarManager,
 ) -> void:
+	if _start_requested:
+		push_error("GameDirector: 启动后不能重新注入依赖")
+		return
 	map_root = p_map_root
 	rts_camera = p_rts_camera
 	game_hud = p_game_hud
 	unit_selector = p_unit_selector
 	game_cursor = p_game_cursor
 	health_bar_manager = p_health_bar_manager
-	if _bootstrapped:
-		return
-	_boot_match()
-
 
 ## Godot 生命周期钩子。
 ##
@@ -203,17 +200,10 @@ func _ready() -> void:
 		assets.seal_runtime_content()
 	_rng.randomize()
 	AppLog.reload_config()
-	# GameMain 的 _ready 在本节点之后（Godot bottom-up _ready 顺序）；
-	# 等一帧让 GameMain._ready 把 setup() 跑完，再触发 _boot_match。
-	if map_root == null:
-		await get_tree().process_frame
-		if map_root == null:
-			push_warning(
-				"GameDirector: setup() 未在首帧后注入；GameMain._ready 必须调 setup(...)"
-			)
-			return
-	_boot_match()
 
+## true 表示本次请求被接受，或此前已经接受；不是完成通知。
+func start_match() -> bool:
+	return _boot_match()
 
 ## 对局启动入口（仅触发一次，由 [member _bootstrapped] 守卫）。
 ##
@@ -221,7 +211,18 @@ func _ready() -> void:
 ## [method _load_camera_bounds] / [method _configure_camera] 集中到此；
 ## selftest 可手动 [code]GameDirector.new() + setup() + _boot_match()[/code]
 ## 全链路跑通而无需挂入 GameMain.tscn。
-func _boot_match() -> void:
+func _boot_match() -> bool:
+	if _start_requested:
+		return true
+	if not is_node_ready():
+		push_error("GameDirector: 请在节点 ready 后启动")
+		return false
+	if not is_instance_valid(map_root):
+		push_error("GameDirector: 启动前必须注入有效的 map_root")
+		return false
+
+	# 在任何可能同步触发回调的工作前置位，防止重入。
+	_start_requested = true
 	_configure_map_root()
 	var debug := _ensure_debug_tools_module()
 	debug.ensure_gm_panel()
@@ -229,11 +230,11 @@ func _boot_match() -> void:
 	_wire_hud()
 	_load_camera_bounds()
 	_configure_camera()
-	if map_root.map_loaded.is_connected(_on_map_loaded) == false:
+	if not map_root.map_loaded.is_connected(_on_map_loaded):
 		map_root.map_loaded.connect(_on_map_loaded)
 	if map_root.is_map_ready():
 		_on_map_loaded()
-
+	return true
 
 func _apply_path_debug_visibility() -> void:
 	if is_instance_valid(_path_debug_mod):
@@ -426,13 +427,16 @@ func _on_map_loaded() -> void:
 	if _bootstrapped:
 		return
 	_bootstrapped = true
+	session_preparation_progress.emit("准备对局…", 0.0)
 	_hide_start_locations()
 	_ensure_navigation_module().initialize(map_root, Callable(_unit_presenter(), "ensure_visual"))
 	if rts_camera != null:
 		rts_camera.set_heightfield(_heightfield)
 	_bootstrap_melee()
+	session_preparation_progress.emit("开局单位已准备…", 0.15)
 	_setup_selector()
 	_bind_match_modules()
+	session_preparation_progress.emit("对局模块已连接…", 0.30)
 	_setup_minimap()
 	_setup_portrait_hud()
 	_setup_health_bars()
@@ -448,15 +452,22 @@ func _on_map_loaded() -> void:
 		var game_root: Node = get_parent()
 		var previous_mode: ProcessMode = game_root.process_mode
 		game_root.process_mode = Node.PROCESS_MODE_DISABLED
-		session_preparation_progress.emit("准备单位显示…", 0.98)
+		session_preparation_progress.emit("准备单位显示…", 0.5)
 		var started: int = Time.get_ticks_usec()
-		await _ensure_selection_hud_module().prepare_starting_portraits(local_player)
+		await _ensure_selection_hud_module().prepare_starting_portraits(local_player, _on_portrait_preparation_progress)
 		if not is_inside_tree() or is_queued_for_deletion() or not is_instance_valid(game_root) or game_root.is_queued_for_deletion():
 			return
 		game_root.process_mode = previous_mode
 		AppLog.info(AppLog.Layer.LOAD, "Portrait", "Starting portraits prepared in %.1f ms" % ((Time.get_ticks_usec() - started) / 1000.0))
 	_presentation_ready = true
 	session_ready.emit()
+
+
+func _on_portrait_preparation_progress(done: int, total: int) -> void:
+	var ratio := float(done) / float(maxi(total, 1))
+	session_preparation_progress.emit(
+		"准备单位显示… %d/%d" % [done, total], 0.5 + 0.5 * ratio
+	)
 
 
 func _setup_match_end() -> void:

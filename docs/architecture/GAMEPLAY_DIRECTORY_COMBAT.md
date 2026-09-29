@@ -17,7 +17,7 @@
 
 ## 边界与后续
 
-`actions` 标识跨帧执行职责，`rules` 放无需场景查询的计算与随机数封装。依赖场景的服务留在 `logic`，不误标为纯规则。AttackController 的动画调用、DeathService 的尸体显示操作仍需另批通过状态/表现接口拆分。详见 [战斗模块职责](../../game/features/combat/README.md)。
+`actions` 标识跨帧执行职责，`rules` 放无需场景查询的计算与随机数封装。依赖场景的服务留在 `logic`，不误标为纯规则。AttackController 的动画调用、DeathService 的尸体显示操作仍需另批通过状态/表现接口拆分。详见 [战斗模块职责](../../packages/gameplay/features/combat/README.md)。
 
 本次没有完成 `apps/game`、`apps/map_editor` 与 `packages` 的最终源码切换。原拟整体迁移约 761 个文件并移除根项目入口，后续接线被自动审批拦截；已按迁移记录与 Git 基线逐文件核验并撤回，改为本批可独立验证的单功能归位。
 

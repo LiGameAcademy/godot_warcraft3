@@ -1,13 +1,13 @@
 # MapRoot 架构设计
 
 > 范围：`scenes/map/map_root.tscn` + `scripts/map/*` — Godot 侧如何把预解析地图数据变成可预览场景。  
-> **分层总纲（优先）**：[LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)（Data / Catalog / Logic / Presentation / Editor）。  
-> 编辑器如何复用本结构见 [EDITOR.md](docs/editor/EDITOR.md)。水体细节见 [WATER.md](docs/water/WATER.md)。悬崖见 [CLIFF.md](docs/cliff/CLIFF.md)（斜坡待重做）。  
-> 路线图见 [ROADMAP.md](docs/roadmap/ROADMAP.md)。  
+> **分层总纲（优先）**：[LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md)（Data / Catalog / Logic / Presentation / Editor）。  
+> 编辑器如何复用本结构见 [EDITOR.md](../design/editor/EDITOR.md)。水体细节见 [WATER.md](../design/water/WATER.md)。悬崖见 [CLIFF.md](../design/cliff/CLIFF.md)（斜坡待重做）。  
+> 路线图见 [ROADMAP.md](../roadmap/ROADMAP.md)。  
 > 最后更新：2026-07-24
 
 原则：**离线解析 → 数据驱动装配 → 节点树分层渲染**。数据与逻辑分离；Layer 只挂树，规则在 Domain。  
-本文 §2 职责表为历史快照；与总纲冲突时以 [LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md) 为准，并逐步搬迁。
+本文 §2 职责表为历史快照；与总纲冲突时以 [LAYERED_ARCHITECTURE.md](LAYERED_ARCHITECTURE.md) 为准，并逐步搬迁。
 
 ---
 
@@ -121,7 +121,7 @@ Infrastructure
 
 | 类别 | 位置 | 内容 |
 | ------ | ------ | ------ |
-| 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](docs/architecture/MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
+| 地图 JSON | `assets/map-parsed/<slug>/` | 见 [MAP_DATA.md](MAP_DATA.md)（`Wc3Heightfield` / `Wc3TileVertex`） |
 | 表/文本数据 | `assets/slk-exported/` | SLK JSON + UnitFunc/UI txt（数据车道） |
 | 转换资产 | `assets/asset-converted/` | PNG / GLB / `.scn` / PathTextures（视觉车道） |
 | extract 中间态 | `.cache/wc3-assets/` | 仅工具；运行时禁止依赖（[ASSET_LANES.md](ASSET_LANES.md)） |
@@ -253,7 +253,7 @@ ctx.ensure_cliff_topology()
 |----------|------------|
 | 地面三角形 / 悬崖留缝 / 斜坡甲板 | `wc3_terrain_autotile.gd` |
 | 地面 shader、图集混合 | `shaders/wc3_ground.gdshader`、`map_terrain_layer.gd` |
-| 悬崖是否出现、TAG、斜坡 romp | `wc3_cliff_tiles.gd`（策略/层高见 [CLIFF.md](docs/cliff/CLIFF.md)；斜坡待重做） |
+| 悬崖是否出现、TAG、斜坡 romp | `wc3_cliff_tiles.gd`（策略/层高见 [CLIFF.md](../design/cliff/CLIFF.md)；斜坡待重做） |
 | 悬崖放哪、叠几段、缺模警告 | `wc3_cliff_builder.gd` |
 | 编辑器崖笔刷 / 异种同化 B | `editor/scripts/map_document.gd` |
 | 悬崖 MultiMesh / 贴图 / 立面栅格 | `map_cliff_layer.gd`、`wc3_cliff.gdshader` |
@@ -315,10 +315,10 @@ ctx.ensure_cliff_topology()
 
 | 文档 | 内容 |
 |------|------|
-| [EDITOR.md](docs/editor/EDITOR.md) | 地图编辑器 Presentation 架构 |
-| [CLIFF.md](docs/cliff/CLIFF.md) | 直崖数据、策略 B、层高与回归 |
-| [ROADMAP.md](docs/roadmap/ROADMAP.md) | MapRoot + Editor 开发路线 |
-| [WATER.md](docs/water/WATER.md) | 水体与岸浪 |
-| [TODO.md](docs/roadmap/TODO.md) | 具体缺陷清单（斜坡等） |
-| [WC3_ASSET_PATHS.md](docs/data/WC3_ASSET_PATHS.md) | 经典资产路径 |
-| [LEGAL.md](docs/data/LEGAL.md) | 资产合规 |
+| [EDITOR.md](../design/editor/EDITOR.md) | 地图编辑器 Presentation 架构 |
+| [CLIFF.md](../design/cliff/CLIFF.md) | 直崖数据、策略 B、层高与回归 |
+| [ROADMAP.md](../roadmap/ROADMAP.md) | MapRoot + Editor 开发路线 |
+| [WATER.md](../design/water/WATER.md) | 水体与岸浪 |
+| [TODO.md](../roadmap/TODO.md) | 具体缺陷清单（斜坡等） |
+| [WC3_ASSET_PATHS.md](../data/WC3_ASSET_PATHS.md) | 经典资产路径 |
+| [LEGAL.md](../data/LEGAL.md) | 资产合规 |

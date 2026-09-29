@@ -229,9 +229,9 @@ MapLoader.rebuild_terrain_cliffs_water (L220+)
 - [data/WC3_ASSET_PATHS.md](../../data/WC3_ASSET_PATHS.md) —— `Units/<id>/<id>.mdx` 路径
 - [roadmap/ROADMAP.md §⑩ 应用高度](../../roadmap/ROADMAP.md) —— change_doodad_heights 完整设计
 =======
-- [data/PIPELINE.md](../data/PIPELINE.md) —— `war3map.doo` → `doodads.json` 解析流水线
-- [data/WC3_ASSET_PATHS.md](../data/WC3_ASSET_PATHS.md) —— `Units/<id>/<id>.mdx` 路径
-- [roadmap/ROADMAP.md §⑩ 应用高度](../roadmap/ROADMAP.md) —— change_doodad_heights 完整设计
+- [data/PIPELINE.md](../../data/PIPELINE.md) —— `war3map.doo` → `doodads.json` 解析流水线
+- [data/WC3_ASSET_PATHS.md](../../data/WC3_ASSET_PATHS.md) —— `Units/<id>/<id>.mdx` 路径
+- [roadmap/ROADMAP.md §⑩ 应用高度](../../roadmap/ROADMAP.md) —— change_doodad_heights 完整设计
 - [game/TREE_INTERACT.md](../game/TREE_INTERACT.md) —— **可交互树**：MM→Node promote、扣血入口、防闪烁（玩法侧）
 - [game/SELECTION_RINGS.md](../game/SELECTION_RINGS.md) —— 树/金矿黄环
 >>>>>>> master:docs/doodad/README.md

@@ -108,7 +108,15 @@ func _boot_scene() -> void:
 		game_cursor,
 		health_bar_manager,
 	)
-
+	# 所有依赖已注入，由场景根明确发起启动。
+	if game_director == null:
+		push_error("GameMain: 缺少 GameDirector，无法启动")
+		get_tree().quit(1)
+		return
+	if not game_director.start_match():
+		push_error("GameMain: 启动请求被拒绝")
+		get_tree().quit(1)
+		return
 
 ## 步骤 1：UnitSelector 注入。
 ## 把相机 + MapRoot.get_unit_layer() 传给 UnitSelector.setup；

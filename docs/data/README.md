@@ -24,7 +24,7 @@
 
 ## 运行时路径
 
-游戏逻辑应通过 Autoload `AssetProvider`（[`addons/asset_provider/`](../../addons/asset_provider/)）解析，**不要**直接读 `res://`。
+游戏逻辑应通过 Autoload `AssetProvider`（[`addons/asset_provider/`](../../packages/content/asset_provider/asset_provider.gd)）解析，**不要**直接读 `res://`。
 
 `AssetProvider` 优先级（详见 [PIPELINE.md](PIPELINE.md)）：
 1. `mods/<id>/` — Mod 覆盖

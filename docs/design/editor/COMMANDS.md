@@ -2,7 +2,7 @@
 
 > 编辑器撤销/重做：`EditorCommand` 基类 + `EditorCommandHistory` 栈 + `EditorVertexSnapshot` 顶点快照 + `PaintStrokeCommand` 笔划。
 >
-> 实现：[`editor/scripts/commands/`](../../../editor/scripts/commands/)
+> 实现：[`EditorCommandHistory`](../../../apps/map_editor/documents/commands/editor_command_history.gd)，同目录包含具体编辑命令。
 > 配合：[BRUSHES.md](BRUSHES.md)
 
 ## 1. 总览

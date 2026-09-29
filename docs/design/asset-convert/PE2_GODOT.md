@@ -164,13 +164,12 @@ HeroArchMage 三个发射器（对照用）：
 |------|------|
 | [MDX_SKINNING_GODOT.md](MDX_SKINNING_GODOT.md) | Tip 局部 = Pivot 厘米；粒子跟网格同一蒙皮空间 |
 | [ATTACHMENTS_BAKE.md](ATTACHMENTS_BAKE.md) | 挂点拼装总方案；PE2 细节以本文为准 |
-| [../architecture/SCRIPTS_LAYOUT.md](../architecture/SCRIPTS_LAYOUT.md) | `scripts/tool` 里 pe2 bake |
-| [../../tools/asset-convert/README.md](../../tools/asset-convert/README.md) | 转换步骤含 pe2.json |
-| [04-wc3-effects-conversion.md](../blog/04-wc3-effects-conversion.md) | 对外说明（全貌，偏教程） |
+| [../architecture/SCRIPTS_LAYOUT.md](../../architecture/SCRIPTS_LAYOUT.md) | `scripts/tool` 里 pe2 bake |
+| [../../tools/asset-convert/README.md](../../../tools/asset-convert/README.md) | 转换步骤含 pe2.json |
 | [../presentation/WEAPON_MISSILE_FX.md](../presentation/WEAPON_MISSILE_FX.md) | **武器飞弹金样**（Priest / FireBall / Water）+ GPU/Shader 决策 |
-| [../tools/ASSET_LAYOUT.md](../tools/ASSET_LAYOUT.md) | pe2.json / .scn 不入库 |
+| [../tools/ASSET_LAYOUT.md](../../tools/ASSET_LAYOUT.md) | pe2.json / .scn 不入库 |
 | [../shader/README.md](../shader/README.md) | 岸浪 PE2 是另一套（MultiMesh），不是单位 GPUParticles |
-| [../roadmap/TODO.md](../roadmap/TODO.md) | visuals 封装 + PE2 历史条目 |
+| [../roadmap/TODO.md](../../roadmap/TODO.md) | visuals 封装 + PE2 历史条目 |
 
 ---
 
