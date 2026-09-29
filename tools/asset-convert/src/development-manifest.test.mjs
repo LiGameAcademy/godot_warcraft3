@@ -64,6 +64,13 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.ok(!melee.assets.some(row => row.id === 'missiles/bolt'), 'overridden model must leave effective scope');
     assert.ok(melee.assets.some(row => row.id === 'missiles/overlay'));
     assert.equal(melee.configuration.definition_profile, 'melee_roc');
+    write('scripts/fx.gd', 'const MODEL = "Units/Foo/Foo_V1.glb"');
+    const withRuntime = buildDevelopmentManifest({...options, scriptRoots: [path.join(root, 'scripts')]});
+    const reason = withRuntime.assets.find(row => row.id === 'units/foo/foo_v1').reasons.find(row => row.script);
+    assert.equal(reason.runtime_path, 'Units/Foo/Foo_V1.glb');
+    assert.equal(reason.line, 1);
+    assert.equal(withRuntime.runtime_references.literal_candidates, 1);
+    assert.ok(withRuntime.inputs.some(row => row.path.endsWith('fx.gd') && row.sha256));
     write('source/Units/AbilityBuffData.slk', 'invalid table');
     assert.throws(() => buildDevelopmentManifest(options), /Invalid definition table/);
     // Exported definitions are the configured authority when both formats exist.

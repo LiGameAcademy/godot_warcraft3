@@ -29,7 +29,7 @@ node tools/asset-convert/src/development-manifest-cli.mjs
 node tools/asset-convert/src/development-manifest-cli.mjs --definition-profile candidates --out tools/asset-convert/tmp/development-manifest/candidates.json
 ```
 
-当前本机默认清单预期 339 个对象、275 个模型、519 个纹理，缺失和未解析均为 0，1 条重复字段差异。审计候选清单预期 347 个对象、276 个模型、527 个纹理，214 条差异；比上轮 211 多出的记录来自现在保留的文件内重复赋值。这两个结果用途不同，不能要求数量相同。
+纳入脚本字面量后，当前本机默认清单预期 339 个对象、281 个模型、522 个纹理，缺失和未解析均为 0，1 条重复字段差异。审计候选清单预期 347 个对象、282 个模型、530 个纹理，214 条差异；比最初 211 多出的记录来自现在保留的文件内重复赋值。这两个结果用途不同，不能要求数量相同。
 
 ```powershell
 node tools/asset-convert/src/definition-layers.test.mjs

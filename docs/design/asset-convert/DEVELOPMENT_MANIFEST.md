@@ -19,6 +19,8 @@ node tools/asset-convert/src/development-manifest-cli.mjs --worker-result "tools
 
 默认读取 `assets/map-parsed/echoisles`、`assets/slk-exported` 和 `.cache/wc3-assets`，以 `hpea,htow` 作为人族开局补充种子。种子依据 `MeleeRacePreview` 的人族配置；更改种族／开局配置时需显式传入 `--seeds`。支持 `--map`、`--definitions`、`--source`、`--out`。`--worker-result` 可重复，但同一资产有多份匹配证据时标记歧义，不擅自挑选成功记录。
 
+扫描与补齐 CLI 均支持 `--edition roc`／`--edition tft`，默认 TFT；与 `--definition-profile` 独立。模型版本候选遵循运行时 `ContentPackRules` 的经典版本规则，不重复追加 `_V1`。源目录是否有候选文件与游戏转换缓存是否有可加载产物是两个检查，不能仅凭候选规则一致便认定实际加载路径一致。
+
 输出默认位于忽略目录 `tools/asset-convert/tmp/development-manifest/echoisles.json`。较小的 `assets/.staging/wc3-assets` 可用于测试，但不能据此判断完整解包库缺失。
 
 ## 当前覆盖
@@ -32,6 +34,8 @@ node tools/asset-convert/src/development-manifest-cli.mjs --worker-result "tools
 - Func 的空行和整行注释不产生引用。`Art`／`Casterupgradeart` 图标的 `.tga` 引用优先找原路径，缺少时尝试同名 `.blp`，保留原请求与候选；不把此规则应用于寻路纹理。
 - 模型内部纹理、当前已知可替换纹理默认值、第一代粒子引用的模型路径。
 - 每项记录引用对象、表名、字段、请求路径和候选路径；输入表与源资产带 SHA-256。
+- 默认 CLI 还扫描 `packages/gameplay`、`packages/map`、`apps/game/app` 的 GDScript 完整路径字面量，包括技能特效回退、集结旗、移动确认等。来源记录 `script`、`line`、`runtime_path`，脚本输入也带哈希。原版路径下的 GLB／glTF／SCN 引用映射为 MDX 源候选。
+- 脚本扫描忽略注释，不执行代码、不分析调用可达性；属于保守候选。带 `%`／花括号的完整插值路径单独列入 `runtime_references.dynamic_candidates`，不冒充现有资产。分段拼接、外部配置、未扫描目录和实际运行轨迹仍是覆盖缺口；动态候选为 0 不代表不存在动态引用。
 
 ## 状态解释
 
@@ -82,7 +86,7 @@ node tools/asset-convert/src/development-recovery-cli.mjs --game-dir "D:/Program
    $report.coverage.complete
    ```
 
-   当前默认 `base` 本机预期：`objects=339`、`models=275`、`textures=519`，三个缺失／未解析计数均为 0，`definition_conflicts=1`，`coverage.complete=False`。唯一差异为基础文件内 `nogm` 的重复 `Buttonpos`。更换配置、原版版本、定义表或地图后数量可以变化，不应为了匹配数量删掉引用。
+   当前默认 `base`／TFT 本机预期：`objects=339`、`models=281`、`textures=522`，三个缺失／未解析计数均为 0，`definition_conflicts=1`，`coverage.complete=False`；包含 22 条脚本字面量候选。唯一差异为基础文件内 `nogm` 的重复 `Buttonpos`。更换配置、原版版本、定义表或地图后数量可以变化，不应为了匹配数量删掉引用。
 
 2. 核查 Buff 来源和冲突可追溯性：
 
@@ -113,3 +117,17 @@ node tools/asset-convert/src/development-recovery-cli.mjs --game-dir "D:/Program
    预期分别 2 项和 4 项通过。测试在独立临时目录验证缺表、损坏表、JSON 优先级、注释排除、图标别名、覆盖候选保留、解包失败和轮数上限，不需要手动删除真实缓存。
 
 本轮验收的是引用发现、来源追踪和补齐行为，不包含粒子／光晕画面、玩家端导入或地图视觉验收；这些仍按重构路线图单独实施。
+
+## 脚本引用及模型版本验收
+
+```powershell
+node tools/asset-convert/src/development-manifest-cli.mjs --edition tft --out tools/asset-convert/tmp/development-manifest/tft.json
+node tools/asset-convert/src/development-manifest-cli.mjs --edition roc --out tools/asset-convert/tmp/development-manifest/roc.json
+$tft = Get-Content tools/asset-convert/tmp/development-manifest/tft.json -Raw | ConvertFrom-Json
+$roc = Get-Content tools/asset-convert/tmp/development-manifest/roc.json -Raw | ConvertFrom-Json
+$tft.assets | Where-Object { $_.logical_path -match 'Priest/Priest' } | Select-Object logical_path
+$roc.assets | Where-Object { $_.logical_path -match 'Priest/Priest' } | Select-Object logical_path
+$tft.assets.reasons | Where-Object { $_.script } | Select-Object -First 5 script,line,runtime_path
+```
+
+当前本机 TFT 应选择 `Units/Human/Priest/Priest_V1.mdx`，RoC 选择 `Units/Human/Priest/Priest.mdx`。TFT 为 281 模型／522 纹理，RoC 为 281／521，两者缺失为 0。脚本来源应能定位到实际声明行。`node tools/asset-convert/src/runtime-asset-references.test.mjs` 应通过 2 项测试；五目录集成测试还包含 12 组 JS／Godot 模型版本候选对照。

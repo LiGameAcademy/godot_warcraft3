@@ -6,7 +6,8 @@ import { atomicWriteBytesSync } from './atomic-write.js';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const options = {map: path.join(repo, 'assets/map-parsed/echoisles'), definitions: path.join(repo, 'assets/slk-exported'),
-  source: path.join(repo, '.cache/wc3-assets'), seeds: ['hpea', 'htow'], results: []};
+  source: path.join(repo, '.cache/wc3-assets'), seeds: ['hpea', 'htow'], results: [],
+  scriptRoots: [path.join(repo, 'packages/gameplay'), path.join(repo, 'packages/map'), path.join(repo, 'apps/game/app')]};
 let output = path.join(repo, 'tools/asset-convert/tmp/development-manifest/echoisles.json');
 for (let i = 2; i < process.argv.length; i++) {
   const flag = process.argv[i];
@@ -15,6 +16,7 @@ for (let i = 2; i < process.argv.length; i++) {
   if (flag === '--out') output = path.resolve(value);
   else if (flag === '--worker-result') options.results.push(path.resolve(value));
   else if (flag === '--definition-profile') options.definitionProfile = value;
+  else if (flag === '--edition') options.edition = value;
   else if (flag === '--seeds') options.seeds = value.split(',').filter(Boolean);
   else if (['--map', '--definitions', '--source'].includes(flag)) options[flag.slice(2)] = path.resolve(value);
   else throw new Error(`Unknown option ${flag}`);

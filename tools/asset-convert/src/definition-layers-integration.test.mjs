@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { mergeDefinitionLayers, layerPolicy } from './definition-layers.js';
+import { modelVersionCandidates } from './runtime-asset-references.js';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 assert.ok(process.env.GODOT, 'Set GODOT to the engine executable');
@@ -73,6 +74,13 @@ func _initialize() -> void:
 	ItemCatalog._merge_ini("res://assets/slk-exported/Units/ItemFunc.txt")
 	result["integration"] = {"builds": worker.get_builds("hpea"), "commands": commands.get_builds("hpea"),
 		"requires": requires.get_requires("hpea"), "item": ItemCatalog._ui["phea"]["art"]}
+	var versions: Array = []
+	for edition: String in ["roc", "tft"]:
+		ProjectSettings.set_setting("warcraft3/content/active_edition", edition)
+		for stem: String in ["Units/Priest", "Units/Priest_V1"]:
+			for flags: int in [0, 2, -1]:
+				versions.append(ContentPackRules.expansion_model_candidates(stem, flags))
+	result["versions"] = versions
 	var file: FileAccess = FileAccess.open("res://actual.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(result))
 	file.close()
@@ -93,6 +101,12 @@ for (const profile of ['base', 'custom_tft']) {
   const expected = mergeDefinitionLayers(layers);
   const integration = actual.integration;
   delete actual.integration;
+  const versions = [];
+  for (const edition of ['roc', 'tft']) for (const stem of ['Units/Priest', 'Units/Priest_V1']) for (const flags of [0, 2, -1]) {
+    versions.push(modelVersionCandidates(stem + '.mdx', flags, edition).map(value => value.replace(/\.mdx$/, '')));
+  }
+  assert.deepEqual(actual.versions, versions, 'Godot and scanner model edition candidates must match');
+  delete actual.versions;
   assert.deepEqual(actual, expected, 'Godot and JavaScript field merge must match');
   const base = profile === 'base';
   assert.deepEqual(integration, {builds: base ? ['htow', 'hbar'] : ['hfoo'], commands: base ? ['htow', 'hbar'] : ['hfoo'],

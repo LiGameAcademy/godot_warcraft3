@@ -8,7 +8,8 @@ import { atomicWriteBytesSync } from './atomic-write.js';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const options = {map: path.join(repo, 'assets/map-parsed/echoisles'), definitions: path.join(repo, 'assets/slk-exported'),
-  source: path.join(repo, '.cache/wc3-assets'), seeds: ['hpea', 'htow'], results: []};
+  source: path.join(repo, '.cache/wc3-assets'), seeds: ['hpea', 'htow'], results: [],
+  scriptRoots: [path.join(repo, 'packages/gameplay'), path.join(repo, 'packages/map'), path.join(repo, 'apps/game/app')]};
 let gameDir = '';
 let output = path.join(repo, 'tools/asset-convert/tmp/development-manifest/recovery.json');
 let extractionManifest = path.join(repo, '.cache/development-extraction-manifest.json');
@@ -21,6 +22,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (flag === '--extraction-manifest') extractionManifest = path.resolve(value);
   else if (flag === '--worker-result') options.results.push(path.resolve(value));
   else if (flag === '--definition-profile') options.definitionProfile = value;
+  else if (flag === '--edition') options.edition = value;
   else if (flag === '--seeds') options.seeds = value.split(',').filter(Boolean);
   else if (['--map', '--definitions', '--source'].includes(flag)) options[flag.slice(2)] = path.resolve(value);
   else throw new Error(`Unknown option ${flag}`);

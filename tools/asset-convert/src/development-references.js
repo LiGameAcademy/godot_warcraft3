@@ -1,3 +1,4 @@
+import { modelVersionCandidates } from './runtime-asset-references.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { inventory, hash } from './asset-audit.js';
@@ -16,7 +17,8 @@ const split = value => clean(value).split(',').map(s => s.trim()).filter(Boolean
 const LINKS = /^(Builds|Trains|Upgrade|Sellunits|Sellitems|abilList|heroAbilList|auto|BuffID\d*|EfctID\d*|Data[A-I]\d*)$/i;
 
 /** Selected profile uses field-level winners; candidates mode retains audit alternatives. */
-export function collectDevelopmentReferences({map, definitions, source, seeds = [], definitionProfile = layerPolicy.default_profile}) {
+export function collectDevelopmentReferences({map, definitions, source, seeds = [], definitionProfile = layerPolicy.default_profile, edition = 'tft'}) {
+  modelVersionCandidates('', 0, edition);
   const inputs = [];
   const entities = new Map();
   const refs = [];
@@ -136,8 +138,8 @@ export function collectDevelopmentReferences({map, definitions, source, seeds = 
           if (field === 'file' && /Doodads|DestructableData/.test(source) && Number(fields.numVar) > 1) {
             for (const variation of variations.get(id) ?? [0]) refs.push({logical: logical.replace(/\.(mdx|mdl)$/i, `${variation}.mdx`), reason: {...reason, variation}});
           } else {
-            const candidates = /\.(mdx|mdl)$/i.test(logical) && Number(fields.fileVerFlags) > 0
-              ? [logical.replace(/\.(mdx|mdl)$/i, '_V1.mdx'), logical]
+            const candidates = /\.(mdx|mdl)$/i.test(logical)
+              ? modelVersionCandidates(logical, fields.fileVerFlags, edition)
               : /^(art|casterupgradeart)$/i.test(field) && /\.tga$/i.test(logical)
                 ? [logical, logical.replace(/\.tga$/i, '.blp')] : [logical];
             refs.push({logical, candidates, reason});

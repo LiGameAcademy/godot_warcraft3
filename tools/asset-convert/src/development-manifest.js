@@ -1,3 +1,4 @@
+import { collectRuntimeAssetReferences } from './runtime-asset-references.js';
 import { layerPolicy, definitionRoots } from './definition-layers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,7 +38,8 @@ export function buildDevelopmentManifest(options) {
   const collected = collectDevelopmentReferences(options);
   const index = new Map(inventory(options.source).map(file => [file.toLowerCase(), file]));
   const records = new Map();
-  const queue = [...collected.refs];
+  const runtime = collectRuntimeAssetReferences(options.scriptRoots ?? []);
+  const queue = [...collected.refs, ...runtime.refs];
   const results = (options.results ?? []).map(file => {
     const result = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (result.result_version !== 1 || typeof result.asset_id !== 'string' || typeof result.ok !== 'boolean' || !Array.isArray(result.diagnostics)) throw new Error(`Invalid worker result: ${file}`);
@@ -86,16 +88,17 @@ export function buildDevelopmentManifest(options) {
   }
   return {
     schema_version: 1, map: path.resolve(options.map), source_root: path.resolve(options.source),
-    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: 'tft', definition_profile: options.definitionProfile ?? layerPolicy.default_profile,
+    configuration: {bootstrap_ids: options.seeds ?? [], definitions: path.resolve(options.definitions), edition: options.edition ?? 'tft', script_roots: (options.scriptRoots ?? []).map(root => path.resolve(root)), definition_profile: options.definitionProfile ?? layerPolicy.default_profile,
       definition_roots: definitionRoots(options.definitionProfile)},
     missing_definitions: collected.missingDefinitions, definition_conflicts: collected.definitionConflicts,
-    coverage: {complete: false, scope: 'placed_objects_and_table_candidate_models_textures', gaps: [
+    coverage: {complete: false, scope: 'placed_objects_tables_and_runtime_literal_candidates', gaps: [
       'Runtime mod overrides and SLK table versions are not reconciled with scan inputs.',
       'Dynamic script spawns, random drop tables and custom map objects require runtime tracing.',
       'Terrain, UI atlases, sound, portraits and all player-color variants are not a complete dependency closure.',
-      'Model version candidates currently follow TFT priority; configured edition must be reconciled with runtime.',
+      'Edition candidates are explicit; runtime converted-cache availability and active game edition still require comparison.',
     ]},
-    inputs: collected.inputs, objects: collected.objects, unresolved_references: collected.unresolved,
+    runtime_references: {literal_candidates: runtime.refs.length, dynamic_candidates: runtime.dynamic},
+    inputs: [...collected.inputs, ...runtime.inputs], objects: collected.objects, unresolved_references: collected.unresolved,
     summary: {objects: collected.objects.length, models: assets.filter(row => row.kind === 'model').length,
       textures: assets.filter(row => row.kind === 'texture').length, missing_sources: assets.filter(row => !row.available).length,
       unresolved_references: collected.unresolved.length, missing_definitions: collected.missingDefinitions.length,
