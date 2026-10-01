@@ -18,7 +18,7 @@
 
 | 文件 | 反模式 |
 |---|---|
-| `game_loading_screen.gd._resolve_refs` | `get_parent().get_node_or_null("MapRoot"/...)` ← 已修复为 `setup()` / `bind_director()` |
+| `game_loading_screen.gd` | 纯 View：`begin` / `set_progress` / `finish`；业务订阅在 `boot.gd` |
 | `game_director.gd._resolve_exports` | `get_node_or_null("../MapRoot"/...)` ← 已删除 |
 | HUD / UnitSelector / HealthBarManager | 各自 `get_node_or_null` 字符串协议 ← 已改 setup 注入 |
 
@@ -60,8 +60,7 @@
 - `RtsCamera.setup(map_root: MapLoader)` — 1 参
 - `GameHud.setup(unit_selector: Node, game_director: GameDirector, health_bar_manager: HealthBarManager)` — 3 参
 - `GameDirector.setup(map_root: MapLoader, rts_camera: RtsCamera, game_hud: GameHud, unit_selector: Node, game_cursor: Node, health_bar_manager: HealthBarManager)` — **6 参**（v1.4 去掉 loading）
-- `GameLoadingScreen.setup(...)` — legacy 4 参（selftest 保留）
-- `GameLoadingScreen.begin_async(title)` / `set_async_progress(p)` / `bind_director(director, hud, hpbar)` — **v1.4 peer 模式**
+- `GameLoadingScreen.begin(title)` / `set_progress(stage, p)` / `finish()` — **纯 View**；由 `boot.gd` 订阅业务信号后推送
 
 **约定**：
 - `setup()` 应是**幂等**的：重复调用不抛 warning 也不重复连接（用 `is_connected` 守卫）。
@@ -161,36 +160,52 @@ func _boot_scene() -> void:
 ```
 boot.tscn (_ready)
   │
-  ├─[--smoke-test]──► 同步 load game_main → session_ready → quit 0
+  ├─[--smoke-test]──► instantiate GameMain
+  │                     configure_match({spawn_opponent_base})
+  │                     add_child → is_session_ready / has_playable_match → quit 0
   │
   └─[正常]──► instantiate game_loading_screen.tscn
-                │  begin_async("Echo Isles")
-                │  ResourceLoader.load_threaded_request(game_main.tscn)
-                │  poll load_threaded_get_status → set_async_progress(0..0.5)
+                │  begin("Echo Isles")
+                │  load_threaded_request(game_main.tscn)
+                │  poll → set_progress(…, 0..GameMain.RESOURCE_END)
                 ▼
               THREAD_LOAD_LOADED
-                │  instantiate GameMain → add_child
-                │  bind_director(director, hud, hpbar)
-                │ （session_preparation_progress 推 0.55→1.0）
+                │  instantiate GameMain
+                │  订 preparation_progress / session_ready
+                │  wire_external_hooks()  （入树前；内部转接 Map/Director，藏 HUD）
+                │  add_child(GameMain)
                 ▼
-              session_ready → loading fade → queue_free
+              session_ready → loading.finish() → fade → queue_free
                 │
               boot.queue_free()
 ```
 
-### Loading 屏 API（peer 模式）
+### Loading 屏 API（纯 View）
 
 | 方法 | 调用方 | 作用 |
 |---|---|---|
-| `begin_async(title)` | `boot.gd` add_child 后 | 立刻显示 UI，进度 0 |
-| `set_async_progress(p)` | `boot.gd` poll 循环 | 资源加载进度映射到 0–50% |
-| `bind_director(d, hud, hp)` | `boot.gd` game_main 就绪后 | 订阅 session 信号，隐藏 HUD/血条 |
-| `setup(map, dir, hud, hp)` | selftest / legacy | 同步 4 参注入（保留） |
+| `begin(title)` | `boot.gd` add_child 后 | 立刻显示 UI，进度 0 |
+| `set_progress(stage, p)` | `boot.gd` | 推送**绝对**总进度 0–1（只升不降） |
+| `finish()` | `boot.gd` 订 `GameMain.session_ready` | 最短展示后淡出 `queue_free` |
+
+### GameMain Facade（对外窄接口）
+
+| API | 作用 |
+|---|---|
+| `wire_external_hooks()` | 入树前：转接进度/就绪、隐藏玩法 UI |
+| `configure_match(settings)` | 入树前写入 GameDirector 配置 |
+| `set_gameplay_ui_visible(v)` | 显隐 HUD / 血条 |
+| `is_session_ready()` / `has_playable_match()` | 等待与冒烟验收 |
+| `signal preparation_progress(stage, p)` | 已映射绝对进度（地图+对局段） |
+| `signal session_ready` | 对局就绪（并恢复玩法 UI） |
+
+`boot.gd` **不** `get_node` MapRoot / GameDirector / GameHud / HealthBarManager。
 
 ### 进度分段
 
 | 阶段 | 进度区间 | 驱动源 |
 |---|---|---|
-| 资源异步加载 | 0.0 – 0.5 | `ResourceLoader.load_threaded_get_status` |
-| 进入战场 / 地图装配 | 0.55 – ~0.95 | `session_preparation_progress` |
-| 就绪 | 1.0 | `session_ready` → fade out |
+| 资源异步加载 | 0.0 – 0.30 | boot × `GameMain.RESOURCE_END` |
+| 地图装配 | 0.30 – 0.85 | GameMain 转发 `MapRoot.load_progress` |
+| 对局准备 | 0.85 – 0.99 | GameMain 转发 `session_preparation_progress` |
+| 就绪 | 1.0 | GameMain `session_ready` → `finish()` |

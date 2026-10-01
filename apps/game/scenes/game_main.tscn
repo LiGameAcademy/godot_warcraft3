@@ -56,29 +56,9 @@ unique_name_in_owner = true
 [node name="GameDirector" type="Node" parent="." unique_id=528822564]
 unique_name_in_owner = true
 script = ExtResource("3_director")
-map_dir = null
-view_grid_level = null
-show_pathing_ground = null
-show_ramp_debug = null
-preview_race = null
-local_player = null
-random_start_location = null
-spawn_melee_base = null
 spawn_opponent_base = true
 enable_opponent_economy = true
 enable_opponent_army = true
-debug_building_fx_hotkeys = null
-enable_move_command = null
-show_path_debug = null
-camera_pan_speed = null
-camera_initial_distance = null
-camera_min_distance = null
-camera_max_distance = null
-camera_initial_pitch_deg = null
-camera_fov = null
-use_wc3_zoom_curve = null
-apply_camera_bounds = null
-prepare_starting_portraits = null
 
 [node name="GameCursor" type="Node" parent="." unique_id=1503412235]
 unique_name_in_owner = true

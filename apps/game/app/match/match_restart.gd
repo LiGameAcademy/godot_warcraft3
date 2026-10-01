@@ -13,9 +13,13 @@ func _replace() -> void:
 		queue_free()
 		return
 	var replacement := packed.instantiate()
-	var director := replacement.get_node("GameDirector")
-	for key in settings:
-		director.set(key, settings[key])
+	if replacement is GameMain:
+		(replacement as GameMain).configure_match(settings)
+	else:
+		var director := replacement.get_node_or_null("GameDirector")
+		if director != null:
+			for key in settings:
+				director.set(key, settings[key])
 	var parent := old_game.get_parent()
 	var tree := get_tree()
 	var was_current := tree.current_scene == old_game

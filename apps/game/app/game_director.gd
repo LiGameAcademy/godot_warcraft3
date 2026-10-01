@@ -1,3 +1,6 @@
+class_name GameDirector
+extends Node
+
 ## 游戏总管（对标 MapEditor）。
 ##
 ## 职责：
@@ -22,8 +25,6 @@
 ## （Loading 屏据此淡出）。
 ## [br]- [signal session_preparation_progress]：开局肖像预热阶段进度
 ## （Loading 屏同步推进度条）。
-class_name GameDirector
-extends Node
 
 ## 地图装配 + Melee/寻路/小地图 bootstrap 完成（Loading 屏可据此淡出）
 signal session_ready

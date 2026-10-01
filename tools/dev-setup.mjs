@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findGodotExecutable } from "./lib/godot-cli.mjs";
+import { findGodotExecutable, syncWorkspace } from "./lib/godot-cli.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -57,9 +57,10 @@ function printHelp() {
   --skip-slk            跳过 SLK→JSON
   --skip-maps           跳过地图解析
   --skip-convert        跳过贴图/模型转换
-  --skip-sync           跳过编辑器 UI 同步
+  --skip-sync           跳过编辑器 UI / PathTextures 数据同步
   --skip-godot          跳过 Godot bake / PE2 / visuals
-  --only <step>         只跑一步: install|extract|slk|maps|convert|sync|godot
+  --skip-packages       跳过 packages → apps/*/addons 源码同步
+  --only <step>         只跑一步: install|extract|slk|maps|convert|sync|godot|packages
                         （可重复）
 
 其它:
@@ -74,7 +75,7 @@ function printHelp() {
   # 设好 GODOT 后，同命令会自动 bake .scn + 导 TownHall PE2/visuals
 
 完成后:
-  同步源码后打开 apps/game/project.godot 或 apps/map_editor/project.godot
+  已自动 sync packages；直接打开 apps/game/project.godot 或 apps/map_editor/project.godot
 `);
 }
 
@@ -94,6 +95,7 @@ function parseArgs(argv) {
       convert: false,
       sync: false,
       godot: false,
+      packages: false,
     },
     only: [],
     help: false,
@@ -151,6 +153,9 @@ function parseArgs(argv) {
       case "--skip-godot":
         opts.skip.godot = true;
         break;
+      case "--skip-packages":
+        opts.skip.packages = true;
+        break;
       case "--only":
         opts.only.push(need().toLowerCase());
         break;
@@ -166,6 +171,8 @@ function parseArgs(argv) {
     opts.skip.convert = true;
     opts.skip.sync = true;
     opts.skip.godot = true;
+    // deps-only 仍默认同步 packages，否则 apps/*/addons 缺失无法打开 Godot。
+    opts.skip.packages = false;
   }
   if (opts.only.length) {
     const all = Object.keys(opts.skip);
@@ -368,6 +375,17 @@ function stepGodot(opts) {
   return run(process.execPath, args, ROOT);
 }
 
+function stepPackages() {
+  logStep("8. sync packages → apps/*/addons/rts_*");
+  try {
+    syncWorkspace("all");
+    return 0;
+  } catch (e) {
+    console.error(e.message ?? e);
+    return 1;
+  }
+}
+
 function printSummary(opts, gameDir) {
   console.log(`\n${"=".repeat(60)}`);
   console.log("准备完成。验收清单:");
@@ -376,11 +394,12 @@ function printSummary(opts, gameDir) {
   console.log(`  [ ] assets/map-parsed/echoisles/（或你指定的地图）`);
   console.log(`  [ ] assets/asset-converted/ 含 PNG/GLB`);
   console.log(`  [ ] （可选）assets/pe2-prefabs/ / assets/visuals/`);
+  console.log(`  [ ] apps/game/addons/rts_map/ 存在（packages 已同步）`);
   console.log("");
-  console.log("打开 Godot 4.6 → 导入本仓库 → 运行:");
-  console.log("  python tools/workspace/sync_packages.py");
+  console.log("已同步 packages → apps/*/addons。直接打开:");
   console.log("  apps/game/project.godot       # Echo Isles 对战");
   console.log("  apps/map_editor/project.godot # 地图编辑器");
+  console.log("若只改了 packages/，重跑: python tools/workspace/sync_packages.py");
   console.log("");
   console.log("热键: S=Stop 选中单位 | F9=路径调试");
   if (gameDir) console.log(`经典客户端: ${gameDir}`);
@@ -439,6 +458,7 @@ function main() {
   if (!opts.skip.convert) pipeline.push(["convert", () => stepConvert(opts)]);
   if (!opts.skip.sync) pipeline.push(["sync", () => stepSync(opts)]);
   if (!opts.skip.godot) pipeline.push(["godot", () => stepGodot(opts)]);
+  if (!opts.skip.packages) pipeline.push(["packages", () => stepPackages()]);
 
   for (const [name, fn] of pipeline) {
     const code = fn();

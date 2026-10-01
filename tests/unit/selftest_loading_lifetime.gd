@@ -21,7 +21,7 @@ func _ready() -> void:
 	screen.min_visible_sec = 0.0
 	screen.fade_out_sec = 10.0
 	add_child(screen)
-	screen._finish()
+	screen.finish()
 	await get_tree().process_frame
 	var refs := tween_refs()
 	check(refs.size() == 1, "长淡出产生一个补间动画")
@@ -37,13 +37,13 @@ func _ready() -> void:
 	normal.min_visible_sec = 0.0
 	normal.fade_out_sec = 0.02
 	add_child(normal)
-	normal._finish()
+	normal.finish()
 	await get_tree().create_timer(0.15).timeout
 	check(not is_instance_valid(normal), "正常淡出结束自动移除加载层")
 	var waiting: GameLoadingScreen = packed.instantiate()
 	waiting.min_visible_sec = 10.0
 	add_child(waiting)
-	waiting._finish()
+	waiting.finish()
 	var pending: WeakRef = null
 	for child in waiting.get_children():
 		if child is Timer:

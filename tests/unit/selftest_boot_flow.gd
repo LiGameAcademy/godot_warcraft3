@@ -1,11 +1,9 @@
 extends SceneTree
 
-## Boot 流程自检（v1.4 独立 Loading + 异步 API）：
-##   1. begin_async 写入标题与初始进度
-##   2. 资源 / 地图 / 对局进度分段映射，晚到事件不倒退
-##   3. bind_director 订阅 session_ready 并触发 finish
-##   4. GameMain 不再持有 game_loading_screen 字段
-##   5. GameDirector.setup 接受 6 参（不含 loading）
+## Boot / Loading View 流程自检（纯 View）：
+##   1. begin 写入标题；set_progress 绝对进度 + 不倒退
+##   2. finish → queue_free
+##   3. GameMain / GameDirector 不再持有 loading 字段
 ##
 ## 设计：docs/design/game/SCENE_BOOTSTRAP.md §10（v1.4）
 
@@ -17,10 +15,11 @@ var _failures: Array[String] = []
 func _initialize() -> void:
 	print("[boot_flow] ===== 开始 selftest =====")
 
-	await _test_begin_async_and_progress()
-	await _test_bind_director_finishes()
+	await _test_begin_and_progress()
+	await _test_finish_releases()
 	_test_game_main_has_no_loading_field()
 	_test_director_setup_six_args()
+	_test_loading_has_no_business_refs()
 
 	print("[boot_flow] 通过 %d / 失败 %d" % [_passed, _failed])
 	if _failed > 0:
@@ -29,51 +28,36 @@ func _initialize() -> void:
 	quit(1 if _failed > 0 else 0)
 
 
-## 1–2：begin_async + set_async_progress
-func _test_begin_async_and_progress() -> void:
+## 1：begin + set_progress（绝对进度，只升不降）
+func _test_begin_and_progress() -> void:
 	var packed: PackedScene = load("res://scenes/game_loading_screen.tscn")
 	if packed == null:
 		_fail("无法加载 game_loading_screen.tscn")
 		return
 	var screen: Node = packed.instantiate()
 	root.add_child(screen)
-	# @onready 在 add_child 的 _ready 中解析；再等一帧确保 UI 子节点就绪。
 	await process_frame
-	screen.call("begin_async", "Echo Isles")
+	screen.call("begin", "Echo Isles")
 	if str(screen.get("map_title")) == "Echo Isles":
-		_pass("begin_async 写入 map_title")
+		_pass("begin 写入 map_title")
 	else:
-		_fail("begin_async 未写入 map_title（got=%s）" % str(screen.get("map_title")))
+		_fail("begin 未写入 map_title（got=%s）" % str(screen.get("map_title")))
 
-	screen.call("set_async_progress", 0.8)
-	# 资源完成 80% 映射到总进度 24%，不是截断到固定上限。
-	var pct: Label = screen.get_node_or_null("Root/Center/Panel/VBox/BarRow/PercentLabel") as Label
+	# 编排方已把资源 80% 映射为总进度 24%（0.8 * 0.30）后再推送。
+	screen.call("set_progress", "正在加载资源…", 0.24)
 	var bar: ProgressBar = screen.get_node_or_null("Root/Center/Panel/VBox/BarRow/ProgressBar") as ProgressBar
-	if pct != null and pct.text == "24%":
-		_pass("资源进度按比例映射到 24%")
-	elif bar != null and is_equal_approx(bar.value, 24.0):
-		_pass("资源进度按比例映射到 24%")
-	else:
-		_fail("资源进度映射错误（pct=%s bar=%s）" % [
-			pct.text if pct else "null",
-			str(bar.value) if bar else "null",
-		])
+	_expect_bar(bar, 24.0, "绝对进度 0.24 → bar 24")
 
-	# -s SceneTree 脚本编译早于 Autoload；运行时加载，避免提前编译地图依赖。
-	var map: Node = load("res://addons/rts_map/presentation/map_loader.gd").new()
-	screen.call("bind_map", map)
-	map.load_progress.emit("地图一半", 0.5)
-	_expect_bar(bar, 57.5, "接收地图进度并映射")
-	map.load_progress.emit("较早地图进度", 0.2)
+	screen.call("set_progress", "地图一半", 0.575)
+	_expect_bar(bar, 57.5, "接收地图段绝对进度")
+	screen.call("set_progress", "较早地图进度", 0.40)
 	_expect_bar(bar, 57.5, "同阶段不倒退")
-	screen.call("_on_load_progress", "对局一半", 0.5)
-	_expect_bar(bar, 92.0, "对局进度映射")
-	map.load_progress.emit("迟到地图", 1.0)
-	screen.call("set_async_progress", 1.0)
-	_expect_bar(bar, 92.0, "晚到的前序事件不覆盖后续阶段")
-	screen.call("_on_load_progress", "准备完成", 1.0)
-	_expect_bar(bar, 99.0, "未收到就绪不得显示 100%")
-	map.free()
+	screen.call("set_progress", "对局一半", 0.92)
+	_expect_bar(bar, 92.0, "对局段绝对进度")
+	screen.call("set_progress", "迟到地图", 0.85)
+	_expect_bar(bar, 92.0, "晚到的前序事件不覆盖后续")
+	screen.call("set_progress", "准备完成", 0.99)
+	_expect_bar(bar, 99.0, "未 finish 前可达 99%")
 	screen.queue_free()
 	await process_frame
 
@@ -85,52 +69,28 @@ func _expect_bar(bar: ProgressBar, value: float, label: String) -> void:
 		_fail(label)
 
 
-## 3：bind_director → session_ready → finish
-func _test_bind_director_finishes() -> void:
+## 2：finish → 释放
+func _test_finish_releases() -> void:
 	var packed: PackedScene = load("res://scenes/game_loading_screen.tscn")
 	var screen: Node = packed.instantiate()
 	screen.set("min_visible_sec", 0.0)
 	screen.set("fade_out_sec", 0.0)
 	root.add_child(screen)
 	await process_frame
-	screen.call("begin_async", "Test")
-
-	var stub := _make_stub_director()
-	root.add_child(stub)
-	var hud := CanvasLayer.new()
-	var hpbar := CanvasLayer.new()
-	root.add_child(hud)
-	root.add_child(hpbar)
-
-	screen.call("bind_director", stub, hud, hpbar)
-	# duck-type stub 不是 GameDirector，typed 字段可能为 null；以信号接线与 HUD 隐藏为准。
-	if not hud.visible:
-		_pass("bind_director 隐藏 HUD")
-	else:
-		_fail("bind_director 未隐藏 HUD")
-	if screen.has_method("bind_director"):
-		_pass("bind_director API 可用")
-	else:
-		_fail("bind_director API 缺失")
-
-	# 触发 session_ready → finish → queue_free（fade_out_sec=0）
-	stub.emit_signal("session_ready")
+	screen.call("begin", "Test")
+	screen.call("finish")
 	var bar := screen.get_node("Root/Center/Panel/VBox/BarRow/ProgressBar") as ProgressBar
-	_expect_bar(bar, 100.0, "就绪显示 100%")
+	_expect_bar(bar, 100.0, "finish 显示 100%")
 	await process_frame
 	await process_frame
 	if not is_instance_valid(screen):
-		_pass("session_ready 后 loading 屏已释放")
+		_pass("finish 后 loading 屏已释放")
 	else:
-		_fail("session_ready 后 loading 屏仍存活")
+		_fail("finish 后 loading 屏仍存活")
 		screen.queue_free()
 
-	stub.queue_free()
-	hud.queue_free()
-	hpbar.queue_free()
 
-
-## 4：GameMain 不再暴露 game_loading_screen
+## 3：GameMain 不再暴露 game_loading_screen
 func _test_game_main_has_no_loading_field() -> void:
 	var gm_script: GDScript = load("res://scenes/game_main.gd") as GDScript
 	if gm_script == null:
@@ -147,7 +107,7 @@ func _test_game_main_has_no_loading_field() -> void:
 		_pass("GameMain 已移除 _setup_game_loading_screen")
 
 
-## 5：GameDirector.setup 形参数量（通过源码扫描确认 6 参）
+## 4：GameDirector.setup 无 loading 形参
 func _test_director_setup_six_args() -> void:
 	var dir_script: GDScript = load("res://app/game_director.gd") as GDScript
 	if dir_script == null:
@@ -164,21 +124,36 @@ func _test_director_setup_six_args() -> void:
 		_pass("GameDirector 已移除 @export game_loading_screen")
 
 
-func _make_stub_director() -> Node:
-	var stub_src := """extends Node
-signal session_preparation_progress(stage: String, progress: float)
-signal session_ready
-func is_session_ready() -> bool:
-	return false
-"""
-	var gs := GDScript.new()
-	gs.source_code = stub_src
-	var err := gs.reload()
-	if err != OK:
-		push_error("stub director script reload failed: %d" % err)
-	var d := Node.new()
-	d.set_script(gs)
-	return d
+## 5：Loading View 无业务字段；boot 经 GameMain Facade 接线
+func _test_loading_has_no_business_refs() -> void:
+	var scr: GDScript = load("res://client/hud/game_loading_screen.gd") as GDScript
+	if scr == null:
+		_fail("无法加载 game_loading_screen.gd")
+		return
+	var src := scr.source_code
+	if "var map_root" in src or "var game_director" in src:
+		_fail("Loading 仍声明 map_root / game_director")
+	else:
+		_pass("Loading 已移除业务节点字段")
+	if "func bind_map" in src or "func bind_director" in src:
+		_fail("Loading 仍暴露 bind_map / bind_director")
+	else:
+		_pass("Loading 已移除 bind_* API")
+	if "func begin(" in src and "func set_progress(" in src and "func finish(" in src:
+		_pass("Loading 暴露 begin / set_progress / finish")
+	else:
+		_fail("Loading 缺少纯 View API")
+
+	var boot_src: String = (load("res://boot.gd") as GDScript).source_code
+	if 'get_node("MapRoot")' in boot_src or 'get_node("GameDirector")' in boot_src:
+		_fail("boot 仍 get_node 子节点")
+	else:
+		_pass("boot 不再 get_node MapRoot/GameDirector")
+	var main_src: String = (load("res://scenes/game_main.gd") as GDScript).source_code
+	if "func wire_external_hooks" in main_src and "signal preparation_progress" in main_src:
+		_pass("GameMain 暴露 Facade API")
+	else:
+		_fail("GameMain 缺少 Facade API")
 
 
 func _pass(label: String) -> void:

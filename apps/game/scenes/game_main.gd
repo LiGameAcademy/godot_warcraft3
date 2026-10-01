@@ -1,105 +1,180 @@
-## 场景根：负责子节点之间的依赖注入。
-##
-## **本类是 game_main.tscn 的根节点脚本**。GameMain 的唯一职责是按拓扑序
-## 给所有子节点（MapRoot / RtsCamera / GameHud / HealthBarManager / UnitSelector
-## / GameDirector / GameCursor）显式注入依赖。
-##
-## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md（v1.4 独立 Loading 场景）。
-##
-## ---- 调用时机 ----
-## Godot _ready 是 bottom-up：子节点（GameDirector）先于父（GameMain）执行 _ready。
-## GameDirector._ready 因此 await 一帧 [code]get_tree().process_frame[/code]
-## 等本节点 _ready 完成 setup() 注入后再触发 _boot_match()。
-##
-## ---- 编排顺序（不可调换） ----
-## 1. [UnitSelector] → 2. [GameCursor] → 3. [HealthBarManager]
-## → 4. [RtsCamera] → 5. [GameHud] → 6. [GameDirector]
-## 理由：每个 setup 节点的入参都依赖前置节点的产物（如
-## [GameDirector.setup] 持有所有上游节点）。
-##
-## 注意：GameLoadingScreen 在 v1.4 中**不再作为本场景子节点**。它由 [code]boot.gd[/code]
-## 作为独立 peer scene 在本场景之前实例化，监听 [code]GameDirector.session_ready[/code]
-## 后淡出。详见 docs/design/game/SCENE_BOOTSTRAP.md §10。
-##
-## ---- 强类型形参约定 ----
-## 所有 _setup_* 函数以强类型形参逐字段赋值（不用 Dictionary），避免
-## 编辑期/编译期丢失类型检查；每个子节点的 setup 接口契约见各自脚本顶部注释。
-##
-## ---- 失败语义 ----
-## 任何子节点为 null 时 push_warning 但不中断其它子节点注入；运行时由
-## 各自 setup() 内部按 null short-circuit 处理。
 class_name GameMain
 extends Node3D
 
+## 场景根：子节点依赖注入 + **对外窄外观（Facade）**。
+##
+## **对内**：按拓扑序给 MapRoot / RtsCamera / GameHud / HealthBarManager /
+## UnitSelector / GameDirector / GameCursor 注入依赖（见 [method _boot_scene]）。
+##
+## **对外**（[code]boot.gd[/code] / 重启）：只通过下列 API，不直接 [code]get_node[/code]
+## 子节点：
+## [br]- [signal preparation_progress] / [signal session_ready]
+## [br]- [method wire_external_hooks]（入树前）
+## [br]- [method configure_match] / [method set_gameplay_ui_visible]
+## [br]- [method is_session_ready] / [method has_playable_match]
+##
+## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md（v1.4）。
+
+## 进度分段（绝对 0..1；资源段由 boot 在 GameMain 实例化前使用）。
+const RESOURCE_END := 0.30
+const MAP_END := 0.85
+const PREPARATION_END := 0.99
+
+## 开局准备总进度（已映射到绝对 0..1）。编排方订此信号推给 Loading View。
+signal preparation_progress(stage: String, progress: float)
+
+## 对局 session 就绪。编排方订此信号以 [method GameLoadingScreen.finish]。
+signal session_ready
+
 ## 全局环境（雾 / 太阳光 / 后处理）。
-## 挂点：game_main.tscn 的 [code]WorldEnvironment[/code] 节点（unique_name_in_owner = true）。
 @onready var world_environment: WorldEnvironment = %WorldEnvironment
 
-## 主方向光（WC3 原作始终 sun 朝下 + 偏南 45°）。
-## 挂点：game_main.tscn 的 [code]Sun[/code] 节点（unique_name_in_owner = true）。
+## 主方向光。
 @onready var sun: DirectionalLight3D = %Sun
 
-## 地图根：管理 wc3mapMap 加载、地形 mesh、单位层、装饰层。
-## 挂点：game_main.tscn 的 [code]MapRoot[/code] 节点（unique_name_in_owner = true）。
-## 作为依赖传入 UnitSelector.setup / HealthBarManager.setup / RtsCamera.setup /
-## GameDirector.setup。
+## 地图根（对内 DI；对外勿直接访问）。
 @onready var map_root: MapLoader = %MapRoot
 
-## RTS 相机：俯仰/偏航/六档滚轮缩放/地形跟随/边界夹紧。
-## 挂点：game_main.tscn 的 [code]RtsCamera[/code] 节点（unique_name_in_owner = true）。
-## 在 _boot_scene() 中通过 setup(map_root) 注入；之后由 GameDirector._configure_camera
-## 写入具体的 pan_speed / fov / zoom 参数。
+## RTS 相机。
 @onready var rts_camera: RtsCamera = %RtsCamera
 
-## 底栏 HUD：资源条 / 活动流 / 小地图 / 命令卡 / 选中详情 / 物品栏。
-## 挂点：game_main.tscn 的 [code]GameHud[/code] 节点（unique_name_in_owner = true）。
-## setup() 仅缓存 selector / director / hpbar 引用，便于 UiSurface 调试查询。
+## 底栏 HUD。
 @onready var game_hud: GameHud = %GameHud
 
-## 全局头顶血条（Present）。
-## 挂点：game_main.tscn 的 [code]HealthBarManager[/code] 节点（unique_name_in_owner = true）。
-## setup() 接收相机与 MapLoader，内部自行调 get_unit_layer() 取单位层。
+## 全局头顶血条。
 @onready var health_bar_manager: HealthBarManager = %HealthBarManager
 
-## 点选/框选中央裁决（依赖相机 + 单位层）。
-## 挂点：game_main.tscn 的 [code]UnitSelector[/code] 节点（unique_name_in_owner = true）。
+## 点选/框选。
 @onready var unit_selector: UnitSelector = %UnitSelector
 
-## 游戏总管（MapEditor 对标）：场景配置、对局启动、模块绑定。
-## 挂点：game_main.tscn 的 [code]GameDirector[/code] 节点（unique_name_in_owner = true）。
-## 接收 6 参 setup()：map_root / rts_camera / game_hud / unit_selector / game_cursor
-## / health_bar_manager。
+## 游戏总管。
 @onready var game_director: GameDirector = %GameDirector
 
-## 对战鼠标光标（按种族切换图集）。
-## 挂点：game_main.tscn 的 [code]GameCursor[/code] 节点（unique_name_in_owner = true）。
+## 对战鼠标光标。
 @onready var game_cursor: Wc3GameCursor = %GameCursor
 
+## 入树前解析的子节点缓存（[method wire_external_hooks] 用；@onready 此时仍为 null）。
+var _facade_map: MapLoader
+var _facade_director: GameDirector
+var _facade_hud: CanvasLayer
+var _facade_hpbar: CanvasLayer
+var _external_hooks_wired: bool = false
 
-## Godot 生命周期钩子：bottom-up 时序下由 GameDirector._ready 等一帧让本节点先完成 setup 注入。
+
+## Godot 生命周期：bottom-up 下由 GameDirector 等一帧让本节点先完成 setup。
 func _ready() -> void:
 	_boot_scene()
 
 
-## 按 [SCENE_BOOTSTRAP.md] 锁定的拓扑序给所有子节点注入依赖。
-## 任何子节点为 null 时 push_warning 但不打断其它子节点注入。
-## 幂等性：本函数当前不重复防护（GameMain 仅 add_child(scene) 时调用一次）。
-## 调用顺序固定为 1→6，详情见类级注释。
+#region ========== 对外 Facade ==========
+
+## 入树前调用：解析子节点、转接进度/就绪信号、默认隐藏玩法 UI。
+## [br]必须在 [code]add_child(self)[/code] **之前**调用，以免漏掉 MapRoot._ready 早期 emit。
+func wire_external_hooks() -> void:
+	_ensure_facade_children()
+	if _external_hooks_wired:
+		return
+	_external_hooks_wired = true
+	set_gameplay_ui_visible(false)
+	if _facade_map != null:
+		if not _facade_map.load_progress.is_connected(_on_map_load_progress):
+			_facade_map.load_progress.connect(_on_map_load_progress)
+	if _facade_director != null:
+		if not _facade_director.session_preparation_progress.is_connected(_on_session_preparation_progress):
+			_facade_director.session_preparation_progress.connect(_on_session_preparation_progress)
+		if not _facade_director.session_ready.is_connected(_on_director_session_ready):
+			_facade_director.session_ready.connect(_on_director_session_ready)
+		if _facade_director.is_session_ready():
+			_on_director_session_ready()
+			return
+	preparation_progress.emit("正在准备场景…", RESOURCE_END)
+
+
+## 开局前写入 GameDirector 配置（如 [code]spawn_opponent_base[/code]）。
+## [br]须在 [code]add_child[/code] 触发 [method _boot_scene] 之前调用。
+func configure_match(settings: Dictionary) -> void:
+	_ensure_facade_children()
+	if _facade_director == null:
+		push_warning("GameMain.configure_match: GameDirector 未挂载")
+		return
+	for key in settings:
+		_facade_director.set(key, settings[key])
+
+
+## 切换玩法 HUD / 血条可见性（loading 遮罩期间应隐藏）。
+func set_gameplay_ui_visible(visible: bool) -> void:
+	_ensure_facade_children()
+	if _facade_hud != null:
+		_facade_hud.visible = visible
+	if _facade_hpbar != null:
+		_facade_hpbar.visible = visible
+
+
+## 对局 session 是否已就绪。
+func is_session_ready() -> bool:
+	_ensure_facade_children()
+	if _facade_director == null:
+		return false
+	return _facade_director.is_session_ready()
+
+
+## 冒烟验收：已有 session 且单位层达到可玩门槛。
+func has_playable_match() -> bool:
+	_ensure_facade_children()
+	if _facade_director == null or _facade_director.get_session() == null:
+		return false
+	if _facade_map == null:
+		return false
+	var layer := _facade_map.get_unit_layer()
+	return layer != null and layer.get_child_count() >= 12
+
+#endregion
+
+
+#region ========== Facade 内部转发 ==========
+
+func _ensure_facade_children() -> void:
+	# 入树后优先用 @onready；入树前用 get_node（仅场景根允许）。
+	if _facade_map == null:
+		_facade_map = map_root if map_root != null else get_node_or_null("MapRoot") as MapLoader
+	if _facade_director == null:
+		_facade_director = game_director if game_director != null else get_node_or_null("GameDirector") as GameDirector
+	if _facade_hud == null:
+		_facade_hud = game_hud if game_hud != null else get_node_or_null("GameHud") as CanvasLayer
+	if _facade_hpbar == null:
+		_facade_hpbar = health_bar_manager if health_bar_manager != null else get_node_or_null("HealthBarManager") as CanvasLayer
+
+
+func _on_map_load_progress(stage: String, progress: float) -> void:
+	preparation_progress.emit(stage, lerpf(RESOURCE_END, MAP_END, clampf(progress, 0.0, 1.0)))
+
+
+func _on_session_preparation_progress(stage: String, progress: float) -> void:
+	preparation_progress.emit(
+		stage,
+		lerpf(MAP_END, PREPARATION_END, clampf(progress, 0.0, 1.0)),
+	)
+
+
+func _on_director_session_ready() -> void:
+	set_gameplay_ui_visible(true)
+	session_ready.emit()
+
+#endregion
+
+
+#region ========== 对内 DI ==========
+
+## 按拓扑序给所有子节点注入依赖。
 func _boot_scene() -> void:
-	# 1. 上游：选择器只读相机 / 单位层
 	_setup_unit_selector(rts_camera.get_camera() if rts_camera else null, map_root)
-	# 2. 鼠标光标：只读 selector（保留引用，详见 Wc3GameCursor.setup 注释）
 	_setup_game_cursor(unit_selector)
-	# 3. 血条：读相机 / 单位层（selector 不参与血条渲染，故不传）
 	_setup_health_bar_manager(
 		rts_camera.get_camera() if rts_camera else null,
 		map_root,
 	)
-	# 4. 相机：读 map_root（地形跟随 + 边界）
 	_setup_rts_camera(map_root)
-	# 5. HUD：缓存 selector / director / health_bar 引用（UiSurface 调试用）
 	_setup_game_hud(unit_selector, game_director, health_bar_manager)
-	# 6. 主协调：依赖前面所有子节点（不再注入 game_loading_screen：v1.4 由 boot.gd 直接持有）
 	_setup_game_director(
 		map_root,
 		rts_camera,
@@ -108,7 +183,6 @@ func _boot_scene() -> void:
 		game_cursor,
 		health_bar_manager,
 	)
-	# 所有依赖已注入，由场景根明确发起启动。
 	if game_director == null:
 		push_error("GameMain: 缺少 GameDirector，无法启动")
 		get_tree().quit(1)
@@ -118,11 +192,7 @@ func _boot_scene() -> void:
 		get_tree().quit(1)
 		return
 
-## 步骤 1：UnitSelector 注入。
-## 把相机 + MapRoot.get_unit_layer() 传给 UnitSelector.setup；
-## unit_host 在 MapRoot 未就绪时为 null（UnitSelector.setup 内部 short-circuit）。
-## [param p_camera] 相机（来自 RtsCamera 子节点）。
-## [param p_map_root] 地图根（来自 MapRoot 子节点；用于 get_unit_layer）。
+
 func _setup_unit_selector(p_camera: Camera3D, p_map_root: MapLoader) -> void:
 	if unit_selector == null:
 		push_warning("GameMain: UnitSelector 未挂载")
@@ -131,9 +201,6 @@ func _setup_unit_selector(p_camera: Camera3D, p_map_root: MapLoader) -> void:
 	unit_selector.setup(p_camera, unit_host)
 
 
-## 步骤 2：Wc3GameCursor 注入。
-## 仅缓存 UnitSelector 引用（Wc3GameCursor.setup 不消费 selector，仅占位便于未来闪选联动）。
-## [param p_unit_selector] UnitSelector 节点（保留引用，详见 Wc3GameCursor.setup 注释）。
 func _setup_game_cursor(p_unit_selector: Node) -> void:
 	if game_cursor == null:
 		push_warning("GameMain: GameCursor 未挂载")
@@ -141,10 +208,6 @@ func _setup_game_cursor(p_unit_selector: Node) -> void:
 	game_cursor.setup(p_unit_selector)
 
 
-## 步骤 3：HealthBarManager 注入。
-## 传相机 + MapRoot（HealthBarManager.setup 内部自行取 unit_layer）。
-## [param p_camera] 相机（来自 RtsCamera 子节点）。
-## [param p_map_root] 地图根（HealthBarManager 内部 get_unit_layer()）。
 func _setup_health_bar_manager(p_camera: Camera3D, p_map_root: MapLoader) -> void:
 	if health_bar_manager == null:
 		push_warning("GameMain: HealthBarManager 未挂载")
@@ -152,10 +215,6 @@ func _setup_health_bar_manager(p_camera: Camera3D, p_map_root: MapLoader) -> voi
 	health_bar_manager.setup(p_camera, p_map_root)
 
 
-## 步骤 4：RtsCamera 注入。
-## RtsCamera.setup 仅缓存 MapLoader 引用，相机调参由 GameDirector._configure_camera
-## 在 _boot_match() 中按 @export 值写入。
-## [param p_map_root] 地图根（用于地形跟随与边界夹紧）。
 func _setup_rts_camera(p_map_root: MapLoader) -> void:
 	if rts_camera == null:
 		push_warning("GameMain: RtsCamera 未挂载")
@@ -163,12 +222,6 @@ func _setup_rts_camera(p_map_root: MapLoader) -> void:
 	rts_camera.setup(p_map_root)
 
 
-## 步骤 5：GameHud 注入（仅缓存引用）。
-## GameHud.setup 不消费参数，仅把它们存到 _unit_selector / _game_director /
-## _health_bar_manager 字段，便于 UiSurface 调试查询；原有 _ready 自动装配不变。
-## [param p_unit_selector] UnitSelector 节点。
-## [param p_game_director] GameDirector 节点（强类型，便于类型查询）。
-## [param p_health_bar_manager] HealthBarManager 节点（强类型）。
 func _setup_game_hud(
 	p_unit_selector: Node,
 	p_game_director: GameDirector,
@@ -180,15 +233,6 @@ func _setup_game_hud(
 	game_hud.setup(p_unit_selector, p_game_director, p_health_bar_manager)
 
 
-## 步骤 6：GameDirector 6 参 setup 注入。
-## 顺序固定：map_root → rts_camera → game_hud → unit_selector → game_cursor
-## → health_bar_manager。
-## [param p_map_root] 地图根（GameDirector 内部装配 MapLoader.configure_unit_runtime）。
-## [param p_rts_camera] RTS 相机（GameDirector._configure_camera 写入 zoom/fov 等）。
-## [param p_game_hud] HUD（GameDirector._wire_hud 订阅 signal）。
-## [param p_unit_selector] 选择器（GameDirector._setup_selector 挂 selection_changed）。
-## [param p_game_cursor] 鼠标光标（InteractionModule 注入 cursor）。
-## [param p_health_bar_manager] 血条（BuildModule / CombatModule 同步 resync）。
 func _setup_game_director(
 	p_map_root: MapLoader,
 	p_rts_camera: RtsCamera,
@@ -208,3 +252,5 @@ func _setup_game_director(
 		p_game_cursor,
 		p_health_bar_manager,
 	)
+
+#endregion
