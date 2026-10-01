@@ -80,7 +80,7 @@ class SelectorStub extends Node:
 	func cycle_primary(value: int) -> bool:
 		step = value
 		return true
-	func _hud_blocks_screen(pos: Vector2, _unused: bool) -> bool:
+	func is_blocked_at(pos: Vector2) -> bool:
 		return pos == Vector2(123, 45)
 class FlatField extends Wc3Heightfield:
 	func is_valid() -> bool:

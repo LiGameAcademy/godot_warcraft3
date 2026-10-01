@@ -1108,7 +1108,7 @@ func _ensure_ghost_node(_building_id: String) -> void:
 
 
 ## HUD / 小地图等吃鼠标的 Control：建造确认与地面采样应避开。
-## 不用底栏粗条带兜底（见 UnitSelector._hud_blocks_screen include_edge_bands=false），
+## 不用底栏粗条带兜底（见 UnitSelector.is_blocked_at），
 ## 否则屏幕下缘地图落点左键会被静默吞掉，表现为「建造点了没反应」。
 func _pointer_over_blocking_gui() -> bool:
 	return _ensure_interaction_feedback().pointer_over_blocking_gui(_last_screen_pos)

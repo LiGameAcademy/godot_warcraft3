@@ -271,9 +271,9 @@ selector_overlay_layer.tscn
 ### 10.4 迁移路径（步骤）
 
 1. **新增 `SelectionPicker`（Node，挂在 `UnitSelector` 下）**：✅ 已落地。`pick_at` / `pick_in_rect` / `iter_unit_nodes` / 半径与候选过滤均在 `apps/game/client/selection/selection_picker.gd`；`UnitSelector` 只转发并 `_set_selection`。
-2. **新增 `SelectorInputGate`**：✅ 已落地。`is_blocked_at` / `add_blocker` / `remove_blocker`；`world_input_blockers` 组保留。`UnitSelector._hud_blocks_screen` 薄转发以兼容 feedback / selftest。
+2. **新增 `SelectorInputGate`**：✅ 已落地。`is_blocked_at` / `add_blocker` / `remove_blocker`；`world_input_blockers` 组保留。`UnitSelector.is_blocked_at` 对外公开。
 3. **overlay / input 升外部子场景**：✅ 已落地（`SelectorInputLayer` / `SelectorOverlayLayer` 由 GameMain 平级挂入）。
-4. **删除 `_try_autobind` 的选择器自救**（独立场景走 `set_external_input(false)` + 自有 setup；正式对局由 `GameDirector._setup_selector` 注入）。
+4. **删除 `_try_autobind` 的选择器自救**：✅ 已落地。独立场景走 `setup` + `set_external_input(false)`；正式对局由 `GameDirector` / `GameMain` 注入。输入入口合并为 `handle_pointer_event`；公开 `is_blocked_at`。
 5. **删除旧的 `RingKind` / 旧兼容入口**（已完成 2026-10-01）。
 
 ### 10.5 迁移前后对照
