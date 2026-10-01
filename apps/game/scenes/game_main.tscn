@@ -7,8 +7,8 @@
 [ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://client/interaction/wc3_game_cursor.gd" id="4_cursor"]
 [ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://scenes/game_hud.tscn" id="5_hud"]
 [ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://client/selection/unit_selector.tscn" id="6_sel"]
-[ext_resource type="PackedScene uid="uid://ds5lxknp1vq6a" path="res://client/selection/selector_input_layer.tscn" id="7_input"]
-[ext_resource type="PackedScene uid="uid://e8w2bqx3n1z7c" path="res://client/selection/selector_overlay_layer.tscn" id="8_overlay"]
+[ext_resource type="PackedScene" uid="uid://ds5lxknp1vq6a" path="res://client/selection/selector_input_layer.tscn" id="7_input"]
+[ext_resource type="PackedScene" uid="uid://e8w2bqx3n1z7c" path="res://client/selection/selector_overlay_layer.tscn" id="8_overlay"]
 [ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://addons/rts_gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
 
 [sub_resource type="Environment" id="Environment_1"]
