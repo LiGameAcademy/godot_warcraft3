@@ -270,9 +270,9 @@ selector_overlay_layer.tscn
 
 ### 10.4 迁移路径（步骤）
 
-1. **新增 `SelectionPicker`（Node，挂在 `UnitSelector` 下）**：把 `_iter_unit_nodes` / `_pick_at` / `_ray_foot_plane_hit` / `_footprint_in_marquee` / `_pick_radius_of` / `_select_in_rect` 全搬过去。`UnitSelector` 保留 `picker.pick_at(...)` / `picker.pick_in_rect(rect)` 调用。无外部行为变化。
-2. **新增 `SelectorInputGate`**：搬 `_hud_blocks_screen` / `_is_ui_control_blocking` / `_ensure_input_layer` / `_input_root`。`UnitSelector.handle_pointer_event` 改成 `if gate.is_blocked_at(pos): return false`，其余逻辑保持。
-3. **overlay 升 `SelectorOverlayLayer`**：现有 `_ensure_overlay` 逻辑搬走，挂在 UnitSelector 下。
+1. **新增 `SelectionPicker`（Node，挂在 `UnitSelector` 下）**：✅ 已落地。`pick_at` / `pick_in_rect` / `iter_unit_nodes` / 半径与候选过滤均在 `apps/game/client/selection/selection_picker.gd`；`UnitSelector` 只转发并 `_set_selection`。
+2. **新增 `SelectorInputGate`**：搬 `_hud_blocks_screen` / `_is_ui_control_blocking`。`UnitSelector.handle_pointer_event` 改成 `if gate.is_blocked_at(pos): return false`，其余逻辑保持。
+3. **overlay / input 升外部子场景**：✅ 已落地（`SelectorInputLayer` / `SelectorOverlayLayer` 由 GameMain 平级挂入）。
 4. **删除 `_try_autobind` 的选择器自救**（独立场景走 `set_external_input(false)` + 自有 setup；正式对局由 `GameDirector._setup_selector` 注入）。
 5. **删除旧的 `RingKind` / 旧兼容入口**（已完成 2026-10-01）。
 
