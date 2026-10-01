@@ -677,9 +677,8 @@ func _set_selection(nodes: Array) -> void:
 func _bind_input_layer() -> void:
 	if _input_root != null and is_instance_valid(_input_root):
 		return
-	var layer: SelectorInputLayer = _resolve_input_layer()
+	var layer := _resolve_node(input_layer_path) as SelectorInputLayer
 	if layer == null:
-		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_bind_input_layer: 未注入 SelectorInputLayer")
 		return
 	# 调整 layer 到当前期望值。
 	layer.layer = input_canvas_layer
@@ -696,26 +695,24 @@ func _bind_input_layer() -> void:
 func _bind_overlay_layer() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		return
-	var layer: SelectorOverlayLayer = _resolve_overlay_layer()
+	var layer := _resolve_node(overlay_layer_path) as SelectorOverlayLayer
 	if layer == null:
-		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_bind_overlay_layer: 未注入 SelectorOverlayLayer")
 		return
 	layer.bind_marquee(_marquee)
 	_overlay = layer.marquee_overlay()
 
 
-func _resolve_input_layer() -> SelectorInputLayer:
-	if input_layer_path.is_empty():
+## 解析 [code]@export NodePath[/code] 引用的兄弟节点。
+## 返回原始 [Node]（不强转）便于调用方按已知类型 [code]as[/code]；空路径 / 未找到均 warn。
+func _resolve_node(path: NodePath) -> Node:
+	if path.is_empty():
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_resolve_node: 未注入（path 为空）")
 		return null
-	var raw := get_node_or_null(input_layer_path)
-	return raw as SelectorInputLayer
-
-
-func _resolve_overlay_layer() -> SelectorOverlayLayer:
-	if overlay_layer_path.is_empty():
+	var raw := get_node_or_null(path)
+	if raw == null:
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_resolve_node: 未找到 %s" % [path])
 		return null
-	var raw := get_node_or_null(overlay_layer_path)
-	return raw as SelectorOverlayLayer
+	return raw
 
 
 func _refresh_rings() -> void:
