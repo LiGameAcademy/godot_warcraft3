@@ -192,7 +192,7 @@ func _finish() -> void:
 	var elapsed_sec := (Time.get_ticks_msec() - _shown_msec) / 1000.0
 	var wait := maxf(0.0, min_visible_sec - elapsed_sec)
 	if wait > 0.0:
-		preload("res://packages/foundation/infra/scene_delay.gd").create_timer(self, wait).timeout.connect(_begin_fade)
+		SceneDelay.create_timer(self, wait).timeout.connect(_begin_fade)
 	else:
 		_begin_fade()
 
