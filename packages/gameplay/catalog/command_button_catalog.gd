@@ -1,7 +1,7 @@
 class_name CommandButtonCatalog
 extends RefCounted
 
-const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
+const DefinitionLayers: GDScript = preload("res://addons/rts_content/definitions/definition_layers.gd")
 
 ## 命令卡资源映射：Command / Ability / Unit / Upgrade 的 Func+Strings → 图标路径、槽位、热键、Tip。
 ## 数据权威：assets/slk-exported/Units/{Command*,*Ability*,*Unit*,*Upgrade*}（经 passthrough，禁止读 .cache）。

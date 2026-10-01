@@ -51,7 +51,7 @@ func _run() -> void:
 		DestructableDataDef.TABLE_NAME: {"Tfoo": tree}}
 	var catalog: Wc3IdCatalog = Wc3IdCatalog.new()
 	catalog.load_default()
-	var policy: Dictionary = RuntimeAssets.read_json_dict("res://packages/content/definitions/layer_policy.json")
+	var policy: Dictionary = RuntimeAssets.read_json_dict("res://addons/rts_content/definitions/layer_policy.json")
 	var base: bool = str(policy["default_profile"]) == "base"
 	var row: Dictionary = catalog.lookup("hpea")
 	var commands: CommandButtonCatalog = CommandButtonCatalog.new()

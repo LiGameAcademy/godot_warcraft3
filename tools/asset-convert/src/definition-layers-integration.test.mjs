@@ -14,7 +14,9 @@ const out = fs.mkdtempSync(path.join(scratch, 'definition-layers-'));
 const write = (name, data) => { const file = path.join(out, name); fs.mkdirSync(path.dirname(file), {recursive: true}); fs.writeFileSync(file, data); };
 const copy = name => write(name, fs.readFileSync(path.join(repo, name)));
 write('project.godot', 'config_version=5\n[application]\nconfig/name="Definition policy regression"\n');
-for (const name of ['definition_layer_merge.gd', 'definition_layers.gd']) copy(`packages/content/definitions/${name}`);
+for (const name of ['definition_layer_merge.gd', 'definition_layers.gd']) {
+  write(`addons/rts_content/definitions/${name}`, fs.readFileSync(path.join(repo, `packages/content/definitions/${name}`)));
+}
 for (const name of ['command_button_catalog.gd', 'item_catalog.gd', 'worker_build_list_catalog.gd', 'unit_requires_catalog.gd']) copy(`packages/gameplay/catalog/${name}`);
 for (const name of ['unit_abilities_def.gd', 'item_def.gd', 'ability_data_def.gd']) copy(`packages/content/definitions/units/${name}`);
 for (const name of ['unit_ui_def.gd', 'unit_data_def.gd', 'unit_balance_def.gd', 'destructable_data_def.gd']) copy(`packages/content/definitions/units/${name}`);
@@ -62,7 +64,7 @@ for (const model of ['Units/Human/Peasant/Peasant.gltf', 'Units/Human/Peasant/Pe
 }
 write('fixture.json', JSON.stringify(layers));
 write('run.gd', `extends SceneTree
-const Merger: GDScript = preload("res://packages/content/definitions/definition_layer_merge.gd")
+const Merger: GDScript = preload("res://addons/rts_content/definitions/definition_layer_merge.gd")
 func _initialize() -> void:
 	var layers: Array[Dictionary] = []
 	for layer: Dictionary in JSON.parse_string(FileAccess.get_file_as_string("res://fixture.json")):
@@ -92,10 +94,10 @@ function run(args) {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.doesNotMatch(result.stdout + result.stderr, /SCRIPT ERROR|Parse Error|ERROR:/);
 }
-write('packages/content/definitions/layer_policy.json', JSON.stringify(layerPolicy));
+write('addons/rts_content/definitions/layer_policy.json', JSON.stringify(layerPolicy));
 run(['--editor', '--quit']);
 for (const profile of ['base', 'custom_tft']) {
-  write('packages/content/definitions/layer_policy.json', JSON.stringify({...layerPolicy, default_profile: profile}));
+  write('addons/rts_content/definitions/layer_policy.json', JSON.stringify({...layerPolicy, default_profile: profile}));
   run(['-s', 'res://run.gd']);
   const actual = JSON.parse(fs.readFileSync(path.join(out, 'actual.json')));
   const expected = mergeDefinitionLayers(layers);

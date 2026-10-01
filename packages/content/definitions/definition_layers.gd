@@ -1,7 +1,7 @@
 extends RefCounted
 
 const Merger: GDScript = preload("definition_layer_merge.gd")
-const POLICY_PATH: String = "res://packages/content/definitions/layer_policy.json"
+const POLICY_PATH: String = "res://addons/rts_content/definitions/layer_policy.json"
 
 ## Shared default profile is selected before catalog construction; restart to change.
 static func read_rows(logical: String) -> Dictionary:
