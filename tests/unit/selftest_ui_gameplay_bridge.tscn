@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://b1uibr0g2abc1"]
+[gd_scene format=3 uid="uid://b1uibr0g2abc1"]
 
 [ext_resource type="Script" path="res://tests/unit/selftest_ui_gameplay_bridge.gd" id="1_self"]
 
