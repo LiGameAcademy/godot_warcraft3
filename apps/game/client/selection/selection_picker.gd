@@ -30,12 +30,7 @@ func bind(p_camera: Camera3D, p_unit_host: Node) -> void:
 
 
 ## 同步过滤条件（由 [UnitSelector] 在 setup / 拾取前写入）。
-func set_filters(
-	p_owner_filter: int,
-	p_marquee_owner: int,
-	p_allow_buildings: bool,
-	p_allow_units: bool
-) -> void:
+func set_filters(p_owner_filter: int, p_marquee_owner: int, p_allow_buildings: bool, p_allow_units: bool) -> void:
 	owner_filter = p_owner_filter
 	marquee_owner = p_marquee_owner
 	allow_buildings = p_allow_buildings
@@ -217,30 +212,8 @@ func _pick_radius_of(n: Node3D) -> float:
 	var sel := InteractionSetup.get_selectable(n)
 	if sel != null:
 		return sel.pick_radius_world()
-	return _estimate_pick_radius(n)
-
-
-func _estimate_pick_radius(n: Node3D) -> float:
-	var tid := _type_id_of(n)
-	var is_bldg := BuildingVisual.is_building(tid)
-	var r := (
-		SelectableComponent.DEFAULT_BUILDING_RADIUS
-		if is_bldg
-		else SelectableComponent.DEFAULT_UNIT_RADIUS
-	)
-	if not tid.is_empty():
-		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
-		var bal: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid)
-		if bal is UnitBalanceDef:
-			var col := (bal as UnitBalanceDef).collision
-			if col > 0.0:
-				r = col * Wc3Coords.WORLD_SCALE
-	var cap := (
-		SelectableComponent.MAX_BUILDING_PICK_RADIUS
-		if is_bldg
-		else SelectableComponent.MAX_UNIT_PICK_RADIUS
-	)
-	return clampf(r, 0.12, cap)
+	# 热路径不 attach：用 Selectable 共享的轻量估计。
+	return SelectableComponent.estimate_pick_radius_world(n)
 
 
 func _node_is_building(n: Node3D, tid: String = "") -> bool:
