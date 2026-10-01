@@ -37,6 +37,7 @@ var unit_host: Node
 var pick_extra: Callable = Callable()
 
 var _picker: SelectionPicker = null
+var _gate: SelectorInputGate = null
 var _marquee: MarqueeSelection = MarqueeSelection.new()
 ## 由 overlay 层提供。
 var _overlay: MarqueeOverlay = null
@@ -56,6 +57,7 @@ var _external_input := false
 func _ready() -> void:
 	set_process(false)
 	_ensure_picker()
+	_ensure_gate()
 	_bind_input_layer()
 	_bind_overlay_layer()
 	# Director 若因脚本解析失败未 setup，下一帧自救绑定相机/单位层。
@@ -72,6 +74,7 @@ func setup(p_camera: Camera3D, p_unit_host: Node) -> void:
 	_picker.warm_bounds()
 	if camera != null and camera.is_inside_tree():
 		camera.make_current()
+	_ensure_gate()
 	_bind_input_layer()
 	_bind_overlay_layer()
 	if camera == null or unit_host == null:
@@ -321,38 +324,10 @@ func _process(_delta: float) -> void:
 
 
 ## screen_pos 是否落在会吃世界点击的 HUD 上。
-## 保留第二参数兼容命令/建造调用；只按实际可见控件，不屏蔽整条屏幕。
+## 保留第二参数兼容命令/建造调用；实现委托 [SelectorInputGate]。
 func _hud_blocks_screen(screen_pos: Vector2, _include_edge_bands: bool = true) -> bool:
-	# _input 先于 GUI 更新悬停状态；动态背包可能位于底栏之外。
-	for panel in get_tree().get_nodes_in_group("world_input_blockers"):
-		if panel is Control and panel.get_viewport() == get_viewport() and panel.is_visible_in_tree() and panel.get_global_rect().has_point(screen_pos):
-			return true
-	# 注意：框选进行中不要调用此函数拦截松手（见 handle_pointer_event）。
-	# 主判据：鼠标下已有接事件的 Control（HUD / GM / 命令卡 / Option 弹出项）。
-	# 框选走 _input 早于 GUI；若不让路，GM 勾选/下拉会被点选吃掉。
-	var viewport := get_viewport()
-	if viewport == null:
-		return false
-	var hovered := viewport.gui_get_hovered_control()
-	if hovered != null and hovered.is_visible_in_tree() and hovered.get_global_rect().has_point(screen_pos) and _is_ui_control_blocking(hovered):
-		return true
-	return false
-
-
-func _is_ui_control_blocking(ctrl: Control) -> bool:
-	if ctrl == null or not is_instance_valid(ctrl):
-		return false
-	# 选择器自建穿透层 / 框选 overlay：不算 UI
-	if _input_root != null and is_instance_valid(_input_root):
-		if ctrl == _input_root or _input_root.is_ancestor_of(ctrl):
-			return false
-	if _overlay != null and is_instance_valid(_overlay):
-		if ctrl == _overlay or _overlay.is_ancestor_of(ctrl):
-			return false
-	# IGNORE 控件不抢点击（全屏 HUD 根常为 IGNORE）
-	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:
-		return false
-	return true
+	_ensure_gate()
+	return _gate.is_blocked_at(screen_pos)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -423,10 +398,23 @@ func _ensure_picker() -> void:
 	add_child(_picker)
 
 
+func _ensure_gate() -> void:
+	if _gate != null and is_instance_valid(_gate):
+		return
+	_gate = SelectorInputGate.new()
+	_gate.name = "SelectorInputGate"
+	add_child(_gate)
+
+
 func _sync_picker() -> void:
 	_ensure_picker()
 	_picker.bind(camera, unit_host)
 	_picker.set_filters(owner_filter, marquee_owner, allow_buildings, allow_units)
+
+
+func _sync_gate_exempts() -> void:
+	_ensure_gate()
+	_gate.set_exempt_controls([_input_root, _overlay])
 
 
 func _set_selection(nodes: Array) -> void:
@@ -466,6 +454,7 @@ func _bind_input_layer() -> void:
 	if not world_input.gui_input.is_connected(_on_world_gui_input):
 		world_input.gui_input.connect(_on_world_gui_input)
 	_input_root = world_input
+	_sync_gate_exempts()
 
 
 ## 绑定外部高图层：取 [code]MarqueeOverlay[/code]，订阅 [signal MarqueeSelection.changed]。
@@ -477,6 +466,7 @@ func _bind_overlay_layer() -> void:
 		return
 	layer.bind_marquee(_marquee)
 	_overlay = layer.marquee_overlay()
+	_sync_gate_exempts()
 
 
 ## 解析 [code]@export NodePath[/code] 引用的兄弟节点。
