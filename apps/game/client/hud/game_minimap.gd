@@ -5,9 +5,9 @@ extends Control
 ## 玩家单位/建筑 → 队伍色正方形；中立单位 → 黑色。
 ## 坐标与编辑器共用 MapMinimapUtils（heightfield UV）。
 
-const MarkerRules := preload("res://addons/rts_map/minimap/minimap_marker_rules.gd")
+const MarkerRules := preload("res://packages/map/minimap/minimap_marker_rules.gd")
 
-const BuildingVisualScr = preload("res://addons/rts_map/presentation/building_visual.gd")
+const BuildingVisualScr = preload("res://packages/map/presentation/building_visual.gd")
 
 signal clicked(uv: Vector2)
 
@@ -150,7 +150,7 @@ func _load_icon(logical: String) -> Texture2D:
 
 
 func _try_load_war3map(map_dir: String) -> Image:
-	return preload("res://addons/rts_map/minimap/minimap_background.gd").load_baked(map_dir)
+	return preload("res://packages/map/minimap/minimap_background.gd").load_baked(map_dir)
 
 
 func _control_to_uv(pos: Vector2) -> Vector2:

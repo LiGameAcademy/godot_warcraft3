@@ -1,6 +1,6 @@
 extends Node3D
 
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
 ## Present 弹道壳：与 Logic 同速制导追目标；不改生命。
 

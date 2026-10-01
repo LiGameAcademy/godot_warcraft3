@@ -24,7 +24,7 @@ tests/              唯一测试源码；按产品准备临时运行副本
 
 ## 运行与依赖
 
-- 包源码中的资源路径固定为 `res://addons/rts_<package>/...`，同步直接复制并保持 UID；不再把整个项目重写进一个 rts_runtime 包。
+- 包源码中的资源路径固定为 `res://packages/<package>/...`（同步副本落在各应用的 `packages/`；不是 Godot addon），同步直接复制并保持 UID；不再把整个项目重写进一个 rts_runtime 包。
 - 编辑器不包含 gameplay、游戏客户端、GAS 或 Panku。MapUnitLayer 的单位工厂和初始化回调由游戏入口注入，编辑器创建普通展示节点。
 - Selectable/选中环可共享；UnitSelector 玩家输入留在游戏 client；带采集/建造语义的 Interactable/InteractionSetup 归 gameplay。
 - 现有 `*_module` 多数是对局服务和 UI 的装配协调，置于游戏 app；不以改目录名掩盖职责混合。纯玩法组件保留在共享 gameplay。

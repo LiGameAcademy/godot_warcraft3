@@ -17,10 +17,10 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-LogPruner="*res://addons/rts_foundation/logger/log_pruner.gd"
-AssetProvider="*res://addons/rts_content/asset_provider/asset_provider.gd"
-EditorI18n="*res://addons/rts_content/localization/editor_i18n.gd"
-Wc3DefStore="*res://addons/rts_content/stores/wc3_def_store.gd"
+LogPruner="*res://packages/foundation/logger/log_pruner.gd"
+AssetProvider="*res://packages/content/asset_provider/asset_provider.gd"
+EditorI18n="*res://packages/content/localization/editor_i18n.gd"
+Wc3DefStore="*res://packages/content/stores/wc3_def_store.gd"
 
 [debug]
 

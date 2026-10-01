@@ -8,7 +8,7 @@ export function prepareWorkerProject(repo, output) {
     fs.copyFileSync(path.join(repo, 'tools/godot', name), path.join(output, name));
   }
   const relative = 'presentation/wc3_model/wc3_pe2_material.gd';
-  const target = path.join(output, 'addons/rts_map', relative);
+  const target = path.join(output, 'packages/map', relative);
   fs.mkdirSync(path.dirname(target), {recursive:true});
   fs.copyFileSync(path.join(repo, 'packages/map', relative), target);
 }

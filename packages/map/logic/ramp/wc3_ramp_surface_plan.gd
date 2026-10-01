@@ -1,7 +1,7 @@
 extends RefCounted
-const State := preload("res://addons/rts_map/logic/ramp/wc3_ramp_cell_state.gd")
-const Regions := preload("res://addons/rts_map/logic/ramp/wc3_ramp_regions.gd")
-const Seam := preload("res://addons/rts_map/logic/ramp/wc3_ramp_seam_plan.gd")
+const State := preload("res://packages/map/logic/ramp/wc3_ramp_cell_state.gd")
+const Regions := preload("res://packages/map/logic/ramp/wc3_ramp_regions.gd")
+const Seam := preload("res://packages/map/logic/ramp/wc3_ramp_seam_plan.gd")
 ## One build-scoped plan consumed by terrain, cliff and ramp presentation.
 ## Full flagged unsupported cells use the existing textured ground triangulator.
 ## Incomplete flags retain their base surface; no saved data is silently rewritten.

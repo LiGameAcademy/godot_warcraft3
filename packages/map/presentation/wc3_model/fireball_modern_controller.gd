@@ -61,7 +61,7 @@ func set_impact_mode() -> void:
 	_set_particles(fx, "FlameTrail", false, false)
 	_set_particles(fx, "Burst", true, true)
 	# 命中闪光短衰减
-	var t := preload("res://addons/rts_foundation/infra/scene_delay.gd").create_timer(self, 0.25)
+	var t := preload("res://packages/foundation/infra/scene_delay.gd").create_timer(self, 0.25)
 	t.timeout.connect(func () -> void:
 		if is_instance_valid(self):
 			_set_light(fx, false, 0.0)

@@ -1,6 +1,6 @@
 extends SceneTree
 
-const Experience = preload("res://addons/rts_gameplay/features/heroes/logic/hero_experience.gd")
+const Experience = preload("res://packages/gameplay/features/heroes/logic/hero_experience.gd")
 var failures := 0
 var checks := 0
 var host: Node3D

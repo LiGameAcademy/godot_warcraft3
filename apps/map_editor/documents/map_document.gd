@@ -12,7 +12,7 @@ var last_file_error: String = ""
 var import_warnings: Array = []
 var _file_original: Dictionary = {}
 
-const _PathingMapScript := preload("res://addons/rts_map/data/wc3_pathing_map.gd")
+const _PathingMapScript := preload("res://packages/map/data/wc3_pathing_map.gd")
 
 const DEFAULT_MAP_DIR := "res://assets/map-parsed/losttemple"
 const PARSED_MAPS_ROOT := "res://assets/map-parsed"
@@ -408,7 +408,7 @@ func paint_tile(tx: int, ty: int, tex_index: int = -1) -> bool:
 
 ## 写单个中级栅格顶点（tilepoint）的地表索引。对齐 WE / HiveWE 角点笔刷。
 func sculpt_height(points: Array, tool: int, plateau_offset: float = 0.0) -> bool:
-	if preload("res://addons/rts_map/logic/terrain/height_sculpt.gd").apply(heightfield, points, tool, plateau_offset):
+	if preload("res://packages/map/logic/terrain/height_sculpt.gd").apply(heightfield, points, tool, plateau_offset):
 		mark_dirty()
 		return true
 	return false

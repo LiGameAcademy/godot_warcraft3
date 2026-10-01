@@ -1,6 +1,6 @@
 extends RefCounted
 
-const DefinitionLayers: GDScript = preload("res://addons/rts_content/definitions/definition_layers.gd")
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
 var _units: Dictionary
 var _destructables: Dictionary
 var _doodads: Dictionary

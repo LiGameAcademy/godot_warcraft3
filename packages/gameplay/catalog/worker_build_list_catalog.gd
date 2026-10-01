@@ -1,7 +1,7 @@
 class_name WorkerBuildListCatalog
 extends RefCounted
 
-const DefinitionLayers: GDScript = preload("res://addons/rts_content/definitions/definition_layers.gd")
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
 
 ## F2-D 数据驱动：解析 *UnitFunc.txt 里的 Builds= 字段。
 ## 数据权威：assets/slk-exported/Units/*UnitFunc.txt（同步自 sync-data-assets）。

@@ -4,7 +4,7 @@ extends RefCounted
 ## 单位/树 promote 时装配：SelectionRing 场景 + Selectable + Interactable，并注入依赖。
 ## 不靠节点名查找临时闪环；幂等（重复调用只补齐缺失）。
 
-const RING_SCENE := preload("res://addons/rts_map/scenes/selection/selection_ring.tscn")
+const RING_SCENE := preload("res://packages/map/scenes/selection/selection_ring.tscn")
 
 ## 装配：SelectionRing 场景 + Selectable + Interactable，并注入依赖。
 ## 幂等；已有 Selectable 时用 type_id 短路，避免重复 BuildingVisual/DefStore。

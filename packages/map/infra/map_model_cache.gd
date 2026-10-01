@@ -468,12 +468,12 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 	if ap != null:
 		ap.autoplay = ""
 		ap.stop()
-		const _Anim := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+		const _Anim := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 		if ap.get_script() != _Anim:
 			ap.set_script(_Anim)
 	_inject_geoset_vis_tracks(glb_path, root)
-	const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
-	const _Model := preload("res://addons/rts_map/presentation/wc3_model/wc3_model_scene.gd")
+	const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
+	const _Model := preload("res://packages/map/presentation/wc3_model/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
 	# PE2 就位后再剪悬空轨（含旧 bake 写进 Stand 的 Death-only :emitting）
@@ -890,8 +890,8 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 func _ensure_model_scene_scripts(root: Node) -> void:
 	if root == null:
 		return
-	const _Model := preload("res://addons/rts_map/presentation/wc3_model/wc3_model_scene.gd")
-	const _Anim := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+	const _Model := preload("res://packages/map/presentation/wc3_model/wc3_model_scene.gd")
+	const _Anim := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 	if root.get_script() != _Model:
 		root.set_script(_Model)
 	var ap := _find_animation_player(root)

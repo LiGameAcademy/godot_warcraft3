@@ -1,7 +1,7 @@
 class_name Unit
 extends Node3D
 
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
 ## 单位实体根：玩法入口 + Stance×Activity → 模型门面播放。
 ##

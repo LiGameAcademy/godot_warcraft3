@@ -65,7 +65,7 @@ func _ready() -> void:
 	check(PackedInt32Array(restored.heightfield.flags_packed) == PackedInt32Array(second), "reopen retains ramp flags")
 	check(PackedInt32Array(restored.heightfield.cliff_textures) == PackedInt32Array(original_textures), "save/reopen preserves cliff textures")
 	brush.queue_free()
-	var map: MapLoader = preload("res://addons/rts_map/scenes/map/map_root.tscn").instantiate()
+	var map: MapLoader = preload("res://packages/map/scenes/map/map_root.tscn").instantiate()
 	map.auto_load_on_ready = false
 	map.place_units = false
 	map.place_doodads = false

@@ -1,7 +1,7 @@
 class_name UnitRequiresCatalog
 extends RefCounted
 
-const DefinitionLayers: GDScript = preload("res://addons/rts_content/definitions/definition_layers.gd")
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
 
 ## 解析 *UnitFunc.txt 的 Requires=（AND 列表）。
 ## 数据权威：assets/slk-exported/Units/*UnitFunc.txt

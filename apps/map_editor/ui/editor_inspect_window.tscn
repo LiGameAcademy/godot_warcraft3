@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://couwjej62bclh" path="res://ui/editor_inspect_window.gd" id="1_script"]
 
-[ext_resource type="Script" path="res://addons/rts_map/minimap/minimap_view.gd" id="minimap_shared"]
+[ext_resource type="Script" path="res://packages/map/minimap/minimap_view.gd" id="minimap_shared"]
 
 [sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_3tof1"]
 

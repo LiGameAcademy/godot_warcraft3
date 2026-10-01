@@ -5,8 +5,8 @@ extends Node
 ## 节点挂在 host_parent（通常为总管）下，保持 OpponentEconomy / OpponentArmy 路径兼容。
 ## 不持有 GameDirector 类型。
 
-const PlayerEconomyAIScript = preload("res://addons/rts_gameplay/features/ai/logic/player_economy_ai.gd")
-const PlayerArmyAIScript = preload("res://addons/rts_gameplay/features/ai/logic/player_army_ai.gd")
+const PlayerEconomyAIScript = preload("res://packages/gameplay/features/ai/logic/player_economy_ai.gd")
+const PlayerArmyAIScript = preload("res://packages/gameplay/features/ai/logic/player_army_ai.gd")
 
 var _host_parent: Node
 var _map_root: MapLoader

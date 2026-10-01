@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://l00dg706sjuo8" path="res://client/hud/game_minimap.gd" id="1_script"]
 
-[ext_resource type="Script" path="res://addons/rts_map/minimap/minimap_view.gd" id="minimap_shared"]
+[ext_resource type="Script" path="res://packages/map/minimap/minimap_view.gd" id="minimap_shared"]
 
 [node name="GameMinimap" type="Control"]
 custom_minimum_size = Vector2(176, 176)

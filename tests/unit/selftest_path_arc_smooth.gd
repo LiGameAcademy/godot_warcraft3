@@ -3,7 +3,7 @@ extends SceneTree
 ## 完整路径弧线平滑：连续 waypoint pair 转角 > MIN_ARC_ANGLE 时沿弧线插值。
 ## godot --headless --path . -s res://tests/unit/selftest_path_arc_smooth.gd
 
-const PathArcScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_arc.gd")
+const PathArcScr = preload("res://packages/gameplay/features/navigation/logic/path_arc.gd")
 
 var passed: int = 0
 var total: int = 5

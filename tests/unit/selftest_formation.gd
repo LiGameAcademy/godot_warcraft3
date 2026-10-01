@@ -2,7 +2,7 @@ extends SceneTree
 ## F-PATH-5 · FormationFollow 单测。
 ## godot --headless --path . -s res://tests/unit/selftest_formation.gd
 
-const FormationScr = preload("res://addons/rts_gameplay/features/navigation/logic/formation_follow.gd")
+const FormationScr = preload("res://packages/gameplay/features/navigation/logic/formation_follow.gd")
 
 var failed := 0
 

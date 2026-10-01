@@ -7,12 +7,12 @@ func _ready() -> void:
 	for path in [
 		"res://app/game_director.gd",
 		"res://client/selection/unit_selector.gd",
-		"res://addons/rts_foundation/infra/app_log.gd",
-		"res://addons/rts_content/runtime/content_registry.gd",
-		"res://addons/rts_map/presentation/map_loader.gd",
-		"res://addons/rts_gameplay/match/game_session.gd",
-		"res://addons/rts_gameplay/entities/commands/command_request.gd",
-		"res://addons/rts_gameplay/features/combat/actions/attack_controller.gd",
+		"res://packages/foundation/infra/app_log.gd",
+		"res://packages/content/runtime/content_registry.gd",
+		"res://packages/map/presentation/map_loader.gd",
+		"res://packages/gameplay/match/game_session.gd",
+		"res://packages/gameplay/entities/commands/command_request.gd",
+		"res://packages/gameplay/features/combat/actions/attack_controller.gd",
 	]:
 		checks += 1
 		if not FileAccess.file_exists(path):

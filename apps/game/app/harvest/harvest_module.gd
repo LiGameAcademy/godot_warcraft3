@@ -2,7 +2,7 @@ class_name HarvestModule
 extends Node
 
 ## 对局采集生命周期；账本仍由 GameSession / PlayerStock 持有。
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 signal carry_changed(resource_id: String, amount: int)
 signal deposited(gold: int, lumber: int)
 signal state_changed(state: int)

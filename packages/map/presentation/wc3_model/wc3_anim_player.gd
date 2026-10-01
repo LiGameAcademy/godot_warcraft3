@@ -21,7 +21,7 @@ const META_RARITY := "wc3_rarity"
 const META_MOVE_SPEED := "wc3_move_speed"
 const META_MDX_NAME := "wc3_mdx_name"
 
-const _SCRIPT_PATH := "res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd"
+const _SCRIPT_PATH := "res://packages/map/presentation/wc3_model/wc3_anim_player.gd"
 
 ## 可走 rarity 族抽取的逻辑根名（小写）。
 const _FAMILY_ROOTS := ["attack", "walk", "death", "stand"]

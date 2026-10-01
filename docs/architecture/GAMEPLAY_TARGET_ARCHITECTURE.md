@@ -130,7 +130,7 @@ tests/{contracts,architecture,integration,performance}/
 docs/{architecture,tutorials}/
 ```
 
-Godot 的 `res://` 是项目根，不能把仓库父目录当成两个项目天然共享的资源根。建议构建/开发同步工具将所需 packages 复制到各项目的生成目录 `addons/rts_<package>/`，统一资源路径；源文件只在 packages 编辑，生成副本禁止编辑，记录内容哈希并检查同步状态。不把 Windows 符号链接作为必需前提。
+Godot 的 `res://` 是项目根，不能把仓库父目录当成两个项目天然共享的资源根。建议构建/开发同步工具将所需 packages 复制到各项目的生成目录 `packages/<package>/`，统一资源路径；源文件只在 packages 编辑，生成副本禁止编辑，记录内容哈希并检查同步状态。不把 Windows 符号链接作为必需前提。
 
 迁移须连同 `.gd.uid` 保留并检查场景、脚本、字符串路径、动态加载及 class_name。两个项目各自导入，不在单个项目里保留两份相同共享源码；明确包清单和依赖顺序。原项目保留到两个入口验收通过，随后再移除旧路径适配。
 

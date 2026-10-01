@@ -2,8 +2,8 @@ class_name MapDoodadLayer
 extends Node3D
 ## 静物 / 装饰物层：GLB 实例或按 Geoset 分片 MultiMesh。
 
-const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
-const DoodadTexture := preload("res://addons/rts_map/presentation/doodad_texture.gd")
+const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
+const DoodadTexture := preload("res://packages/map/presentation/doodad_texture.gd")
 
 
 @export var try_load_glb: bool = true

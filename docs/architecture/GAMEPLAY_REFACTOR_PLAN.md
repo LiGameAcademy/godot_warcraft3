@@ -125,7 +125,7 @@ apps/
     client/                     # 玩家输入、HUD、相机、命令卡、选择
     scenes/
     config/
-    addons/rts_*/               # 工具同步生成，不手工编辑
+    packages/*/               # 工具同步生成，不手工编辑
   map_editor/
     project.godot
     app/
@@ -133,7 +133,7 @@ apps/
     tools/
     ui/
     scenes/
-    addons/rts_*/               # 工具同步生成
+    packages/*/               # 工具同步生成
 packages/
   gameplay/
     match/
@@ -158,7 +158,7 @@ docs/
 
 玩家输入与 HUD 属于游戏客户端，不进入 Gameplay 核心；可复用的单位视觉适配可以随 gameplay 发布。编辑器普通地图预览只依赖 map/content；试玩先调用独立游戏程序，传入地图与内容锁定信息。
 
-共享包同步到两个 Godot 项目内的固定路径，解决两个 `res://` 根的实际可见性。脚本/资源路径在此阶段统一到 `res://addons/rts_<package>/...`。保留 UID、构建清单与哈希，排除重复 class_name；检查 `.gdignore` 不误屏蔽需要导入的共享代码。生成目录仅一份，不同时扫描 packages 源码与同步副本。
+共享包同步到两个 Godot 项目内的固定路径，解决两个 `res://` 根的实际可见性。脚本/资源路径在此阶段统一到 `res://packages/<package>/...`。保留 UID、构建清单与哈希，排除重复 class_name；检查 `.gdignore` 不误屏蔽需要导入的共享代码。生成目录仅一份，不同时扫描 packages 源码与同步副本。
 
 各应用独立管理 Autoload 和发布配置。第三方 addons 按实际依赖分发，先审计再搬迁，不在目录整理中修改插件实现或子模块。大量转换资产、缓存、日志和 node_modules 不属于共享源码包；依照现有资产管线处理，不顺带删除或搬运。
 

@@ -8,8 +8,8 @@ extends Node
 
 signal locale_changed(locale: String)
 
-const CSV_PATH := "res://addons/rts_content/localization/locale/editor_strings.csv"
-const ZH_NAME_SORT_PATH := "res://addons/rts_content/localization/locale/westring_name_sort_zh.json"
+const CSV_PATH := "res://packages/content/localization/locale/editor_strings.csv"
+const ZH_NAME_SORT_PATH := "res://packages/content/localization/locale/westring_name_sort_zh.json"
 const CONFIG_PATH := "user://editor_locale.cfg"
 const SUPPORTED := ["zh_CN", "en"]
 

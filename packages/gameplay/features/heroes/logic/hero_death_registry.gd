@@ -3,7 +3,7 @@ extends RefCounted
 
 ## 英雄阵亡登记（Logic）：祭坛复活 / HUD 角标的数据源（Present 后置）。
 
-const GameConstants = preload("res://addons/rts_gameplay/catalog/melee_game_constants.gd")
+const GameConstants = preload("res://packages/gameplay/catalog/melee_game_constants.gd")
 
 ## owner_id → Array[{ type_id, level, owner, died_at }]
 static var _dead_by_owner: Dictionary = {}

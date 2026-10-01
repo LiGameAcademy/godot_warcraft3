@@ -15,7 +15,7 @@ extends Node3D
 ## 外界不要 `get_node` 翻子树；走本 API 或直接拿 `wc3_anim_player()`。
 
 const META_SOCKET := "wc3_mdx_attachment"
-const _AnimPlayerScript := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+const _AnimPlayerScript := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 
 var _ap: AnimationPlayer = null
 var _overhead: Node3D = null

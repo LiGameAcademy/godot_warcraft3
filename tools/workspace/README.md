@@ -9,7 +9,7 @@ python tools/workspace/sync_packages.py
 & $env:GODOT --editor --path apps/asset_viewer
 ```
 
-只编辑 `apps/<产品>/` 中的应用源码和 `packages/` 的共享源码。同步生成固定 `addons/rts_<包>/` 路径，保留 UID，不改写资源引用。游戏使用四个共享包与 GAS/Panku；地图编辑器和资产查看器只使用 foundation/content/map。根目录已不是 Godot 项目。查看器用法与审计说明见 [资产查看器](../../apps/asset_viewer/README.md)。
+只编辑 `apps/<产品>/` 中的应用源码和 `packages/` 的共享源码。同步生成固定 `packages/<包>/`（`res://packages/...`）路径，保留 UID，不改写资源引用。共享包不是 Godot addon；真插件仍落在 `addons/`。游戏使用四个共享包与 GAS/Panku；地图编辑器和资产查看器只使用 foundation/content/map。根目录已不是 Godot 项目。查看器用法与审计说明见 [资产查看器](../../apps/asset_viewer/README.md)。
 
 生成目录、清单、测试副本和本地 `override.cfg` 均不提交。清单保存来源路径及 SHA256；同步按清单移除过时文件，并拒绝越界路径和符号链接/junction。旧 `.scn` 脚本路径通过生成的 `.remap` 兼容，不生成重复 class_name。
 

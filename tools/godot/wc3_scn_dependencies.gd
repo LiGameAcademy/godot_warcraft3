@@ -1,7 +1,7 @@
 extends RefCounted
 ## Content signatures include removed dependencies and converter changes, not
 ## just mtimes. One instance per bake run caches shared texture/source hashes.
-const CODE_ROOTS := ["res://tools/godot", "res://addons/rts_map/presentation/wc3_model", "res://addons/rts_map/infra", "res://addons/rts_map/presentation/effects", "res://assets/shaders", "res://tools/asset-convert/src"]
+const CODE_ROOTS := ["res://tools/godot", "res://packages/map/presentation/wc3_model", "res://packages/map/infra", "res://packages/map/presentation/effects", "res://assets/shaders", "res://tools/asset-convert/src"]
 var _hashes: Dictionary = {}
 var _code_signature := ""
 

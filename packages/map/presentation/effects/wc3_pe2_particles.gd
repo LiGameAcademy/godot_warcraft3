@@ -28,8 +28,8 @@ const FLAG_LINE_EMITTER := 0x20000
 const FLAG_XY_QUAD := 0x100000
 const FLAG_MODEL_SPACE := 0x80000
 const FLAG_SORT_FAR_Z := 0x10000
-const EMITTER_SCRIPT := preload("res://addons/rts_map/presentation/wc3_model/wc3_pe2_emitter.gd")
-const MATERIAL_SCRIPT := preload("res://addons/rts_map/presentation/wc3_model/wc3_pe2_material.gd")
+const EMITTER_SCRIPT := preload("res://packages/map/presentation/wc3_model/wc3_pe2_emitter.gd")
+const MATERIAL_SCRIPT := preload("res://packages/map/presentation/wc3_model/wc3_pe2_material.gd")
 ## FrameFlags：bit0=Head，bit1=Tail；也有导出写成枚举 0/1/2。
 ## 仅 2/3 或 bit1 当 Tail，避免把 Head-only 的 1 拧成拖尾（ArchMage 普攻火花）。
 
@@ -289,7 +289,7 @@ static func apply_sequence(root: Node, sequence_name: String) -> void:
 		if not p.has_meta(META_ACTIVE_SEQS) and not p.has_meta(META_ALWAYS_ON):
 			continue
 		_apply_sequence_to_particle(p, want)
-	const _Ribbon := preload("res://addons/rts_map/presentation/wc3_model/wc3_ribbon_presenter.gd")
+	const _Ribbon := preload("res://packages/map/presentation/wc3_model/wc3_ribbon_presenter.gd")
 	_Ribbon.apply_sequence(root, sequence_name)
 
 

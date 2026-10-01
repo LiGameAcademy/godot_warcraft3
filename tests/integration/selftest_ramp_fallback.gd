@@ -7,7 +7,7 @@ func check(ok: bool, message: String) -> void:
 func _ready() -> void:
 	var doc = preload("res://documents/map_document.gd").new()
 	doc.create_from_options({"width": 8, "height": 8, "ground_tilesets": ["Ldrt","Lgrs"], "cliff_tilesets": ["CLdi","CLgr"]})
-	var map: MapLoader = preload("res://addons/rts_map/scenes/map/map_root.tscn").instantiate()
+	var map: MapLoader = preload("res://packages/map/scenes/map/map_root.tscn").instantiate()
 	map.auto_load_on_ready = false
 	map.place_units = false
 	map.place_doodads = false

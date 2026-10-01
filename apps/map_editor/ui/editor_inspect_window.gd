@@ -24,7 +24,7 @@ const ORBIT_PITCH_MAX := 80.0
 const ORBIT_PITCH_DEFAULT := 25.0
 const ORBIT_YAW_DEFAULT := 0.0
 const ZOOM_WHEEL_FACTOR := 1.12
-const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
+const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
 
 ## MMP 图标逻辑路径（AssetProvider / converted）。
 const ICON_PATHS := {
@@ -86,7 +86,7 @@ var _suppress_edit_signal: bool = false
 var _orbit_dragging: bool = false
 var _orbit_last: Vector2 = Vector2.ZERO
 var _minimap_raster: MapMinimapRaster
-const MarkerRules := preload("res://addons/rts_map/minimap/minimap_marker_rules.gd")
+const MarkerRules := preload("res://packages/map/minimap/minimap_marker_rules.gd")
 var _foliage_texture: ImageTexture
 var _live_icons: Array = []
 var _has_live_units := false
@@ -568,7 +568,7 @@ func set_viewport_uv(rect: Rect2) -> void:
 
 
 func _try_load_war3map_map(map_dir: String) -> Image:
-	return preload("res://addons/rts_map/minimap/minimap_background.gd").load_baked(map_dir)
+	return preload("res://packages/map/minimap/minimap_background.gd").load_baked(map_dir)
 
 
 func _try_load_mmp_icons(map_dir: String) -> Array:
@@ -1008,7 +1008,7 @@ func _polish_preview_deferred(gen: int, path: String, info: Dictionary) -> void:
 	if not path.is_empty():
 		_Pe2.attach_to(node, path)
 	if _preview_kind != "unit":
-		preload("res://addons/rts_map/presentation/doodad_texture.gd").apply(node, info)
+		preload("res://packages/map/presentation/doodad_texture.gd").apply(node, info)
 		MapPlaceholders.attach_editor_helpers(node, info, has_mesh)
 	if _preview_kind == "unit" and _cache != null:
 		var color_i := MapUnitLayer.resolve_team_color_index(_type_id, _team_color_owner)

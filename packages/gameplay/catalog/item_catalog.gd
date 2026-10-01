@@ -1,7 +1,7 @@
 class_name ItemCatalog
 extends RefCounted
 
-const DefinitionLayers: GDScript = preload("res://addons/rts_content/definitions/definition_layers.gd")
+const DefinitionLayers: GDScript = preload("res://packages/content/definitions/definition_layers.gd")
 
 ## 道具静态映射。数值读 ItemDef / AbilityDataDef；名称/图标读 ItemFunc+ItemStrings。
 ## 未实现效果不会冒充可用。

@@ -26,7 +26,7 @@ git submodule update --init --recursive
 ## Godot 项目入口
 
 共享源码位于 `packages/{foundation,content,map,gameplay}`；应用源码位于 `apps/`。
-**打开任何 `apps/*/project.godot` 之前必须先同步**，否则 `res://addons/rts_*` 不存在，Godot 会报
+**打开任何 `apps/*/project.godot` 之前必须先同步**，否则 `res://packages/*` 不存在，Godot 会报
 `Could not find type "MapLoader"` 一类错误，Autoload 也会指向丢失路径。
 
 ```powershell
@@ -36,7 +36,8 @@ python tools/workspace/sync_packages.py
 .\tools\workspace\Sync-Packages.ps1
 ```
 
-同步把 `packages/` 复制到各应用的 `addons/rts_<包>/`（生成目录，**禁止手改**）。
+同步把仓库根 `packages/` 复制到各应用的 `packages/<包>/`（`res://packages/...`，生成目录，**禁止手改**）。
+这不是 Godot AssetLib addon；`addons/` 只放第三方插件。
 只改了 `packages/` 之后也要重跑；首次同步还会写本机 `override.cfg` 的外部资产路径。
 
 详见 [同步与验证](tools/workspace/README.md) 和 [完整目录迁移记录](docs/architecture/DIRECTORY_CUTOVER_2026_09_24.md)。
@@ -77,7 +78,7 @@ node tools/dev-setup.mjs --game-dir "D:/Program Files (x86)/Warcraft3"
 5. 转换人族 Melee + Lordaeron 子集 → `assets/asset-converted/`（含自动 bake `.scn`）
 6. `sync-data-assets`：UnitFunc/UI txt → `slk-exported`；PathTextures → `asset-converted`
 7. Godot headless：bake `.scn`（含 PE2）
-8. `sync packages`：`packages/` → `apps/*/addons/rts_*`
+8. `sync packages`：`packages/` → `apps/*/packages/*`
 
 完成后直接打开 `apps/game/project.godot` 或 `apps/map_editor/project.godot`。根目录不再是 Godot 项目。若只改了 `packages/`，单独重跑 `python tools/workspace/sync_packages.py`。
 
