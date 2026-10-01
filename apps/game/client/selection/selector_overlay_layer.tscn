@@ -1,0 +1,25 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://c2v6p9wzf1h3d" path="res://client/selection/selector_overlay_layer.gd" id="1_overlay_layer"]
+[ext_resource type="Script" path="res://addons/rts_map/presentation/selection/marquee_overlay.gd" id="2_marquee"]
+
+[node name="SelectorOverlayLayer" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_overlay_layer")
+
+[node name="OverlayRoot" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="MarqueeOverlay" type="Control" parent="OverlayRoot"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_marquee")

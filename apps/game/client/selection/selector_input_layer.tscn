@@ -1,0 +1,17 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://b7m8a3kqy4j2n" path="res://client/selection/selector_input_layer.gd" id="1_input_layer"]
+
+[node name="SelectorInputLayer" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_input_layer")
+
+[node name="WorldInput" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[connection signal="gui_input" from="WorldInput" to="." method="_on_world_gui_input"]

@@ -1,22 +1,21 @@
 class_name UnitSelector
 extends Node
+
 ## 点选/框选中央裁决（模型表面优先，脚底容错）。
 ## 选中环 / 拾取半径数据在 SelectableComponent；交互闪环在 InteractableComponent。
 ##
 ## 游戏输入由 MatchInputController 转发；独立使用时启用自身 _input。
+##
+## 透明输入层与高图层由外部注入：
+## - [member input_layer]（CanvasLayer + 全屏 Control）由 [code]GameMain[/code] 平级挂入；
+## - [member overlay_layer]（CanvasLayer + MarqueeOverlay）同理；
+## 选择器不再自己 [code]add_child(CanvasLayer/Control)[/code]。
 
 ## 建筑略大半径惩罚：同点多圆重叠时优先小单位 / 近圆心
 const BUILDING_RADIUS_SCORE_MUL := 0.35
-const PickVolume := preload("res://client/selection/unit_pick_volume.gd")
 ## 小幅脚底容错，不能让离鼠标几十像素的单位抢走建筑命中。
 const FOOT_FALLBACK_UNIT_PX := 10.0
 const FOOT_FALLBACK_BUILDING_PX := 8.0
-
-## 兼容旧 API
-enum RingKind {
-	OWN = 1,
-	NEUTRAL = 2,
-}
 
 signal selection_changed(primary: Node3D, selected: Array)
 
@@ -33,17 +32,23 @@ signal selection_changed(primary: Node3D, selected: Array)
 @export var marquee_owner: int = -1
 @export var allow_buildings: bool = true
 @export var allow_units: bool = true
-## 输入层 CanvasLayer.layer；须低于 GameHud（默认 10）
+## 输入层 CanvasLayer.layer；须低于 GameHud（默认 10）。仅在 [member input_layer] 为 null 时生效。
 @export var input_canvas_layer: int = 5
+
+## 外部注入的透明输入层（由 [code]GameMain[/code] 平级挂入）。
+## .tscn 写 `input_layer = NodePath("../SelectorInputLayer")`，运行时 [code]setup[/code] 解析。
+@export var input_layer_path: NodePath
+@export var overlay_layer_path: NodePath
 
 var camera: Camera3D
 var unit_host: Node
-var overlay_parent: Control
 ## 额外拾取（如树木 promote）：Callable(screen_pos: Vector2) -> Node3D
 var pick_extra: Callable = Callable()
 
 var _marquee: MarqueeSelection = MarqueeSelection.new()
+## 由 [member overlay_layer] 提供。
 var _overlay: MarqueeOverlay = null
+## 由 [member input_layer] 提供；用于 [code]accept_event[/code] 与 HUD 阻挡豁免判定。
 var _input_root: Control = null
 var _marqueeing: bool = false
 var _selected: Array[Node3D] = []
@@ -58,17 +63,15 @@ var _external_input := false
 
 func _ready() -> void:
 	set_process(false)
-	_ensure_input_layer()
-	_ensure_overlay()
+	_bind_input_layer()
+	_bind_overlay_layer()
 	# Director 若因脚本解析失败未 setup，下一帧自救绑定相机/单位层。
 	call_deferred("_try_autobind")
 
 
-func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = null) -> void:
+func setup(p_camera: Camera3D, p_unit_host: Node) -> void:
 	camera = p_camera
 	unit_host = p_unit_host
-	if p_overlay_parent != null:
-		overlay_parent = p_overlay_parent
 	set_process_input(not _external_input)
 	# 预热表，避免首次点选 ensure_table 尖峰
 	Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
@@ -78,17 +81,13 @@ func setup(p_camera: Camera3D, p_unit_host: Node, p_overlay_parent: Control = nu
 		for child in unit_host.get_children():
 			var model := child.get_node_or_null("Model") as Node3D
 			if model != null:
-				PickVolume.model_bounds(model)
+				UnitPickVolume.model_bounds(model)
 	if camera != null and not camera.is_inside_tree():
 		pass
 	elif camera != null:
 		camera.make_current()
-	_ensure_input_layer()
-	# 允许 setup 时重建 overlay（_ready 可能已建在错误父节点下）
-	if _overlay != null and is_instance_valid(_overlay):
-		_overlay.queue_free()
-		_overlay = null
-	_ensure_overlay()
+	_bind_input_layer()
+	_bind_overlay_layer()
 	if camera == null or unit_host == null:
 		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "setup: camera 或 unit_host 为空，点选/框选不可用")
 	else:
@@ -123,8 +122,8 @@ func _try_autobind() -> void:
 			unit_host = scene.find_child("Units", true, false)
 	if camera != null and unit_host != null:
 		set_process_input(not _external_input)
-		_ensure_input_layer()
-		_ensure_overlay()
+		_bind_input_layer()
+		_bind_overlay_layer()
 		AppLog.info(
 			AppLog.Layer.GAME,
 			"UnitSelector",
@@ -445,7 +444,7 @@ func _pick_at(screen_pos: Vector2) -> Node3D:
 	var best_body_distance := INF
 
 	for n in _iter_unit_nodes():
-		var body_distance := PickVolume.ray_distance(n, origin, dir)
+		var body_distance := UnitPickVolume.ray_distance(n, origin, dir)
 		if body_distance < best_body_distance:
 			best_body_distance = body_distance
 			best_body = n
@@ -673,46 +672,50 @@ func _set_selection(nodes: Array) -> void:
 	selection_changed.emit(_primary, _selected.duplicate())
 
 
-func _ensure_input_layer() -> void:
+## 绑定外部输入层：取 [code]WorldInput[/code] Control；订阅 [signal SelectorInputLayer.gui_input_received]。
+## 若 [member input_layer_path] 为空，发出警告（独立场景应在 [code]_ready[/code] 之前手动挂上）。
+func _bind_input_layer() -> void:
 	if _input_root != null and is_instance_valid(_input_root):
 		return
-	var layer := CanvasLayer.new()
-	layer.name = "SelectorInputLayer"
+	var layer: SelectorInputLayer = _resolve_input_layer()
+	if layer == null:
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_bind_input_layer: 未注入 SelectorInputLayer")
+		return
+	# 调整 layer 到当前期望值。
 	layer.layer = input_canvas_layer
-	add_child(layer)
-	_input_root = Control.new()
-	_input_root.name = "WorldInput"
-	_input_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_input_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_input_root.gui_input.connect(_on_world_gui_input)
-	layer.add_child(_input_root)
+	var world_input := layer.world_input()
+	if world_input == null:
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_bind_input_layer: SelectorInputLayer 缺 WorldInput 子节点")
+		return
+	if not world_input.gui_input.is_connected(_on_world_gui_input):
+		world_input.gui_input.connect(_on_world_gui_input)
+	_input_root = world_input
 
 
-func _ensure_overlay() -> void:
+## 绑定外部高图层：取 [code]MarqueeOverlay[/code]，订阅 [signal MarqueeSelection.changed]。
+func _bind_overlay_layer() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		return
-	# 始终用独立高图层，避免挂到 HUD Root 后被底栏盖住或坐标错位
-	var layer := CanvasLayer.new()
-	layer.name = "SelectorOverlayLayer"
-	layer.layer = 100
-	add_child(layer)
-	var root := Control.new()
-	root.name = "OverlayRoot"
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 0
-	root.offset_top = 0
-	root.offset_right = 0
-	root.offset_bottom = 0
-	layer.add_child(root)
-	_overlay = MarqueeOverlay.new()
-	_overlay.name = "MarqueeOverlay"
-	root.add_child(_overlay)
-	_overlay.bind(_marquee)
-	# 下一帧强制铺满视口（部分环境下 anchor 首帧 size=0）
-	if is_inside_tree():
-		var vp_size := get_viewport().get_visible_rect().size
-		root.set_deferred("size", vp_size)
+	var layer: SelectorOverlayLayer = _resolve_overlay_layer()
+	if layer == null:
+		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_bind_overlay_layer: 未注入 SelectorOverlayLayer")
+		return
+	layer.bind_marquee(_marquee)
+	_overlay = layer.marquee_overlay()
+
+
+func _resolve_input_layer() -> SelectorInputLayer:
+	if input_layer_path.is_empty():
+		return null
+	var raw := get_node_or_null(input_layer_path)
+	return raw as SelectorInputLayer
+
+
+func _resolve_overlay_layer() -> SelectorOverlayLayer:
+	if overlay_layer_path.is_empty():
+		return null
+	var raw := get_node_or_null(overlay_layer_path)
+	return raw as SelectorOverlayLayer
 
 
 func _refresh_rings() -> void:
@@ -738,20 +741,3 @@ func _refresh_rings() -> void:
 	for n3 in _selected:
 		if is_instance_valid(n3):
 			_ring_hosts.append(n3)
-
-
-func ring_kind_for(node: Node3D) -> int:
-	InteractionSetup.attach(node)
-	var sel := InteractionSetup.get_selectable(node)
-	if sel != null:
-		return sel.ring_kind()
-	return RingKind.OWN
-
-
-## 选中圈直径（世界单位）；供右键交互闪环复用。
-func selection_ring_diameter_for(host: Node3D) -> float:
-	InteractionSetup.attach(host)
-	var sel := InteractionSetup.get_selectable(host)
-	if sel != null:
-		return sel.ring_diameter_world()
-	return 1.1

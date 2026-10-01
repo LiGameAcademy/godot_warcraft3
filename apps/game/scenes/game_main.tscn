@@ -7,6 +7,8 @@
 [ext_resource type="Script" uid="uid://b4bfuosw6wy87" path="res://client/interaction/wc3_game_cursor.gd" id="4_cursor"]
 [ext_resource type="PackedScene" uid="uid://jswtl3uxmvo7" path="res://scenes/game_hud.tscn" id="5_hud"]
 [ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://client/selection/unit_selector.tscn" id="6_sel"]
+[ext_resource type="PackedScene uid="uid://ds5lxknp1vq6a" path="res://client/selection/selector_input_layer.tscn" id="7_input"]
+[ext_resource type="PackedScene uid="uid://e8w2bqx3n1z7c" path="res://client/selection/selector_overlay_layer.tscn" id="8_overlay"]
 [ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://addons/rts_gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
 
 [sub_resource type="Environment" id="Environment_1"]
@@ -51,6 +53,14 @@ layer = 8
 script = ExtResource("7_hpbar")
 
 [node name="UnitSelector" parent="." unique_id=1109850831 instance=ExtResource("6_sel")]
+unique_name_in_owner = true
+input_layer_path = NodePath("../SelectorInputLayer")
+overlay_layer_path = NodePath("../SelectorOverlayLayer")
+
+[node name="SelectorInputLayer" parent="." unique_id=1109850832 instance=ExtResource("7_input")]
+unique_name_in_owner = true
+
+[node name="SelectorOverlayLayer" parent="." unique_id=1109850833 instance=ExtResource("8_overlay")]
 unique_name_in_owner = true
 
 [node name="GameDirector" type="Node" parent="." unique_id=528822564]
