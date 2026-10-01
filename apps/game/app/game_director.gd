@@ -35,7 +35,7 @@ signal session_preparation_progress(stage: String, progress: float)
 @export var map_root: MapLoader
 @export var rts_camera: RtsCamera
 @export var game_hud: GameHud
-@export var unit_selector: Node
+@export var unit_selector: UnitSelector
 @export var game_cursor: Node
 @export var health_bar_manager: HealthBarManager
 @export var map_dir: String = "res://assets/map-parsed/echoisles"
@@ -152,7 +152,7 @@ var _binding_epoch := 0
 var _bound_modules: Dictionary = {}
 var _binding_counts: Dictionary = {}
 var _wired_hud: GameHud
-var _wired_selector: Node
+var _wired_selector: UnitSelector
 var _ui_bridge: Node
 
 var _start_requested: bool = false
@@ -174,7 +174,7 @@ var _start_requested: bool = false
 ## [br]v1.4 起不再注入 game_loading_screen：Loading 已独立为 peer scene，由 [code]boot.gd[/code]
 ## 直接持有并订阅本节点的 [signal session_ready]。
 func setup(p_map_root: MapLoader, p_rts_camera: RtsCamera, 
-	p_game_hud: GameHud, p_unit_selector: Node, p_game_cursor: Node, 
+	p_game_hud: GameHud, p_unit_selector: UnitSelector, p_game_cursor: Node, 
 	p_health_bar_manager: HealthBarManager,
 ) -> void:
 	if _start_requested:
@@ -374,8 +374,8 @@ func _ensure_selection_presenter() -> SelectionPresenter:
 
 func _setup_selector() -> void:
 	if is_instance_valid(_wired_selector) and _wired_selector != unit_selector:
-		if _wired_selector.is_connected("selection_changed", _on_selection_changed):
-			_wired_selector.disconnect("selection_changed", _on_selection_changed)
+		if _wired_selector.selection_changed.is_connected(_on_selection_changed):
+			_wired_selector.selection_changed.disconnect(_on_selection_changed)
 	_wired_selector = unit_selector
 	if unit_selector == null or rts_camera == null or map_root == null:
 		push_warning("GameDirector: UnitSelector 绑定失败（selector/camera/map 为空）")
@@ -386,16 +386,13 @@ func _setup_selector() -> void:
 		push_warning("GameDirector: UnitSelector.setup 跳过（camera=%s layer=%s）" % [cam, layer])
 		return
 	# 点选：中立/敌方可点选观察；框选仅己方。下达指令另见「可控」过滤。
-	unit_selector.set("owner_filter", -1)
-	unit_selector.set("marquee_owner", local_player)
-	if unit_selector.has_method("setup"):
-		unit_selector.call("setup", cam, layer, null)
+	unit_selector.owner_filter = -1
+	unit_selector.marquee_owner = local_player
+	unit_selector.setup(cam, layer)
 	# 原作：树不可左键选中；伐木只走右键智能命令
 	unit_selector.pick_extra = Callable()
-	if unit_selector.has_signal("selection_changed"):
-		var sel_sig: Signal = unit_selector.selection_changed
-		if not sel_sig.is_connected(_on_selection_changed):
-			sel_sig.connect(_on_selection_changed)
+	if not unit_selector.selection_changed.is_connected(_on_selection_changed):
+		unit_selector.selection_changed.connect(_on_selection_changed)
 	if game_hud:
 		game_hud.set_status("点选就绪 · LMB 单位/金矿 · RMB 矿/树/移动")
 

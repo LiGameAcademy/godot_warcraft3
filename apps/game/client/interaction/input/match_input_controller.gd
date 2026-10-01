@@ -1,6 +1,8 @@
 class_name MatchInputController
 extends Node
+
 signal path_debug_toggle_requested
+
 var last_screen_pos := Vector2.ZERO
 var _commands: CommandInputModule
 var _interaction: InteractionModule
@@ -26,15 +28,24 @@ func configure(deps: Dictionary) -> void:
 	_card = deps.get("card") as CommandCardModule
 	_debug = deps.get("debug") as DebugToolsModule
 	_feedback = deps.get("feedback") as InteractionFeedback
+	# selftest 可用 Stub；正式对局注入 UnitSelector。
 	unit_selector = deps.get("selector") as Node
-	if is_instance_valid(previous_selector) and previous_selector != unit_selector and previous_selector.has_method("set_external_input"):
+	if previous_selector != unit_selector:
 		# 已退役的接收器可能还留在树中，不能重新抢走新接收器的输入。
-		previous_selector.set_external_input(true)
-	if is_instance_valid(unit_selector) and unit_selector != previous_selector and unit_selector.has_method("set_external_input"):
-		unit_selector.set_external_input(true)
+		_claim_selector_input(previous_selector, true)
+		_claim_selector_input(unit_selector, true)
 	game_hud = deps.get("hud") as GameHud
 	_commit_build = deps.get("commit_build", Callable()) as Callable
 	_cancel_build = deps.get("cancel_build", Callable()) as Callable
+
+
+func _claim_selector_input(sel: Node, external: bool) -> void:
+	if not is_instance_valid(sel):
+		return
+	if sel is UnitSelector:
+		(sel as UnitSelector).set_external_input(external)
+	elif sel.has_method("set_external_input"):
+		sel.call("set_external_input", external)
 
 func shutdown() -> void:
 	configure({})
@@ -96,7 +107,10 @@ func handle_input(event: InputEvent) -> void:
 			_cancel_build.call()
 			get_viewport().set_input_as_handled()
 			return
-	if unit_selector != null and unit_selector.has_method("handle_pointer_event"):
+	if unit_selector is UnitSelector:
+		if (unit_selector as UnitSelector).handle_pointer_event(event):
+			get_viewport().set_input_as_handled()
+	elif unit_selector != null and unit_selector.has_method("handle_pointer_event"):
 		if bool(unit_selector.call("handle_pointer_event", event)):
 			get_viewport().set_input_as_handled()
 
@@ -136,9 +150,14 @@ func handle_unhandled(event: InputEvent, enable_move_command: bool, debug_buildi
 		var phys := ek.physical_keycode
 		# 多选：Tab / Shift+Tab 切换当前选中（肖像 + 命令卡）
 		if key == KEY_TAB or phys == KEY_TAB:
-			if unit_selector != null and unit_selector.has_method("cycle_primary"):
+			if unit_selector is UnitSelector:
 				var step := -1 if ek.shift_pressed else 1
-				if unit_selector.cycle_primary(step):
+				if (unit_selector as UnitSelector).cycle_primary(step):
+					get_viewport().set_input_as_handled()
+					return
+			elif unit_selector != null and unit_selector.has_method("cycle_primary"):
+				var step2 := -1 if ek.shift_pressed else 1
+				if unit_selector.cycle_primary(step2):
 					get_viewport().set_input_as_handled()
 					return
 		# GM 面板：`（反引号）或 F4。F10 常被编辑器占用。
