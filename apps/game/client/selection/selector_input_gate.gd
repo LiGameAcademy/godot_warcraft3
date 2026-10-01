@@ -3,17 +3,13 @@ extends Node
 
 ## HUD / UI 是否挡住世界点击。
 ##
-## 双轨：
-## - 扫描 [code]world_input_blockers[/code] 组（现有 HUD 登记方式，保留）
-## - [method add_blocker] / [method remove_blocker] 主动注册（推荐新代码）
+## 唯一登记轨：扫描 [code]world_input_blockers[/code] 组（HUD 面板在 .tscn 里入组）。
+## 另：对 [code]gui_get_hovered_control[/code] 做一轮兜底（非 IGNORE 且未豁免）。
 ##
 ## 选择器自建穿透层与框选 overlay 通过 [method set_exempt_controls] 豁免。
 
-signal blocker_changed
-
 const GROUP_BLOCKERS := "world_input_blockers"
 
-var _extra_blockers: Array[Control] = []
 var _exempt: Array[Control] = []
 
 
@@ -25,25 +21,6 @@ func set_exempt_controls(controls: Array) -> void:
 			_exempt.append(item as Control)
 
 
-func add_blocker(ctrl: Control) -> void:
-	if ctrl == null or not is_instance_valid(ctrl):
-		return
-	if _extra_blockers.has(ctrl):
-		return
-	_extra_blockers.append(ctrl)
-	blocker_changed.emit()
-
-
-func remove_blocker(ctrl: Control) -> void:
-	if ctrl == null:
-		return
-	var idx := _extra_blockers.find(ctrl)
-	if idx < 0:
-		return
-	_extra_blockers.remove_at(idx)
-	blocker_changed.emit()
-
-
 ## screen_pos 是否落在会吃世界点击的 UI 上。
 func is_blocked_at(screen_pos: Vector2) -> bool:
 	var tree := get_tree()
@@ -51,9 +28,6 @@ func is_blocked_at(screen_pos: Vector2) -> bool:
 		return false
 	for panel in tree.get_nodes_in_group(GROUP_BLOCKERS):
 		if _control_blocks(panel as Control, screen_pos):
-			return true
-	for panel in _extra_blockers:
-		if _control_blocks(panel, screen_pos):
 			return true
 	var viewport := get_viewport()
 	if viewport == null:
