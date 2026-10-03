@@ -35,9 +35,20 @@ def sync(name):
     plugins = ('godot_ability_system', 'panku_console') if name == 'game' else ()
     for plugin in plugins:
         base = ROOT / 'addons' / plugin
+        # Godot plugin repos often nest the real addon at addons/<name>/ inside the repo.
+        nested = base / 'addons' / plugin
         listed = subprocess.check_output(['git', '-C', str(base), 'ls-files', '-z']).decode().split('\0')
         for rel in filter(None, listed):
-            if (base / rel).is_file(): sources[f'addons/{plugin}/{rel}'] = base / rel
+            src = base / rel
+            if not src.is_file():
+                continue
+            if nested.is_dir():
+                prefix = f'addons/{plugin}/'
+                if not rel.startswith(prefix):
+                    continue
+                sources[f'addons/{plugin}/{rel[len(prefix):]}'] = src
+            else:
+                sources[f'addons/{plugin}/{rel}'] = src
     assets = subprocess.check_output(['git','-C',str(ROOT),'ls-files','-z','--','assets','icon.svg']).decode().split('\0')
     for rel in filter(None, assets):
         p = ROOT / rel
