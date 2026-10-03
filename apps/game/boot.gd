@@ -10,6 +10,7 @@ extends Node
 ##
 ## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md §10。
 
+const SourceImport: GDScript = preload("res://app/game_source_import.gd")
 const AssetImport: GDScript = preload("res://app/game_asset_import.gd")
 
 const GAME_MAIN_PATH: String = "res://scenes/game_main.tscn"
@@ -153,9 +154,12 @@ func _prepare_asset_import() -> bool:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	var manifest_path: String = ""
 	var result_path: String = ""
+	var game_dir: String = ""
+	var request_path: String = ""
+	var cache_root: String = "user://wc3-cache/source-import"
 	var index: int = 0
 	while index < args.size():
-		if args[index] in ["--asset-root", "--asset-import-manifest", "--asset-import-result"]:
+		if args[index] in ["--asset-root", "--asset-import-manifest", "--asset-import-result", "--warcraft-dir", "--asset-import-request", "--asset-import-cache"]:
 			if index + 1 >= args.size():
 				get_tree().quit(2)
 				return false
@@ -165,14 +169,25 @@ func _prepare_asset_import() -> bool:
 				"--asset-root": ProjectSettings.set_setting("warcraft3/asset_root", args[index])
 				"--asset-import-manifest": manifest_path = args[index]
 				"--asset-import-result": result_path = args[index]
+				"--warcraft-dir": game_dir = args[index]
+				"--asset-import-request": request_path = args[index]
+				"--asset-import-cache": cache_root = args[index]
 		index += 1
-	if manifest_path.is_empty():
+	if manifest_path.is_empty() and game_dir.is_empty():
 		if "--asset-import-only" in args:
 			get_tree().quit(2)
 			return false
 		return true
 	var importer: RefCounted = AssetImport.new()
-	var result: Dictionary = importer.run_manifest(manifest_path, AssetProvider.runtime_content_sealed)
+	var result: Dictionary
+	if not game_dir.is_empty():
+		if not manifest_path.is_empty():
+			get_tree().quit(2)
+			return false
+		var source_importer: RefCounted = SourceImport.new()
+		result = source_importer.run_source(game_dir, request_path, cache_root, AssetProvider.runtime_content_sealed)
+	else:
+		result = importer.run_manifest(manifest_path, AssetProvider.runtime_content_sealed)
 	if not result_path.is_empty():
 		var file: FileAccess = FileAccess.open(result_path, FileAccess.WRITE)
 		if file == null:
