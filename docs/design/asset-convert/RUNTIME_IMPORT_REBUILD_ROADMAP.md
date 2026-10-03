@@ -366,3 +366,31 @@ python tools/workspace/test_apps.py --godot 'D:/GameMaker/Godot_v4.7.2-stable_mo
 5. 用同一缓存在游戏和只读查看器检查结果。技术通过与视觉通过分别记录；证据通过后再推进原生源解析和首次启动引导。
 
 其后按开发地图清单补齐缺失 SCN、收紧 fallback 门禁，继续修复 billboard 自转及粒子/Ribbon 历史近似。分支完结条件仍是导出端闭环、开发地图依赖覆盖和游戏内验收，不能仅以查看器能打开为准。
+
+
+## 11. 导出端编译实验（2026-10-03）
+
+已完成第 10 节的首个运行边界实验：独立 Windows **release** 应用能从外部预生成 IR + glTF/纹理编译真实 Footman、牧师投射物和回春术 Ribbon，将 SCN 保存到 `user://wc3-cache/<本轮唯一目录>`。移开全部输入文件后，用新的发布进程重载成功；牧师粒子 A/B 参数隔离通过。运行阶段清空 PATH、GODOT 和 ASSET_SOURCE，不调用 Node 或编辑器，但这不是干净机器上的完整游戏安装验收。
+
+实现分工：
+
+- `tools/godot/import_scene_compiler.gd`：可由导出应用调用的 RefCounted 同步核心，返回结果和退出码，不负责退出进程。
+- `tools/godot/import_worker.gd`：保留现有开发 CLI 契约，调用同一核心。
+- `prepare-worker-project.mjs`：打包时为两个内嵌特效脚本复制 `.gd.source`，以原始 `.gd` 为唯一维护来源。
+- `import_embedded_script.gd`：开发环境使用 source_code；发布包源码被剥离时使用 `.source`。发布 preset 必须包含 `include_filter="*.source"`。此步骤目前接入独立编译实验，尚未接入正式游戏发布构建。
+
+实验发现并修复了发布差异：压缩 GDScript 的 source_code 为空时，旧逻辑会生成错误基类的内嵌脚本，导致 SkeletonModifier3D 无法挂载，同时编译结果仍显示成功。现在校验源码，并将特效编译的 error 诊断传播为失败。
+
+复现（仓库根目录 PowerShell，需要已安装对应版本的 Windows export templates）：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+$env:ASSET_SOURCE = Join-Path $PWD 'assets/.staging/wc3-assets'
+node tools/asset-convert/src/exported-runtime.test.mjs
+```
+
+准备与导出阶段仍使用 Node 和编辑器；玩家阶段仅启动生成的 EXE。输出在 `tools/asset-convert/tmp/exported-*/report.json`，其中记录 EXE、结果和用户缓存绝对路径，均为本机生成产物，不提交原版资产。测试还检查输入内容哈希不变、损坏 IR 返回 `ir_invalid`、失败不覆盖已有良好缓存，以及恢复有效任务后的重试成功。另行导出不含源码 payload 的发布包，确认返回失败和 `billboard_script_invalid`，不会被误记为成功。查看器载入发布端生成的 Footman、牧师缓存后交互与实际渲染回归通过；查看器截图不代表原作视觉验收。
+
+当前未完成：源 MPQ/MDX 的玩家端解析、正式游戏首次启动引导、完整 IR 结构校验、异步进度/取消、缓存复用与版本失效，以及完整游戏发布验收。产物仍为 `deliverable=false`；该实验不证明特效视觉保真。
+
+下一轮先做持久缓存契约：纳入源文件、IR/schema、编译器和依赖签名；实现缓存命中/失效、临时产物校验后原子替换、损坏缓存重建，并用本轮 release 实验验证。随后把编译核心及源码 payload 打包步骤接入正式游戏构建，再按证据推进原生适配器和首次启动引导。

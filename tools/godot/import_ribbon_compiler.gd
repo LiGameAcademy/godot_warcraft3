@@ -1,4 +1,5 @@
 extends RefCounted
+const EmbeddedScript: GDScript = preload("import_embedded_script.gd")
 const Runtime: GDScript = preload("import_ribbon_runtime.gd")
 
 static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dictionary:
@@ -15,9 +16,8 @@ static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dict
 		if image == null:
 			result.diagnostics.append({"code": "ribbon_texture_missing", "severity": "warning", "emitter": em.name})
 			continue
-		var script: GDScript = GDScript.new()
-		script.source_code = Runtime.source_code
-		if script.reload() != OK:
+		var script: GDScript = EmbeddedScript.create(Runtime)
+		if script == null:
 			result.diagnostics.append({"code": "ribbon_script_invalid", "severity": "error"})
 			continue
 		var ribbon: MeshInstance3D = MeshInstance3D.new()
