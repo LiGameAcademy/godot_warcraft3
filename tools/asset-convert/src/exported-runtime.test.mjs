@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {convertOneMdx} from './convert-mdx.js';
 import {createBakeTask, writeBakeTask} from './bake-task.js';
 import {prepareWorkerProject} from './prepare-worker-project.mjs';
+import {checkExportedCache} from './exported-cache-checks.mjs';
 
 // Node and the editor only prepare/export the experiment. Player phases execute
 // the release binary with an empty PATH and a separate, read-only input directory.
@@ -22,7 +23,9 @@ const inputs = path.join(scratch, 'inputs');
 const release = path.join(scratch, 'release');
 for (const dir of [project, inputs, release]) fs.mkdirSync(dir);
 prepareWorkerProject(repo, project);
-fs.copyFileSync(path.join(repo, 'tests/integration/runtime_import_probe.gd'), path.join(project, 'runtime_import_probe.gd'));
+for (const name of ['runtime_import_probe.gd', 'runtime_cache_failure_compiler.gd']) {
+  fs.copyFileSync(path.join(repo, 'tests/integration', name), path.join(project, name));
+}
 fs.writeFileSync(path.join(project, 'main.tscn'), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://runtime_import_probe.gd" id="1"]\n[node name="RuntimeImportProbe" type="Node"]\nscript = ExtResource("1")\n');
 fs.writeFileSync(path.join(project, 'project.godot'), 'config_version=5\n[application]\nconfig/name="Runtime Import Experiment"\nrun/main_scene="res://main.tscn"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
 fs.writeFileSync(path.join(project, 'export_presets.cfg'), '[preset.0]\nname="Windows Desktop"\nplatform="Windows Desktop"\nexport_filter="all_resources"\ninclude_filter="*.source"\nscript_export_mode=2\n[preset.0.options]\nbinary_format/architecture="x86_64"\nbinary_format/embed_pck=false\ndebug/export_console_wrapper=1\n');
@@ -70,8 +73,9 @@ for (const [logical, expected] of [
   assert.equal(result.ok, true);
   assert.deepEqual(snapshot(inputs), inputBefore, 'Runtime modified source inputs');
   assert.ok(result.output_scene.includes('wc3-cache'));
-  records.push({name, expected, resultPath, reloadPath, output_scene:result.output_scene});
+  records.push({name, expected, task, resultPath, reloadPath, output_scene:result.output_scene});
 }
+checkExportedCache({records, inputs, scratch, binary, release, project, editor:process.env.GODOT, run});
 // A rejected IR must preserve an existing good scene; retry is a new invocation.
 const priest = records.find(record => record.name === 'PriestMissile');
 const validTask = JSON.parse(fs.readFileSync(path.join(inputs, 'PriestMissile.task.json')));
@@ -101,10 +105,10 @@ assert.equal(missingExport.status, 0, missingExport.log);
 fs.writeFileSync(presetPath, preset);
 const missingResultPath = path.join(scratch, 'missing-payload.result.json');
 const missingPayload = run(missingBinary, ['--headless', '--', '--compile', path.join(inputs, 'Footman.task.json'), missingResultPath], release, true);
-assert.equal(missingPayload.status, 1, missingPayload.log);
+assert.equal(missingPayload.status, 2, missingPayload.log);
 const missingResult = JSON.parse(fs.readFileSync(missingResultPath));
 assert.equal(missingResult.ok, false);
-assert.ok(missingResult.diagnostics.some(item => item.code === 'billboard_script_invalid' && item.severity === 'error'));
+assert.ok(missingResult.diagnostics.some(item => ['billboard_script_invalid', 'compiler_signature_missing'].includes(item.code) && item.severity === 'error'));
 console.log('Exported runtime PASS: missing embedded source is rejected');
 // Remove access to all converter inputs before restarting the exported process.
 fs.renameSync(inputs, path.join(scratch, 'inputs-offline'));

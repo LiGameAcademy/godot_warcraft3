@@ -33,7 +33,7 @@ func compile_task(task_path: String) -> Dictionary:
 		return _finish(result, 2)
 	var task: Dictionary = parsed
 	result["asset_id"] = str(task.get("asset_id", ""))
-	var validation: Array[Dictionary] = _validate_task(task)
+	var validation: Array[Dictionary] = validate_task(task)
 	if not validation.is_empty():
 		result["diagnostics"] = validation
 		return _finish(result, 2)
@@ -144,7 +144,7 @@ func compile_task(task_path: String) -> Dictionary:
 	return _finish(result, 0)
 
 
-func _validate_task(task: Dictionary) -> Array[Dictionary]:
+static func validate_task(task: Dictionary) -> Array[Dictionary]:
 	var errors: Array[Dictionary] = []
 	if int(task.get("task_version", 0)) != 1:
 		errors.append({"code": "task_version", "severity": "error", "message": "不支持的 task_version"})

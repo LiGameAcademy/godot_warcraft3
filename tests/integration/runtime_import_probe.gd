@@ -1,19 +1,25 @@
 extends Node
 
-const Compiler: GDScript = preload("res://import_scene_compiler.gd")
+const FailureCompiler: GDScript = preload("res://runtime_cache_failure_compiler.gd")
+const Compiler: GDScript = preload("res://import_cached_compiler.gd")
 
 func _ready() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
-	if args.size() != 3 or args[0] not in ["--compile", "--reload"]:
+	if args.size() != 3 or args[0] not in ["--compile", "--reload", "--fail-scene-commit", "--fail-record-commit", "--change-input"]:
 		get_tree().quit(2)
 		return
 	var result: Dictionary = {}
 	var exit_code: int = 0
-	if args[0] == "--compile":
-		var compiler: RefCounted = Compiler.new()
+	if args[0] != "--reload":
+		var compiler: RefCounted = Compiler.new() if args[0] == "--compile" else FailureCompiler.new()
+		if args[0] != "--compile":
+			compiler.phase = args[0]
+			if args[0] == "--change-input":
+				var changing_task: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(args[1]))
+				compiler.changing_input = str(changing_task.source_path)
 		var response: Dictionary = compiler.compile_task(args[1])
 		result = response.result
 		exit_code = int(response.exit_code)

@@ -394,3 +394,30 @@ node tools/asset-convert/src/exported-runtime.test.mjs
 当前未完成：源 MPQ/MDX 的玩家端解析、正式游戏首次启动引导、完整 IR 结构校验、异步进度/取消、缓存复用与版本失效，以及完整游戏发布验收。产物仍为 `deliverable=false`；该实验不证明特效视觉保真。
 
 下一轮先做持久缓存契约：纳入源文件、IR/schema、编译器和依赖签名；实现缓存命中/失效、临时产物校验后原子替换、损坏缓存重建，并用本轮 release 实验验证。随后把编译核心及源码 payload 打包步骤接入正式游戏构建，再按证据推进原生适配器和首次启动引导。
+
+
+## 12. 缓存可靠性完成（2026-10-03）
+
+新增 `import_cached_compiler.gd` 作为同步缓存入口，复用已有场景编译核心。开发 CLI 保持直接编译和原有固定输出路径；发布实验调用缓存入口。正式游戏接入仍属于下一步。
+
+缓存签名覆盖：源签名所在的 IR 内容、可选原始源文件 `source_path` 的实际内容、IR/schema、glTF、buffer/纹理、IR 与 task 声明依赖、profile、规则/预期签名、引擎版本、编译器版本及编译实现内容。`prepare-worker-project.mjs` 生成 `import_compiler.source`，发布 preset 的 `*.source` 过滤器同时包含它。缺失或不可读的依赖明确失败，不返回陈旧缓存。
+
+[Godot Windows 的 rename 实现](https://github.com/godotengine/godot/blob/master/drivers/windows/dir_access_windows.cpp)在覆盖目标文件时会先删除目标，不能以此实现安全覆盖。因此采用独立版本：
+
+```text
+任务 output_scene = user://wc3-cache/.../PriestMissile.scn（逻辑槽）
+PriestMissile.scn.cache/
+  <版本>.scn                校验成功的完整场景
+  <版本>.json               最后发布的提交记录
+  <版本>.pending.*          尚未提交的暂存文件
+```
+
+消费者必须读取结果的 `output_scene` 实际路径，不能拼接逻辑槽路径。场景保存、磁盘重载和输入签名复查完成后，先发布唯一场景文件，再发布唯一 JSON 提交记录；两次 rename 的目标均不存在，禁止覆盖。没有记录的孤立场景不被消费，旧提交保持可用。无需另增玩家端外部工具或原生扩展。
+
+命中时验证最新提交的格式/缓存版本、签名、SCN SHA-256 以及结果的资产身份、profile、编译器版本和必要字段。返回 `cache.status=hit`；重建返回 `rebuilt` 并记录原因，如 `signature_changed`、`scene_corrupt`、`record_invalid`。损坏文件先检测哈希，不把它交给 ResourceLoader 引发解析错误。损坏 JSON 使用可恢复解析，明确作为缓存失效处理。
+
+发布端测试覆盖重复调用不重写场景、源/IR/几何/纹理/依赖/规则/profile 的失效、真实重导出后的编译器版本和构建签名失效、缺失依赖、SCN 缺失/损坏、记录损坏/版本/身份不匹配、暂存残留、系统时钟回退、场景及记录提交失败、编译期间输入变化和跨进程重载。失败注入仅位于测试应用中；失败不替换旧提交。最终发布端 35 项缓存检查通过，Footman 开发 CLI 回归及新缓存在查看器中的交互/实际渲染回归通过。复现仍使用第 11 节的 `exported-runtime.test.mjs`，结果附 `cache-checks.json`。
+
+缓存入口当前消费预生成 IR + glTF；暂不支持此入口直接缓存 GLB。旧已提交版本及异常退出留下的孤立文件不自动删除，正式游戏接入时另行制定容量和清理策略。没有改变查看器的只读定位，也没有将技术通过标记为视觉保真或可交付。
+
+下一步为正式游戏接入：打包缓存入口及源码/构建签名 payload，按缓存结果的实际路径加载资产，并在正式导出游戏内复现缓存命中、失效、故障恢复和重载。
