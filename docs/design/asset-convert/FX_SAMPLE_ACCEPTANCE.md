@@ -8,11 +8,12 @@
 
 ```powershell
 $env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+$env:ASSET_SOURCE = Join-Path $PWD 'assets/.staging/wc3-assets'
 node tools/asset-convert/src/worker-fx-samples.test.mjs
-& $env:GODOT --path apps/asset_viewer -- --preview-report 'D:/GodotProject/laoli_gamedev_godot4_course/godot_warcraft3/.cache/fx-preview/report.json'
+& $env:GODOT --path apps/asset_viewer -- --preview-report (Join-Path $PWD '.cache/fx-preview/report.json')
 ```
 
-测试命令读取 `.cache/wc3-assets`（可用 `ASSET_SOURCE` 改写），重建样本并执行独立项目重载、动画切换和资源隔离检查。原版资产缺失会失败，不自动跳过。场景、纹理、IR 和结果日志位于 `.cache/fx-preview`，只保存在本机。
+测试命令默认读取 `.cache/wc3-assets`；上述命令用 `ASSET_SOURCE` 指向当前仓库的 `assets/.staging/wc3-assets`，重建样本并执行独立项目重载、动画切换和资源隔离检查。原版资产缺失会失败，不自动跳过。场景、纹理、IR 和结果日志位于 `.cache/fx-preview`，只保存在本机。
 
 左侧只有三条记录，初始选中牧师投射物。切换记录不会重新烘焙。`--preview-report` 只影响本次会话，不改写项目设置。
 

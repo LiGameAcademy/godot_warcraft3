@@ -1,7 +1,7 @@
 extends Node
 
-var failures := 0
-var checks := 0
+var failures: int = 0
+var checks: int = 0
 
 func check(ok: bool, label: String) -> void:
 	checks += 1
@@ -9,10 +9,14 @@ func check(ok: bool, label: String) -> void:
 		failures += 1
 		push_error("LOADING LIFETIME: " + label)
 
-func tween_refs() -> Array[WeakRef]:
+func tween_refs(excluded: Array[WeakRef] = []) -> Array[WeakRef]:
 	var refs: Array[WeakRef] = []
-	for tween in get_tree().get_processed_tweens():
-		refs.append(weakref(tween))
+	for tween: Tween in get_tree().get_processed_tweens():
+		var existing: bool = false
+		for previous: WeakRef in excluded:
+			existing = existing or previous.get_ref() == tween
+		if not existing:
+			refs.append(weakref(tween))
 	return refs
 
 func _ready() -> void:
@@ -21,16 +25,18 @@ func _ready() -> void:
 	screen.min_visible_sec = 0.0
 	screen.fade_out_sec = 10.0
 	add_child(screen)
+	# 只跟踪本加载屏产生的补间；控制台等 Autoload 也可能有动画。
+	var baseline: Array[WeakRef] = tween_refs()
 	screen.finish()
+	var refs: Array[WeakRef] = tween_refs(baseline)
 	await get_tree().process_frame
-	var refs := tween_refs()
 	check(refs.size() == 1, "长淡出产生一个补间动画")
 	screen.process_mode = Node.PROCESS_MODE_DISABLED
 	screen.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	var released := true
-	for ref in refs:
+	var released: bool = true
+	for ref: WeakRef in refs:
 		released = released and ref.get_ref() == null
 	check(released, "冻结中卸载加载层释放未结束补间")
 	var normal: GameLoadingScreen = packed.instantiate()
@@ -45,7 +51,7 @@ func _ready() -> void:
 	add_child(waiting)
 	waiting.finish()
 	var pending: WeakRef = null
-	for child in waiting.get_children():
+	for child: Node in waiting.get_children():
 		if child is Timer:
 			pending = weakref(child)
 	check(pending != null, "最短显示时间等待由子计时器持有")

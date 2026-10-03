@@ -56,6 +56,11 @@ func _run() -> void:
 	_check(viewer._tree_items.size() == viewer.models.item_count, "Tree and list filters disagree")
 	var footman: TreeItem = viewer._tree_items.get("units/human/footman/footman") as TreeItem
 	_check(footman != null, "Footman tree leaf missing")
+	if footman == null:
+		viewer._clear_model()
+		viewer.free()
+		quit(1)
+		return
 	if footman != null:
 		footman.select(0)
 		viewer.model_tree.item_selected.emit()
