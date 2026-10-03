@@ -23,7 +23,7 @@ export function validateRequest(request) {
 }
 
 /** Source bytes stay outside the release package; only the task manifest is published last. */
-export async function prepareSourceImport({gameDir, request, outDir, bundleSignature = '', source}) {
+export async function prepareSourceImport({gameDir, request, outDir, bundleSignature = '', source, onProgress = () => {}}) {
   const models = validateRequest(request);
   if (gameDir) {
     const relative = path.relative(path.resolve(gameDir), path.resolve(outDir));
@@ -39,7 +39,8 @@ export async function prepareSourceImport({gameDir, request, outDir, bundleSigna
     return entries.get(key);
   };
   try {
-    for (const logical of models) {
+    for (const [index, logical] of models.entries()) {
+      onProgress('读取模型与纹理', index, models.length);
       const entry = remember(logical);
       const model = parseModel(entry.bytes, logical);
       for (const texture of model.Textures || []) {
@@ -68,7 +69,8 @@ export async function prepareSourceImport({gameDir, request, outDir, bundleSigna
     }
   }
   const tasks = [];
-  for (const logical of models) {
+  for (const [index, logical] of models.entries()) {
+    onProgress('生成模型编译输入', index, models.length);
     await convertOneMdx(path.join(raw, logical), logical, raw, converted);
     const stem = logical.replace(/\.(mdx|mdl)$/i, '');
     const irPath = path.join(converted, stem + '.ir.json');
@@ -94,13 +96,21 @@ export async function prepareSourceImport({gameDir, request, outDir, bundleSigna
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [gameDir, requestPath, outDir, resultPath] = process.argv.slice(2);
+  let progressSequence = 0;
+  const [gameDir, requestPath, outDir, resultPath, progressPath] = process.argv.slice(2);
   if (!gameDir || !requestPath || !outDir || !resultPath) throw new Error('Expected game-dir request output result');
   fs.mkdirSync(path.dirname(resultPath), {recursive: true});
   try {
     const bundlePath = fileURLToPath(new URL('../../../runtime-bundle.json', import.meta.url));
     const bundleSignature = fs.existsSync(bundlePath) ? sha256Bytes(fs.readFileSync(bundlePath)) : '';
-    const result = await prepareSourceImport({gameDir, request: JSON.parse(fs.readFileSync(requestPath)), outDir, bundleSignature});
+    const result = await prepareSourceImport({gameDir, request: JSON.parse(fs.readFileSync(requestPath)), outDir, bundleSignature, onProgress: (stage, completed, total) => {
+      if (progressPath) {
+        // Immutable snapshots avoid replacing a file Godot may have open on Windows.
+        const snapshot = progressPath + '.' + String(progressSequence++).padStart(6, '0') + '.json';
+        fs.writeFileSync(snapshot + '.pending', JSON.stringify({stage, completed, total}));
+        fs.renameSync(snapshot + '.pending', snapshot);
+      }
+    }});
     fs.writeFileSync(resultPath, JSON.stringify(result, null, 2));
   } catch (error) {
     fs.writeFileSync(resultPath, JSON.stringify({ok: false, diagnostics: [{code: 'source_import_failed',

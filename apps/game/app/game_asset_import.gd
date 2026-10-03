@@ -2,7 +2,7 @@ extends RefCounted
 
 const CachedCompiler: GDScript = preload("res://tools/godot/import_cached_compiler.gd")
 
-## 接受预生成 bake task 清单；解析原版资产与玩家导入 UI 属于后续阶段。
+## 同步命令行入口；后台任务复用 install_results 提交完整路径表。
 func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 	if content_in_use:
 		return _failure("content_in_use", "对局运行中不能导入资产")
@@ -13,7 +13,6 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 	if manifest.get("manifest_version") != 1 or not manifest.get("tasks") is Array or manifest.tasks.is_empty():
 		return _failure("manifest_invalid", "清单版本不支持或 tasks 为空")
 	var results: Array[Dictionary] = []
-	var paths: Dictionary[String, String] = {}
 	var compiler: RefCounted = CachedCompiler.new()
 	for entry: Variant in manifest.tasks:
 		if not entry is String or entry.is_empty():
@@ -23,15 +22,22 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 		results.append(response.result)
 		if int(response.exit_code) != 0:
 			return {"ok": false, "results": results, "diagnostics": response.result.diagnostics}
-		var result: Dictionary = response.result
-		var asset_id: String = str(result.asset_id).replace("\\", "/").to_lower()
+	return install_results(results)
+
+func install_results(results: Array[Dictionary]) -> Dictionary:
+	if results.is_empty() or AssetProvider.runtime_content_sealed:
+		return _failure("cache_install_invalid", "空索引或对局已开始")
+	var paths: Dictionary[String, String] = {}
+	for result: Dictionary in results:
+		if not result.get("ok", false) or not result.get("output_scene") is String:
+			return _failure("cache_result_invalid", "编译结果无效")
+		var asset_id: String = str(result.get("asset_id", "")).replace("\\", "/").to_lower()
 		if asset_id.is_empty() or asset_id.is_absolute_path() or asset_id.split("/").has("..") or paths.has(asset_id + ".scn"):
 			return _failure("asset_identity_invalid", "重复或非法资产身份：" + asset_id)
-		var logical: String = asset_id + ".scn"
 		var scene: PackedScene = RuntimeAssets.load_packed_scene(str(result.output_scene))
 		if scene == null:
 			return _failure("cache_scene_load_failed", "缓存场景不能由游戏加载：" + asset_id)
-		paths[logical] = str(result.output_scene)
+		paths[asset_id + ".scn"] = str(result.output_scene)
 	var installed: Error = ContentPaths.install_compiled_scenes(paths)
 	if installed != OK:
 		return _failure("cache_install_failed", "缓存路径提交失败：%s" % installed)

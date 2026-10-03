@@ -25,9 +25,27 @@ func _ready() -> void:
 
 
 func _start() -> void:
+	if _run_import_worker():
+		return
 	if not _prepare_asset_import():
 		return
-	if "--smoke-test" in OS.get_cmdline_user_args():
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if (not OS.has_feature("editor") or "--asset-import-wizard" in args) and not "--warcraft-dir" in args and not "--asset-import-manifest" in args:
+		var wizard: Control = (load("res://client/asset_import/asset_import_wizard.tscn") as PackedScene).instantiate() as Control
+		wizard.auto_resume = not "--asset-import-wizard" in args
+		var cache_index: int = args.find("--asset-import-cache")
+		if cache_index >= 0 and cache_index + 1 < args.size():
+			wizard.cache_root = args[cache_index + 1]
+		wizard.ready_to_play.connect(func() -> void:
+			wizard.queue_free()
+			if "--smoke-test" in args:
+				_smoke_start.call_deferred()
+			else:
+				_async_start.call_deferred())
+		get_tree().root.add_child(wizard)
+		get_tree().current_scene = wizard
+		return
+	if "--smoke-test" in args:
 		_smoke_start()
 		return
 	_async_start()
@@ -199,4 +217,25 @@ func _prepare_asset_import() -> bool:
 	if not result.ok or "--asset-import-only" in args:
 		get_tree().quit(0 if result.ok else 1)
 		return false
+	return true
+
+## 子进程只编译一个任务，缓存发布仍使用同一原子提交契约。
+func _run_import_worker() -> bool:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	var task_index: int = args.find("--asset-worker-task")
+	if task_index < 0:
+		return false
+	var result_index: int = args.find("--asset-worker-result")
+	if task_index + 1 >= args.size() or result_index < 0 or result_index + 1 >= args.size():
+		get_tree().quit(2)
+		return true
+	var compiler: RefCounted = load("res://tools/godot/import_cached_compiler.gd").new()
+	var response: Dictionary = compiler.compile_task(args[task_index + 1])
+	var file: FileAccess = FileAccess.open(args[result_index + 1], FileAccess.WRITE)
+	if file == null:
+		get_tree().quit(2)
+		return true
+	file.store_string(JSON.stringify(response.result))
+	file.close()
+	get_tree().quit(int(response.exit_code))
 	return true
