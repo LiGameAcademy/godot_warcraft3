@@ -32,6 +32,9 @@ def sync(name):
         for path in base.rglob('*'):
             if path.is_file() and path.suffix not in {'.md', '.import'}:
                 sources[f'packages/{package}/{path.relative_to(base).as_posix()}'] = path
+    # The locale directory has .gdignore: preserve raw runtime data outside it.
+    for filename in ('editor_strings.csv', 'westring_name_sort_zh.json'):
+        sources[f'packages/content/localization/{filename}.source'] = ROOT / 'packages/content/localization/locale' / filename
     plugins = ('godot_ability_system', 'panku_console') if name == 'game' else ()
     for plugin in plugins:
         base = ROOT / 'addons' / plugin
@@ -96,6 +99,16 @@ def sync(name):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         records.append({'path':relative, 'generated':'legacy_model_redirect', 'sha256':hashlib.sha256(data).hexdigest()})
+    if name == 'game':
+        tool_dir = app / 'tools/godot'
+        payloads = ['import_billboard_pose.gd', 'import_ribbon_runtime.gd']
+        hashes = [[p.name, hashlib.sha256(p.read_bytes()).hexdigest()] for p in sorted(tool_dir.glob('import_*.gd'))]
+        material = app / 'packages/map/presentation/wc3_model/wc3_pe2_material.gd'
+        hashes.append(['presentation/wc3_model/wc3_pe2_material.gd', hashlib.sha256(material.read_bytes()).hexdigest()])
+        for relative, data in [(f'tools/godot/{n}.source', (tool_dir / n).read_bytes()) for n in payloads] + [('tools/godot/import_compiler.source', json.dumps(hashes).encode())]:
+            target = safe_path(app, relative)
+            target.write_bytes(data)
+            records.append({'path': relative, 'generated': 'runtime_import_payload', 'sha256': hashlib.sha256(data).hexdigest()})
     manifest_path.write_text(json.dumps(records, indent=2)+'\n', encoding='utf-8')
     config = app / 'override.cfg'
     if not config.exists(): config.write_text('[warcraft3]\nasset_root='+json.dumps((ROOT/'assets').as_posix())+'\n',encoding='utf-8')

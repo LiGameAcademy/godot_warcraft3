@@ -80,7 +80,7 @@ func _run() -> void:
 	var team: OptionButton = _named(viewer, "Team")
 	team.select(2)
 	team.item_selected.emit(2)
-	for node: Node in viewer._nodes(viewer.current_model):
+	for node: Node in load("res://viewer_inspection.gd").collect_nodes(viewer.current_model):
 		if node is MeshInstance3D and node.mesh != null:
 			for surface: int in range(node.mesh.get_surface_count()):
 				var material: Material = node.get_active_material(surface)

@@ -1,0 +1,30 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "godot_warcraft3", "godot_warcraft3.csproj", "{F3B07F69-9931-4B06-80C5-89E098EB283A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rts.Kernel", "..\..\external\rts_kernel\src\Rts.Kernel\Rts.Kernel.csproj", "{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		ExportDebug|Any CPU = ExportDebug|Any CPU
+		ExportRelease|Any CPU = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{F3B07F69-9931-4B06-80C5-89E098EB283A}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{2EBDC339-5A50-43F4-A7C6-F60F9FC03859}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

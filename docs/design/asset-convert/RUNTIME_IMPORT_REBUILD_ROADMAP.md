@@ -421,3 +421,51 @@ PriestMissile.scn.cache/
 缓存入口当前消费预生成 IR + glTF；暂不支持此入口直接缓存 GLB。旧已提交版本及异常退出留下的孤立文件不自动删除，正式游戏接入时另行制定容量和清理策略。没有改变查看器的只读定位，也没有将技术通过标记为视觉保真或可交付。
 
 下一步为正式游戏接入：打包缓存入口及源码/构建签名 payload，按缓存结果的实际路径加载资产，并在正式导出游戏内复现缓存命中、失效、故障恢复和重载。
+
+## 13. 正式游戏缓存接入（2026-10-03）
+
+缓存编译入口已接入 `apps/game` 正式启动与 Windows release 构建。新增 `app/game_asset_import.gd` 消费版本化任务清单，在地图启动前编译/复用缓存，并通过游戏原有 `RuntimeAssets.load_packed_scene` 重载。全部任务成功后一次提交逻辑路径表；`ContentPaths` 将旧的资产逻辑路径映射到结果返回的实际缓存版本路径。导入失败不启动地图，也不安装半份路径表；对局运行中拒绝导入。路径表提交后只读，复制调用方字典，不允许重复切换。
+
+新增启动参数：
+
+- `--asset-root`：现有外部资源目录；在路径解析阶段生效，覆盖开发配置，避免 Autoload 先于 boot 加载到错误目录。
+- `--asset-import-manifest`：包含 `manifest_version=1` 和非空 `tasks` 路径数组的 JSON；相对任务路径以清单目录为基准。
+- `--asset-import-result`：写出结构化结果，包含每项诊断及实际缓存场景路径。
+- `--asset-import-only`：完成编译、重载与游戏路径注册后退出，方便验证导入。
+- 不使用 `--asset-import-only` 时继续正常 Loading；开发验证可以追加已有 `--smoke-test`。
+
+这些参数是本阶段开发验收入口，不是最终玩家交互。输入仍是预生成 IR/glTF/bake task；开发地图的基础数据、纹理和未替换模型仍来自外部开发资源目录。成功结果保持 `deliverable=false`。
+
+发布构建补充：
+
+- `sync_packages.py` 在正式游戏同步时生成内嵌脚本源码及编译器签名 payload，维护源仍是原有脚本。
+- Windows preset 包含 `*.source`，排除开发 override、测试、工具 JS、插件示例及旧原作模型/特效资源目录；原作资产不作为本轮新增发布资源提交。
+- 补充游戏 .NET solution，匹配 Godot 的 Debug/ExportDebug/ExportRelease 配置及 Kernel 引用。
+- 正式导出揭示 locale 目录被 `.gdignore` 排除：同步工具从同一权威 CSV/JSON 生成目录外只读 `.source`，本地化加载在原路径不可用时读取它。不维护第二套文案。
+
+复现（仓库根目录 PowerShell，开发机器需要 Python、Node、Godot .NET、.NET SDK 和对应 Windows export templates）：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+$env:ASSET_SOURCE = Join-Path $PWD 'assets/.staging/wc3-assets'
+Remove-Item Env:GAME_BINARY -ErrorAction SilentlyContinue
+node tools/asset-convert/src/game-runtime-import.test.mjs
+```
+
+测试自行同步、导出正式游戏，再准备 Footman、牧师投射物和回春术 Ribbon。发布进程清空 PATH、GODOT、ASSET_SOURCE，只启动游戏 EXE，验证首次导入、跨进程缓存命中、输入签名失效、缓存场景损坏重建、错误 IR 不破坏良好缓存、修正后重试，以及游戏按实际缓存路径加载并启动开发地图。退出码与脚本/构建错误同时校验，不能只看导出命令返回 0。每轮目录 `tools/asset-convert/tmp/game-runtime-*/` 保存 EXE、清单、逐次日志及最终 `report.json`。
+
+手动检查最新成功报告中的 `binary` 与 `manifestPath`，启动该 EXE，传入 `--asset-root`、`--asset-import-manifest` 和 `--asset-import-result` 的实际路径；省略 `--headless`、`--asset-import-only`、`--smoke-test` 即进入正常 Loading 和地图。报告 `result.paths` 中的缓存 SCN 可直接放入只读查看器检查。不得将自动启动通过记为游戏内特效视觉验收。
+
+本轮自测：正式 Windows release 的 8 项集成检查、路径表隔离/提交和导入保护边界测试、正常 Loading → 可玩地图回归、查看器帧数/循环/节点树/动画元数据/六向视图及实际渲染均通过。地图启动生成 86 个单位。现有悬崖、UberSplat 纹理和部分旧 SCN 缺失/占位告警仍存在；编辑器导出与正常退出时的 ObjectDB/resources 清理告警也未在本轮消除。这些不等于资源完整或视觉验收通过。
+
+手动打开最新成功的正式游戏构建：
+
+```powershell
+$reportFile = Get-ChildItem tools/asset-convert/tmp/game-runtime-*/report.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$report = Get-Content $reportFile.FullName -Raw | ConvertFrom-Json
+$assetRoot = Join-Path $PWD 'assets'
+$resultFile = Join-Path $reportFile.DirectoryName 'manual-import.result.json'
+& $report.binary -- --asset-root $assetRoot --asset-import-manifest $report.manifestPath --asset-import-result $resultFile
+```
+
+下一步：确定发布进程中的源资产适配入口，先从原版路径读取开发地图所需资产并产生 IR/依赖，明确归档读取、格式解析和 Node 开发工具的边界，再接入首次启动 UI、进度、取消和失败重试。之后才扩展开发地图全量资产和游戏内视觉验收。缓存容量/旧版本清理、无输入清单的持久索引挂载及干净机器安装验收仍未完成。

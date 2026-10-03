@@ -10,11 +10,13 @@ extends Node
 ##
 ## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md §10。
 
-const GAME_MAIN_PATH := "res://scenes/game_main.tscn"
-const LOADING_SCREEN_PATH := "res://scenes/game_loading_screen.tscn"
+const AssetImport: GDScript = preload("res://app/game_asset_import.gd")
+
+const GAME_MAIN_PATH: String = "res://scenes/game_main.tscn"
+const LOADING_SCREEN_PATH: String = "res://scenes/game_loading_screen.tscn"
 
 ## Async loading 超时（msec）。
-const ASYNC_LOAD_TIMEOUT_MSEC := 180000
+const ASYNC_LOAD_TIMEOUT_MSEC: int = 180000
 
 
 func _ready() -> void:
@@ -22,6 +24,8 @@ func _ready() -> void:
 
 
 func _start() -> void:
+	if not _prepare_asset_import():
+		return
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		_smoke_start()
 		return
@@ -30,18 +34,18 @@ func _start() -> void:
 
 ## --smoke-test：跳过 loading，经 Facade 配置并等待 session。
 func _smoke_start() -> void:
-	var packed := ResourceLoader.load(GAME_MAIN_PATH) as PackedScene
+	var packed: PackedScene = ResourceLoader.load(GAME_MAIN_PATH) as PackedScene
 	if not is_instance_valid(packed):
 		push_error("boot: 同步加载 game_main 失败")
 		get_tree().quit(1)
 		return
-	var scene := packed.instantiate() as GameMain
+	var scene: GameMain = packed.instantiate() as GameMain
 	# spawn_opponent_base 必须在 add_child → _boot_scene 之前写入。
 	scene.configure_match({"spawn_opponent_base": true})
 	get_tree().root.add_child(scene)
 	get_tree().current_scene = scene
 
-	var deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
 	while is_instance_valid(scene) and not scene.is_session_ready() \
 			and Time.get_ticks_msec() < deadline:
 		await get_tree().process_frame
@@ -60,7 +64,7 @@ func _smoke_start() -> void:
 
 ## 正常启动：Loading View + GameMain Facade。
 func _async_start() -> void:
-	var loading_packed := ResourceLoader.load(LOADING_SCREEN_PATH) as PackedScene
+	var loading_packed: PackedScene = ResourceLoader.load(LOADING_SCREEN_PATH) as PackedScene
 	if not is_instance_valid(loading_packed):
 		push_error("boot: 加载 game_loading_screen.tscn 失败")
 		get_tree().quit(1)
@@ -70,7 +74,7 @@ func _async_start() -> void:
 	get_tree().current_scene = loading
 	loading.begin(_initial_map_title())
 
-	var err := ResourceLoader.load_threaded_request(GAME_MAIN_PATH)
+	var err: Error = ResourceLoader.load_threaded_request(GAME_MAIN_PATH)
 	if err != OK:
 		push_error("boot: load_threaded_request 失败 err=%d" % err)
 		get_tree().quit(1)
@@ -78,10 +82,10 @@ func _async_start() -> void:
 
 	# 资源阶段：boot 映射到 0 .. GameMain.RESOURCE_END（GameMain 尚未存在）。
 	var progress: Array = [0.0]
-	var deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
-	var timed_out := true
+	var deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var timed_out: bool = true
 	while Time.get_ticks_msec() < deadline:
-		var status := ResourceLoader.load_threaded_get_status(GAME_MAIN_PATH, progress)
+		var status: ResourceLoader.ThreadLoadStatus = ResourceLoader.load_threaded_get_status(GAME_MAIN_PATH, progress)
 		match status:
 			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 				loading.set_progress(
@@ -105,12 +109,12 @@ func _async_start() -> void:
 
 	loading.set_progress("正在加载资源…", GameMain.RESOURCE_END)
 
-	var main_packed := ResourceLoader.load_threaded_get(GAME_MAIN_PATH) as PackedScene
+	var main_packed: PackedScene = ResourceLoader.load_threaded_get(GAME_MAIN_PATH) as PackedScene
 	if not is_instance_valid(main_packed):
 		push_error("boot: load_threaded_get 拿到非 PackedScene")
 		get_tree().quit(1)
 		return
-	var scene := main_packed.instantiate() as GameMain
+	var scene: GameMain = main_packed.instantiate() as GameMain
 	# 先订 Facade 信号，再 wire（wire 末尾可能立刻 emit 初始进度 / 已就绪）。
 	scene.preparation_progress.connect(
 		func(stage: String, p: float) -> void:
@@ -126,7 +130,7 @@ func _async_start() -> void:
 	get_tree().root.add_child(scene)
 	get_tree().current_scene = scene
 
-	var ready_deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var ready_deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
 	while is_instance_valid(scene) and not scene.is_session_ready() \
 			and Time.get_ticks_msec() < ready_deadline:
 		await get_tree().process_frame
@@ -143,3 +147,41 @@ func _async_start() -> void:
 
 func _initial_map_title() -> String:
 	return "Echo Isles"
+
+## 启动参数仅编排导入，不承载解析/编译实现。
+func _prepare_asset_import() -> bool:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	var manifest_path: String = ""
+	var result_path: String = ""
+	var index: int = 0
+	while index < args.size():
+		if args[index] in ["--asset-root", "--asset-import-manifest", "--asset-import-result"]:
+			if index + 1 >= args.size():
+				get_tree().quit(2)
+				return false
+			var flag: String = args[index]
+			index += 1
+			match flag:
+				"--asset-root": ProjectSettings.set_setting("warcraft3/asset_root", args[index])
+				"--asset-import-manifest": manifest_path = args[index]
+				"--asset-import-result": result_path = args[index]
+		index += 1
+	if manifest_path.is_empty():
+		if "--asset-import-only" in args:
+			get_tree().quit(2)
+			return false
+		return true
+	var importer: RefCounted = AssetImport.new()
+	var result: Dictionary = importer.run_manifest(manifest_path, AssetProvider.runtime_content_sealed)
+	if not result_path.is_empty():
+		var file: FileAccess = FileAccess.open(result_path, FileAccess.WRITE)
+		if file == null:
+			get_tree().quit(2)
+			return false
+		file.store_string(JSON.stringify(result, "  ") + "\n")
+		file.close()
+	print("GAME asset import %s" % ["PASS" if result.ok else "FAIL"])
+	if not result.ok or "--asset-import-only" in args:
+		get_tree().quit(0 if result.ok else 1)
+		return false
+	return true
