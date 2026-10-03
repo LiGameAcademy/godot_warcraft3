@@ -11,6 +11,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = path.resolve(__dirname, "..");
 
 const includes = [
+  // HUD icons and selection feedback are independent of model dependencies.
+  "ReplaceableTextures/CommandButtons*/**",
+  "ReplaceableTextures/PassiveButtons*/**",
+  "ReplaceableTextures/Selection/**",
+  "UI/**",
   // 地形 / 悬崖 / 水 / 树
   "TerrainArt/LordaeronSummer/**",
   "ReplaceableTextures/Cliff/**",
