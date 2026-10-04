@@ -9,13 +9,25 @@ import path from "node:path";
  * 之前的隐患：NodeIO().write(PE2) 成功后再写 GLB，半路挂 → 下次 cache 看到 dest 存在就 skip，
  * 但 .pe2.json / .geosetvis.json 缺失，runtime 走 JSON fallback 但 model 也缺。
  *
- * 失败语义：写 .tmp 失败 / rename 失败 → 删 .tmp，throw；不会留 dest。
+ * 失败语义：写 .tmp 失败 / rename 失败 → 删 .tmp，throw；保留原有 dest。
  *
  * @template T
  * @param {string} dest 最终目标路径
  * @param {(tmp: string) => T} writer 实际写入函数（传入 .tmp 路径，返回任意值透传）
  * @returns {T}
  */
+/** Retry only transient Windows file locks; never remove the previous target. */
+export function renameWithRetrySync(source, destination) {
+  const delays = [20, 50, 100, 200];
+  for (let attempt = 0; ; attempt++) {
+    try { fs.renameSync(source, destination); return; }
+    catch (error) {
+      if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= delays.length) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delays[attempt]);
+    }
+  }
+}
+
 export function atomicWriteSync(dest, writer) {
   const tmp = dest + ".tmp";
   /** @type {T | undefined} */
@@ -23,7 +35,7 @@ export function atomicWriteSync(dest, writer) {
   try {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     result = writer(tmp);
-    fs.renameSync(tmp, dest);
+    renameWithRetrySync(tmp, dest);
     return result;
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* tmp 不存在或不可删，忽略 */ }

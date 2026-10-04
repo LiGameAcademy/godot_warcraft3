@@ -26,6 +26,7 @@ export async function packageRuntime(destination) {
       pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(relative), match[1])));
     }
   }
+  copy('packages/content/definitions/layer_policy.json');
   for (const pkg of ['asset-convert', 'mpq-extract']) {
     copy(`tools/${pkg}/package.json`);
     fs.cpSync(path.join(repo, `tools/${pkg}/node_modules`), path.join(destination, `tools/${pkg}/node_modules`), {recursive: true});

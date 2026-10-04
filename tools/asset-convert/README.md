@@ -1,5 +1,7 @@
 # asset-convert
 
+玩家导入的最新入口、完整开发地图验收和手动启动见 [PLAYER_SOURCE_IMPORT.md](../../docs/design/asset-convert/PLAYER_SOURCE_IMPORT.md#开发地图资源覆盖2026-10-04)。默认 Windows 引导读取原版安装目录，准备 Echo Isles 所需内容及缓存 SCN；玩家无需安装 Node 或 Godot 编辑器。下文旧开发转换命令继续用于构建与调试。
+
 将经典 WC3 资产转为 Godot 可用格式：
 
 1. **贴图** `BLP` → `PNG`（`war3-model` 解码 + `pngjs`）

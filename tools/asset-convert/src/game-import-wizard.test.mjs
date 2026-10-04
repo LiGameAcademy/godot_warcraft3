@@ -106,7 +106,7 @@ assert.equal(rebuilt.result.ok, true);
 assert.equal(JSON.stringify(rebuilt.result.paths), coldPaths);
 probe('render', ['--capture']);
 run(binary, ['--headless', '--', '--asset-root', path.join(repo, 'assets'),
-  '--asset-import-cache', cache, '--smoke-test'], true);
+  '--asset-import-cache', cache, '--asset-import-request', 'res://config/asset_import_samples.source', '--smoke-test'], true);
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({
   binary, gameDir, cache,
   checks: ['source_directory_readonly', 'responsive_cold_import', 'source_cancel_preserves_index',

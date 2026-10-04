@@ -36,7 +36,7 @@ text = "准备游戏资源"
 
 [node name="Description" type="Label" parent="Center/Panel"]
 layout_mode = 2
-text = "提供经典《魔兽争霸3》原版目录。导入过程只读原版文件。\n本阶段验证模型与特效样本，完整开发地图资源仍在迁移中。"
+text = "提供经典《魔兽争霸3》原版目录。导入过程只读原版文件。\n准备 Echo Isles 开发地图、模型、图标、定义表与地形资源。"
 
 [node name="Path" type="HBoxContainer" parent="Center/Panel"]
 layout_mode = 2

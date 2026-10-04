@@ -20,6 +20,7 @@ func _run() -> void:
 	var report: String = args[args.find("--report") + 1]
 	var wizard: Control = Wizard.instantiate() as Control
 	wizard.cache_root = cache
+	wizard.request_resource = "res://config/development_asset_request.source" if "--development" in args else "res://config/asset_import_samples.source"
 	wizard.auto_resume = mode in ["warm", "rebuild"]
 	wizard.ready_to_play.connect(func() -> void: ready_count += 1)
 	add_child(wizard)
@@ -55,7 +56,7 @@ func _run() -> void:
 			_check(completion.get("cancelled", false) and wizard.play_button.disabled and not wizard.start_button.disabled)
 		else:
 			_check(completion.ok and not wizard.play_button.disabled and frames > 10)
-			_check(not Index.latest(cache).is_empty())
+			_check(not Index.latest(cache, wizard.request_resource).is_empty())
 			wizard.play_button.pressed.emit()
 			_check(ready_count == 1)
 	if "--capture" in args:
@@ -70,7 +71,7 @@ func _run() -> void:
 	get_tree().quit(0 if _failures.is_empty() else 1)
 
 func _wait(wizard: Control) -> void:
-	var deadline: int = Time.get_ticks_msec() + 180000
+	var deadline: int = Time.get_ticks_msec() + (1800000 if "--development" in OS.get_cmdline_user_args() else 180000)
 	while wizard.job.active and Time.get_ticks_msec() < deadline:
 		frames += 1
 		await get_tree().process_frame

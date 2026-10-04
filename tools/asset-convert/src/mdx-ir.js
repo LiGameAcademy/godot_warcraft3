@@ -18,7 +18,7 @@ import { ribbonPayload } from './mdx-ribbon-ir.js';
  * @param {string} outDir
  * @param {string} inDir
  */
-export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir) {
+export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir, sourceMetadata = {}) {
   const irLogical = mdxLogicalToModelIr(logicalPath);
   const destination = path.join(outDir, ...irLogical.split("/"));
   const gltf = mdxLogicalToGltf(logicalPath);
@@ -44,6 +44,8 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
     source_format: path.extname(logicalPath).slice(1).toLowerCase(),
     source_path: logicalPath,
     source_hash: sha256Bytes(sourceBytes),
+    source_package: sourceMetadata.source_package,
+    overlay_priority: sourceMetadata.overlay_priority,
     geometry: {
       gltf,
       node_count: nodes.length,

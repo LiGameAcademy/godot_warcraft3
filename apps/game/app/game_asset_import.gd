@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Content: GDScript = preload("res://app/asset_import_content.gd")
 const CachedCompiler: GDScript = preload("res://tools/godot/import_cached_compiler.gd")
 
 ## 同步命令行入口；后台任务复用 install_results 提交完整路径表。
@@ -22,11 +23,13 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 		results.append(response.result)
 		if int(response.exit_code) != 0:
 			return {"ok": false, "results": results, "diagnostics": response.result.diagnostics}
-	return install_results(results)
+	return install_results(results, manifest.get("content", {}))
 
-func install_results(results: Array[Dictionary]) -> Dictionary:
+func install_results(results: Array[Dictionary], content: Dictionary = {}) -> Dictionary:
 	if results.is_empty() or AssetProvider.runtime_content_sealed:
 		return _failure("cache_install_invalid", "空索引或对局已开始")
+	if not Content.validate(content):
+		return _failure("content_generation_invalid", "地图资源缓存缺失或损坏")
 	var paths: Dictionary[String, String] = {}
 	for result: Dictionary in results:
 		if not result.get("ok", false) or not result.get("output_scene") is String:
@@ -38,15 +41,17 @@ func install_results(results: Array[Dictionary]) -> Dictionary:
 		if scene == null:
 			return _failure("cache_scene_load_failed", "缓存场景不能由游戏加载：" + asset_id)
 		paths[asset_id + ".scn"] = str(result.output_scene)
-	var installed: Error = ContentPaths.install_compiled_scenes(paths)
+	var installed: Error = ContentPaths.install_compiled_scenes(paths, str(content.get("root", "")))
 	if installed != OK:
 		return _failure("cache_install_failed", "缓存路径提交失败：%s" % installed)
+	if not content.is_empty():
+		Wc3DefStore.clear_loaded_tables()
 	# Check the same resolver used by the game's model cache, not a direct load.
 	for logical: String in paths:
 		var resolved: String = RuntimeAssets.resolve_model_scene(logical)
 		if resolved != paths[logical]:
 			return _failure("cache_resolution_failed", "游戏未选择新缓存：" + logical)
-	return {"ok": true, "results": results, "paths": paths, "deliverable": false}
+	return {"ok": true, "results": results, "paths": paths, "content": content, "deliverable": false}
 
 func _failure(code: String, message: String) -> Dictionary:
 	return {"ok": false, "results": [], "diagnostics": [{"code": code, "severity": "error", "message": message}]}

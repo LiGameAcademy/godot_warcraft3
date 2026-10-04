@@ -1,5 +1,7 @@
 # 玩家源资产入口：Windows 发布实验
 
+最新阶段见本文末尾“开发地图资源覆盖（2026-10-04）”。此前的四样本、外部 `--asset-root` 操作保留为历史验收记录。当前默认请求已改为开发地图请求；四样本回归须显式指定 `asset_import_samples.source`。
+
 2026-10-03。本轮验证原版安装目录 → MPQ 精确读取 → 原有 JS 适配器 → IR/glTF/依赖 → 游戏缓存编译 → SCN。结果保持 `deliverable=false`；不代表开发地图全量或特效视觉保真通过。
 
 ## 运行边界
@@ -116,3 +118,58 @@ $manualCache = Join-Path $reportFile.DirectoryName 'manual-cache'
 6. 强制显示配置界面可保留 `--asset-import-wizard`。索引或 SCN 损坏、版本变化时，应回到配置界面，重新导入修复。
 
 本轮正式发布包 9 项引导验收、既有同步导入 8 项兼容回归和正常 Loading → 可玩地图回归通过。自动验收覆盖缓存不得写入原版目录、冷导入、界面持续更新、两阶段取消保护原索引、离线索引恢复、错误目录重试、损坏索引重建、界面实际渲染与缓存恢复后的可玩地图启动。截图和逐次日志保存在报告同目录。完整资源覆盖和原作视觉一致性仍需下一轮验收。
+
+
+## 开发地图资源覆盖（2026-10-04）
+
+默认首次启动清单为 `apps/game/config/development_asset_request.source`。从玩家的经典 TFT 安装目录读取 `Maps/FrozenThrone/(2)EchoIsles.w3x`，解析地图信息、地形、单位、装饰物和寻路；从同一 MPQ 来源导出定义表和文本配置。根据地图摆放、人族初始农民/主城、建造/训练/技能/物品关联和运行时脚本常量递归收集模型、头像、投射物、光晕及图标。地形对应的悬崖/过渡模型及当前 UI/可替换贴图目录补充扫描；listfile 只作补充，定义引用仍按精确名称读取。
+
+清单只包含路径和规则，不携带原作资源。开发者重新生成它可运行 `node tools/asset-convert/scripts/build-development-request.mjs`；生成器使用开发解包目录的定义文件名和当前脚本，不在玩家机器运行。新增运行时资源引用或开发地图依赖时应更新清单。当前不是任意地图、任意种族或整部魔兽资源的完整导入。
+
+每一代导入在缓存下的独立 `content/<UUID>/assets` 中准备地图、定义表、PNG、glTF 和必要旁路文件，并记录全部文件哈希。模型仍经原有 IR → 缓存编译 → SCN 契约，模型依赖签名改为自身源文件与贴图，不把全部 UI 贴图重复纳入每个任务。全部场景和内容文件校验成功后，才同时挂载场景路径表及这一代内容根目录、清除挂载前的定义表缓存并发布持久索引。失败与取消不发布半份地图内容；旧索引保持可恢复。
+
+Windows release 排除原版模型、派生模型、地图数据、定义表及旧特效目录，保留游戏自写着色器和材质。正常启动不需要 `--asset-root`。缓存索引也验证地图、定义表和贴图的 SHA-256，任一文件缺失/损坏应回到配置界面；快速恢复无需原版 MPQ、中间 IR 或可执行的 Node。源目录变化不在快速启动时自动探测，需主动重新导入。
+
+完整批次的后台编译每次启动同一游戏 EXE 编译最多 16 个任务，四样本仍每批一个，保留逐任务取消回归。取消终止当前拥有的进程，已经提交的单场景缓存可用于重试。阶段计数不是总耗时百分比；最后的哈希验证和路径挂载仍在主线程，尚未承诺大批量全过程没有停顿。
+
+覆盖报告在内容根目录的 `coverage.json`：列出对象/模型/贴图计数、未解析引用、源缺项及路径别名。命令面板的旧 `BTNBuild`/`DISBTNBuild` 引用通过显式别名使用原版 `BTNHumanBuild`/`DISBTNHumanBuild`，报告保留对应关系。未找到真实引用会记录警告并使 `complete=false`，界面提示核查报告；模型自身必需依赖缺失仍失败。`complete` 只表示此规则范围的引用覆盖，`visual=unverified` 和 `deliverable=false` 继续保留。
+
+这次扩大范围还修复了挂点以另一个挂点为父节点的编译、纯粒子模型的空 glTF 缓冲/无轨道动画，Godot 导入时骨骼与场景节点重名的精确映射，以及相同 float32 动画载荷的重复存储。复用动画存储不会降低采样率或改变曲线。来源元数据随 IR 首次写出；Windows 临时文件占用只进行有限重试，持续失败仍报错并保留旧目标。
+
+### 完整发布验收与手动启动
+
+构建机设置 Godot .NET 路径后，从仓库根目录执行：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64.exe'
+node tools/asset-convert/src/game-development-import.test.mjs
+```
+
+测试导出正式 release，后台完成完整默认请求，验证覆盖报告与缓存索引。随后禁用随包 `node.exe` 并移走中间输入，再用持久缓存启动 86 单位地图，清空外部工具相关环境变量，且不传 `--asset-root`；最后实际渲染地图并验证图标可加载。报告、日志和截图位于 `tools/asset-convert/tmp/development-*/`，只保留成功完成后的 `report.json` 作为验收证据。
+
+本轮验收结果：449 个 SCN、10,537 个内容文件，当前规则范围未解析引用为 0。完整后台冷导入、无 Node/中间输入的索引恢复、86 单位地图启动及实际截图通过；四样本引导 9 项回归、内容原子挂载、挂点层级/骨骼映射、纯粒子输入与 3,500 次动画采样对比通过。修正了 release 会剔除断言导致截图保存未执行的测试脚本，最终渲染复测复用了同一份成功冷导入证据（报告 `reusedColdImport=true`）。
+
+此次冷导入约 1,012 秒；缓存地图启动观察到约 34 秒及一次 286 秒，不能据此承诺快速启动。下一轮应分段测量完整文件哈希、场景预加载和地图初始化，再决定减少重复校验/延迟加载的边界。启动挂载前仍有定义表缺项警告，渲染退出日志还有 Godot 的空材质及对象清理信息，保留日志继续排查；未计为原作视觉验收通过。
+
+打开最新成功构建（复用验收缓存）：
+
+```powershell
+$reportFile = Get-ChildItem tools/asset-convert/tmp/development-*/report.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$report = Get-Content $reportFile.FullName -Raw | ConvertFrom-Json
+& $report.binary -- --asset-import-cache $report.cacheRoot
+```
+
+验证玩家首次启动，应改用一个新缓存目录，并强制显示配置界面：
+
+```powershell
+$manualCache = Join-Path $reportFile.DirectoryName 'manual-cache'
+& $report.binary -- --asset-import-cache $manualCache --asset-import-wizard
+```
+
+1. 选择含 MPQ 和上述 Echo Isles 文件的经典安装目录，查看定义表/地图/贴图/模型各阶段进度。
+2. 取消后不得进入地图；重试成功后点击继续，检查地形、悬崖、农民/主城和 UI，选择单位检查图标/选择环。
+3. 训练牧师、大法师并攻击，检查投射物、光晕、动画循环；与原作游戏内表现比较，不能将“可加载”当保真通过。
+4. 关闭游戏后，同一命令移除 `--asset-import-wizard`，应从缓存进入地图。
+5. 修改缓存的贴图/定义表或删除 SCN，下一次启动应回到导入界面，而不是使用半损坏内容。
+
+剩余工作：游戏内视觉验收、干净机器安装、缓存容量及旧版本清理、多个游戏进程的导入协调。地图内嵌资源覆盖、其他地图/种族、CASC、音效事件和跨平台发布不在本轮覆盖承诺内。

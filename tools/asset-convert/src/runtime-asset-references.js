@@ -18,11 +18,11 @@ export function collectRuntimeAssetReferences(roots = []) {
         for (const match of line.matchAll(/#[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g)) {
           if (match[0].startsWith('#')) break;
           const value = match[0].slice(1, -1).replaceAll('\\\\', '/').replaceAll('\\', '/');
-          if (!/^(Abilities|Units|Buildings|Doodads|Objects|UI\/Feedback|ReplaceableTextures)\//i.test(value)) continue;
-          if (!/\.(mdx|mdl|gltf|glb|scn|blp|tga|dds)$/i.test(value)) continue;
+          if (!/^(Abilities|Units|Buildings|Doodads|Objects|UI|TerrainArt|Textures|ReplaceableTextures)\//i.test(value)) continue;
+          if (!/\.(mdx|mdl|gltf|glb|scn|png|blp|tga|dds)$/i.test(value)) continue;
           const reason = {script: file, line: index + 1, runtime_path: value, kind: 'runtime_literal_candidate'};
           if (/[%{}]/.test(value)) { dynamic.push(reason); continue; }
-          refs.push({logical: value.replace(/\.(glb|gltf|scn)$/i, '.mdx'), reason});
+          refs.push({logical: value.replace(/\.(glb|gltf|scn)$/i, '.mdx').replace(/\.png$/i, '.blp'), reason});
         }
       }
     }

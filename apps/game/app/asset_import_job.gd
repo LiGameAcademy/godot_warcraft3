@@ -6,6 +6,8 @@ signal finished(result: Dictionary)
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 
+var request_resource: String = "res://config/development_asset_request.source"
+var _content: Dictionary = {}
 var active: bool = false
 var cache_root: String = "user://wc3-cache/source-import"
 var _pid: int = -1
@@ -18,6 +20,7 @@ var _game_dir: String = ""
 var _session: String = ""
 var _progress_text: String = ""
 var _cancelling: bool = false
+var _batch_count: int = 0
 
 func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-import") -> void:
 	if active:
@@ -32,6 +35,7 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 	_cancelling = false
 	_tasks.clear()
 	_results.clear()
+	_content = {}
 	if AssetProvider.runtime_content_sealed:
 		_fail("content_in_use", "对局运行中不能导入资产")
 		return
@@ -44,7 +48,7 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 		_fail("source_cache_unwritable", "无法创建导入目录")
 		return
 	var request: String = _session.path_join("request.json")
-	if not _write(request, FileAccess.get_file_as_string("res://config/asset_import_samples.source")):
+	if not _write(request, FileAccess.get_file_as_string(request_resource)):
 		_fail("source_request_unwritable", "无法写入导入请求")
 		return
 	_progress_path = _session.path_join("progress.json")
@@ -84,6 +88,7 @@ func poll() -> void:
 		_complete(response if not response.is_empty() and not response.get("ok", false) else {"ok": false, "diagnostics": [{"code": "process_failed", "message": "导入子进程异常退出，请重试"}]})
 		return
 	if _phase == "source":
+		_content = response.get("content", {})
 		var manifest: Dictionary = _read(str(response.get("manifest_path", "")))
 		for task: Variant in manifest.get("tasks", []):
 			if not task is String:
@@ -95,14 +100,18 @@ func poll() -> void:
 			return
 		_phase = "compile"
 	else:
-		_results.append(response)
+		if not response.get("results") is Array or response.results.size() != _batch_count:
+			_fail("worker_batch_invalid", "编译结果数量与批次不匹配")
+			return
+		for entry: Dictionary in response.results:
+			_results.append(entry)
 	if _results.size() < _tasks.size():
 		_start_worker()
 		return
 	progress_changed.emit("校验并安装缓存索引", _tasks.size(), _tasks.size())
 	var importer: RefCounted = TaskImport.new()
-	var result: Dictionary = importer.install_results(_results)
-	if result.ok and Index.save(cache_root, _results, _game_dir) != OK:
+	var result: Dictionary = importer.install_results(_results, _content)
+	if result.ok and Index.save(cache_root, _results, _game_dir, _content, request_resource) != OK:
 		result["diagnostics"] = [{"code": "index_save_failed", "message": "本次导入可用，但下次启动需重新导入索引"}]
 	_complete(result)
 
@@ -120,7 +129,14 @@ func cancel() -> void:
 func _start_worker() -> void:
 	_result_path = _session.path_join("worker-%s.json" % _results.size())
 	progress_changed.emit("编译场景缓存", _results.size(), _tasks.size())
-	_pid = OS.create_process(OS.get_executable_path(), PackedStringArray(["--headless", "--", "--asset-worker-task", _tasks[_results.size()], "--asset-worker-result", _result_path]), false)
+	var batch_size: int = 1 if _tasks.size() <= 4 else 16
+	var batch: Array[String] = _tasks.slice(_results.size(), mini(_results.size() + batch_size, _tasks.size()))
+	_batch_count = batch.size()
+	var batch_path: String = _session.path_join("batch-%s.json" % _results.size())
+	if not _write(batch_path, JSON.stringify(batch)):
+		_fail("worker_batch_unwritable", "不能写入场景编译批次")
+		return
+	_pid = OS.create_process(OS.get_executable_path(), PackedStringArray(["--headless", "--", "--asset-worker-batch", batch_path, "--asset-worker-result", _result_path]), false)
 	if _pid < 0:
 		_fail("worker_start_failed", "不能启动场景编译进程")
 

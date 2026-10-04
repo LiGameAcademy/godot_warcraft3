@@ -23,6 +23,10 @@ export class ClassicMpqSource {
       }
     } catch (error) { this.close(); throw error; }
   }
+  list() {
+    return [...new Set(this.archives.flatMap(entry => this.io.listFiles(entry.handle)
+      .map(name => name.replaceAll("\\", "/"))))].sort();
+  }
   read(name) {
     const logical = safeLogical(name);
     const archived = logical.replaceAll('/', '\\');

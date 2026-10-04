@@ -2,6 +2,7 @@ extends RefCounted
 
 ## 可在导出游戏中调用的同步编译核心；不退出进程或写命令行结果。
 const COMPILER_VERSION: String = "2"
+const BoneNames: GDScript = preload("import_bone_names.gd")
 const SkeletonCompiler: GDScript = preload("import_skeleton_compiler.gd")
 const MaterialCompiler: GDScript = preload("import_material_compiler.gd")
 const VisibilityCompiler: GDScript = preload("import_geoset_visibility.gd")
@@ -69,6 +70,7 @@ func compile_task(task_path: String) -> Dictionary:
 		root = Node3D.new()
 		root.name = str(task["asset_id"]).get_file()
 		root.add_child(generated)
+	ir = BoneNames.remap(ir, BoneNames.from_state(state))
 	root.set_meta("wc3_import_profile", str(task["profile"]))
 	root.set_meta("wc3_model_ir_path", ir_path)
 	root.set_meta("wc3_import_worker_version", COMPILER_VERSION)

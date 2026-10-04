@@ -29,7 +29,7 @@ assert.equal(exported.status,0,exported.log);
 const bundle=await packageRuntime(path.join(release,'asset-import-runtime'));
 const resultPath=path.join(output,'result.json');
 const cacheRoot=`user://wc3-cache/${path.basename(output)}`;
-function run({dir=gameDir,request,ok=true,only=true}={}) {
+function run({dir=gameDir,request=path.join(repo,'apps/game/config/asset_import_samples.source'),ok=true,only=true}={}) {
   fs.rmSync(resultPath,{force:true});
   const args=['--headless','--','--warcraft-dir',dir,'--asset-import-cache',cacheRoot,'--asset-import-result',resultPath,only?'--asset-import-only':'--smoke-test'];
   // External map data is a separate lane, still required until the full map import phase.

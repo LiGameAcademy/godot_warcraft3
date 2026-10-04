@@ -6,6 +6,7 @@ const Job: GDScript = preload("res://app/asset_import_job.gd")
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
 
+@export var request_resource: String = "res://config/development_asset_request.source"
 @export var auto_resume: bool = true
 @export var cache_root: String = "user://wc3-cache/source-import"
 @onready var directory: LineEdit = %Directory
@@ -20,6 +21,7 @@ var job: RefCounted
 
 func _ready() -> void:
 	job = Job.new()
+	job.request_resource = request_resource
 	job.progress_changed.connect(_on_progress)
 	job.finished.connect(_on_finished)
 	browse.pressed.connect(func() -> void: dialog.popup_centered_ratio(0.7))
@@ -27,14 +29,14 @@ func _ready() -> void:
 	start_button.pressed.connect(_start_import)
 	cancel_button.pressed.connect(func() -> void: job.cancel())
 	play_button.pressed.connect(func() -> void: ready_to_play.emit())
-	var record: Dictionary = Index.latest(cache_root)
+	var record: Dictionary = Index.latest(cache_root, request_resource)
 	directory.text = str(record.get("game_dir", ""))
 	if auto_resume and not record.is_empty():
 		var importer: RefCounted = TaskImport.new()
 		var results: Array[Dictionary] = []
 		for result: Dictionary in record.results:
 			results.append(result)
-		var installed: Dictionary = importer.install_results(results)
+		var installed: Dictionary = importer.install_results(results, record.get("content", {}))
 		if installed.ok:
 			call_deferred("_resume")
 			return
@@ -69,13 +71,21 @@ func _on_finished(result: Dictionary) -> void:
 	cancel_button.disabled = true
 	progress.indeterminate = false
 	if result.get("ok", false):
-		status.text = "导入完成，可以继续。当前仅覆盖四个验收样本；开发地图仍需外部资源目录。"
+		status.text = "导入完成，可以继续。已准备所选批次的游戏资源。"
 		if result.has("diagnostics"):
 			status.text += " " + str(result.diagnostics[0].get("message", ""))
+		if not result.get("content", {}).get("coverage", {}).get("complete", true):
+			status.text += " 存在未解析引用，详情见资源缓存中的 coverage.json。"
 		play_button.disabled = false
 		progress.value = progress.max_value
 	else:
-		status.text = str(result.get("diagnostics", [{"message": "导入失败，请重试"}])[0].get("message", "导入失败，请重试"))
+		status.text = "导入失败，请重试。"
+		for diagnostic: Dictionary in result.get("diagnostics", []):
+			if diagnostic.get("severity", "error") == "error":
+				status.text = str(diagnostic.get("message", diagnostic.get("code", status.text)))
+				if result.has("asset_id"):
+					status.text += "：" + str(result.asset_id)
+				break
 		start_button.disabled = false
 		browse.disabled = false
 		directory.editable = true

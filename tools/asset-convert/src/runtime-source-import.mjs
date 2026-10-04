@@ -6,9 +6,10 @@ import {blpBufferToPng} from './convert-blp.js';
 import {ClassicMpqSource, safeLogical} from './classic-mpq-source.mjs';
 import {parseModel, convertOneMdx} from './convert-mdx.js';
 import {REPLACEABLE_DEFAULTS} from './mdx-materials.js';
-import {sha256Bytes, writeModelIr} from './model-ir.js';
+import {sha256Bytes} from './model-ir.js';
 import {createBakeTask, writeBakeTask} from './bake-task.js';
 import {beginSession} from '../../pipeline-log.mjs';
+import {prepareDevelopmentContent, finalizeDevelopmentContent} from './runtime-map-content.mjs';
 
 export function validateRequest(request) {
   if (request?.request_version !== 1 || !Array.isArray(request.models) || !request.models.length) {
@@ -24,7 +25,9 @@ export function validateRequest(request) {
 
 /** Source bytes stay outside the release package; only the task manifest is published last. */
 export async function prepareSourceImport({gameDir, request, outDir, bundleSignature = '', source, onProgress = () => {}}) {
-  const models = validateRequest(request);
+  let models = validateRequest(request);
+  let development = null;
+  const modelDependencies = new Map();
   if (gameDir) {
     const relative = path.relative(path.resolve(gameDir), path.resolve(outDir));
     if (!relative || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))) {
@@ -39,25 +42,37 @@ export async function prepareSourceImport({gameDir, request, outDir, bundleSigna
     return entries.get(key);
   };
   try {
+    if (request.development_map) {
+      development = prepareDevelopmentContent({gameDir, outDir, request, reader, onProgress});
+      models = [...new Map([...models, ...development.models].map(model => [model.replace(/\.(mdx|mdl)$/i, '').toLowerCase(), model])).values()];
+      for (const [index, logical] of development.textures.entries()) {
+        if (index % 25 === 0) onProgress('读取运行时贴图', index, development.textures.length);
+        remember(logical);
+      }
+    }
     for (const [index, logical] of models.entries()) {
       onProgress('读取模型与纹理', index, models.length);
       const entry = remember(logical);
       const model = parseModel(entry.bytes, logical);
+      const dependencies = [logical];
       for (const texture of model.Textures || []) {
         const dependency = texture.Image || REPLACEABLE_DEFAULTS[texture.ReplaceableId];
         if (!dependency) throw new Error('texture_identity_missing: ' + logical);
         remember(safeLogical(dependency));
+        dependencies.push(dependency);
       }
+      modelDependencies.set(logical.toLowerCase(), dependencies);
     }
   } finally { if (!source) reader.close(); }
   const provenance = [...entries.values()].map(({bytes, ...entry}) => ({...entry, sha256: sha256Bytes(bytes)}));
-  const signature = sha256Bytes(Buffer.from(JSON.stringify({models, provenance, bundleSignature})));
+  const signature = sha256Bytes(Buffer.from(JSON.stringify({models, provenance, bundleSignature, content: development?.signature})));
   const generation = path.join(outDir, 'inputs', signature);
   const raw = path.join(generation, 'raw');
   const converted = path.join(generation, 'converted');
   fs.mkdirSync(converted, {recursive: true});
   const log = beginSession('runtime-source-import', {logPath: path.join(outDir, 'adapter.log.md')});
-  for (const entry of entries.values()) {
+  for (const [index, entry] of [...entries.values()].entries()) {
+    if (index % 25 === 0) onProgress('转换游戏贴图', index, entries.size);
     const filename = path.join(raw, entry.logical_path);
     fs.mkdirSync(path.dirname(filename), {recursive: true});
     fs.writeFileSync(filename, entry.bytes);
@@ -66,33 +81,35 @@ export async function prepareSourceImport({gameDir, request, outDir, bundleSigna
       const pngPath = path.join(converted, blpLogicalToPng(entry.logical_path));
       fs.mkdirSync(path.dirname(pngPath), {recursive: true});
       fs.writeFileSync(pngPath, blpBufferToPng(entry.bytes));
+    } else if (/\.(tga|dds|png)$/i.test(entry.logical_path)) {
+      const imagePath = path.join(converted, entry.logical_path);
+      fs.mkdirSync(path.dirname(imagePath), {recursive: true});
+      fs.writeFileSync(imagePath, entry.bytes);
     }
   }
   const tasks = [];
   for (const [index, logical] of models.entries()) {
     onProgress('生成模型编译输入', index, models.length);
-    await convertOneMdx(path.join(raw, logical), logical, raw, converted);
+    const entry = entries.get(logical.toLowerCase());
+    await convertOneMdx(path.join(raw, logical), logical, raw, converted, entry);
     const stem = logical.replace(/\.(mdx|mdl)$/i, '');
     const irPath = path.join(converted, stem + '.ir.json');
-    const ir = JSON.parse(fs.readFileSync(irPath));
-    const entry = entries.get(logical.toLowerCase());
-    Object.assign(ir.source, {source_package: entry.source_package, overlay_priority: entry.overlay_priority});
-    writeModelIr(irPath, ir);
     const task = createBakeTask({asset_id: stem.toLowerCase(), ir_path: irPath,
       geometry_path: path.join(converted, stem + '.gltf'),
       output_scene: path.join(outDir, 'scenes', stem + '.scn'),
       rules_version: 'runtime-source-v1:' + bundleSignature,
-      dependencies: [...entries.values()].map(item => path.join(raw, item.logical_path))});
+      dependencies: modelDependencies.get(logical.toLowerCase()).map(item => path.join(raw, item))});
     task.source_path = path.join(raw, logical);
     const taskPath = path.join(generation, stem + '.task.json');
     writeBakeTask(taskPath, task);
     tasks.push(taskPath);
   }
   const manifestPath = path.join(generation, 'manifest.json');
-  const manifest = {manifest_version: 1, tasks, source_signature: signature, provenance};
+  const content = development ? finalizeDevelopmentContent(development, converted) : {};
+  const manifest = {manifest_version: 1, tasks, source_signature: signature, provenance, content};
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   log.endSession({models: models.length, dependencies: provenance.length});
-  return {ok: true, manifest_path: manifestPath, source_signature: signature, provenance};
+  return {ok: true, manifest_path: manifestPath, source_signature: signature, provenance, content};
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
