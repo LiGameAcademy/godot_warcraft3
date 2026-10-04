@@ -21,3 +21,8 @@ static func validate(content: Dictionary) -> bool:
 		if not FileAccess.file_exists(filename) or FileAccess.get_sha256(filename) != str(entry.sha256):
 			return false
 	return true
+
+## Opt-in measurements; no file writes or cache policy changes.
+static func trace(stage: String, started_usec: int, count: int) -> void:
+	if "--asset-import-profile" in OS.get_cmdline_user_args():
+		print("ASSET_IMPORT_PROFILE " + JSON.stringify({"stage": stage, "milliseconds": (Time.get_ticks_usec() - started_usec) / 1000.0, "count": count}))

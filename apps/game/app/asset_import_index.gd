@@ -26,10 +26,13 @@ static func latest(cache_root: String, request_resource: String = DEFAULT_REQUES
 		var record: Dictionary = parser.data
 		if record.get("version") != 1 or record.get("build") != build_key(request_resource) or not record.get("results") is Array or record.results.is_empty():
 			return {}
+		var content_started: int = Time.get_ticks_usec()
 		if not record.get("content", {}) is Dictionary or not Content.validate(record.get("content", {})):
 			return {}
 		if request_resource == DEFAULT_REQUEST and record.get("content", {}).is_empty():
 			return {}
+		Content.trace("index_content_hashes", content_started, record.get("content", {}).get("files", []).size())
+		var scenes_started: int = Time.get_ticks_usec()
 		for entry: Variant in record.results:
 			if not entry is Dictionary:
 				return {}
@@ -37,6 +40,7 @@ static func latest(cache_root: String, request_resource: String = DEFAULT_REQUES
 			var scene: String = str(result.get("output_scene", ""))
 			if not FileAccess.file_exists(scene) or FileAccess.get_sha256(scene) != result.get("output_sha256", ""):
 				return {}
+		Content.trace("index_scene_hashes", scenes_started, record.results.size())
 		return record
 	return {}
 

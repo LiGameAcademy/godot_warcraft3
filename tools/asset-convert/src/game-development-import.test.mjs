@@ -110,9 +110,11 @@ const before = fs.readdirSync(path.join(cache, 'indexes'));
 // Cache replay must not parse MPQs, regenerate IR or launch the source runtime.
 fs.renameSync(path.join(bundle, 'node.exe'), path.join(bundle, 'node.disabled'));
 if (fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs'), path.join(cache, 'inputs-disabled'));
-const replay = launch(binary, ['--headless', '--', '--asset-import-cache', cache, '--smoke-test'], true);
+const replay = launch(binary, ['--headless', '--', '--asset-import-cache', cache, '--smoke-test', '--asset-import-profile'], true);
 assert.match(replay, /APP startup PASS: game/);
 assert.match(replay, /units=86/);
+const timings = replay.split(/\r?\n/).filter(line => line.startsWith('ASSET_IMPORT_PROFILE ')).map(line => JSON.parse(line.slice('ASSET_IMPORT_PROFILE '.length)));
+assert.equal(timings.length, 4);
 assert.deepEqual(fs.readdirSync(path.join(cache, 'indexes')), before);
 const capture = path.join(output, 'game.png');
 launch(binary, ['--position', '-10000,-10000', '--rendering-method', 'gl_compatibility', '--', '--asset-import-cache', cache, '--capture-game', capture], true);
@@ -120,7 +122,7 @@ assert.ok(fs.statSync(capture).size > 10000);
 fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
 fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture,
-  reusedColdImport: Boolean(reuse), coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
+  startupTimings: timings, reusedColdImport: Boolean(reuse), coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
   checks: ['full_background_import', 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
     'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons'],
 }, null, 2));

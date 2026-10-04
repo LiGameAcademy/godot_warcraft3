@@ -28,8 +28,11 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 func install_results(results: Array[Dictionary], content: Dictionary = {}) -> Dictionary:
 	if results.is_empty() or AssetProvider.runtime_content_sealed:
 		return _failure("cache_install_invalid", "空索引或对局已开始")
+	var content_started: int = Time.get_ticks_usec()
 	if not Content.validate(content):
 		return _failure("content_generation_invalid", "地图资源缓存缺失或损坏")
+	Content.trace("install_content_hashes", content_started, content.get("files", []).size())
+	var scenes_started: int = Time.get_ticks_usec()
 	var paths: Dictionary[String, String] = {}
 	for result: Dictionary in results:
 		if not result.get("ok", false) or not result.get("output_scene") is String:
@@ -41,6 +44,7 @@ func install_results(results: Array[Dictionary], content: Dictionary = {}) -> Di
 		if scene == null:
 			return _failure("cache_scene_load_failed", "缓存场景不能由游戏加载：" + asset_id)
 		paths[asset_id + ".scn"] = str(result.output_scene)
+	Content.trace("install_scene_loads", scenes_started, results.size())
 	var installed: Error = ContentPaths.install_compiled_scenes(paths, str(content.get("root", "")))
 	if installed != OK:
 		return _failure("cache_install_failed", "缓存路径提交失败：%s" % installed)
