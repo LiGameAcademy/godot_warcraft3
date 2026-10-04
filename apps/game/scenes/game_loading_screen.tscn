@@ -1,11 +1,9 @@
 [gd_scene format=3 uid="uid://dr84uf138y6ps"]
 
 [ext_resource type="Script" uid="uid://cxfiyq6uj07qs" path="res://client/hud/game_loading_screen.gd" id="1_script"]
-[ext_resource type="Theme" uid="uid://c282878ac99fa96c" path="res://client/hud/game_loading_screen_theme.tres" id="2_theme"]
 
 [node name="GameLoadingScreen" type="CanvasLayer" unique_id=933421007]
 layer = 100
-theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
 [node name="Root" type="Control" parent="." unique_id=863611816]
