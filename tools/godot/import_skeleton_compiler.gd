@@ -1,4 +1,5 @@
 extends RefCounted
+const Timing: GDScript = preload("import_sequence_timing.gd")
 ## Consumer for the legacy flat WC3 skeleton (identity inverse bind matrices).
 ## Payloads are embedded in IR; no game singletons or sidecar path resolution.
 
@@ -122,7 +123,7 @@ static func _visibility(player: AnimationPlayer, marker: Marker3D, entry: Dictio
 	for sequence: Dictionary in sequences:
 		if not player.has_animation(str(sequence.name)):
 			return false
-		if player.get_animation(str(sequence.name)).length > (float(sequence.interval[1]) - float(sequence.interval[0])) / 1000.0 + 0.01:
+		if not Timing.compatible(player, sequence):
 			return false
 	var target: NodePath = NodePath(str(player.get_parent().get_path_to(marker)) + ":visible")
 	for sequence: Dictionary in sequences:

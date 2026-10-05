@@ -108,3 +108,7 @@ $maintenance = Join-Path $runtime 'tools/asset-convert/src/cache-maintenance.mjs
 - 既有旧特效测试 `selftest_wc3_fx_presenter.gd` 缺少固定开发 glTF 夹具，未完成整套旧样本回归；Godot 导出/退出仍有资源清理告警，日志保留。地图截图中的网格和彩色区域是现有开发显示，视觉裁定仍需实际交互及原作对照。
 
 技术收尾已完成空缓存全量导入及缓存恢复回归；原作视觉裁定和真实干净 Windows 安装保持待验收。不要据此直接把整个分支标为可发布或自动合并。
+
+## 游戏截图问题复验（2026-10-05）
+
+队色、肖像背景、建筑禁建外圈、建筑肖像及额外测试开局的原因、修复与手动流程见 [GAME_ASSET_REVIEW.md](GAME_ASSET_REVIEW.md)。启动增加 `--asset-review` 可获得牧师与大法师。必须使用本轮新场景缓存；默认 D3D12 阻塞及原作视觉裁定仍不据此视为完成。

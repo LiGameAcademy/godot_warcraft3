@@ -7,6 +7,7 @@ const SkeletonCompiler: GDScript = preload("import_skeleton_compiler.gd")
 const MaterialCompiler: GDScript = preload("import_material_compiler.gd")
 const VisibilityCompiler: GDScript = preload("import_geoset_visibility.gd")
 const EffectCompiler: GDScript = preload("import_effect_compiler.gd")
+const SequenceTiming: GDScript = preload("import_sequence_timing.gd")
 const AnimationMetadata: GDScript = preload("import_animation_metadata.gd")
 
 var _task_path: String = ""
@@ -71,9 +72,11 @@ func compile_task(task_path: String) -> Dictionary:
 		root.name = str(task["asset_id"]).get_file()
 		root.add_child(generated)
 	ir = BoneNames.remap(ir, BoneNames.from_state(state))
+	root.set_meta("wc3_portrait_cameras", ir.get("cameras", {}).get("cameras", []))
 	root.set_meta("wc3_import_profile", str(task["profile"]))
 	root.set_meta("wc3_model_ir_path", ir_path)
 	root.set_meta("wc3_import_worker_version", COMPILER_VERSION)
+	var native_track_start: Dictionary = SequenceTiming.snapshot(root)
 	var compiled: Dictionary = SkeletonCompiler.compile(root, ir)
 	if not compiled.ok:
 		result["diagnostics"] = compiled.diagnostics
@@ -92,6 +95,7 @@ func compile_task(task_path: String) -> Dictionary:
 	compiled.diagnostics.append_array(visibility_result.diagnostics)
 	var effects: Dictionary = EffectCompiler.compile(root, ir, ir_path.get_base_dir())
 	result["effect_compile"] = effects
+	result["repeated_control_tracks"] = SequenceTiming.repeat_controls(root, ir.get("animations", {}).get("payload", {}).get("sequences", []), native_track_start)
 	compiled.diagnostics.append_array(effects.diagnostics)
 	for diagnostic: Dictionary in compiled.diagnostics:
 		if str(diagnostic.get("severity", "")) == "error":

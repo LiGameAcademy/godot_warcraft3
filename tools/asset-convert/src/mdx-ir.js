@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, mdxLogicalToModelIr, mdxLogicalToGeosetVis, mdxLogicalToGltf, mdxLogicalToPe2 } from "./paths.js";
+import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, mdxLogicalToModelIr, mdxLogicalToGeosetVis, mdxLogicalToGltf, mdxLogicalToPe2, mdxLogicalToCameras } from "./paths.js";
 import { createModelIr, sha256Bytes, writeModelIr } from "./model-ir.js";
 import { resolveTexturePng } from "./mdx-materials.js";
 import { billboardPayload, particlePayload } from './mdx-fx-ir.js';
@@ -91,11 +91,12 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
       sidecar: attachments,
       payload: JSON.parse(fs.readFileSync(path.join(outDir, attachments), "utf8")),
     },
+    cameras: JSON.parse(fs.readFileSync(path.join(outDir, mdxLogicalToCameras(logicalPath)), "utf8")),
     events: {
       count: (model.EventObjects ?? []).length,
       animkeys,
     },
-    dependencies: [gltf, pe2, ribbons, geosetvis, attachments, animkeys, boneRest,
+    dependencies: [gltf, pe2, ribbons, geosetvis, attachments, animkeys, boneRest, mdxLogicalToCameras(logicalPath),
       ...resolvedTextures.map(texture => path.posix.normalize(path.posix.join(path.posix.dirname(irLogical), texture.uri)))],
     diagnostics: resolvedTextures.filter(texture => texture.uri.includes('_placeholders/')).map(texture => ({
       code: 'texture_placeholder', severity: 'warning', message: `Texture fallback: ${texture.Image || texture.ReplaceableId}`,

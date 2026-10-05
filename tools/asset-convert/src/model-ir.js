@@ -54,6 +54,7 @@ export function createModelIr(input = {}) {
     attachments: input.attachments ?? {},
     team_color: input.team_color ?? {},
     glow_categories: input.glow_categories ?? [],
+    cameras: input.cameras ?? {},
     events: input.events ?? {},
     dependencies: Array.isArray(input.dependencies) ? input.dependencies : [],
     diagnostics: Array.isArray(input.diagnostics) ? input.diagnostics : [],

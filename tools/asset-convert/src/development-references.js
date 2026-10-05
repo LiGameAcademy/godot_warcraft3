@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseSlk } from '../../slk-export/src/parse-slk.js';
 
 const TABLES = {
-  'Units/UnitUI.json': 'unitUIID', 'Units/UnitAbilities.json': 'unitAbilID',
+  'Units/UnitData.json': 'unitID', 'Units/UnitUI.json': 'unitUIID', 'Units/UnitAbilities.json': 'unitAbilID',
   'Units/UnitWeapons.json': 'unitWeapID', 'Units/ItemData.json': 'itemID',
   'Units/AbilityData.json': 'alias', 'Units/DestructableData.json': 'DestructableID',
   'Doodads/Doodads.json': 'doodID',

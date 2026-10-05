@@ -32,3 +32,10 @@ test("rejects missing identity and unknown feature status", () => {
   assert.ok(result.errors.some((error) => error.includes("asset_id")));
   assert.ok(result.errors.some((error) => error.includes("invalid status")));
 });
+
+test("retains source portrait cameras without requiring them on older IR", () => {
+  const cameras = {cameras: [{name: "Camera01", position: [6, 2, 1], target: [0, 1, 0],
+    fov_y_deg: 36, near: 0.08, far: 10, translation: {frames: [77000], values: [[0, 0, 0]]}}]};
+  assert.deepEqual(createModelIr({cameras}).cameras, cameras);
+  assert.deepEqual(createModelIr().cameras, {});
+});

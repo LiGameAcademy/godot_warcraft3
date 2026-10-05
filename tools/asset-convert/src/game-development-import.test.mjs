@@ -38,13 +38,14 @@ const tmp = path.join(repo, 'apps/game/tmp');
 fs.mkdirSync(tmp, {recursive: true});
 for (const ext of ['gd', 'tscn']) fs.copyFileSync(path.join(repo, `tests/integration/selftest_asset_import_wizard.${ext}`), path.join(tmp, `selftest_asset_import_wizard.${ext}`));
 fs.writeFileSync(path.join(tmp, 'development_probe.gd'), `extends "res://boot.gd"
+const Capture: GDScript = preload("res://tmp/development_capture.gd")
 func _start() -> void:
 	if "--mode" in OS.get_cmdline_user_args():
 		var probe: Node = (load("res://tmp/selftest_asset_import_wizard.tscn") as PackedScene).instantiate()
 		get_tree().root.add_child(probe)
 	else:
 		if "--capture-game" in OS.get_cmdline_user_args():
-			get_tree().root.add_child(load("res://tmp/development_capture.gd").new())
+			get_tree().root.add_child(Capture.new())
 		super._start()
 `);
 fs.writeFileSync(path.join(tmp, 'development_probe.tscn'), `[gd_scene load_steps=2 format=3]
@@ -52,36 +53,7 @@ fs.writeFileSync(path.join(tmp, 'development_probe.tscn'), `[gd_scene load_steps
 [node name="Boot" type="Node"]
 script = ExtResource("1")
 `);
-fs.writeFileSync(path.join(tmp, 'development_capture.gd'), `extends Node
-func _ready() -> void:
-	_run.call_deferred()
-func _run() -> void:
-	var deadline: int = Time.get_ticks_msec() + 240000
-	var game: GameMain
-	while Time.get_ticks_msec() < deadline:
-		game = get_tree().current_scene as GameMain
-		if game != null and game.is_session_ready():
-			break
-		await get_tree().process_frame
-	if game == null or not game.has_playable_match() or FileAccess.file_exists("res://assets/map-parsed/echoisles/info.json") or FileAccess.file_exists("res://assets/slk-exported/Units/UnitUI.json"):
-		push_error("Release content/startup verification failed")
-		get_tree().quit(1)
-		return
-	if RuntimeAssets.load_texture("res://assets/asset-converted/ReplaceableTextures/CommandButtons/BTNPeasant.png") == null:
-		push_error("Release icon verification failed")
-		get_tree().quit(1)
-		return
-	for frame: int in range(20):
-		await get_tree().process_frame
-	await RenderingServer.frame_post_draw
-	var args: PackedStringArray = OS.get_cmdline_user_args()
-	if get_viewport().get_texture().get_image().save_png(args[args.find("--capture-game") + 1]) != OK:
-		push_error("Release screenshot save failed")
-		get_tree().quit(1)
-		return
-	print("PASS: release rendered map and icons without packaged original assets")
-	get_tree().quit(0)
-`);
+fs.copyFileSync(path.join(repo, 'tests/integration/development_capture.gd'), path.join(tmp, 'development_capture.gd'));
 const project = path.join(repo, 'apps/game/project.godot');
 const preset = path.join(repo, 'apps/game/export_presets.cfg');
 const originalProject = fs.readFileSync(project);
@@ -122,25 +94,32 @@ assert.ok(cold.result.content.files.length > 5000);
 if (!recover) assert.ok(cold.frames > 10);
 if (!recover) assert.ok(cold.events.filter(event => event.stage === '编译场景缓存').length > 10);
 const before = fs.readdirSync(path.join(cache, 'indexes'));
-// Cache replay must not parse MPQs, regenerate IR or launch the source runtime.
-fs.renameSync(path.join(bundle, 'node.exe'), path.join(bundle, 'node.disabled'));
-if (fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs'), path.join(cache, 'inputs-disabled'));
-const replay = launch(binary, ['--headless', '--', '--asset-import-cache', cache, '--smoke-test', '--asset-import-profile'], true);
-assert.match(replay, /APP startup PASS: game/);
-assert.match(replay, /units=86/);
-const timings = replay.split(/\r?\n/).filter(line => line.startsWith('ASSET_IMPORT_PROFILE ')).map(line => JSON.parse(line.slice('ASSET_IMPORT_PROFILE '.length)));
-assert.equal(timings.length, 3);
-assert.deepEqual(timings.map(row => row.stage), ["index_content_hashes", "index_scene_hashes", "install_cached_paths"]);
-assert.deepEqual(fs.readdirSync(path.join(cache, 'indexes')), before);
-const capture = path.join(output, 'game.png');
-launch(binary, ['--position', '-10000,-10000', '--rendering-method', 'gl_compatibility', '--', '--asset-import-cache', cache, '--capture-game', capture], true);
-assert.ok(fs.statSync(capture).size > 10000);
-fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
-fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
-fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture,
+let timings, capture, reviewCapture;
+try {
+  // Cache replay must not parse MPQs, regenerate IR or launch the source runtime.
+  fs.renameSync(path.join(bundle, 'node.exe'), path.join(bundle, 'node.disabled'));
+  if (fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs'), path.join(cache, 'inputs-disabled'));
+  const replay = launch(binary, ['--headless', '--', '--asset-import-cache', cache, '--smoke-test', '--asset-import-profile'], true);
+  assert.match(replay, /APP startup PASS: game/);
+  assert.match(replay, /units=86/);
+  timings = replay.split(/\r?\n/).filter(line => line.startsWith('ASSET_IMPORT_PROFILE ')).map(line => JSON.parse(line.slice('ASSET_IMPORT_PROFILE '.length)));
+  assert.equal(timings.length, 3);
+  assert.deepEqual(timings.map(row => row.stage), ["index_content_hashes", "index_scene_hashes", "install_cached_paths"]);
+  assert.deepEqual(fs.readdirSync(path.join(cache, 'indexes')), before);
+  capture = path.join(output, 'game.png');
+  launch(binary, ['--position', '-10000,-10000', '--rendering-method', 'gl_compatibility', '--', '--asset-import-cache', cache, '--capture-game', capture], true);
+  assert.ok(fs.statSync(capture).size > 10000);
+  reviewCapture = path.join(output, 'asset-review.png');
+  launch(binary, ['--position', '-10000,-10000', '--rendering-driver', 'vulkan', '--', '--asset-import-cache', cache, '--asset-review', '--capture-game', reviewCapture], true);
+  assert.ok(fs.statSync(reviewCapture).size > 10000);
+} finally {
+  if (fs.existsSync(path.join(cache, 'inputs-disabled')) && !fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
+  if (fs.existsSync(path.join(bundle, 'node.disabled'))) fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
+}
+fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture, reviewCapture,
   startupTimings: timings, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
   checks: [recover ? 'recovered_published_index_after_acceptance_timeout' : 'full_background_import', recover ? 'prior_batched_compilation_artifacts' : 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
-    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons'],
+    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons', 'vulkan_asset_review_models_portraits_pathing'],
 }, null, 2));
 console.log(recover ? 'PASS: published full index -> offline standalone startup and rendered map' : 'PASS: original installation -> full background import -> standalone cached game');
 console.log('Report: ' + path.join(output, 'report.json'));

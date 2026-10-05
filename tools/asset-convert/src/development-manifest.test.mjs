@@ -16,6 +16,8 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
   try {
     write('map/units.json', {units: [{typeId: 'hfoo'}]});
     write('map/doodads.json', {doodads: [{id: 'LTlt', variation: 2}]});
+    write('defs/Units/UnitData.json', {records: [{unitID: 'hfoo', pathTex: 'PathTextures/4x4Simple.tga'}]});
+    write('source/PathTextures/4x4Simple.tga', 'pathing fixture');
     write('defs/Units/UnitUI.json', {records: [{unitUIID: 'hfoo', file: 'Units/Foo/Foo', fileVerFlags: 2}]});
     write('defs/Units/UnitAbilities.json', {records: []});
     write('defs/Units/UnitWeapons.json', {records: []});
@@ -32,6 +34,7 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.equal(report.summary.objects, 3);
     assert.equal(report.summary.models, 3);
     assert.equal(report.summary.missing_sources, 1);
+    assert.ok(report.assets.some(row => row.logical_path === 'PathTextures/4x4Simple.tga' || row.id === 'pathtextures/4x4simple'));
     assert.equal(report.coverage.complete, false);
     const model = report.assets.find(row => row.id === 'units/foo/foo_v1');
     assert.equal(model.assessment.technical, 'source_invalid');

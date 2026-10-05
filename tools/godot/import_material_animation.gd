@@ -1,4 +1,5 @@
 extends RefCounted
+const Timing: GDScript = preload("import_sequence_timing.gd")
 ## Non-global step/linear alpha keys, clipped to their own sequence intervals.
 static func supported(player: AnimationPlayer, alpha: Dictionary, ir: Dictionary) -> bool:
 	var global_sequence: Variant = alpha.get("GlobalSeqId")
@@ -10,7 +11,7 @@ static func supported(player: AnimationPlayer, alpha: Dictionary, ir: Dictionary
 	for sequence: Dictionary in sequences:
 		if not player.has_animation(str(sequence.name)):
 			return false
-		if player.get_animation(str(sequence.name)).length > (float(sequence.interval[1]) - float(sequence.interval[0])) / 1000.0 + 0.01:
+		if not Timing.compatible(player, sequence):
 			return false
 	return true
 

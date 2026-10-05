@@ -29,6 +29,14 @@ static func compile(scene: Node, ir: Dictionary, texture_base: String = "") -> D
 			_warn(result, "material_binding_missing", id)
 			continue
 		var layers: Array = materials[id].get("Layers", [])
+		for source_layer: Dictionary in layers:
+			if source_layer.get("TextureID") is Dictionary:
+				continue
+			var source_id: int = int(source_layer.get("TextureID", -1))
+			if source_id >= 0 and source_id < textures.size():
+				var image_name: String = str(textures[source_id].get("Image", "")).replace("\\", "/").to_lower()
+				if image_name == "textures/background.blp" or image_name.contains("portraitback") or image_name.contains("portrait_background"):
+					mesh.set_meta("wc3_portrait_background", true)
 		var team: bool = TeamCompiler.supported(layers, textures)
 		if layers.size() != 1 and not team:
 			_warn(result, "multilayer_pending", id)
@@ -64,6 +72,9 @@ static func compile(scene: Node, ir: Dictionary, texture_base: String = "") -> D
 					material = _single(original, layer)
 			material.resource_local_to_scene = true
 			material.set_meta("import_material_id", id)
+			var texture_id: int = int(layer.get("TextureID", -1))
+			if texture_id >= 0 and texture_id < textures.size():
+				material.set_meta("import_replaceable_id", int(textures[texture_id].get("ReplaceableId", 0)))
 			material.set_meta("import_filter_mode", int(layer.get("FilterMode", 0)))
 			mesh.set_surface_override_material(surface, material)
 			if animated:
