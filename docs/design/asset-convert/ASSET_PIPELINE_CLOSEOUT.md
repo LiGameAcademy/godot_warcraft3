@@ -45,14 +45,16 @@ node tools/asset-convert/src/game-fx-review.test.mjs
 ```powershell
 $reportFile = Get-ChildItem tools/asset-convert/tmp/development-*/report.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $report = Get-Content $reportFile.FullName -Raw | ConvertFrom-Json
-& $report.binary -- --asset-import-cache $report.cacheRoot
+& $report.binary --rendering-driver vulkan -- --asset-import-cache $report.cacheRoot
 ```
+
+当前有窗口验收使用 OpenGL 兼容模式。默认项目配置为 D3D12：本机手动启动在「放置单位模型 6/97」停留超过十分钟且窗口无响应；同一发布包与缓存改用兼容模式，约 21.2 秒完成地图及图标渲染。D3D12 正常启动尚未通过，不能用兼容模式截图代替默认后端验收。同一发布包与缓存改用 Vulkan + Forward+，约 47.0 秒也完成地图及图标渲染；上述手动命令因此显式选择 Vulkan，保留 Forward+。OpenGL 兼容模式可作为备用，但效果应注明所用后端。保留资源缓存；D3D12 底层阻塞原因仍需单独定位。对照日志和截图在 `tools/asset-convert/tmp/loading-debug/`。
 
 第一次导入改用新缓存：
 
 ```powershell
 $manualCache = Join-Path $reportFile.DirectoryName 'manual-cache'
-& $report.binary -- --asset-import-cache $manualCache --asset-import-wizard
+& $report.binary --rendering-driver vulkan -- --asset-import-cache $manualCache --asset-import-wizard
 ```
 
 清理前关闭使用该缓存的游戏。使用发布包自带工具，先预览；确认报告的 `root`、`retainedIndexes` 和 `remove` 后再执行：
@@ -63,7 +65,7 @@ $maintenance = Join-Path $runtime 'tools/asset-convert/src/cache-maintenance.mjs
 & (Join-Path $runtime 'node.exe') $maintenance $report.cacheRoot
 # 对同一派生缓存执行报告中的删除：
 & (Join-Path $runtime 'node.exe') $maintenance $report.cacheRoot --apply
-& $report.binary -- --asset-import-cache $report.cacheRoot
+& $report.binary --rendering-driver vulkan -- --asset-import-cache $report.cacheRoot
 ```
 
 工具不会修复坏索引。收到 `cache_index_invalid` 时先保留诊断、通过重新导入或新缓存目录恢复，勿直接猜测哪些模型可删除。

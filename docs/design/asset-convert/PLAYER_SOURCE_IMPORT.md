@@ -156,14 +156,14 @@ node tools/asset-convert/src/game-development-import.test.mjs
 ```powershell
 $reportFile = Get-ChildItem tools/asset-convert/tmp/development-*/report.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $report = Get-Content $reportFile.FullName -Raw | ConvertFrom-Json
-& $report.binary -- --asset-import-cache $report.cacheRoot
+& $report.binary --rendering-driver vulkan -- --asset-import-cache $report.cacheRoot
 ```
 
 验证玩家首次启动，应改用一个新缓存目录，并强制显示配置界面：
 
 ```powershell
 $manualCache = Join-Path $reportFile.DirectoryName 'manual-cache'
-& $report.binary -- --asset-import-cache $manualCache --asset-import-wizard
+& $report.binary --rendering-driver vulkan -- --asset-import-cache $manualCache --asset-import-wizard
 ```
 
 1. 选择含 MPQ 和上述 Echo Isles 文件的经典安装目录，查看定义表/地图/贴图/模型各阶段进度。
