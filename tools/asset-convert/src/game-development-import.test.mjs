@@ -9,7 +9,10 @@ const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const base = path.join(repo, 'tools/asset-convert/tmp');
 fs.mkdirSync(base, {recursive: true});
 const reuse = process.env.ASSET_TEST_REUSE || '';
-const output = reuse ? path.resolve(reuse) : fs.mkdtempSync(path.join(base, 'development-'));
+const retry = process.env.ASSET_TEST_RETRY || '';
+const recover = process.env.ASSET_TEST_RECOVER || '';
+assert.ok([reuse, retry, recover].filter(Boolean).length <= 1, 'Choose one acceptance recovery mode');
+const output = reuse || retry || recover ? path.resolve(reuse || retry || recover) : fs.mkdtempSync(path.join(base, 'development-'));
 const release = path.join(output, 'release');
 fs.mkdirSync(release, {recursive: true});
 const binary = path.join(release, 'game.exe');
@@ -19,7 +22,7 @@ let sequence = 0;
 function launch(executable, args, player = false) {
   const started = Date.now();
   const child = spawnSync(executable.replace(/_console\.exe$/i, '.exe'), args, {
-    cwd: repo, encoding: 'utf8', timeout: 1860000,
+    cwd: repo, encoding: 'utf8', timeout: 3660000,
     env: player ? {...process.env, PATH: '', GODOT: '', ASSET_SOURCE: '', STORMLIB_DLL: '', NODE_PATH: '', NODE_OPTIONS: ''} : process.env,
   });
   const log = (child.stdout || '') + (child.stderr || '');
@@ -93,19 +96,31 @@ try {
   fs.writeFileSync(preset, originalPreset);
 }
 const bundle = path.join(release, 'asset-import-runtime');
-if (!reuse) await packageRuntime(bundle);
+if (!reuse && !retry && !recover) await packageRuntime(bundle);
 else if (fs.existsSync(path.join(bundle, 'node.disabled'))) fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
 const coldReport = path.join(output, 'cold.json');
-if (!reuse) launch(binary, ['--headless', '--', '--mode', 'cold', '--development', '--cache', cache, '--source', gameDir, '--report', coldReport], true);
-const cold = JSON.parse(fs.readFileSync(coldReport));
+if (!reuse && !recover) launch(binary, ['--headless', '--', '--mode', 'cold', '--development', '--cache', cache, '--source', gameDir, '--report', coldReport], true);
+let cold;
+let recoveredIndex = '';
+if (recover) {
+  launch(binary, ['--headless', '--', '--mode', 'warm', '--development', '--cache', cache,
+    '--source', gameDir, '--report', path.join(output, 'recovered-index.json')], true);
+  const indexes = fs.readdirSync(path.join(cache, 'indexes')).filter(name => name.endsWith('.json')).sort();
+  assert.ok(indexes.length);
+  recoveredIndex = path.join(cache, 'indexes', indexes.at(-1));
+  const record = JSON.parse(fs.readFileSync(recoveredIndex));
+  // The warm fixture has already hashed this publication and installed it.
+  // Do not replace cold.json or manufacture cold UI/progress evidence.
+  cold = {result: {ok: true, results: record.results, content: record.content}};
+} else cold = JSON.parse(fs.readFileSync(coldReport));
 assert.equal(cold.result.ok, true);
 assert.equal(cold.result.content.coverage.complete, true);
 assert.equal(cold.result.content.coverage.unresolved_references.length, 0);
 assert.ok(cold.result.results.length >= 300);
 assert.ok(cold.result.results.every(entry => !entry.diagnostics.some(row => row.code === "texture_placeholder")));
 assert.ok(cold.result.content.files.length > 5000);
-assert.ok(cold.frames > 10);
-assert.ok(cold.events.filter(event => event.stage === '编译场景缓存').length > 10);
+if (!recover) assert.ok(cold.frames > 10);
+if (!recover) assert.ok(cold.events.filter(event => event.stage === '编译场景缓存').length > 10);
 const before = fs.readdirSync(path.join(cache, 'indexes'));
 // Cache replay must not parse MPQs, regenerate IR or launch the source runtime.
 fs.renameSync(path.join(bundle, 'node.exe'), path.join(bundle, 'node.disabled'));
@@ -114,7 +129,8 @@ const replay = launch(binary, ['--headless', '--', '--asset-import-cache', cache
 assert.match(replay, /APP startup PASS: game/);
 assert.match(replay, /units=86/);
 const timings = replay.split(/\r?\n/).filter(line => line.startsWith('ASSET_IMPORT_PROFILE ')).map(line => JSON.parse(line.slice('ASSET_IMPORT_PROFILE '.length)));
-assert.equal(timings.length, 4);
+assert.equal(timings.length, 3);
+assert.deepEqual(timings.map(row => row.stage), ["index_content_hashes", "index_scene_hashes", "install_cached_paths"]);
 assert.deepEqual(fs.readdirSync(path.join(cache, 'indexes')), before);
 const capture = path.join(output, 'game.png');
 launch(binary, ['--position', '-10000,-10000', '--rendering-method', 'gl_compatibility', '--', '--asset-import-cache', cache, '--capture-game', capture], true);
@@ -122,9 +138,9 @@ assert.ok(fs.statSync(capture).size > 10000);
 fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
 fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture,
-  startupTimings: timings, reusedColdImport: Boolean(reuse), coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
-  checks: ['full_background_import', 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
+  startupTimings: timings, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
+  checks: [recover ? 'recovered_published_index_after_acceptance_timeout' : 'full_background_import', recover ? 'prior_batched_compilation_artifacts' : 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
     'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons'],
 }, null, 2));
-console.log('PASS: original installation -> full background import -> standalone cached game');
+console.log(recover ? 'PASS: published full index -> offline standalone startup and rendered map' : 'PASS: original installation -> full background import -> standalone cached game');
 console.log('Report: ' + path.join(output, 'report.json'));

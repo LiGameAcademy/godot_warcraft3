@@ -1,6 +1,9 @@
 extends RefCounted
 
 const Content: GDScript = preload("res://app/asset_import_content.gd")
+const Index: GDScript = preload("res://app/asset_import_index.gd")
+var _validated_record: Dictionary = {}
+
 const CachedCompiler: GDScript = preload("res://tools/godot/import_cached_compiler.gd")
 
 ## 同步命令行入口；后台任务复用 install_results 提交完整路径表。
@@ -25,13 +28,33 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 			return {"ok": false, "results": results, "diagnostics": response.result.diagnostics}
 	return install_results(results, manifest.get("content", {}))
 
+## Worker-thread entry: hashes only; no scene-tree access or scene loading.
+func validate_cache(cache_root: String, request_resource: String) -> bool:
+	_validated_record = Index.latest(cache_root, request_resource)
+	return not _validated_record.is_empty()
+
+## Call only after the validation thread has been joined. Consume once.
+func restore_validated_cache() -> Dictionary:
+	var record: Dictionary = _validated_record
+	_validated_record = {}
+	if record.is_empty():
+		return _failure("cache_not_validated", "缓存未通过校验")
+	var results: Array[Dictionary] = []
+	for result: Dictionary in record.results:
+		results.append(result)
+	return _install_results(results, record.get("content", {}), true)
+
 func install_results(results: Array[Dictionary], content: Dictionary = {}) -> Dictionary:
+	return _install_results(results, content, false)
+
+func _install_results(results: Array[Dictionary], content: Dictionary, restored: bool) -> Dictionary:
 	if results.is_empty() or AssetProvider.runtime_content_sealed:
 		return _failure("cache_install_invalid", "空索引或对局已开始")
 	var content_started: int = Time.get_ticks_usec()
-	if not Content.validate(content):
+	if not restored and not Content.validate(content):
 		return _failure("content_generation_invalid", "地图资源缓存缺失或损坏")
-	Content.trace("install_content_hashes", content_started, content.get("files", []).size())
+	if not restored:
+		Content.trace("install_content_hashes", content_started, content.get("files", []).size())
 	var scenes_started: int = Time.get_ticks_usec()
 	var paths: Dictionary[String, String] = {}
 	for result: Dictionary in results:
@@ -40,19 +63,23 @@ func install_results(results: Array[Dictionary], content: Dictionary = {}) -> Di
 		var asset_id: String = str(result.get("asset_id", "")).replace("\\", "/").to_lower()
 		if asset_id.is_empty() or asset_id.is_absolute_path() or asset_id.split("/").has("..") or paths.has(asset_id + ".scn"):
 			return _failure("asset_identity_invalid", "重复或非法资产身份：" + asset_id)
-		var scene: PackedScene = RuntimeAssets.load_packed_scene(str(result.output_scene))
-		if scene == null:
-			return _failure("cache_scene_load_failed", "缓存场景不能由游戏加载：" + asset_id)
+		if not restored:
+			# Each compiler worker already reloads/instantiates its publication.
+			# Verify that those bytes did not change before committing the batch.
+			var scene_path: String = str(result.output_scene)
+			var expected_hash: String = str(result.get("output_sha256", ""))
+			if expected_hash.is_empty() or FileAccess.get_sha256(scene_path) != expected_hash:
+				return _failure("cache_scene_hash_failed", "缓存场景缺失或已改变：" + asset_id)
 		paths[asset_id + ".scn"] = str(result.output_scene)
-	Content.trace("install_scene_loads", scenes_started, results.size())
+	Content.trace("install_cached_paths" if restored else "install_scene_hashes", scenes_started, results.size())
 	var installed: Error = ContentPaths.install_compiled_scenes(paths, str(content.get("root", "")))
 	if installed != OK:
 		return _failure("cache_install_failed", "缓存路径提交失败：%s" % installed)
 	if not content.is_empty():
 		Wc3DefStore.clear_loaded_tables()
-	# Check the same resolver used by the game's model cache, not a direct load.
+	# Check the game's shared path resolver; legacy SCN probing is unrelated here.
 	for logical: String in paths:
-		var resolved: String = RuntimeAssets.resolve_model_scene(logical)
+		var resolved: String = ContentPaths.resolve("res://assets/asset-converted/" + logical)
 		if resolved != paths[logical]:
 			return _failure("cache_resolution_failed", "游戏未选择新缓存：" + logical)
 	return {"ok": true, "results": results, "paths": paths, "content": content, "deliverable": false}

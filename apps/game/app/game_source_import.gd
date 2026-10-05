@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Guard: GDScript = preload("res://app/asset_import_guard.gd")
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
 const DEFAULT_REQUEST: String = "res://config/development_asset_request.source"
@@ -22,6 +23,9 @@ func run_source(game_dir: String, request_path: String, cache_root: String, cont
 		return _failure("source_cache_overlap", "缓存目录不能位于原版安装目录内")
 	if DirAccess.make_dir_recursive_absolute(root_path) != OK:
 		return _failure("source_cache_unwritable", "不能创建源导入缓存目录")
+	var guard: RefCounted = Guard.new()
+	if guard.acquire(root_path) != OK:
+		return _failure("cache_busy", "缓存正被其他游戏或导入进程使用")
 	var request: String = request_path
 	if request.is_empty():
 		request = root_path.path_join("source-request.json")
@@ -48,6 +52,8 @@ func run_source(game_dir: String, request_path: String, cache_root: String, cont
 		var request_resource: String = DEFAULT_REQUEST if request_path.is_empty() else request_path
 		if Index.save(cache_root, saved_results, game_dir, prepared.get("content", {}), request_resource) != OK:
 			result["diagnostics"] = [{"code": "index_save_failed", "message": "本次导入可用，但下次启动需重新导入索引"}]
+	if result.get("ok", false) and guard.retain_reader() != OK:
+		return _failure("cache_reader_failed", "不能保护已导入缓存，请重启后重试")
 	result["source"] = prepared
 	return result
 

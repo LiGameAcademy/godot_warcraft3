@@ -9,7 +9,7 @@ export async function packageRuntime(destination) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Windows x64 runtime only');
   if (fs.existsSync(destination)) throw new Error('Runtime destination already exists');
   fs.mkdirSync(destination, {recursive: true});
-  const pending = ['tools/asset-convert/src/runtime-source-import.mjs'];
+  const pending = ['tools/asset-convert/src/runtime-source-import.mjs', 'tools/asset-convert/src/cache-maintenance.mjs'];
   const seen = new Set();
   const copy = relative => {
     const target = path.join(destination, relative);

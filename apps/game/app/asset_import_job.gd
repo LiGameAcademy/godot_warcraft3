@@ -4,6 +4,12 @@ signal progress_changed(stage: String, completed: int, total: int)
 signal finished(result: Dictionary)
 
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
+const Guard: GDScript = preload("res://app/asset_import_guard.gd")
+var _guard: RefCounted
+
+const POLL_INTERVAL_MSEC: int = 100
+var _next_poll_msec: int = 0
+
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 
 var request_resource: String = "res://config/development_asset_request.source"
@@ -33,6 +39,7 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 		_fail("source_cache_overlap", "缓存目录不能位于原版安装目录内")
 		return
 	_cancelling = false
+	_next_poll_msec = 0
 	_tasks.clear()
 	_results.clear()
 	_content = {}
@@ -42,6 +49,10 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 	var bundle: String = OS.get_executable_path().get_base_dir().path_join("asset-import-runtime")
 	if OS.has_feature("editor") or OS.get_name() != "Windows" or not FileAccess.file_exists(bundle.path_join("node.exe")):
 		_fail("source_runtime_missing", "请使用包含 asset-import-runtime 的 Windows 发布包")
+		return
+	_guard = Guard.new()
+	if _guard.acquire(cache_root) != OK:
+		_fail("cache_busy", "资源缓存正被其他游戏或导入进程使用，请关闭后重试")
 		return
 	_session = cache_root.path_join("sessions/%s-%s" % [OS.get_process_id(), Time.get_ticks_usec()])
 	if DirAccess.make_dir_recursive_absolute(_session) != OK:
@@ -58,12 +69,17 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 	_progress_text = ""
 	progress_changed.emit("检查原版资源目录", 0, 0)
 	_pid = OS.create_process(bundle.path_join("node.exe"), PackedStringArray([bundle.path_join("tools/asset-convert/src/runtime-source-import.mjs"), game_dir, request, cache_root, _result_path, _progress_path]), false)
+	_guard.track_child(_pid)
 	if _pid < 0:
 		_fail("source_process_failed", "不能启动源解析进程")
 
 func poll() -> void:
 	if not active:
 		return
+	var now: int = Time.get_ticks_msec()
+	if now < _next_poll_msec:
+		return
+	_next_poll_msec = now + POLL_INTERVAL_MSEC
 	if _phase == "source":
 		var snapshots: PackedStringArray = DirAccess.get_files_at(_session)
 		snapshots.sort()
@@ -80,6 +96,7 @@ func poll() -> void:
 		return
 	var exit_code: int = OS.get_process_exit_code(_pid)
 	_pid = -1
+	_guard.track_child(-1)
 	if _cancelling:
 		_complete({"ok": false, "cancelled": true, "diagnostics": [{"code": "cancelled", "message": "已取消；完成的场景缓存保留，下次可重试"}]})
 		return
@@ -137,10 +154,16 @@ func _start_worker() -> void:
 		_fail("worker_batch_unwritable", "不能写入场景编译批次")
 		return
 	_pid = OS.create_process(OS.get_executable_path(), PackedStringArray(["--headless", "--", "--asset-worker-batch", batch_path, "--asset-worker-result", _result_path]), false)
+	_guard.track_child(_pid)
 	if _pid < 0:
 		_fail("worker_start_failed", "不能启动场景编译进程")
 
 func _complete(result: Dictionary) -> void:
+	if _guard != null:
+		if result.get("ok", false) and _guard.retain_reader() != OK:
+			result = {"ok": false, "diagnostics": [{"code": "cache_reader_failed", "message": "不能保护已导入缓存，请重启后重试"}]}
+		_guard.release()
+		_guard = null
 	active = false
 	finished.emit(result)
 

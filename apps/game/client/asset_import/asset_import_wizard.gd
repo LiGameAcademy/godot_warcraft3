@@ -2,6 +2,7 @@ extends Control
 
 signal ready_to_play()
 
+const Guard: GDScript = preload("res://app/asset_import_guard.gd")
 const Job: GDScript = preload("res://app/asset_import_job.gd")
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
@@ -17,6 +18,9 @@ const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
 @onready var status: Label = %Status
 @onready var progress: ProgressBar = %Progress
 @onready var dialog: FileDialog = %DirectoryDialog
+var _cache_thread: Thread
+var _cache_importer: RefCounted
+var checking_cache: bool = false
 var job: RefCounted
 
 func _ready() -> void:
@@ -29,28 +33,48 @@ func _ready() -> void:
 	start_button.pressed.connect(_start_import)
 	cancel_button.pressed.connect(func() -> void: job.cancel())
 	play_button.pressed.connect(func() -> void: ready_to_play.emit())
-	var record: Dictionary = Index.latest(cache_root, request_resource)
-	directory.text = str(record.get("game_dir", ""))
-	if auto_resume and not record.is_empty():
-		var importer: RefCounted = TaskImport.new()
-		var results: Array[Dictionary] = []
-		for result: Dictionary in record.results:
-			results.append(result)
-		var installed: Dictionary = importer.install_results(results, record.get("content", {}))
-		if installed.ok:
-			call_deferred("_resume")
+	if auto_resume:
+		if Guard.register_reader(cache_root) != OK:
+			status.text = "缓存正被其他进程使用，请关闭后重启。"
+			start_button.disabled = true
 			return
+		checking_cache = true
+		status.text = "正在后台校验资源缓存…"
+		start_button.disabled = true
+		_cache_importer = TaskImport.new()
+		_cache_thread = Thread.new()
+		var error: Error = _cache_thread.start(_cache_importer.validate_cache.bind(cache_root, request_resource))
+		if error == OK:
+			return
+		checking_cache = false
+		start_button.disabled = false
 	status.text = "请选择经典《魔兽争霸3》安装目录（包含 MPQ 文件）。"
 
 func _process(_delta: float) -> void:
+	if checking_cache and _cache_thread != null and not _cache_thread.is_alive():
+		var valid: bool = bool(_cache_thread.wait_to_finish())
+		checking_cache = false
+		_cache_thread = null
+		if valid:
+			var installed: Dictionary = _cache_importer.restore_validated_cache()
+			if installed.ok:
+				_resume.call_deferred()
+				return
+		status.text = "缓存缺失或损坏，请选择原版目录重新导入。"
+		start_button.disabled = false
+		_cache_importer = null
 	if job != null:
 		job.poll()
 
 func _exit_tree() -> void:
+	if _cache_thread != null and _cache_thread.is_started():
+		_cache_thread.wait_to_finish()
 	if job != null:
 		job.cancel()
 
 func _start_import() -> void:
+	if checking_cache:
+		return
 	if directory.text.strip_edges().is_empty():
 		status.text = "请先选择原版安装目录。"
 		return
@@ -71,6 +95,9 @@ func _on_finished(result: Dictionary) -> void:
 	cancel_button.disabled = true
 	progress.indeterminate = false
 	if result.get("ok", false):
+		if Guard.register_reader(cache_root) != OK:
+			status.text = "不能保留缓存使用标记，请重启后重试。"
+			return
 		status.text = "导入完成，可以继续。已准备所选批次的游戏资源。"
 		if result.has("diagnostics"):
 			status.text += " " + str(result.diagnostics[0].get("message", ""))

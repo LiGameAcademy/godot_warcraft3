@@ -18,6 +18,20 @@ func _run() -> void:
 	var cache: String = args[args.find("--cache") + 1]
 	var game_dir: String = args[args.find("--source") + 1]
 	var report: String = args[args.find("--report") + 1]
+	if mode in ["hold-writer", "hold-reader"]:
+		var guard_script: GDScript = load("res://app/asset_import_guard.gd")
+		var guard: RefCounted = guard_script.new()
+		var acquired: Error = guard.acquire(cache) if mode == "hold-writer" else guard_script.register_reader(cache)
+		if acquired != OK:
+			get_tree().quit(1)
+			return
+		var ready: FileAccess = FileAccess.open(report, FileAccess.WRITE)
+		ready.store_string("ready")
+		ready.close()
+		await get_tree().create_timer(120.0).timeout
+		guard.release()
+		get_tree().quit(0)
+		return
 	var wizard: Control = Wizard.instantiate() as Control
 	wizard.cache_root = cache
 	wizard.request_resource = "res://config/development_asset_request.source" if "--development" in args else "res://config/asset_import_samples.source"
@@ -30,6 +44,10 @@ func _run() -> void:
 		if mode == "cancel-compile" and stage == "编译场景缓存" and completed == 1:
 			call_deferred("_cancel", wizard))
 	await get_tree().process_frame
+	while wizard.checking_cache:
+		frames += 1
+		await get_tree().process_frame
+	await get_tree().process_frame
 	if "--capture" in args:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(report + ".initial.png")
@@ -40,7 +58,7 @@ func _run() -> void:
 		_check(ready_count == 0, "Invalid index must return to setup")
 		wizard.directory.text = cache.path_join("missing-install") if mode == "retry" else game_dir
 		wizard.start_button.pressed.emit()
-		if mode != "source-overlap":
+		if not mode in ["source-overlap", "busy"]:
 			_check(wizard.start_button.disabled and not wizard.cancel_button.disabled)
 		if mode == "cancel-source":
 			_cancel(wizard)
@@ -50,7 +68,9 @@ func _run() -> void:
 			wizard.directory.text = game_dir
 			wizard.start_button.pressed.emit()
 			await _wait(wizard)
-		if mode == "source-overlap":
+		if mode == "busy":
+			_check(not completion.ok and completion.diagnostics[0].code == "cache_busy")
+		elif mode == "source-overlap":
 			_check(not completion.ok and not wizard.start_button.disabled and wizard.play_button.disabled)
 		elif mode.begins_with("cancel"):
 			_check(completion.get("cancelled", false) and wizard.play_button.disabled and not wizard.start_button.disabled)
@@ -71,7 +91,7 @@ func _run() -> void:
 	get_tree().quit(0 if _failures.is_empty() else 1)
 
 func _wait(wizard: Control) -> void:
-	var deadline: int = Time.get_ticks_msec() + (1800000 if "--development" in OS.get_cmdline_user_args() else 180000)
+	var deadline: int = Time.get_ticks_msec() + (3600000 if "--development" in OS.get_cmdline_user_args() else 180000)
 	while wizard.job.active and Time.get_ticks_msec() < deadline:
 		frames += 1
 		await get_tree().process_frame

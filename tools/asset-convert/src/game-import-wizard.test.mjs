@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {packageRuntime} from '../scripts/package-runtime.mjs';
 
@@ -88,6 +88,20 @@ assert.ok(cold.events.some(event => event.stage === '编译场景缓存'));
 const indexDir = path.join(cache, 'indexes');
 const indexBefore = fs.readdirSync(indexDir);
 const coldPaths = JSON.stringify(cold.result.paths);
+for (const mode of ['hold-writer', 'hold-reader']) {
+  const ready = path.join(output, mode + '.ready');
+  const holder = spawn(binary, ['--headless', '--', '--mode', mode, '--cache', cache, '--source', gameDir, '--report', ready], {cwd: repo, stdio: 'ignore'});
+  try {
+    const deadline = Date.now() + 20000;
+    while (!fs.existsSync(ready) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(fs.existsSync(ready), 'Concurrent cache holder did not start');
+    assert.equal(probe('busy').result.diagnostics[0].code, 'cache_busy');
+    assert.deepEqual(fs.readdirSync(indexDir), indexBefore);
+  } finally {
+    holder.kill();
+    if (holder.exitCode === null) await new Promise(resolve => holder.once('exit', resolve));
+  }
+}
 assert.equal(probe('cancel-source').result.cancelled, true);
 assert.deepEqual(fs.readdirSync(indexDir), indexBefore);
 assert.equal(probe('cancel-compile').result.cancelled, true);
@@ -97,6 +111,14 @@ fs.renameSync(path.join(cache, 'inputs'), path.join(cache, 'inputs-disabled'));
 assert.equal(probe('warm').result.resumed, true);
 fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
 fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
+const cleanup = path.join(bundle, 'tools/asset-convert/src/cache-maintenance.mjs');
+const preview = JSON.parse(run(path.join(bundle, 'node.exe'), [cleanup, cache], true));
+assert.equal(preview.apply, false);
+assert.ok(preview.reclaimBytes > 0);
+const cleaned = JSON.parse(run(path.join(bundle, 'node.exe'), [cleanup, cache, '--apply'], true));
+assert.equal(cleaned.apply, true);
+assert.deepEqual(fs.readdirSync(indexDir), indexBefore);
+assert.equal(probe('warm').result.resumed, true);
 const retry = probe('retry', [], path.join(output, 'retry-cache'));
 assert.equal(retry.result.ok, true);
 const damaged = path.join(indexDir, indexBefore.at(-1));
@@ -105,13 +127,13 @@ const rebuilt = probe('rebuild');
 assert.equal(rebuilt.result.ok, true);
 assert.equal(JSON.stringify(rebuilt.result.paths), coldPaths);
 probe('render', ['--capture']);
-run(binary, ['--headless', '--', '--asset-root', path.join(repo, 'assets'),
-  '--asset-import-cache', cache, '--asset-import-request', 'res://config/asset_import_samples.source', '--smoke-test'], true);
+// A four-model fixture cannot validate the complete development map.
+// game-development-import.test.mjs owns the standalone game startup regression.
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({
   binary, gameDir, cache,
   checks: ['source_directory_readonly', 'responsive_cold_import', 'source_cancel_preserves_index',
     'compile_cancel_preserves_index', 'offline_index_restore', 'invalid_directory_retry',
-    'broken_index_rebuild', 'rendered_wizard', 'cached_game_map_startup'],
+    'broken_index_rebuild', 'rendered_wizard', 'concurrent_writer_exclusion', 'active_reader_exclusion', 'bundled_cache_cleanup', 'restore_after_cleanup'],
 }, null, 2));
 console.log('PASS: formal wizard cold/progress/responsive/cancel-source/cancel-compile/offline/retry/index rebuild');
 console.log('Report: ' + path.join(output, 'report.json'));
