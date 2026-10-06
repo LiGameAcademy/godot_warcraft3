@@ -21,9 +21,11 @@ void fragment() {
  float alpha = layer_alpha * geoset_alpha;
  if (alpha < 0.001) discard;
  ALBEDO = color_add ? rgb * rgb : rgb;
- ALPHA = color_add ? 1.0 : texel.a * alpha;
+ ALPHA = color_add ? alpha : texel.a * alpha;
 }
 """
+	if int(layer.get("Shading", 0)) & 32:
+		shader.code = shader.code.replace("depth_draw_never;", "depth_draw_never, fog_disabled;")
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.shader = shader
 	material.resource_local_to_scene = true

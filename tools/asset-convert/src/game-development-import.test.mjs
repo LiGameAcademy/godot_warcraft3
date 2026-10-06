@@ -53,7 +53,9 @@ fs.writeFileSync(path.join(tmp, 'development_probe.tscn'), `[gd_scene load_steps
 [node name="Boot" type="Node"]
 script = ExtResource("1")
 `);
-fs.copyFileSync(path.join(repo, 'tests/integration/development_capture.gd'), path.join(tmp, 'development_capture.gd'));
+for (const name of ['development_capture.gd', 'development_spell_review.gd']) {
+  fs.copyFileSync(path.join(repo, 'tests/integration', name), path.join(tmp, name));
+}
 const project = path.join(repo, 'apps/game/project.godot');
 const preset = path.join(repo, 'apps/game/export_presets.cfg');
 const originalProject = fs.readFileSync(project);
@@ -116,10 +118,13 @@ try {
   if (fs.existsSync(path.join(cache, 'inputs-disabled')) && !fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
   if (fs.existsSync(path.join(bundle, 'node.disabled'))) fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
 }
+const spellReviewPath = path.join(output, 'asset-review-spells.json');
+const spellReview = JSON.parse(fs.readFileSync(spellReviewPath));
+assert.equal(spellReview.failures, 0);
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture, reviewCapture,
-  startupTimings: timings, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
+  startupTimings: timings, spellReviewPath, spellReview, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
   checks: [recover ? 'recovered_published_index_after_acceptance_timeout' : 'full_background_import', recover ? 'prior_batched_compilation_artifacts' : 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
-    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons', 'vulkan_asset_review_models_portraits_pathing'],
+    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons', 'vulkan_asset_review_models_portraits_pathing', 'three_summon_levels_native_models', 'repeated_blizzard_without_scene_reload', 'mass_teleport_effect_lifecycle_and_cancel'],
 }, null, 2));
 console.log(recover ? 'PASS: published full index -> offline standalone startup and rendered map' : 'PASS: original installation -> full background import -> standalone cached game');
 console.log('Report: ' + path.join(output, 'report.json'));

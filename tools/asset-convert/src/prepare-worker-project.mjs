@@ -10,7 +10,7 @@ export function prepareWorkerProject(repo, output) {
   }
   // Release script exports may strip source_code. Keep an explicit source payload
   // for scripts embedded into newly compiled SCNs; .gd remains authoritative.
-  for (const name of ['import_billboard_pose.gd', 'import_ribbon_runtime.gd']) {
+  for (const name of ['import_billboard_pose.gd', 'import_ribbon_runtime.gd', 'import_particle_burst.gd']) {
     fs.copyFileSync(path.join(repo, 'tools/godot', name), path.join(output, `${name}.source`));
   }
   const hashes = fs.readdirSync(path.join(repo, 'tools/godot')).filter(n => /^import_.*\.gd$/.test(n)).sort().map(name =>

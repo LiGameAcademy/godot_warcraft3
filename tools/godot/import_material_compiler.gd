@@ -88,7 +88,7 @@ static func _warn(result: Dictionary, code: String, id: int) -> void:
 static func _supported(layer: Dictionary) -> bool:
 	var flags: int = int(layer.get("Shading", 0))
 	var mode: int = int(layer.get("FilterMode", 0))
-	return not layer.get("TextureID") is Dictionary and layer.get("TVertexAnimId") == null and flags & ~17 == 0 and mode >= 0 and mode <= 4 and int(layer.get("CoordId", 0)) == 0
+	return not layer.get("TextureID") is Dictionary and layer.get("TVertexAnimId") == null and flags & ~49 == 0 and mode >= 0 and mode <= 4 and int(layer.get("CoordId", 0)) == 0
 
 static func _single(original: StandardMaterial3D, layer: Dictionary) -> StandardMaterial3D:
 	var material: StandardMaterial3D = original.duplicate()
@@ -97,6 +97,7 @@ static func _single(original: StandardMaterial3D, layer: Dictionary) -> Standard
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED if flags & 1 else BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED if flags & 16 else BaseMaterial3D.CULL_BACK
 	material.transparency = [BaseMaterial3D.TRANSPARENCY_DISABLED, BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR, BaseMaterial3D.TRANSPARENCY_ALPHA][mode]
+	material.disable_fog = flags & 32 != 0
 	material.alpha_scissor_threshold = 0.75
 	material.albedo_color.a = 1.0 if layer.get("Alpha", 1) is Dictionary else float(layer.get("Alpha", 1))
 	return material

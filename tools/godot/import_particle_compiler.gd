@@ -1,4 +1,6 @@
 extends RefCounted
+const Embedded: GDScript = preload("import_embedded_script.gd")
+const Burst: GDScript = preload("import_particle_burst.gd")
 const ParticleMaterial: GDScript = preload("res://packages/map/presentation/wc3_model/wc3_pe2_material.gd")
 
 static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dictionary:
@@ -8,7 +10,7 @@ static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dict
 	if int(ir.get("particles", {}).get("count", 0)) > 0 and payload.is_empty():
 		result.diagnostics.append({"code": "particle_payload_missing", "severity": "warning"})
 	for em: Dictionary in payload.get("emitters", []):
-		if bool(em.get("squirt", false)) or not em.get("unsupported", []).is_empty() or players.size() != 1:
+		if not em.get("unsupported", []).is_empty() or players.size() != 1:
 			result.diagnostics.append({"code": "particle_controls_pending", "severity": "warning", "emitter": em.name, "fields": em.get("unsupported", [])})
 			continue
 		var image: Image = Image.load_from_file(texture_base.path_join(str(em.texture_uri)).simplify_path())
@@ -32,7 +34,13 @@ static func _build(em: Dictionary, texture: Texture2D) -> GPUParticles3D:
 	for clip: Dictionary in em.clips:
 		for key: Dictionary in clip.keys:
 			peak = maxf(peak, float(key.rate))
-	particle.amount = clampi(ceili(peak * particle.lifetime), 1, 4096)
+	var burst: bool = bool(em.get("squirt", false))
+	particle.amount = clampi(ceili(peak if burst else peak * particle.lifetime), 1, 4096)
+	if burst:
+		particle.set_script(Embedded.create(Burst))
+		particle.one_shot = true
+		particle.explosiveness = 1.0
+		particle.set_meta("import_particle_burst", true)
 	particle.local_coords = int(em.flags) & 0x80000 != 0
 	particle.emitting = false
 	particle.use_fixed_seed = true
@@ -107,9 +115,14 @@ static func _tracks(player: AnimationPlayer, particle: GPUParticles3D, em: Dicti
 			animation.track_insert_key(position, time, _vec(key.position))
 			animation.track_insert_key(rotation, time, Quaternion(key.rotation[0], key.rotation[1], key.rotation[2], key.rotation[3]))
 			animation.track_insert_key(scale, time, _vec(key.scale))
-			animation.track_insert_key(emitting, time, bool(key.visible) and float(key.rate) > 0.0)
+			animation.track_insert_key(emitting, time, not bool(em.get("squirt", false)) and bool(key.visible) and float(key.rate) > 0.0)
 			animation.track_insert_key(ratio, time, clampf(float(key.rate) * particle.lifetime / particle.amount, 0.0, 1.0))
 			animation.track_insert_key(box, time, Vector3(float(key.width), 0.0, float(key.length)) * 0.005)
+		if bool(em.get("squirt", false)):
+			var events: int = _track(animation, path, Animation.TYPE_METHOD)
+			for burst: Dictionary in clip.get("bursts", []):
+				animation.track_insert_key(events, float(burst.time), {"method": &"emit_burst", "args": [int(burst.count)]})
+			count += 1
 		count += 6
 	return count
 

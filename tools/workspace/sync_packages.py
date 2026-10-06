@@ -101,7 +101,7 @@ def sync(name):
         records.append({'path':relative, 'generated':'legacy_model_redirect', 'sha256':hashlib.sha256(data).hexdigest()})
     if name == 'game':
         tool_dir = app / 'tools/godot'
-        payloads = ['import_billboard_pose.gd', 'import_ribbon_runtime.gd']
+        payloads = ['import_billboard_pose.gd', 'import_ribbon_runtime.gd', 'import_particle_burst.gd']
         hashes = [[p.name, hashlib.sha256(p.read_bytes()).hexdigest()] for p in sorted(tool_dir.glob('import_*.gd'))]
         material = app / 'packages/map/presentation/wc3_model/wc3_pe2_material.gd'
         hashes.append(['presentation/wc3_model/wc3_pe2_material.gd', hashlib.sha256(material.read_bytes()).hexdigest()])

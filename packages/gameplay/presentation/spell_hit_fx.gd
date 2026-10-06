@@ -1,5 +1,6 @@
 class_name SpellHitFx
 extends Node3D
+const FxScene: GDScript = preload("ability_fx_scene.gd")
 
 ## 技能命中附着特效（Present）：FrostDamage 等，短寿命。
 
@@ -12,6 +13,7 @@ const MODEL_SCALE := 1.35
 
 var _age: float = 0.0
 var _inst: Node3D = null
+var _lifetime: float = LIFETIME
 
 
 static func spawn_on(
@@ -33,12 +35,11 @@ static func spawn_on(
 	var fx := SpellHitFx.new()
 	fx.name = "SpellHitFx"
 	target.add_child(fx)
-	fx._play(art_rel, cache, attach_name)
+	fx._play(target, art_rel, cache, attach_name)
 	return fx
 
 
-func _play(art_rel: String, cache: MapModelCache, attach_name: String) -> void:
-	var host := get_parent() as Node3D
+func _play(host: Node3D, art_rel: String, cache: MapModelCache, attach_name: String) -> void:
 	# 保持挂在单位实体根上：插座在 MODEL_SCALE 子树里，reparent 进去会把 FX 缩到看不见。
 	var place := AbilityAttachFxPresenter.resolve_attach(
 		host, attach_name, _attach_offset(host, attach_name)
@@ -53,9 +54,8 @@ func _play(art_rel: String, cache: MapModelCache, attach_name: String) -> void:
 	if _inst == null:
 		_inst = _spawn_fallback()
 	if _inst != null:
-		if cache != null:
-			cache.prepare_fx_model(_inst)
-		_inst.scale = _inst.scale * MODEL_SCALE
+		if not CompiledModelPresentation.is_compiled(_inst):
+			_inst.scale = _inst.scale * MODEL_SCALE
 		add_child(_inst)
 		_try_play_anim(_inst, art_rel)
 	_age = 0.0
@@ -70,19 +70,7 @@ static func _attach_offset(target: Node3D, _attach_name: String) -> Vector3:
 
 
 func _spawn_model(art_rel: String, cache: MapModelCache) -> Node3D:
-	var rel := art_rel.strip_edges()
-	if rel.is_empty():
-		return null
-	var path := RuntimeAssets.converted_path(rel)
-	if cache != null:
-		var n := cache.instance_glb(path)
-		if n != null:
-			return n
-	if ResourceLoader.exists(path):
-		var packed := load(path)
-		if packed is PackedScene:
-			return (packed as PackedScene).instantiate() as Node3D
-	return null
+	return FxScene.instantiate(art_rel, cache) if not art_rel.is_empty() else null
 
 
 func _spawn_fallback() -> MeshInstance3D:
@@ -104,6 +92,14 @@ func _spawn_fallback() -> MeshInstance3D:
 
 
 func _try_play_anim(root: Node, art_rel: String) -> void:
+	if CompiledModelPresentation.is_compiled(root):
+		var clip: String = FxScene.play(root as Node3D, "Birth")
+		if clip.is_empty():
+			clip = FxScene.play(root as Node3D, "Stand")
+		var player: AnimationPlayer = AnimPlayback.find_animation_player(root)
+		if player != null and not clip.is_empty():
+			_lifetime = maxf(LIFETIME, player.get_animation(clip).length)
+		return
 	var ap := AnimPlayback.find_animation_player(root)
 	var pick := "Birth"
 	if ap != null:
@@ -144,5 +140,5 @@ func _process(delta: float) -> void:
 			var t := clampf(_age / LIFETIME, 0.0, 1.0)
 			mat.albedo_color.a = FALLBACK_COLOR.a * (1.0 - t)
 		scale = Vector3.ONE * (1.0 + _age * 0.35)
-	if _age >= LIFETIME:
+	if _age >= _lifetime:
 		queue_free()

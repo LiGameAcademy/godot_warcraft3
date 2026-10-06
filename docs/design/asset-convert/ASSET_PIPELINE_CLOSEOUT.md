@@ -112,3 +112,10 @@ $maintenance = Join-Path $runtime 'tools/asset-convert/src/cache-maintenance.mjs
 ## 游戏截图问题复验（2026-10-05）
 
 队色、肖像背景、建筑禁建外圈、建筑肖像及额外测试开局的原因、修复与手动流程见 [GAME_ASSET_REVIEW.md](GAME_ASSET_REVIEW.md)。启动增加 `--asset-review` 可获得牧师与大法师。必须使用本轮新场景缓存；默认 D3D12 阻塞及原作视觉裁定仍不据此视为完成。
+
+
+## 大法师技能复验（2026-10-06）
+
+召唤单位的源引用闭包、技能场景旧处理入口、Squirt 爆发、技能材质曲线、特效寿命和每波重复读取 SCN 的问题已纳入本轮修复。原因、手动流程及明确剩余近似见 [GAME_ASSET_REVIEW.md](GAME_ASSET_REVIEW.md)。本轮另外验证三个等级水元素、连续暴风雪与完整群体传送；保真视觉仍由原作对照裁定。
+
+新技能验收使用 `tools/asset-convert/tmp/development-9beFl2/report.json` 与 `asset-review-spells.json`：480 个模型、10,903 个内容文件；全量导入证据保留，最终重新导出后复用缓存验收。命中特效也绕过旧网格重建；暴风雪长帧明显降低，剩余近似及性能边界见上述说明，不据此宣布原作视觉通过。

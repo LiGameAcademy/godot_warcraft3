@@ -1,5 +1,6 @@
 class_name AbilitiesModule
 extends Node
+const FxScene: GDScript = preload("res://packages/gameplay/presentation/ability_fx_scene.gd")
 
 ## 对局内技能编排：cast ctx / runtime / 瞄准 / HUD 反馈 / 范围预览。
 ## 由总管注入地图、战斗管线与选择回调；不依赖 GameDirector 类型。
@@ -69,9 +70,14 @@ func configure(deps: Dictionary) -> void:
 	_sync_selection_info = deps.get("sync_selection_info", Callable()) as Callable
 	_last_screen_pos = deps.get("last_screen_pos", Callable()) as Callable
 	_ensure_services()
+	if _map_root != null:
+		# Keep recurring spell scenes in memory before gameplay begins.
+		for id: String in ["AHbz", "AHmt"]:
+			FxScene.warm_for_ability(id, _map_root.get_model_cache())
 
 
 func shutdown() -> void:
+	FxScene.clear()
 	clear_preview()
 	ctx_factory = null
 	hud = null

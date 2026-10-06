@@ -1,5 +1,6 @@
 class_name AbilityAttachFxPresenter
 extends RefCounted
+const FxScene: GDScript = preload("ability_fx_scene.gd")
 
 const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
@@ -253,24 +254,13 @@ static func _find_named(host: Node3D, node_name: String) -> Node3D:
 
 
 static func _spawn(art_rel: String, cache: MapModelCache) -> Node3D:
-	if art_rel.is_empty():
-		return null
-	var path := RuntimeAssets.converted_path(art_rel)
-	var inst: Node3D = null
-	if cache != null:
-		inst = cache.instance_glb(path)
-	if inst == null and ResourceLoader.exists(path):
-		var packed := load(path)
-		if packed is PackedScene:
-			inst = (packed as PackedScene).instantiate() as Node3D
-	if inst == null:
-		return null
-	if cache != null:
-		cache.prepare_fx_model(inst)
-	return inst
+	return FxScene.instantiate(art_rel, cache) if not art_rel.is_empty() else null
 
 
 static func _try_play_loop(root: Node, art_rel: String) -> void:
+	if CompiledModelPresentation.is_compiled(root):
+		FxScene.play(root as Node3D, "Stand", true)
+		return
 	var ap := AnimPlayback.find_animation_player(root)
 	if ap != null:
 		ap.active = true
@@ -291,6 +281,10 @@ static func _try_play_loop(root: Node, art_rel: String) -> void:
 
 
 static func _try_play_once(root: Node, art_rel: String) -> void:
+	if CompiledModelPresentation.is_compiled(root):
+		if FxScene.play(root as Node3D, "Birth").is_empty():
+			FxScene.play(root as Node3D, "Stand")
+		return
 	var ap := AnimPlayback.find_animation_player(root)
 	var pick := "Birth"
 	if ap != null:

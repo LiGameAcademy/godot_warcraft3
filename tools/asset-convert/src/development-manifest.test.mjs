@@ -44,7 +44,12 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.deepEqual(report.missing_definitions, ['Units/AbilityBuffData.slk']);
 
     write('defs/Units/UnitAbilities.json', {records: [{unitAbilID: 'hfoo', abilList: 'Afoo'}]});
-    write('defs/Units/AbilityData.json', {records: [{alias: 'Afoo', BuffID1: 'Bfoo'}]});
+    write('defs/Units/AbilityData.json', {records: [{alias: 'Afoo', BuffID1: 'Bfoo', UnitID1: 'hwat', UnitID2: 'hwt2', UnitID3: 'hwt3'}]});
+    write('defs/Units/UnitUI.json', {records: [
+      {unitUIID: 'hfoo', file: 'Units/Foo/Foo', fileVerFlags: 2},
+      ...['hwat', 'hwt2', 'hwt3'].map(unitUIID => ({unitUIID, file: 'Units/Water/Water'})),
+    ]});
+    write('source/Units/Water/Water.mdx', 'summon fixture');
     write('source/Units/AbilityBuffData.slk', 'ID;PWXL;N;E\nB;X1;Y2\nC;X1;Y1;K"alias"\nC;X1;Y2;K"Bfoo"\nE\n');
     write('defs/Melee_V0/Units/HumanUnitFunc.txt', '[hfoo]\nMissileart=Missiles/Overlay.mdl\n//Art=UI/Comment.blp\nArt=UI/Icon.tga\n');
     write('source/UI/Icon.blp', 'fixture icon');
@@ -53,6 +58,9 @@ test('map references are traceable, cyclic links terminate, MDL resolves case-in
     assert.equal(supplemented.missing_definitions.length, 0);
     assert.equal(supplemented.unresolved_references.length, 0);
     assert.ok(supplemented.objects.some(row => row.id === 'Bfoo'));
+    for (const id of ['hwat', 'hwt2', 'hwt3']) assert.ok(supplemented.objects.some(row => row.id === id));
+    const summon = supplemented.assets.find(row => row.id === 'units/water/water');
+    assert.deepEqual(new Set(summon.reasons.map(row => row.object_id)), new Set(['hwat', 'hwt2', 'hwt3']));
     assert.ok(supplemented.inputs.some(row => row.path.endsWith('AbilityBuffData.slk') && row.sha256));
     assert.ok(supplemented.assets.find(row => row.id === 'missiles/bolt'), 'base candidate retained');
     assert.equal(supplemented.assets.find(row => row.id === 'missiles/overlay').reasons[0].table,

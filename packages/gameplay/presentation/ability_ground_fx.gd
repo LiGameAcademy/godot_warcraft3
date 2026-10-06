@@ -1,7 +1,8 @@
 class_name AbilityGroundFx
 extends Node3D
+const FxScene: GDScript = preload("ability_fx_scene.gd")
 
-## 点地技能地面特效（Present）：WC3 Effectart → GLB + PE2。
+## 点地技能表现：优先源场景自带动画/粒子；旧资产保留兼容入口。
 
 const FALLBACK_DIAM := 3.6
 const FALLBACK_COLOR := Color(0.55, 0.75, 1.0, 0.55)
@@ -11,6 +12,7 @@ var _inst: Node3D = null
 var _art_rel: String = ""
 var _age: float = 0.0
 var _lifetime: float = 3.0
+var _ending: bool = false
 
 
 static func spawn(
@@ -79,35 +81,17 @@ func _play(
 		queue_free()
 		return
 	add_child(_inst)
-	if _cache != null and not _art_rel.is_empty():
-		_cache.prepare_fx_model(_inst, RuntimeAssets.converted_path(_art_rel))
 	_try_play_anim(_inst)
-	# 预览：Birth 循环，避免播完粒子熄灭
+	# Preview loop policy is instance-owned for compiled and legacy animations.
 	if _lifetime <= 0.0:
-		var ap := AnimPlayback.find_animation_player(_inst)
-		if ap != null and not str(ap.current_animation).is_empty():
-			var cur := str(ap.current_animation)
-			if ap.has_animation(cur):
-				var anim := ap.get_animation(cur)
-				if anim != null:
-					anim.loop_mode = Animation.LOOP_LINEAR
+		var player: AnimationPlayer = AnimPlayback.find_animation_player(_inst)
+		if player != null and not player.current_animation.is_empty():
+			FxScene.play(_inst, str(player.current_animation), true)
 	set_process(true)
 
 
 func _spawn_model(art_rel: String) -> Node3D:
-	var rel := art_rel.strip_edges()
-	if rel.is_empty():
-		return null
-	var path := RuntimeAssets.converted_path(rel)
-	if _cache != null:
-		var n := _cache.instance_glb(path)
-		if n != null:
-			return n
-	if ResourceLoader.exists(path):
-		var packed := load(path)
-		if packed is PackedScene:
-			return (packed as PackedScene).instantiate() as Node3D
-	return null
+	return FxScene.instantiate(art_rel, _cache) if not art_rel.is_empty() else null
 
 
 func _spawn_fallback() -> MeshInstance3D:
@@ -129,6 +113,17 @@ func _spawn_fallback() -> MeshInstance3D:
 
 
 func _try_play_anim(root: Node) -> void:
+	if CompiledModelPresentation.is_compiled(root):
+		var model: Node3D = root as Node3D
+		var player: AnimationPlayer = AnimPlayback.find_animation_player(model)
+		var clip: String = FxScene.play(model, "Birth")
+		if clip.is_empty():
+			clip = FxScene.play(model, "Stand", true)
+		if player != null and not clip.is_empty():
+			player.animation_finished.connect(_on_animation_finished)
+			if AnimPlayback.resolve(model, "Stand", player).is_empty() and _lifetime > 0.0:
+				_lifetime = maxf(_lifetime, player.get_animation(clip).length)
+		return
 	var ap := AnimPlayback.find_animation_player(root)
 	var pick := "Birth"
 	if ap != null:
@@ -181,5 +176,13 @@ func _process(delta: float) -> void:
 			mat.albedo_color.a = FALLBACK_COLOR.a * a
 	if _lifetime <= 0.0:
 		return
-	if _age >= _lifetime:
+	if _age >= _lifetime and not _ending:
+		_ending = true
+		if not CompiledModelPresentation.is_compiled(_inst) or FxScene.play(_inst, "Death").is_empty():
+			queue_free()
+
+func _on_animation_finished(clip: StringName) -> void:
+	if _ending:
 		queue_free()
+	elif str(clip).get_file().to_lower().begins_with("birth"):
+		FxScene.play(_inst, "Stand", true)
