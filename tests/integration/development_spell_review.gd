@@ -5,6 +5,7 @@ var failures: int = 0
 var _frames: Array[float] = []
 var _phases: Array[Dictionary] = []
 var _instances: Array[Dictionary] = []
+var _summon_transitions: Array[Dictionary] = []
 
 func run(game: GameMain, capture: String) -> int:
 	var caster: Node3D = null
@@ -38,6 +39,7 @@ func run(game: GameMain, capture: String) -> int:
 			_check(AnimPlayback.find_animation_player(model) != null, "Summon has native animation: " + id)
 			game.unit_selector.select_node(summon)
 			await _wait_portrait(game, id)
+			await _wait_summon_idle(game, caster, model, id)
 		await _save(game, capture.get_basename() + "-water-%d.png" % level)
 	var goal: Vector2 = Wc3Coords.godot_to_wc3_xy(caster.global_position) + Vector2(-180.0, -200.0)
 	game.unit_selector.select_node(caster)
@@ -95,20 +97,24 @@ func run(game: GameMain, capture: String) -> int:
 	_check(caster.get_node_or_null("MassTeleportCasterFx") == null, "Canceled teleport clears caster FX")
 	_check(game.map_root.get_node_or_null("MassTeleportDestMarker") == null, "Canceled teleport clears destination preview")
 	var stats: Dictionary = _timings(_frames)
-	stats.merge({"scene_loads_before_casts": loads, "scene_loads_after_casts": FxScene.scene_loads, "phases": _phases, "instance_setup": _instances, "blizzard_loads_before": blizzard_loads, "blizzard_loads_after": _blizzard_loads(), "failures": failures, "visual": "requires_original_game_comparison"})
+	stats.merge({"scene_loads_before_casts": loads, "scene_loads_after_casts": FxScene.scene_loads, "phases": _phases, "instance_setup": _instances, "summon_transitions": _summon_transitions, "blizzard_loads_before": blizzard_loads, "blizzard_loads_after": _blizzard_loads(), "failures": failures, "visual": "requires_original_game_comparison"})
 	var file: FileAccess = FileAccess.open(capture.get_basename() + "-spells.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(stats, "  "))
 	print("SPELL_REVIEW " + JSON.stringify(stats))
 	return failures
 
 func _wait(game: GameMain, seconds: float) -> void:
-	var until: int = Time.get_ticks_usec() + int(seconds*1000000.0)
+	# Gameplay timers use frame delta; wall-clock waits race channels after long frames.
+	var elapsed: float = 0.0
+	var deadline: int = Time.get_ticks_usec() + 120000000
 	var previous: int = Time.get_ticks_usec()
-	while Time.get_ticks_usec() < until:
+	while elapsed < seconds and Time.get_ticks_usec() < deadline:
 		await game.get_tree().process_frame
 		var now: int = Time.get_ticks_usec()
 		_frames.append(float(now-previous)/1000.0)
 		previous = now
+		elapsed += game.get_process_delta_time()
+	_check(elapsed >= seconds, "Gameplay wait timed out: %.2f seconds" % seconds)
 
 func _save(game: GameMain, path: String) -> void:
 	await RenderingServer.frame_post_draw
@@ -160,3 +166,32 @@ func _wait_portrait(game: GameMain, id: String) -> void:
 			_check(CompiledModelPresentation.is_compiled(view._model_root), "Summon portrait uses compiled source: " + id)
 			return
 	_check(false, "Summon portrait UI exists: " + id)
+
+func _wait_summon_idle(game: GameMain, caster: Node3D, model: Node3D, id: String) -> void:
+	var ap: AnimationPlayer = AnimPlayback.find_animation_player(model)
+	var caster_ap: AnimationPlayer = AnimPlayback.find_animation_player(caster)
+	if ap == null or caster_ap == null:
+		_check(false, "Summon and caster animation players exist")
+		return
+	var birth: String = AnimPlayback.resolve(model, "Birth", ap)
+	var spell: String = AnimPlayback.resolve(caster, "Spell", caster_ap)
+	if birth.is_empty() or spell.is_empty():
+		_check(false, "Birth and Spell clips resolve")
+		return
+	var birth_clip: Animation = ap.get_animation(birth)
+	var spell_clip: Animation = caster_ap.get_animation(spell)
+	_check(birth_clip.loop_mode == Animation.LOOP_NONE, "Summon Birth remains single play: " + id)
+	_check(spell_clip.loop_mode == Animation.LOOP_NONE, "Summon gesture remains single play")
+	var deadline: int = Time.get_ticks_msec() + 8000
+	while (ap.current_animation == birth or bool(caster.get("_spell_casting"))) and Time.get_ticks_msec() < deadline:
+		await _wait(game, 0.1)
+	_check(AnimPlayback.compact_seq_name(ap.current_animation).begins_with("stand"), "Birth finishes into Stand: " + id)
+	_check(not bool(caster.get("_spell_casting")), "Caster exits spell gesture: " + id)
+	_check(not AnimPlayback.compact_seq_name(caster_ap.current_animation).begins_with("spell"), "Caster leaves Spell: " + id)
+	# Observe another Birth-length interval to catch repeated/restarted birth phases.
+	await _wait(game, birth_clip.length + 0.2)
+	_check(ap.current_animation != birth, "Summon does not restart Birth: " + id)
+	_check(not bool(caster.get("_spell_casting")), "Caster remains released after summon: " + id)
+	_summon_transitions.append({"unit": id, "birth_seconds": birth_clip.length, "spell_seconds": spell_clip.length,
+		"summon_animation": ap.current_animation, "caster_animation": caster_ap.current_animation,
+		"caster_spell_casting": bool(caster.get("_spell_casting"))})
