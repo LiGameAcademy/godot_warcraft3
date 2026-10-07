@@ -1,6 +1,6 @@
 # RTS 内核重构开发路线图
 
-日期：2026-09-27（计划定稿）；状态更新 2026-09-28：M0 工具链验证（部分）+ M1 双宿主骨架最小形态**已落地**——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。M2 的 R02.1 地图数据转换进行中，真实寻路与移动尚未实现；内核已完成[独立仓库与子模块拆分](../verification/rts_kernel/REPOSITORY_SPLIT.md)。本文完成仍不代表实现完成，文档与代码仍按 §11 工作包规则同步。
+日期：2026-09-27（计划定稿）；状态更新 2026-10-07：M0 工具链验证（部分）+ M1 双宿主骨架最小形态**已落地**——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。M2 的 R02.1 地图数据转换进行中，真实寻路与移动尚未实现；内核已完成[独立仓库与子模块拆分](../verification/rts_kernel/REPOSITORY_SPLIT.md)。本文完成仍不代表实现完成，文档与代码仍按 §11 工作包规则同步。
 
 设计依据：[内核契约](../architecture/RTS_KERNEL.md)、[迁移与验收](../architecture/RTS_KERNEL_MIGRATION.md)、[技能系统](../architecture/RTS_ABILITY_SYSTEM.md)。本文细化执行顺序与工作包，不替代上述约束。
 
@@ -46,12 +46,14 @@
 
 ## 4. M2 — 真实移动、地图查询与导航
 
+2026-10-07：静态寻路及动态障碍/格子净空已在内核功能分支实现，尚未合并；对应 [Issue #1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[Issue #2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。[Issue #3](https://github.com/LiGameAcademy/rts_kernel_cs/issues/3) 跟踪后续移动与 Godot 隔离场景接入；详情见 [本批验证记录](../verification/rts_kernel/M2/NAVIGATION_STATE.md)。R02.1/R02.2 尚未整体完成，不标记完整 M2 已验收。
+
 2026-09-28 用户确认调整：暂缓 R00.4 的 300/500 活跃单位性能基线及 R00.5 的 Windows 导出验证，允许继续 M2 开发。G0 尚未完全通过，两项仍是后续验收欠项；编译、数据转换、寻路正确性、快照与必要回归继续执行。暂缓不等于取消，也不作为性能达标或可发布的证明。
 
 **成果：玩家选中单位后下达移动命令，由纯 C# 完成移动全过程。依赖：G1。**
 
-- [ ] R02.1 进行中：独立 Rts.Content 已转换现有静态寻路网格和高度场，CLI 成功读取 Echo Isles。尚需接入运行时障碍叠加、出生点和单位移动参数，见 `docs/verification/rts_kernel/M2/TERRAIN_ADAPTER.md`；保留现有解析和资产加载流程。
-- [ ] R02.2 实现纯 C# 路径查询与稳定同代价排序，对照现有 PathQuery/AStarGrid2D 和脚本 A*；首轮同步处理，禁止墙钟预算影响规则。
+- [ ] R02.1 进行中：独立 Rts.Content 已转换现有静态寻路网格和高度场，CLI 成功读取 Echo Isles。内核已支持通过测试帧命令更新动态障碍；尚需接入游戏运行时占地、出生点和单位移动参数，见 `docs/verification/rts_kernel/M2/TERRAIN_ADAPTER.md`；保留现有解析和资产加载流程。
+- [ ] R02.2 进行中：纯 C# 静态/动态网格查询、格子净空与稳定同代价排序已在功能分支实现，沿用现有 PathQuery 的八邻接及禁止穿墙角规则；已与独立最短路参考对照。尚需真实地图及宿主查询行为对照；同步处理，禁止墙钟预算影响规则。
 - [ ] R02.3 迁移路径跟随、转向减速、坡度、预约、局部避让、群体落点及当前编队规则；停止/替换/排队命令接入统一订单语义。
 - [ ] R02.4 接入选择与移动表现，保留 Godot 模型动画与插值；位置/朝向由内核独占，移除已切换实体的旧移动写入口。
 - [ ] R02.5 测试窄路、斜坡、卡边、不可达、大尺寸单位、拥挤与动态障碍；移动中恢复快照，比较后续路径推进状态。
