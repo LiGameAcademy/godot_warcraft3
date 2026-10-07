@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$GodotConsole,
-    [string]$Configuration = "Debug"
+    [string]$Configuration = "Debug",
+    [string]$TestCase = "integration/selftest_rts_kernel_bridge.gd",
+    [string[]]$CliArguments = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +12,6 @@ $godotExecutable = (Resolve-Path $GodotConsole).Path
 $godotRoot = Split-Path $godotExecutable -Parent
 $godotPackages = Join-Path $godotRoot "GodotSharp/Tools/nupkgs"
 $gameProject = "apps/game/godot_warcraft3.csproj"
-$testCase = "integration/selftest_rts_kernel_bridge.gd"
 
 if (-not (Test-Path $godotPackages)) {
     throw "Godot .NET package directory not found: $godotPackages"
@@ -35,7 +36,7 @@ try {
         dotnet build $gameProject --no-restore -p:NuGetAudit=false -c Debug
         if ($LASTEXITCODE -ne 0) { throw "Godot runtime Debug build failed" }
     }
-    $cliLines = dotnet run --project external/rts_kernel/samples/Rts.Kernel.Cli --no-build -c $Configuration
+    $cliLines = dotnet run --project external/rts_kernel/samples/Rts.Kernel.Cli --no-build -c $Configuration -- @CliArguments
     if ($LASTEXITCODE -ne 0) { throw "CLI parity baseline failed" }
     if (($cliLines -join "`n") -notmatch 'hash=([a-f0-9]{64})') {
         throw "CLI parity output did not contain a state hash"
