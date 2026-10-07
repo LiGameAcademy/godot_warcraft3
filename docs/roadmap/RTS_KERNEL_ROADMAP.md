@@ -46,6 +46,8 @@
 
 ## 4. M2 — 真实移动、地图查询与导航
 
+2026-10-07：静态寻路及动态障碍/格子净空已在内核功能分支实现，尚未合并；对应 [Issue #1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[Issue #2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。[Issue #3](https://github.com/LiGameAcademy/rts_kernel_cs/issues/3) 跟踪后续移动与 Godot 隔离场景接入；详情见 [本批验证记录](../verification/rts_kernel/M2/NAVIGATION_STATE.md)。R02.1/R02.2 尚未整体完成，不标记完整 M2 已验收。
+
 2026-09-28 用户确认调整：暂缓 R00.4 的 300/500 活跃单位性能基线及 R00.5 的 Windows 导出验证，允许继续 M2 开发。G0 尚未完全通过，两项仍是后续验收欠项；编译、数据转换、寻路正确性、快照与必要回归继续执行。暂缓不等于取消，也不作为性能达标或可发布的证明。
 
 **成果：玩家选中单位后下达移动命令，由纯 C# 完成移动全过程。依赖：G1。**

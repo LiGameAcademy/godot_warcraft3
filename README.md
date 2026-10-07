@@ -2,7 +2,7 @@
 
 用 **Godot 4.7.2** 复刻《魔兽争霸3》玩法的实验项目。
 
-纯 C# RTS 内核独立维护于 [rts_kernel_cs](https://github.com/Liweimin0512/rts_kernel_cs)，通过 `external/rts_kernel` 子模块固定版本。首次克隆后执行：
+纯 C# RTS 内核独立维护于 [rts_kernel_cs](https://github.com/LiGameAcademy/rts_kernel_cs)，通过 `external/rts_kernel` 子模块固定版本。首次克隆后执行：
 
 ```powershell
 git submodule update --init --recursive

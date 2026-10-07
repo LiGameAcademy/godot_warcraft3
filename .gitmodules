@@ -6,4 +6,4 @@
 	url = https://github.com/Ark2000/panku_console
 [submodule "external/rts_kernel"]
 	path = external/rts_kernel
-	url = https://github.com/Liweimin0512/rts_kernel_cs.git
+	url = https://github.com/LiGameAcademy/rts_kernel_cs.git
