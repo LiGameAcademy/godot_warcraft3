@@ -1,7 +1,7 @@
 extends SceneTree
 
-var _checks := 0
-var _failures := 0
+var _checks: int = 0
+var _failures: int = 0
 var _events: Array[Dictionary] = []
 
 
@@ -12,7 +12,7 @@ func _initialize() -> void:
 		_finish()
 		return
 
-	var bridge := Node.new()
+	var bridge: Node = Node.new()
 	bridge.set_script(bridge_script)
 	root.add_child(bridge)
 	await process_frame
@@ -72,10 +72,11 @@ func _initialize() -> void:
 	bridge.call("Step", 1)
 	bridge.call("SubmitVelocity", 2, 0, 1, 1, Vector2(30, 0))
 	bridge.call("Step", 30)
-	var cli_hash := "016e7546154597ff8ef859ee879e5a1ee22f3e5e4de5c2925cdcefae35ecfdea"
+	var cli_hash: String = _expected_cli_hash()
+	_check(cli_hash.length() == 64, "current CLI hash supplied by verification runner")
 	_check(str(bridge.call("GetStateHash")) == cli_hash, "Godot and CLI state hashes match")
 
-	var other := Node.new()
+	var other: Node = Node.new()
 	other.set_script(bridge_script)
 	root.add_child(other)
 	await process_frame
@@ -95,7 +96,7 @@ func _initialize() -> void:
 	var recreate_snapshot: String = bridge.call("CaptureSnapshotJson")
 	bridge.queue_free()
 	await process_frame
-	var replacement := Node.new()
+	var replacement: Node = Node.new()
 	replacement.set_script(bridge_script)
 	root.add_child(replacement)
 	await process_frame
@@ -109,6 +110,13 @@ func _initialize() -> void:
 	other.queue_free()
 	await process_frame
 	_finish()
+
+
+func _expected_cli_hash() -> String:
+	for argument: String in OS.get_cmdline_user_args():
+		if argument.begins_with("--expected-cli-hash="):
+			return argument.trim_prefix("--expected-cli-hash=")
+	return ""
 
 
 func _check(condition: bool, label: String) -> void:
