@@ -22,7 +22,7 @@ import { unlinkQuiet } from "./convert-mdx.js";
  * @param {string} inDir
  * @param {string} outDir
  */
-export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
+export async function convertOneMdx(absPath, logicalPath, inDir, outDir, sourceMetadata = {}) {
   const sourceBytes = fs.readFileSync(absPath);
   const model = parseModel(sourceBytes, logicalPath);
   const document = new Document();
@@ -363,7 +363,14 @@ export async function convertOneMdx(absPath, logicalPath, inDir, outDir) {
     writeAnimKeysSidecar(model, logicalPath, outDir);
     writeCollisionSidecar(model, logicalPath, outDir);
     writeBoneRestSidecar(skinAnimNodes, bindWorlds, jointList, logicalPath, outDir);
-    writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir);
+    writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir, sourceMetadata);
+    // Particle-only models have no accessors; an unused buffer writes [{}],
+    // which is invalid glTF and rejected by Godot.
+    if (document.getRoot().listAccessors().length === 0) buffer.dispose();
+    // Empty clips stay in IR; Godot rebuilds them for particle controls.
+    for (const animation of document.getRoot().listAnimations()) {
+      if (animation.listChannels().length === 0) animation.dispose();
+    }
     await new NodeIO().write(dest, document);
     unlinkQuiet(dest.replace(/\.gltf$/i, ".glb"));
   } catch (err) {

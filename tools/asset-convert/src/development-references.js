@@ -7,14 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { parseSlk } from '../../slk-export/src/parse-slk.js';
 
 const TABLES = {
-  'Units/UnitUI.json': 'unitUIID', 'Units/UnitAbilities.json': 'unitAbilID',
+  'Units/UnitData.json': 'unitID', 'Units/UnitUI.json': 'unitUIID', 'Units/UnitAbilities.json': 'unitAbilID',
   'Units/UnitWeapons.json': 'unitWeapID', 'Units/ItemData.json': 'itemID',
   'Units/AbilityData.json': 'alias', 'Units/DestructableData.json': 'DestructableID',
   'Doodads/Doodads.json': 'doodID',
 };
 const clean = value => String(value ?? '').trim().replaceAll('\\', '/').replace(/^"|"$/g, '');
 const split = value => clean(value).split(',').map(s => s.trim()).filter(Boolean);
-const LINKS = /^(Builds|Trains|Upgrade|Sellunits|Sellitems|abilList|heroAbilList|auto|BuffID\d*|EfctID\d*|Data[A-I]\d*)$/i;
+const LINKS = /^(Builds|Trains|Upgrade|Sellunits|Sellitems|abilList|heroAbilList|auto|UnitID\d*|BuffID\d*|EfctID\d*|Data[A-I]\d*)$/i;
 
 /** Selected profile uses field-level winners; candidates mode retains audit alternatives. */
 export function collectDevelopmentReferences({map, definitions, source, seeds = [], definitionProfile = layerPolicy.default_profile, edition = 'tft'}) {

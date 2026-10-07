@@ -330,3 +330,184 @@ fallback 记录
 7. 在确认 IR 字段稳定后，再开始原生导入核心设计和 GDExtension 骨架。
 
 第一批任务不修改主干运行时路径，不删除旧 `.scn`，不在查看器中增加编辑能力。旧流程只作为对照，直到新流程完成代表样本和开发地图资产的验收。
+
+
+## 10. 主干同步与下一轮目标（2026-10-03）
+
+实际仓库已迁移至 `projects/blizzard-warcraft3/godot_warcraft3`，原路径不再有效。本轮从 `master` 提交公共依赖修复 `4ea2023f`，然后将主干快进合并到 `codex/asset-pipeline-rebuild`；没有文本冲突。此前的资产管线提交已经包含在主干中，不应再次复制实现。
+
+### 本轮修复与验证
+
+- 修复插件仓库同步时重复嵌套 `addons/<plugin>` 的路径，补齐启动计时器及治疗结果接口依赖。
+- 恢复加载屏的纯显示接口 `begin/set_progress/finish`。主干迁移中误恢复了旧绑定接口，导致普通启动失败；快速启动 smoke 会绕过加载屏，无法发现该问题。
+- 加入普通启动集成测试；加载屏生命周期测试仅检查自身补间，避免控制台 Autoload 动画造成误报。查看器缺少 Footman 样本时明确退出失败，避免空节点访问和挂起。
+- 普通启动及快速启动均成功进入可玩地图，注册 86 个单位；治疗、指令请求、启动编排和加载屏回归通过。
+- 重新生成牧师投射物、火球、大法师及三组 Ribbon 样本；独立场景重载、动画控制、资源隔离等技术检查通过。查看器用三个新特效与已有 Footman 场景组合测试，交互回归及实际渲染通过。Footman 是查看器基线，不作为本轮新编译器覆盖证明。
+
+普通启动检查（仓库根目录 PowerShell）：
+
+```powershell
+python tools/workspace/sync_packages.py --app game
+python tools/workspace/test_apps.py --godot 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe' --app game --case integration/selftest_normal_startup.tscn
+```
+
+当前开发地图仍有 10 个单位及肖像缺少 SCN，运行时使用 glTF fallback；部分地图纹理有缺失日志，退出时仍有 ObjectDB/资源未释放提示。启动通过不等于依赖完整或所有资产保真通过。特效仍需原作对照及游戏内视觉验收，保持未交付状态。
+
+本次未完成的控制组、选择分组及指令排队修改独立保存在 Git stash：`待完善：控制组与指令排队，合并资产管线前保留 2026-10-03`（对象 `1f611c9fba8e9e0dcc315ac8ef2ae1f757eadaa2`）。它们涉及超出 500 行的既有文件和未完成的队列推进，不并入本次资产管线修复；以后恢复前需独立拆分和测试。stash 仅在本机保存。
+
+### 下一轮：导出游戏中的编译与缓存闭环
+
+优先验证导出的 Windows 游戏能否消费已生成 IR，在 `user://wc3-cache` 编译、保存并重新加载场景，全程无需玩家安装 Godot 编辑器或 Node.js。先证明现有 Godot 编译层的运行边界，再决定原生源适配器的实施范围。
+
+1. 审计编译入口及依赖，区分可随游戏导出的逻辑和仅编辑器可用的接口；所有不支持情况产生明确日志。
+2. 使用真实静态/骨骼模型及牧师、Ribbon 样本建立最小导出实验。此阶段输入为预生成 IR，不宣称已经支持玩家直接读取 MPQ/MDX。
+3. 在全新用户缓存目录完成首次生成、退出重启和重载；验证源内容、IR/schema、编译器版本及依赖变化能使缓存失效。
+4. 覆盖缺失依赖、损坏 IR、失败重试及 A/B 实例隔离；产物和错误日志可定位，输入文件保持只读。
+5. 用同一缓存在游戏和只读查看器检查结果。技术通过与视觉通过分别记录；证据通过后再推进原生源解析和首次启动引导。
+
+其后按开发地图清单补齐缺失 SCN、收紧 fallback 门禁，继续修复 billboard 自转及粒子/Ribbon 历史近似。分支完结条件仍是导出端闭环、开发地图依赖覆盖和游戏内验收，不能仅以查看器能打开为准。
+
+
+## 11. 导出端编译实验（2026-10-03）
+
+已完成第 10 节的首个运行边界实验：独立 Windows **release** 应用能从外部预生成 IR + glTF/纹理编译真实 Footman、牧师投射物和回春术 Ribbon，将 SCN 保存到 `user://wc3-cache/<本轮唯一目录>`。移开全部输入文件后，用新的发布进程重载成功；牧师粒子 A/B 参数隔离通过。运行阶段清空 PATH、GODOT 和 ASSET_SOURCE，不调用 Node 或编辑器，但这不是干净机器上的完整游戏安装验收。
+
+实现分工：
+
+- `tools/godot/import_scene_compiler.gd`：可由导出应用调用的 RefCounted 同步核心，返回结果和退出码，不负责退出进程。
+- `tools/godot/import_worker.gd`：保留现有开发 CLI 契约，调用同一核心。
+- `prepare-worker-project.mjs`：打包时为两个内嵌特效脚本复制 `.gd.source`，以原始 `.gd` 为唯一维护来源。
+- `import_embedded_script.gd`：开发环境使用 source_code；发布包源码被剥离时使用 `.source`。发布 preset 必须包含 `include_filter="*.source"`。此步骤目前接入独立编译实验，尚未接入正式游戏发布构建。
+
+实验发现并修复了发布差异：压缩 GDScript 的 source_code 为空时，旧逻辑会生成错误基类的内嵌脚本，导致 SkeletonModifier3D 无法挂载，同时编译结果仍显示成功。现在校验源码，并将特效编译的 error 诊断传播为失败。
+
+复现（仓库根目录 PowerShell，需要已安装对应版本的 Windows export templates）：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+$env:ASSET_SOURCE = Join-Path $PWD 'assets/.staging/wc3-assets'
+node tools/asset-convert/src/exported-runtime.test.mjs
+```
+
+准备与导出阶段仍使用 Node 和编辑器；玩家阶段仅启动生成的 EXE。输出在 `tools/asset-convert/tmp/exported-*/report.json`，其中记录 EXE、结果和用户缓存绝对路径，均为本机生成产物，不提交原版资产。测试还检查输入内容哈希不变、损坏 IR 返回 `ir_invalid`、失败不覆盖已有良好缓存，以及恢复有效任务后的重试成功。另行导出不含源码 payload 的发布包，确认返回失败和 `billboard_script_invalid`，不会被误记为成功。查看器载入发布端生成的 Footman、牧师缓存后交互与实际渲染回归通过；查看器截图不代表原作视觉验收。
+
+当前未完成：源 MPQ/MDX 的玩家端解析、正式游戏首次启动引导、完整 IR 结构校验、异步进度/取消、缓存复用与版本失效，以及完整游戏发布验收。产物仍为 `deliverable=false`；该实验不证明特效视觉保真。
+
+下一轮先做持久缓存契约：纳入源文件、IR/schema、编译器和依赖签名；实现缓存命中/失效、临时产物校验后原子替换、损坏缓存重建，并用本轮 release 实验验证。随后把编译核心及源码 payload 打包步骤接入正式游戏构建，再按证据推进原生适配器和首次启动引导。
+
+
+## 12. 缓存可靠性完成（2026-10-03）
+
+新增 `import_cached_compiler.gd` 作为同步缓存入口，复用已有场景编译核心。开发 CLI 保持直接编译和原有固定输出路径；发布实验调用缓存入口。正式游戏接入仍属于下一步。
+
+缓存签名覆盖：源签名所在的 IR 内容、可选原始源文件 `source_path` 的实际内容、IR/schema、glTF、buffer/纹理、IR 与 task 声明依赖、profile、规则/预期签名、引擎版本、编译器版本及编译实现内容。`prepare-worker-project.mjs` 生成 `import_compiler.source`，发布 preset 的 `*.source` 过滤器同时包含它。缺失或不可读的依赖明确失败，不返回陈旧缓存。
+
+[Godot Windows 的 rename 实现](https://github.com/godotengine/godot/blob/master/drivers/windows/dir_access_windows.cpp)在覆盖目标文件时会先删除目标，不能以此实现安全覆盖。因此采用独立版本：
+
+```text
+任务 output_scene = user://wc3-cache/.../PriestMissile.scn（逻辑槽）
+PriestMissile.scn.cache/
+  <版本>.scn                校验成功的完整场景
+  <版本>.json               最后发布的提交记录
+  <版本>.pending.*          尚未提交的暂存文件
+```
+
+消费者必须读取结果的 `output_scene` 实际路径，不能拼接逻辑槽路径。场景保存、磁盘重载和输入签名复查完成后，先发布唯一场景文件，再发布唯一 JSON 提交记录；两次 rename 的目标均不存在，禁止覆盖。没有记录的孤立场景不被消费，旧提交保持可用。无需另增玩家端外部工具或原生扩展。
+
+命中时验证最新提交的格式/缓存版本、签名、SCN SHA-256 以及结果的资产身份、profile、编译器版本和必要字段。返回 `cache.status=hit`；重建返回 `rebuilt` 并记录原因，如 `signature_changed`、`scene_corrupt`、`record_invalid`。损坏文件先检测哈希，不把它交给 ResourceLoader 引发解析错误。损坏 JSON 使用可恢复解析，明确作为缓存失效处理。
+
+发布端测试覆盖重复调用不重写场景、源/IR/几何/纹理/依赖/规则/profile 的失效、真实重导出后的编译器版本和构建签名失效、缺失依赖、SCN 缺失/损坏、记录损坏/版本/身份不匹配、暂存残留、系统时钟回退、场景及记录提交失败、编译期间输入变化和跨进程重载。失败注入仅位于测试应用中；失败不替换旧提交。最终发布端 35 项缓存检查通过，Footman 开发 CLI 回归及新缓存在查看器中的交互/实际渲染回归通过。复现仍使用第 11 节的 `exported-runtime.test.mjs`，结果附 `cache-checks.json`。
+
+缓存入口当前消费预生成 IR + glTF；暂不支持此入口直接缓存 GLB。旧已提交版本及异常退出留下的孤立文件不自动删除，正式游戏接入时另行制定容量和清理策略。没有改变查看器的只读定位，也没有将技术通过标记为视觉保真或可交付。
+
+下一步为正式游戏接入：打包缓存入口及源码/构建签名 payload，按缓存结果的实际路径加载资产，并在正式导出游戏内复现缓存命中、失效、故障恢复和重载。
+
+## 13. 正式游戏缓存接入（2026-10-03）
+
+缓存编译入口已接入 `apps/game` 正式启动与 Windows release 构建。新增 `app/game_asset_import.gd` 消费版本化任务清单，在地图启动前编译/复用缓存，并通过游戏原有 `RuntimeAssets.load_packed_scene` 重载。全部任务成功后一次提交逻辑路径表；`ContentPaths` 将旧的资产逻辑路径映射到结果返回的实际缓存版本路径。导入失败不启动地图，也不安装半份路径表；对局运行中拒绝导入。路径表提交后只读，复制调用方字典，不允许重复切换。
+
+新增启动参数：
+
+- `--asset-root`：现有外部资源目录；在路径解析阶段生效，覆盖开发配置，避免 Autoload 先于 boot 加载到错误目录。
+- `--asset-import-manifest`：包含 `manifest_version=1` 和非空 `tasks` 路径数组的 JSON；相对任务路径以清单目录为基准。
+- `--asset-import-result`：写出结构化结果，包含每项诊断及实际缓存场景路径。
+- `--asset-import-only`：完成编译、重载与游戏路径注册后退出，方便验证导入。
+- 不使用 `--asset-import-only` 时继续正常 Loading；开发验证可以追加已有 `--smoke-test`。
+
+这些参数是本阶段开发验收入口，不是最终玩家交互。输入仍是预生成 IR/glTF/bake task；开发地图的基础数据、纹理和未替换模型仍来自外部开发资源目录。成功结果保持 `deliverable=false`。
+
+发布构建补充：
+
+- `sync_packages.py` 在正式游戏同步时生成内嵌脚本源码及编译器签名 payload，维护源仍是原有脚本。
+- Windows preset 包含 `*.source`，排除开发 override、测试、工具 JS、插件示例及旧原作模型/特效资源目录；原作资产不作为本轮新增发布资源提交。
+- 补充游戏 .NET solution，匹配 Godot 的 Debug/ExportDebug/ExportRelease 配置及 Kernel 引用。
+- 正式导出揭示 locale 目录被 `.gdignore` 排除：同步工具从同一权威 CSV/JSON 生成目录外只读 `.source`，本地化加载在原路径不可用时读取它。不维护第二套文案。
+
+复现（仓库根目录 PowerShell，开发机器需要 Python、Node、Godot .NET、.NET SDK 和对应 Windows export templates）：
+
+```powershell
+$env:GODOT = 'D:/GameMaker/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe'
+$env:ASSET_SOURCE = Join-Path $PWD 'assets/.staging/wc3-assets'
+Remove-Item Env:GAME_BINARY -ErrorAction SilentlyContinue
+node tools/asset-convert/src/game-runtime-import.test.mjs
+```
+
+测试自行同步、导出正式游戏，再准备 Footman、牧师投射物和回春术 Ribbon。发布进程清空 PATH、GODOT、ASSET_SOURCE，只启动游戏 EXE，验证首次导入、跨进程缓存命中、输入签名失效、缓存场景损坏重建、错误 IR 不破坏良好缓存、修正后重试，以及游戏按实际缓存路径加载并启动开发地图。退出码与脚本/构建错误同时校验，不能只看导出命令返回 0。每轮目录 `tools/asset-convert/tmp/game-runtime-*/` 保存 EXE、清单、逐次日志及最终 `report.json`。
+
+手动检查最新成功报告中的 `binary` 与 `manifestPath`，启动该 EXE，传入 `--asset-root`、`--asset-import-manifest` 和 `--asset-import-result` 的实际路径；省略 `--headless`、`--asset-import-only`、`--smoke-test` 即进入正常 Loading 和地图。报告 `result.paths` 中的缓存 SCN 可直接放入只读查看器检查。不得将自动启动通过记为游戏内特效视觉验收。
+
+本轮自测：正式 Windows release 的 8 项集成检查、路径表隔离/提交和导入保护边界测试、正常 Loading → 可玩地图回归、查看器帧数/循环/节点树/动画元数据/六向视图及实际渲染均通过。地图启动生成 86 个单位。现有悬崖、UberSplat 纹理和部分旧 SCN 缺失/占位告警仍存在；编辑器导出与正常退出时的 ObjectDB/resources 清理告警也未在本轮消除。这些不等于资源完整或视觉验收通过。
+
+手动打开最新成功的正式游戏构建：
+
+```powershell
+$reportFile = Get-ChildItem tools/asset-convert/tmp/game-runtime-*/report.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$report = Get-Content $reportFile.FullName -Raw | ConvertFrom-Json
+$assetRoot = Join-Path $PWD 'assets'
+$resultFile = Join-Path $reportFile.DirectoryName 'manual-import.result.json'
+& $report.binary -- --asset-root $assetRoot --asset-import-manifest $report.manifestPath --asset-import-result $resultFile
+```
+
+下一步：确定发布进程中的源资产适配入口，先从原版路径读取开发地图所需资产并产生 IR/依赖，明确归档读取、格式解析和 Node 开发工具的边界，再接入首次启动 UI、进度、取消和失败重试。之后才扩展开发地图全量资产和游戏内视觉验收。缓存容量/旧版本清理、无输入清单的持久索引挂载及干净机器安装验收仍未完成。
+
+## 14. 原版路径到发布游戏的源解析入口（2026-10-03）
+
+已经验证随 Windows 游戏打包 Node/JS/Koffi/StormLib 的路线，复用现有适配器。发布游戏直接读取经典 MPQ 的四个真实样本及其纹理，产生带来源/哈希的 IR 和编译任务，再调用既有缓存入口；不要求玩家安装 Node 或编辑器。精确名称查找绕过不完整 listfile，补丁覆盖顺序与开发工具保持一致。请求越界、重复身份、缺失依赖及运行时缺失明确失败，失败不安装半份游戏资产路径表。
+
+构建、手动验收、运行边界及限制见 [PLAYER_SOURCE_IMPORT.md](PLAYER_SOURCE_IMPORT.md)。当前同步命令行入口不等于玩家首次启动引导完成；完整开发地图仍需要现有外部资源数据。下一轮为后台进度/取消与首次启动 UI，再扩大开发地图覆盖和游戏内验收。
+
+## 15. 后台导入与首次启动引导（2026-10-03）
+
+Windows 发布游戏已实现只读源目录选择、源解析和逐场景编译子进程、阶段进度、取消、失败重试及持久索引恢复。只在完整批次可加载时挂载路径表，取消保留既有索引；下次启动验证版本和 SCN 哈希，无需重新解析源或保留 IR/纹理输入。编辑器默认开发启动、同步命令行验收和只读查看器保持各自职责。具体手动验收见 [PLAYER_SOURCE_IMPORT.md](PLAYER_SOURCE_IMPORT.md#首次启动与后台导入2026-10-03)。
+
+本阶段仍只覆盖四个验收样本。下一阶段：从开发地图真实引用生成资源请求，覆盖单位/建筑/投射物/光晕、数据表和地形纹理，将地图启动对外部开发 assets 的依赖逐项移除；失败缺项需保留具体日志。之后再完成游戏内视觉验收、缓存容量清理、多进程协调和干净机器首次安装测试。
+
+
+## 16. 开发地图覆盖与独立内容挂载（2026-10-04）
+
+默认玩家请求从四样本扩大到 Echo Isles 摆放、人族建造/训练与技能物品关联、头像、运行时常量、地形及 UI。地图、SLK/TXT 和模型/纹理都从玩家同一经典安装来源产生；精确 MPQ 读取补齐旧 listfile 遗漏。独立内容代保存哈希、覆盖报告和显式别名，与 SCN 路径表同时校验后挂载并发布索引，正式 release 排除开发数据，地图启动不再要求外部 `--asset-root`。
+
+后台每批最多 16 个模型，继续沿用拥有子进程的取消及原子缓存发布。扩大范围发现并修复 Gnoll 式挂点层级、纯粒子模型的无缓冲/空动画输入，以及重复动画访问器引起的加载耗时；源动画样本不变。完整发布验收入口是 `game-development-import.test.mjs`；操作说明与覆盖边界见 [PLAYER_SOURCE_IMPORT.md](PLAYER_SOURCE_IMPORT.md#开发地图资源覆盖2026-10-04)。
+
+本轮正式发布验收通过 449 个模型和 10,537 个内容文件；地图可直接由缓存启动。收尾次序：先做实际对局与原作视觉验收，同时测量启动哈希校验/场景预加载耗时，再补缓存容量/旧版本清理及并发导入保护，最后验证干净机器首次安装。其他地图/种族、地图内嵌资产覆盖及 CASC 作为另行扩展，不把当前开发地图覆盖标成全部资产保真完成。
+
+
+## 17. 真实投射物壳分流与启动计时（2026-10-05）
+
+统一 SCN 接入真实投射物壳，绕过旧粒子重挂、强制发射/循环及视觉替换，保留源控制；旧资产兼容几何计算按职责提取。移动、三轮循环、命中 Death 和英雄光晕截图技术验收通过，完整对局与原作视觉对照仍待验收。新增四段启动计时；已确认全量哈希、重复内容复核和场景加载为主要开销。下一轮先处理主线程复核耗时及重复工作，随后容量/并发保护与干净机器测试，不能将本轮计时视为优化完成。操作和限制见 PLAYER_SOURCE_IMPORT.md 最新章节。
+
+
+## 18. 缓存恢复和资源协调收尾（2026-10-05）
+
+后台一次性完整校验后原子安装路径，恢复按需加载；新导入依赖编译子进程已有的重载/实例化校验，主进程复核发布后的内容/SCN 哈希。进度轮询限流，修复 Windows 跨进程存活查询与 PID 复用误判，保护当前子进程和活动读者，序列化同代失效锁回收。维护 CLI 保留两份索引，默认预览，显式清理只触及无引用派生内容并记录日志。
+
+12 项发布引导检查及锁/完整性/路径表单测通过。449 模型、10,537 内容文件的空缓存独立冷导入、索引恢复、离线 86 单位地图与渲染通过；新冷导入 0 场景缓存命中，约 1,018 秒。历史超时及恢复结果独立记录。技术收尾代码可提交，合并前仍需原作视觉裁定和干净机器安装。操作和全部证据边界见 [ASSET_PIPELINE_CLOSEOUT.md](ASSET_PIPELINE_CLOSEOUT.md)。
+
+
+## 19. 游戏视觉回归修复（2026-10-06）
+
+统一 SCN 的单位表现绕过旧材质/粒子启发式，按源元数据独立设置实例队色，支持农民的裁切队色底层与逐层单双面设置。补齐 UnitData 的建筑 pathTex；肖像 Camera 数据进入 IR 与 SCN，HUD 按源 Portrait 时间采样机位。肖像专用背景按源纹理及序列显隐语义识别，战场与 HUD 不渲染背景网格。
+
+全局动画延长 glTF 循环片段时，显隐编译不再因时长不等拒绝源控制；新增局部控制重复到完整片段，原骨骼和全局动画保留。主城 Stand 只显示一级几何，升级层及脚手架恢复源显隐。
+
+449 SCN、10,545 内容文件全量重试及离线 OpenGL/Vulkan 游戏渲染通过；0 场景缓存命中。提供只在 --asset-review 下添加牧师与大法师的配置、真实材质/显隐/寻路/肖像检查与截图。具体记录和可粘贴的本机命令见 [GAME_ASSET_REVIEW.md](GAME_ASSET_REVIEW.md)。原作视觉裁定、D3D12 定位及干净 Windows 验收仍保留为下一步，暂不自动合并主干。

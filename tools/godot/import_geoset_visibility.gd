@@ -1,4 +1,5 @@
 extends RefCounted
+const Timing: GDScript = preload("import_sequence_timing.gd")
 const Curves: GDScript = preload("import_geoset_curves.gd")
 ## Exact binary, non-global GeosetAnim alpha. Continuous alpha needs composition
 ## with material-layer alpha and must not be silently reduced to a boolean.
@@ -24,9 +25,12 @@ static func compile(scene: Node, ir: Dictionary) -> Dictionary:
 			continue
 		var alpha: Dictionary = entry.get("alpha", {}) if entry.get("alpha") is Dictionary else {}
 		var sequences: Array = payload.get("sequences", [])
+		if _portrait_board(mesh, alpha, sequences):
+			mesh.set_meta("wc3_portrait_background", true)
 		if (not _supported(alpha) or int(entry.get("flags", 0)) & 2) and players.size() == 1 and _clips_supported(players[0], sequences):
 			var curves: Dictionary = Curves.compile(mesh, players[0], entry, sequences)
 			if curves.ok:
+				_restore_visibility_scale(mesh, players)
 				result.meshes += 1
 				result.curve_tracks += curves.tracks
 				continue
@@ -36,12 +40,14 @@ static func compile(scene: Node, ir: Dictionary) -> Dictionary:
 			_warn(result, "geoset_alpha_pending", id)
 			continue
 		if alpha.has("static") or alpha.is_empty():
+			_restore_visibility_scale(mesh, players)
 			mesh.visible = _scalar(alpha.get("static", 1.0)) > 0.0
 			result.meshes += 1
 			continue
 		if players.size() != 1 or not _clips_supported(players[0], sequences):
 			_warn(result, "geoset_animation_layout_pending", id)
 			continue
+		_restore_visibility_scale(mesh, players)
 		var player: AnimationPlayer = players[0]
 		var target: NodePath = NodePath(str(player.get_parent().get_path_to(mesh)) + ":visible")
 		for sequence: Dictionary in sequences:
@@ -96,10 +102,47 @@ static func _clips_supported(player: AnimationPlayer, sequences: Array) -> bool:
 	for sequence: Dictionary in sequences:
 		if not player.has_animation(str(sequence.name)):
 			return false
-		var duration: float = (float(sequence.interval[1]) - float(sequence.interval[0])) / 1000.0
-		if absf(player.get_animation(str(sequence.name)).length - duration) > 0.01:
+		if not Timing.compatible(player, sequence):
 			return false
 	return true
 
 static func _warn(result: Dictionary, code: String, id: int) -> void:
 	result.diagnostics.append({"code": code, "severity": "warning", "geoset": id})
+
+static func _portrait_board(mesh: MeshInstance3D, alpha: Dictionary, sequences: Array) -> bool:
+	if not _supported(alpha) or alpha.get("keys", []).is_empty() or mesh.mesh.get_surface_count() != 1:
+		return false
+	var material: Material = mesh.get_active_material(0)
+	if material == null or int(material.get_meta("import_replaceable_id", 0)) not in [1, 2]:
+		return false
+	var vertices: PackedVector3Array = mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	if vertices.size() != 4:
+		return false
+	var portrait: bool = false
+	for sequence: Dictionary in sequences:
+		var keys: Array[Dictionary] = []
+		for key: Dictionary in alpha.get("keys", []):
+			if float(key.frame) >= float(sequence.interval[0]) and float(key.frame) <= float(sequence.interval[1]):
+				keys.append(key)
+		var shown: bool = keys.is_empty()
+		for key: Dictionary in keys:
+			shown = shown or _scalar(key.vector) > 0.0
+		if str(sequence.get("mdx_name", sequence.name)).to_lower().begins_with("portrait"):
+			portrait = portrait or shown
+		elif shown:
+			return false
+	return portrait
+
+static func _restore_visibility_scale(mesh: MeshInstance3D, players: Array[AnimationPlayer]) -> void:
+	# glTF encodes alpha=0 as zero mesh scale. Native visibility owns it now.
+	if mesh.scale.is_zero_approx():
+		mesh.scale = Vector3.ONE
+	for player: AnimationPlayer in players:
+		var target: NodePath = NodePath(str(player.get_parent().get_path_to(mesh)))
+		for name: String in player.get_animation_list():
+			var animation: Animation = player.get_animation(name)
+			for track: int in range(animation.get_track_count()):
+				if animation.track_get_type(track) != Animation.TYPE_SCALE_3D or animation.track_get_path(track) != target:
+					continue
+				for key: int in range(animation.track_get_key_count(track)):
+					animation.track_set_key_value(track, key, Vector3.ONE)

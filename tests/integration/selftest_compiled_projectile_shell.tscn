@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tests/integration/selftest_compiled_projectile_shell.gd" id="1"]
+[node name="CompiledProjectileShellTest" type="Node"]
+script = ExtResource("1")

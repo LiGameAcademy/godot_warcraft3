@@ -48,16 +48,16 @@ func _exit_tree() -> void:
 ## spawn_melee_base / spawn_opponent_base。
 ## 返回 { session, hall_world, local_sloc, ok }。
 func bootstrap_melee(options: Dictionary) -> Dictionary:
-	var preview_race := str(options.get("preview_race", "human"))
-	var local_player := int(options.get("local_player", 0))
-	var random_start := bool(options.get("random_start_location", true))
-	var spawn_base := bool(options.get("spawn_melee_base", true))
-	var spawn_opponent := bool(options.get("spawn_opponent_base", false))
+	var preview_race: String = str(options.get("preview_race", "human"))
+	var local_player: int = int(options.get("local_player", 0))
+	var random_start: bool = bool(options.get("random_start_location", true))
+	var spawn_base: bool = bool(options.get("spawn_melee_base", true))
+	var spawn_opponent: bool = bool(options.get("spawn_opponent_base", false))
 
-	var race := MeleeRacePreview.race_from_string(preview_race)
-	var preview := MeleeRacePreview.preview_dict(race)
+	var race: int = MeleeRacePreview.race_from_string(preview_race)
+	var preview: Dictionary = MeleeRacePreview.preview_dict(race)
 	var worker_n: int = int(preview.get("worker_count", 5))
-	var session := GameSession.from_melee_bootstrap(
+	var session: GameSession = GameSession.from_melee_bootstrap(
 		_map_dir,
 		local_player,
 		str(preview.get("race", "human")),
@@ -70,14 +70,14 @@ func bootstrap_melee(options: Dictionary) -> Dictionary:
 	if _game_hud != null and _game_hud.has_method("bind_stock"):
 		_game_hud.call("bind_stock", session.local_stock())
 
-	var out := {
+	var out: Dictionary = {
 		"session": session,
 		"hall_world": Vector3.ZERO,
 		"local_sloc": {},
 		"ok": true,
 	}
 
-	var slocs := MeleeBootstrap.collect_slocs(_map_dir)
+	var slocs: Array[Dictionary] = MeleeBootstrap.collect_slocs(_map_dir)
 	if slocs.is_empty():
 		_set_status("%s · 无 sloc，跳过开局刷兵" % str(preview.get("display_name", "")))
 		_finish_pathing()
@@ -92,15 +92,15 @@ func bootstrap_melee(options: Dictionary) -> Dictionary:
 			sloc = MeleeBootstrap.pick_random_sloc(slocs, _rng)
 	out["local_sloc"] = sloc
 
-	var hall_world := Vector3.ZERO
+	var hall_world: Vector3 = Vector3.ZERO
 	if spawn_base:
 		if _map_root == null:
 			out["ok"] = false
 			_set_status("%s · 开局刷兵失败" % str(preview.get("display_name", "")))
 			_finish_pathing()
 			return out
-		var hf := _map_root.get_heightfield_dict()
-		var result := MeleeBootstrap.spawn_at_sloc(_map_root, sloc, race, local_player, hf)
+		var hf: Dictionary = _map_root.get_heightfield_dict()
+		var result: Dictionary = MeleeBootstrap.spawn_at_sloc(_map_root, sloc, race, local_player, hf)
 		if result.get("ok", false):
 			hall_world = result.get("hall_world", Vector3.ZERO) as Vector3
 			_set_status(
@@ -135,6 +135,8 @@ func bootstrap_melee(options: Dictionary) -> Dictionary:
 	if spawn_base and spawn_opponent:
 		spawn_opponent_base(session, slocs, sloc, local_player)
 
+	if spawn_base and OS.get_cmdline_user_args().has("--asset-review"):
+		_spawn_review_units(sloc, local_player)
 	_finish_pathing()
 	return out
 
@@ -144,29 +146,29 @@ func spawn_opponent_base(
 ) -> bool:
 	if session == null or _map_root == null:
 		return false
-	var available := MeleeBootstrap.available_slocs(slocs, [local_sloc])
+	var available: Array[Dictionary] = MeleeBootstrap.available_slocs(slocs, [local_sloc])
 	if available.is_empty():
 		push_warning("双玩家开局：没有独立的对手出生点")
 		return false
-	var owner_id := 1 if local_player == 0 else 0
+	var owner_id: int = 1 if local_player == 0 else 0
 	if session.stocks.has(owner_id):
 		return false
-	var sloc := MeleeBootstrap.pick_random_sloc(available, _rng)
-	var race := MeleeRacePreview.race_from_string("human")
-	var result := MeleeBootstrap.spawn_at_sloc(
+	var sloc: Dictionary = MeleeBootstrap.pick_random_sloc(available, _rng)
+	var race: int = MeleeRacePreview.race_from_string("human")
+	var result: Dictionary = MeleeBootstrap.spawn_at_sloc(
 		_map_root, sloc, race, owner_id, _map_root.get_heightfield_dict()
 	)
 	if not bool(result.get("ok", false)):
 		return false
-	var workers := maxi(int(result.get("spawned", 1)) - 1, 0)
-	var cap := BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
-	var mode := session.ensure_game_mode()
+	var workers: int = maxi(int(result.get("spawned", 1)) - 1, 0)
+	var cap: int = BuildingCatalog.get_food_made(str(result.get("town_hall", "htow")))
+	var mode: GameMode = session.ensure_game_mode()
 	session.set_stock(owner_id, mode.create_starting_stock(workers, cap))
 	return true
 
 
 func _find_sloc_for_owner(slocs: Array[Dictionary], owner_id: int) -> Dictionary:
-	for s in slocs:
+	for s: Dictionary in slocs:
 		if int(s.get("owner", -1)) == owner_id:
 			return s
 	return {}
@@ -189,3 +191,22 @@ func _display_name() -> String:
 func _set_status(text: String) -> void:
 	if _game_hud != null and _game_hud.has_method("set_status"):
 		_game_hud.call("set_status", text)
+
+## Only the explicit acceptance launch adds combat samples to the local base.
+func _spawn_review_units(sloc: Dictionary, owner_id: int) -> void:
+	var config: Resource = load("res://config/asset_review_start.tres")
+	var ids: PackedStringArray = config.unit_ids
+	var offsets: PackedVector2Array = config.offsets_wc3
+	var position: Dictionary = sloc.get("position", {})
+	if ids.size() != offsets.size():
+		push_error("Invalid asset review starting configuration")
+		return
+	for index: int in range(ids.size()):
+		var offset: Vector2 = offsets[index]
+		var entry: Dictionary = {"typeId": ids[index], "owner": owner_id, "variation": 0,
+			"position": {"x": float(position.get("x", 0.0)) + offset.x,
+				"y": float(position.get("y", 0.0)) + offset.y, "z": float(position.get("z", 0.0))},
+			"angle": MeleeBootstrap.UNIT_FACING_RAD, "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+			"flags": 2, "creationNumber": 95000 + owner_id * 100 + index}
+		if not _map_root.add_unit_instance(entry, _map_root.get_heightfield_dict()):
+			push_error("Asset review unit spawn failed: " + ids[index])

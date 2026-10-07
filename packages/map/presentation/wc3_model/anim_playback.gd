@@ -235,23 +235,17 @@ static func play(
 			)
 		return out
 	ap.active = true
-	var anim := ap.get_animation(anim_name)
+	var anim: Animation = ap.get_animation(anim_name)
 	if anim != null:
-		var baked := anim.has_meta("wc3_seq_looping")
-		if force_loop == 0 or ping:
-			anim.loop_mode = Animation.LOOP_NONE
-		elif force_loop == 1:
-			anim.loop_mode = Animation.LOOP_LINEAR
-		elif baked:
-			anim.loop_mode = (
-				Animation.LOOP_LINEAR
-				if bool(anim.get_meta("wc3_seq_looping"))
-				else Animation.LOOP_NONE
-			)
-		else:
-			anim.loop_mode = (
-				Animation.LOOP_NONE if not loop else Animation.LOOP_LINEAR
-			)
+		# Native SCNs use source_looping; legacy scenes keep wc3_seq_looping.
+		var source_looping: Variant = anim.get_meta(
+			"source_looping", anim.get_meta("wc3_seq_looping", loop)
+		)
+		if force_loop < 0 and not ping and source_looping is bool:
+			loop = bool(source_looping)
+		_set_instance_loop_mode(
+			ap, anim_name, Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
+		)
 	ap.play(anim_name, maxf(blend, 0.0))
 	# 立刻应用第 0 帧姿态（建筑门/旗等常量骨骼轨，避免从上一段姿态卡住）
 	ap.seek(0.0, true)
@@ -262,6 +256,24 @@ static func play(
 		"play anim=%s blend=%.2f loop=%s ping=%s" % [anim_name, blend, loop, ping]
 	)
 	return out
+
+
+## Copy only when playback policy differs; shared tracks and templates stay read-only.
+static func _set_instance_loop_mode(
+	ap: AnimationPlayer, clip: String, mode: Animation.LoopMode
+) -> void:
+	var source: Animation = ap.get_animation(clip)
+	if source.loop_mode == mode:
+		return
+	var library_name: String = clip.get_slice("/", 0) if clip.contains("/") else ""
+	var leaf: String = anim_leaf(clip)
+	var library: AnimationLibrary = ap.get_animation_library(library_name).duplicate() as AnimationLibrary
+	var animation: Animation = source.duplicate() as Animation
+	animation.loop_mode = mode
+	library.remove_animation(leaf)
+	library.add_animation(leaf, animation)
+	ap.remove_animation_library(library_name)
+	ap.add_animation_library(library_name, library)
 
 
 ## 解析逻辑名并播放；附带 PE2。`ap` 优先注入，整次调用复用。

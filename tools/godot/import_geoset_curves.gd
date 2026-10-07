@@ -1,4 +1,5 @@
 extends RefCounted
+const Sampling: GDScript = preload("import_curve_sampling.gd")
 ## Single Blend surfaces: independent layer alpha, Geoset alpha and RGB curves.
 ## The adapter's color vectors are already in RGB order (MDL parsing reverses BGR).
 static func compile(mesh: MeshInstance3D, player: AnimationPlayer, entry: Dictionary, sequences: Array) -> Dictionary:
@@ -37,7 +38,7 @@ static func compile(mesh: MeshInstance3D, player: AnimationPlayer, entry: Dictio
 
 static func _supported(curve: Dictionary, dimensions: int) -> bool:
 	var global_sequence: Variant = curve.get("global_seq_id")
-	if (global_sequence != null and int(global_sequence) >= 0) or int(curve.get("line_type", 0)) not in [0, 1]:
+	if (global_sequence != null and int(global_sequence) >= 0) or int(curve.get("line_type", 0)) not in [0, 1, 2, 3]:
 		return false
 	var values: Array = [curve.static] if curve.has("static") else []
 	for key: Dictionary in curve.get("keys", []):
@@ -80,6 +81,14 @@ static func _add_track(animation: Animation, sequence: Dictionary, curve: Dictio
 	animation.track_insert_key(index, 0.0, initial)
 	for key: Dictionary in keys:
 		animation.track_insert_key(index, (float(key.frame) - start) / 1000.0, _value(key.vector, color))
+	if int(curve.get("line_type", 0)) >= 2:
+		var fallback: Array = [1.0, 1.0, 1.0] if color else [1.0]
+		for index_sample: int in range(ceili((end-start)*0.03)+1):
+			var frame: float = minf(start + index_sample*1000.0/30.0, end)
+			var value: Array = Sampling.sample(keys, frame, int(curve.line_type), fallback)
+			for axis: int in range(value.size()):
+				value[axis] = clampf(float(value[axis]), 0.0, 1.0)
+			animation.track_insert_key(index, (frame-start)/1000.0, _value(value, color))
 	return initial
 
 static func _material(original: StandardMaterial3D) -> ShaderMaterial:
@@ -99,7 +108,7 @@ void fragment() {
  ROUGHNESS = 1.0;
  SPECULAR = 0.0;
 }
-""" % (("cull_disabled" if original.cull_mode == BaseMaterial3D.CULL_DISABLED else "cull_back") + (", unshaded" if original.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED else ""))
+""" % (("cull_disabled" if original.cull_mode == BaseMaterial3D.CULL_DISABLED else "cull_back") + (", unshaded" if original.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED else "") + (", fog_disabled" if original.disable_fog else ""))
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.shader = shader
 	material.resource_local_to_scene = true

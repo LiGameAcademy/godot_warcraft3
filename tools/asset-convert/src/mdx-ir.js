@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, mdxLogicalToModelIr, mdxLogicalToGeosetVis, mdxLogicalToGltf, mdxLogicalToPe2 } from "./paths.js";
+import { mdxLogicalToAnimKeys, mdxLogicalToAttachments, mdxLogicalToBoneRest, mdxLogicalToModelIr, mdxLogicalToGeosetVis, mdxLogicalToGltf, mdxLogicalToPe2, mdxLogicalToCameras } from "./paths.js";
 import { createModelIr, sha256Bytes, writeModelIr } from "./model-ir.js";
 import { resolveTexturePng } from "./mdx-materials.js";
 import { billboardPayload, particlePayload } from './mdx-fx-ir.js';
@@ -18,7 +18,7 @@ import { ribbonPayload } from './mdx-ribbon-ir.js';
  * @param {string} outDir
  * @param {string} inDir
  */
-export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir) {
+export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inDir, sourceMetadata = {}) {
   const irLogical = mdxLogicalToModelIr(logicalPath);
   const destination = path.join(outDir, ...irLogical.split("/"));
   const gltf = mdxLogicalToGltf(logicalPath);
@@ -44,6 +44,8 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
     source_format: path.extname(logicalPath).slice(1).toLowerCase(),
     source_path: logicalPath,
     source_hash: sha256Bytes(sourceBytes),
+    source_package: sourceMetadata.source_package,
+    overlay_priority: sourceMetadata.overlay_priority,
     geometry: {
       gltf,
       node_count: nodes.length,
@@ -89,11 +91,12 @@ export function writeModelIrSidecar(model, logicalPath, sourceBytes, outDir, inD
       sidecar: attachments,
       payload: JSON.parse(fs.readFileSync(path.join(outDir, attachments), "utf8")),
     },
+    cameras: JSON.parse(fs.readFileSync(path.join(outDir, mdxLogicalToCameras(logicalPath)), "utf8")),
     events: {
       count: (model.EventObjects ?? []).length,
       animkeys,
     },
-    dependencies: [gltf, pe2, ribbons, geosetvis, attachments, animkeys, boneRest,
+    dependencies: [gltf, pe2, ribbons, geosetvis, attachments, animkeys, boneRest, mdxLogicalToCameras(logicalPath),
       ...resolvedTextures.map(texture => path.posix.normalize(path.posix.join(path.posix.dirname(irLogical), texture.uri)))],
     diagnostics: resolvedTextures.filter(texture => texture.uri.includes('_placeholders/')).map(texture => ({
       code: 'texture_placeholder', severity: 'warning', message: `Texture fallback: ${texture.Image || texture.ReplaceableId}`,

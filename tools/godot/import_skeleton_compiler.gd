@@ -1,4 +1,5 @@
 extends RefCounted
+const Timing: GDScript = preload("import_sequence_timing.gd")
 ## Consumer for the legacy flat WC3 skeleton (identity inverse bind matrices).
 ## Payloads are embedded in IR; no game singletons or sidecar path resolution.
 
@@ -23,55 +24,86 @@ static func compile(scene: Node3D, ir: Dictionary) -> Dictionary:
 	if not rest is Dictionary or not attachments is Dictionary:
 		result.diagnostics.append({"code": "missing_skeleton_payload", "severity": "error"})
 		return result
-	if rest.get("version") != 2 or attachments.get("version") != 1 or skeletons.size() != 1:
+	if rest.get("version") != 2 or attachments.get("version") != 1 or skeletons.size() > 1 or (skeletons.is_empty() and not rest.get("bones", []).is_empty()):
 		result.diagnostics.append({"code": "unsupported_skeleton_layout", "severity": "error"})
 		return result
-	var skeleton: Skeleton3D = skeletons[0]
+	var skeleton: Skeleton3D = skeletons[0] if not skeletons.is_empty() else null
 	for entry: Dictionary in rest.get("bones", []):
 		var index: int = skeleton.find_bone(str(entry.get("name", "")))
 		if index < 0 or skeleton.get_bone_parent(index) != -1:
-			result.diagnostics.append({"code": "bone_mapping_failed", "severity": "error"})
+			result.diagnostics.append({"code": "bone_mapping_failed", "severity": "error", "bone": str(entry.get("name", "")), "index": index})
 			return result
 		var rotation: Array = entry.rotation
 		var basis: Basis = Basis(Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]))
 		skeleton.set_bone_rest(index, Transform3D(basis.scaled(_vec(entry.scale)), _vec(entry.translation)))
 		skeleton.reset_bone_pose(index)
 		result.rests += 1
-	skeleton.force_update_all_bone_transforms()
+	if skeleton != null:
+		skeleton.force_update_all_bone_transforms()
+	var socket_entries: Array[Dictionary] = []
+	var declared: Dictionary[String, Dictionary] = {}
+	var markers: Dictionary[String, Marker3D] = {}
 	for entry: Dictionary in attachments.get("attachments", []):
-		if entry.get("type") != "attachment":
-			continue
-		var bone: String = str(entry.get("bone", ""))
-		var index: int = skeleton.find_bone(bone)
-		if not bone.is_empty() and bone != "<null>" and index < 0:
-			result.diagnostics.append({"code": "socket_bone_missing", "severity": "error", "bone": bone})
+		if entry.get("type") == "attachment":
+			socket_entries.append(entry)
+			declared[str(entry.name)] = entry
+	while not socket_entries.is_empty():
+		var before: int = socket_entries.size()
+		for entry: Dictionary in socket_entries.duplicate():
+			var bone: String = str(entry.get("bone", ""))
+			if declared.has(bone) and not markers.has(bone):
+				continue
+			if not _socket(scene, skeleton, players, ir, result, entry, declared, markers):
+				return result
+			socket_entries.erase(entry)
+		if before == socket_entries.size():
+			result.diagnostics.append({"code": "socket_parent_cycle", "severity": "error"})
 			return result
-		var marker: Marker3D = Marker3D.new()
-		if index >= 0:
-			var socket: BoneAttachment3D = BoneAttachment3D.new()
-			socket.name = str(entry.name)
-			skeleton.add_child(socket)
-			socket.owner = scene
-			socket.bone_name = bone
-			socket.bone_idx = index
-			socket.add_child(marker)
-			marker.name = "Tip"
-			# Legacy geometry remains in model units beneath the 0.01 root.
-			marker.position = _vec(entry.pivot) / 0.01
-		else:
-			scene.add_child(marker)
-			marker.name = str(entry.name)
-			marker.position = _vec(entry.pivot)
-		marker.owner = scene
-		marker.visible = bool(entry.get("visibility_default", true))
-		marker.set_meta("import_socket", str(entry.name))
-		marker.set_meta("source_object_id", entry.get("object_id", -1))
-		if entry.has("visibility"):
-			if players.size() != 1 or not _visibility(players[0], marker, entry, ir, result):
-				result.diagnostics.append({"code": "socket_visibility_not_compiled", "severity": "warning", "socket": str(entry.name)})
-		result.sockets += 1
 	result.ok = true
 	return result
+
+
+static func _socket(scene: Node3D, skeleton: Skeleton3D, players: Array[AnimationPlayer], ir: Dictionary, result: Dictionary, entry: Dictionary, declared: Dictionary[String, Dictionary], markers: Dictionary[String, Marker3D]) -> bool:
+	var bone: String = str(entry.get("bone", ""))
+	var index: int = skeleton.find_bone(bone) if skeleton != null else -1
+	if not bone.is_empty() and bone != "<null>" and index < 0 and not declared.has(bone):
+		result.diagnostics.append({"code": "socket_bone_missing", "severity": "error", "bone": bone})
+		return false
+	var marker: Marker3D = Marker3D.new()
+	var unit_scale: float = 1.0
+	if markers.has(bone):
+		var parent_marker: Marker3D = markers[bone]
+		unit_scale = float(parent_marker.get_meta("import_socket_unit_scale"))
+		parent_marker.add_child(marker)
+		marker.name = str(entry.name)
+		marker.position = (_vec(entry.pivot) - _vec(declared[bone].pivot)) * unit_scale
+	elif index >= 0:
+		var socket: BoneAttachment3D = BoneAttachment3D.new()
+		socket.name = str(entry.name)
+		skeleton.add_child(socket)
+		socket.owner = scene
+		socket.bone_name = bone
+		socket.bone_idx = index
+		socket.add_child(marker)
+		marker.name = "Tip"
+		# Legacy geometry remains in model units beneath the 0.01 root.
+		unit_scale = 1.0 / 0.01
+		marker.position = _vec(entry.pivot) * unit_scale
+	else:
+		scene.add_child(marker)
+		marker.name = str(entry.name)
+		marker.position = _vec(entry.pivot)
+	markers[str(entry.name)] = marker
+	marker.set_meta("import_socket_unit_scale", unit_scale)
+	marker.owner = scene
+	marker.visible = bool(entry.get("visibility_default", true))
+	marker.set_meta("import_socket", str(entry.name))
+	marker.set_meta("source_object_id", entry.get("object_id", -1))
+	if entry.has("visibility"):
+		if players.size() != 1 or not _visibility(players[0], marker, entry, ir, result):
+			result.diagnostics.append({"code": "socket_visibility_not_compiled", "severity": "warning", "socket": str(entry.name)})
+	result.sockets += 1
+	return true
 
 
 static func _vec(value: Array) -> Vector3:
@@ -91,7 +123,7 @@ static func _visibility(player: AnimationPlayer, marker: Marker3D, entry: Dictio
 	for sequence: Dictionary in sequences:
 		if not player.has_animation(str(sequence.name)):
 			return false
-		if player.get_animation(str(sequence.name)).length > (float(sequence.interval[1]) - float(sequence.interval[0])) / 1000.0 + 0.01:
+		if not Timing.compatible(player, sequence):
 			return false
 	var target: NodePath = NodePath(str(player.get_parent().get_path_to(marker)) + ":visible")
 	for sequence: Dictionary in sequences:

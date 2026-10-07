@@ -138,9 +138,10 @@ func placeable_sort_index(name_key: String) -> int:
 
 func _load_zh_name_sort() -> void:
 	_zh_name_sort.clear()
-	if not FileAccess.file_exists(ZH_NAME_SORT_PATH):
+	var source_path: String = _raw_locale_path(ZH_NAME_SORT_PATH)
+	if not FileAccess.file_exists(source_path):
 		return
-	var text := RuntimeAssets.read_utf8_text(ZH_NAME_SORT_PATH)
+	var text: String = RuntimeAssets.read_utf8_text(source_path)
 	if text.is_empty():
 		return
 	var parsed: Variant = RuntimeAssets.parse_json_text(text)
@@ -164,32 +165,33 @@ func _resolve_mpq(key: String) -> String:
 
 func _load_csv() -> void:
 	_tables.clear()
-	if not FileAccess.file_exists(CSV_PATH):
+	var source_path: String = _raw_locale_path(CSV_PATH)
+	if not FileAccess.file_exists(source_path):
 		push_warning("EditorI18n: missing %s" % CSV_PATH)
 		return
-	var f := FileAccess.open(CSV_PATH, FileAccess.READ)
+	var f: FileAccess = FileAccess.open(source_path, FileAccess.READ)
 	if f == null:
 		return
-	var header := _parse_csv_line(f.get_line())
+	var header: PackedStringArray = _parse_csv_line(f.get_line())
 	if header.size() < 2 or header[0] != "keys":
 		push_warning("EditorI18n: bad CSV header")
 		return
 	var locale_cols: Array[String] = []
-	for i in range(1, header.size()):
-		var loc := str(header[i])
+	for i: int in range(1, header.size()):
+		var loc: String = str(header[i])
 		locale_cols.append(loc)
 		_tables[loc] = {}
 	while not f.eof_reached():
-		var line := f.get_line()
+		var line: String = f.get_line()
 		if line.strip_edges().is_empty():
 			continue
-		var cols := _parse_csv_line(line)
+		var cols: PackedStringArray = _parse_csv_line(line)
 		if cols.is_empty():
 			continue
-		var key := cols[0]
-		for i in range(locale_cols.size()):
+		var key: String = cols[0]
+		for i: int in range(locale_cols.size()):
 			var loc: String = locale_cols[i]
-			var val := cols[i + 1] if i + 1 < cols.size() else key
+			var val: String = cols[i + 1] if i + 1 < cols.size() else key
 			(_tables[loc] as Dictionary)[key] = val
 
 
@@ -285,3 +287,9 @@ func _write_saved_locale(locale: String) -> void:
 	cfg.load(CONFIG_PATH)
 	cfg.set_value("i18n", "locale", locale)
 	cfg.save(CONFIG_PATH)
+
+## 发布包中 locale 被 .gdignore 排除；同步工具生成同源只读 payload。
+func _raw_locale_path(path: String) -> String:
+	if FileAccess.file_exists(path):
+		return path
+	return path.get_base_dir().get_base_dir().path_join(path.get_file() + ".source")

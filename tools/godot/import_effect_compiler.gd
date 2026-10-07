@@ -1,4 +1,5 @@
 extends RefCounted
+const EmbeddedScript: GDScript = preload("import_embedded_script.gd")
 const Particles: GDScript = preload("import_particle_compiler.gd")
 const BillboardPose: GDScript = preload("import_billboard_pose.gd")
 const Ribbons: GDScript = preload("import_ribbon_compiler.gd")
@@ -15,9 +16,8 @@ static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dict
 	var skeletons: Array[Node] = scene.find_children("*", "Skeleton3D", true, false)
 	if not entries.is_empty() and skeletons.size() == 1:
 		# An embedded script survives loading from another Godot project/export.
-		var script: GDScript = GDScript.new()
-		script.source_code = BillboardPose.source_code
-		if script.reload() == OK:
+		var script: GDScript = EmbeddedScript.create(BillboardPose)
+		if script != null:
 			var modifier: SkeletonModifier3D = SkeletonModifier3D.new()
 			modifier.set_script(script)
 			modifier.set("entries", entries)
@@ -26,6 +26,8 @@ static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dict
 			modifier.owner = scene
 			result.billboards = entries.size()
 			result.diagnostics.append({"code": "billboard_orientation_approximation", "severity": "info", "message": "Preserves animated pivot and scale; camera orientation replaces source bone rotation"})
+		else:
+			result.diagnostics.append({"code": "billboard_script_invalid", "severity": "error"})
 	var ribbons: Dictionary = Ribbons.compile(scene, ir, texture_base)
 	result["ribbons"] = ribbons.ribbons
 	result.diagnostics.append_array(ribbons.diagnostics)

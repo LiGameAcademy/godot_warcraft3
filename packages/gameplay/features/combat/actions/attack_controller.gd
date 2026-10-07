@@ -36,6 +36,7 @@ var _ensure_navigator: Callable = Callable()				## 确保导航器
 var _unit_host: Callable = Callable()						## 单位主机
 var _pipeline: DamagePipeline = null						## 伤害管道
 var _projectiles: ProjectileService = null					## 弹道服务（会话共享）
+var _attack_presentation: CombatAttackPresentation = CombatAttackPresentation.new()
 var _active: bool = false									## 是否活跃
 
 ## 配置
@@ -70,8 +71,8 @@ func is_active() -> bool:
 	return _active and _state != State.IDLE
 
 ## 取消
-func cancel() -> void:
-	var body := _body()
+func cancel(stop_animation: bool = true) -> void:
+	var body: Node3D = _body()
 	if _projectiles != null and body != null:
 		_projectiles.cancel_attacker(body)
 	_active = false
@@ -81,8 +82,9 @@ func cancel() -> void:
 	_cooldown_left = 0.0
 	_dmgpt_left = 0.0
 	_set_state(State.IDLE)
-	_set_attack_anim(false)
-	var nav := _nav()
+	if stop_animation:
+		_set_attack_anim(false)
+	var nav: UnitNavigator = _nav()
 	if nav != null:
 		nav.stop()
 
@@ -96,9 +98,8 @@ func notify_strike_result(result: Dictionary) -> void:
 	var killed: Node3D = result.get("target") as Node3D
 	if killed != null and _target == killed:
 		_target = null
-		_set_attack_anim(false)
 		if _mode == Mode.ATTACK:
-			cancel()
+			cancel(false)
 		elif _mode == Mode.ATTACK_MOVE:
 			_set_state(State.MOVE_TO_GOAL)
 			_path_to_goal()
@@ -108,19 +109,22 @@ func notify_strike_result(result: Dictionary) -> void:
 ## 通知目标死亡
 func notify_target_died(dead: Node3D) -> void:
 	if dead != null and _target == dead:
+		# 出弹后的目标死亡结束订单，但不是新命令；保留本击收招。
+		var released: bool = _state == State.COOLDOWN or (_state == State.WINDUP and _dmgpt_left <= 0.0)
 		_target = null
 		_dmgpt_left = 0.0
-		if _mode == Mode.ATTACK_MOVE or _mode == Mode.HOLD:
+		if not released:
 			_set_attack_anim(false)
+		if _mode == Mode.ATTACK_MOVE or _mode == Mode.HOLD:
 			_set_state(State.MOVE_TO_GOAL if _mode == Mode.ATTACK_MOVE else State.IDLE)
 		elif _mode == Mode.ATTACK:
-			cancel()
+			cancel(not released)
 
 ## 开始攻击
 func start_attack(target: Node3D) -> bool:
 	if target == null or not is_instance_valid(target):
 		return false
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or not CombatQuery.has_weapon(body):
 		return false
 	if not CombatQuery.is_valid_attack_target(body, target):
@@ -138,11 +142,11 @@ func start_attack(target: Node3D) -> bool:
 
 
 ## 切目标的最小冷却（秒）：被新 target 覆盖时给一拍冷却窗，避免连挥刷伤。
-const _MIN_SWAP_COOLDOWN := 0.05
+const _MIN_SWAP_COOLDOWN: float = 0.05
 
 ## 开始攻击移动
 func start_attack_move(goal_wc3: Vector2) -> bool:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or not CombatQuery.has_weapon(body):
 		return false
 	if goal_wc3 == Vector2.INF:
@@ -159,7 +163,7 @@ func start_attack_move(goal_wc3: Vector2) -> bool:
 
 ## 开始待命
 func start_hold() -> bool:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null:
 		return false
 	_active = true
@@ -170,7 +174,7 @@ func start_hold() -> bool:
 	_dmgpt_left = 0.0
 	_set_state(State.IDLE)
 	_set_attack_anim(false)
-	var nav := _nav()
+	var nav: UnitNavigator = _nav()
 	if nav != null:
 		nav.stop()
 	return true
@@ -179,7 +183,7 @@ func start_hold() -> bool:
 func _process(delta: float) -> void:
 	if not _active:
 		return
-	var body := _body()
+	var body: Node3D = _body()
 	if body != null and UnitStatusEffects.is_stunned(body):
 		_set_attack_anim(false)
 		return
@@ -202,7 +206,7 @@ func _process(delta: float) -> void:
 
 ## 追逐或开挥
 func _chase_or_strike(_delta: float) -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null:
 		cancel()
 		return
@@ -223,7 +227,7 @@ func _chase_or_strike(_delta: float) -> void:
 	if CombatQuery.in_attack_range(body, _target):
 		# 追击绕障时由导航面对下一个路点；出手时才转向敌人。
 		_face_target()
-		var nav := _nav()
+		var nav: UnitNavigator = _nav()
 		if nav != null and nav.is_moving():
 			nav.stop()
 		if _cooldown_left <= 0.0:
@@ -240,14 +244,14 @@ func _chase_or_strike(_delta: float) -> void:
 
 ## 开一击前摇：播 Attack，等 dmgpt 再结算；整段 cool1 从此时起算。
 func _begin_windup() -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or _target == null:
 		return
-	var cool := CombatQuery.cooldown_sec(body)
-	var atk_spd := UnitStatusEffects.attack_speed_mul(body)
+	var cool: float = CombatQuery.cooldown_sec(body)
+	var atk_spd: float = UnitStatusEffects.attack_speed_mul(body)
 	if atk_spd > 0.0 and atk_spd < 1.0:
 		cool /= atk_spd
-	var dmgpt := CombatQuery.damage_point_sec(body)
+	var dmgpt: float = CombatQuery.damage_point_sec(body)
 	_cooldown_left = cool
 	_dmgpt_left = dmgpt
 	_set_attack_anim(true)
@@ -258,7 +262,7 @@ func _begin_windup() -> void:
 
 ## 前摇
 func _tick_windup(delta: float) -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null:
 		cancel()
 		return
@@ -280,7 +284,7 @@ func _tick_windup(delta: float) -> void:
 
 ## 伤害点结算：instant/normal 当场 Pipeline；missile 交 ProjectileService 飞行后再结算。
 func _resolve_strike() -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	_dmgpt_left = 0.0
 	if body == null or _target == null or _pipeline == null:
 		_set_attack_anim(false)
@@ -295,16 +299,15 @@ func _resolve_strike() -> void:
 			_projectiles.fire(body, _target, false)
 			# 命中结果由会话层 projectile_resolved → 可选转发；此处不立刻 kill 切态
 		else:
-			var result := _pipeline.apply({"attacker": body, "target": _target, "source_kind": "weapon"})
+			var result: Dictionary = _pipeline.apply({"attacker": body, "target": _target, "source_kind": "weapon"})
 			damage_applied.emit(result)
 			# hrif 等 instant 远程：Present 弹道壳，Logic 已扣血
 			if CombatQuery.wants_projectile_visual(body) and _projectiles != null:
 				_projectiles.fire(body, _target, true)
 			if bool(result.get("killed", false)):
 				_target = null
-				_set_attack_anim(false)
 				if _mode == Mode.ATTACK:
-					cancel()
+					cancel(false)
 					return
 				if _mode == Mode.ATTACK_MOVE:
 					_set_state(State.MOVE_TO_GOAL)
@@ -313,12 +316,12 @@ func _resolve_strike() -> void:
 				if _mode == Mode.HOLD:
 					_set_state(State.IDLE)
 					return
-	_set_attack_anim(false)
+	# 发射/伤害帧不是片段末尾；保留收招，由表现层监听完成。
 	_set_state(State.COOLDOWN)
 
 ## 冷却（站桩等下一击）
 func _tick_cooldown(_delta: float) -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or _target == null or not CombatQuery.is_valid_attack_target(body, _target):
 		_chase_or_strike(0.0)
 		return
@@ -332,19 +335,19 @@ func _tick_cooldown(_delta: float) -> void:
 
 ## 攻击移动
 func _tick_attack_move(delta: float) -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null:
 		cancel()
 		return
 	var host: Node = _unit_host.call() if _unit_host.is_valid() else null
-	var acq := CombatQuery.find_acquire_target(body, host)
+	var acq: Node3D = CombatQuery.find_acquire_target(body, host)
 	if acq != null:
 		_target = acq
 		_set_state(State.CHASE)
 		_chase_or_strike(delta)
 		return
 	# 已到终点附近
-	var here := Wc3Coords.godot_to_wc3_xy(body.global_position)
+	var here: Vector2 = Wc3Coords.godot_to_wc3_xy(body.global_position)
 	if here.distance_to(_goal_wc3) <= 48.0:
 		cancel()
 		return
@@ -354,7 +357,7 @@ func _tick_attack_move(delta: float) -> void:
 
 ## 待命：只打出手射程内，不追击
 func _tick_hold(delta: float) -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or not CombatQuery.has_weapon(body):
 		return
 	if _target != null and CombatQuery.is_valid_attack_target(body, _target) and CombatQuery.in_attack_range(body, _target):
@@ -362,7 +365,7 @@ func _tick_hold(delta: float) -> void:
 		_chase_or_strike(delta)
 		return
 	var host: Node = _unit_host.call() if _unit_host.is_valid() else null
-	var acq := CombatQuery.find_acquire_target(body, host, CombatQuery.attack_range_wc3(body))
+	var acq: Node3D = CombatQuery.find_acquire_target(body, host, CombatQuery.attack_range_wc3(body))
 	if acq != null:
 		_target = acq
 		_set_state(State.CHASE)
@@ -372,29 +375,29 @@ func _tick_hold(delta: float) -> void:
 func _path_to_target() -> void:
 	if _target == null or not _ensure_navigator.is_valid():
 		return
-	var body := _body()
-	var nav := _ensure_navigator.call(body) as UnitNavigator
+	var body: Node3D = _body()
+	var nav: UnitNavigator = _ensure_navigator.call(body) as UnitNavigator
 	if nav == null:
 		return
-	var goal := Wc3Coords.godot_to_wc3_xy(_target.global_position)
+	var goal: Vector2 = Wc3Coords.godot_to_wc3_xy(_target.global_position)
 	nav.go_to_wc3(goal)
 
 ## 移动到目标位置
 func _path_to_goal() -> void:
 	if _goal_wc3 == Vector2.INF or not _ensure_navigator.is_valid():
 		return
-	var nav := _ensure_navigator.call(_body()) as UnitNavigator
+	var nav: UnitNavigator = _ensure_navigator.call(_body()) as UnitNavigator
 	if nav != null:
 		nav.go_to_wc3(_goal_wc3)
 
 ## 面向目标
 func _face_target() -> void:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null or _target == null:
 		return
-	var from := Wc3Coords.godot_to_wc3_xy(body.global_position)
-	var to := Wc3Coords.godot_to_wc3_xy(_target.global_position)
-	var dir := to - from
+	var from: Vector2 = Wc3Coords.godot_to_wc3_xy(body.global_position)
+	var to: Vector2 = Wc3Coords.godot_to_wc3_xy(_target.global_position)
+	var dir: Vector2 = to - from
 	if dir.length_squared() < 1.0:
 		return
 	# 与 UnitNavigator 一致：前进轴 +X，yaw = atan2(dy, dx)
@@ -402,12 +405,10 @@ func _face_target() -> void:
 
 ## 设置攻击动画
 func _set_attack_anim(on: bool) -> void:
-	var body := _body()
-	if body == null:
-		return
-	var vis := Unit.of(body)
-	if vis != null:
-		vis.set_combat_attack(on)
+	if on:
+		_attack_presentation.begin(_body())
+	else:
+		_attack_presentation.cancel()
 
 ## 设置状态
 func _set_state(s: int) -> void:
@@ -418,7 +419,7 @@ func _set_state(s: int) -> void:
 
 ## 获取导航器
 func _nav() -> UnitNavigator:
-	var body := _body()
+	var body: Node3D = _body()
 	if body == null:
 		return null
 	if _ensure_navigator.is_valid():
@@ -428,3 +429,7 @@ func _nav() -> UnitNavigator:
 ## 获取单位主体
 func _body() -> Node3D:
 	return get_parent() as Node3D
+
+
+func _exit_tree() -> void:
+	_attack_presentation.cancel()

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import { ModelRenderer } from 'war3-model';
 import { parseModel } from './convert-mdx.js';
 import { sampleAnimVector, sampleAnimVectorInSequence } from './anim.js';
@@ -38,7 +39,9 @@ assert.equal(values[jump*3],5);
 
 // Independent reference: the installed source-format renderer's interpolator,
 // not another path through our own world-matrix evaluator.
-const source = new URL('../../../.cache/wc3-assets/Abilities/Weapons/PriestMissile/PriestMissile.mdx', import.meta.url);
+const source = process.env.ASSET_SOURCE
+  ? path.join(process.env.ASSET_SOURCE, 'Abilities/Weapons/PriestMissile/PriestMissile.mdx')
+  : new URL('../../../assets/.staging/wc3-assets/Abilities/Weapons/PriestMissile/PriestMissile.mdx', import.meta.url);
 const model = parseModel(fs.readFileSync(source), 'PriestMissile.mdx');
 const reference = new ModelRenderer(model);
 let comparisons = 0;

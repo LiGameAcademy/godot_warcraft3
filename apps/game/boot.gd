@@ -10,11 +10,14 @@ extends Node
 ##
 ## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md §10。
 
-const GAME_MAIN_PATH := "res://scenes/game_main.tscn"
-const LOADING_SCREEN_PATH := "res://scenes/game_loading_screen.tscn"
+const SourceImport: GDScript = preload("res://app/game_source_import.gd")
+const AssetImport: GDScript = preload("res://app/game_asset_import.gd")
+
+const GAME_MAIN_PATH: String = "res://scenes/game_main.tscn"
+const LOADING_SCREEN_PATH: String = "res://scenes/game_loading_screen.tscn"
 
 ## Async loading 超时（msec）。
-const ASYNC_LOAD_TIMEOUT_MSEC := 180000
+const ASYNC_LOAD_TIMEOUT_MSEC: int = 180000
 
 
 func _ready() -> void:
@@ -22,7 +25,30 @@ func _ready() -> void:
 
 
 func _start() -> void:
-	if "--smoke-test" in OS.get_cmdline_user_args():
+	if _run_import_worker():
+		return
+	if not _prepare_asset_import():
+		return
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if (not OS.has_feature("editor") or "--asset-import-wizard" in args) and not "--warcraft-dir" in args and not "--asset-import-manifest" in args:
+		var wizard: Control = (load("res://client/asset_import/asset_import_wizard.tscn") as PackedScene).instantiate() as Control
+		wizard.auto_resume = not "--asset-import-wizard" in args
+		var request_index: int = args.find("--asset-import-request")
+		if request_index >= 0 and request_index + 1 < args.size():
+			wizard.request_resource = args[request_index + 1]
+		var cache_index: int = args.find("--asset-import-cache")
+		if cache_index >= 0 and cache_index + 1 < args.size():
+			wizard.cache_root = args[cache_index + 1]
+		wizard.ready_to_play.connect(func() -> void:
+			wizard.queue_free()
+			if "--smoke-test" in args:
+				_smoke_start.call_deferred()
+			else:
+				_async_start.call_deferred())
+		get_tree().root.add_child(wizard)
+		get_tree().current_scene = wizard
+		return
+	if "--smoke-test" in args:
 		_smoke_start()
 		return
 	_async_start()
@@ -30,18 +56,18 @@ func _start() -> void:
 
 ## --smoke-test：跳过 loading，经 Facade 配置并等待 session。
 func _smoke_start() -> void:
-	var packed := ResourceLoader.load(GAME_MAIN_PATH) as PackedScene
+	var packed: PackedScene = ResourceLoader.load(GAME_MAIN_PATH) as PackedScene
 	if not is_instance_valid(packed):
 		push_error("boot: 同步加载 game_main 失败")
 		get_tree().quit(1)
 		return
-	var scene := packed.instantiate() as GameMain
+	var scene: GameMain = packed.instantiate() as GameMain
 	# spawn_opponent_base 必须在 add_child → _boot_scene 之前写入。
 	scene.configure_match({"spawn_opponent_base": true})
 	get_tree().root.add_child(scene)
 	get_tree().current_scene = scene
 
-	var deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
 	while is_instance_valid(scene) and not scene.is_session_ready() \
 			and Time.get_ticks_msec() < deadline:
 		await get_tree().process_frame
@@ -60,7 +86,7 @@ func _smoke_start() -> void:
 
 ## 正常启动：Loading View + GameMain Facade。
 func _async_start() -> void:
-	var loading_packed := ResourceLoader.load(LOADING_SCREEN_PATH) as PackedScene
+	var loading_packed: PackedScene = ResourceLoader.load(LOADING_SCREEN_PATH) as PackedScene
 	if not is_instance_valid(loading_packed):
 		push_error("boot: 加载 game_loading_screen.tscn 失败")
 		get_tree().quit(1)
@@ -70,7 +96,7 @@ func _async_start() -> void:
 	get_tree().current_scene = loading
 	loading.begin(_initial_map_title())
 
-	var err := ResourceLoader.load_threaded_request(GAME_MAIN_PATH)
+	var err: Error = ResourceLoader.load_threaded_request(GAME_MAIN_PATH)
 	if err != OK:
 		push_error("boot: load_threaded_request 失败 err=%d" % err)
 		get_tree().quit(1)
@@ -78,10 +104,10 @@ func _async_start() -> void:
 
 	# 资源阶段：boot 映射到 0 .. GameMain.RESOURCE_END（GameMain 尚未存在）。
 	var progress: Array = [0.0]
-	var deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
-	var timed_out := true
+	var deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var timed_out: bool = true
 	while Time.get_ticks_msec() < deadline:
-		var status := ResourceLoader.load_threaded_get_status(GAME_MAIN_PATH, progress)
+		var status: ResourceLoader.ThreadLoadStatus = ResourceLoader.load_threaded_get_status(GAME_MAIN_PATH, progress)
 		match status:
 			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 				loading.set_progress(
@@ -105,12 +131,12 @@ func _async_start() -> void:
 
 	loading.set_progress("正在加载资源…", GameMain.RESOURCE_END)
 
-	var main_packed := ResourceLoader.load_threaded_get(GAME_MAIN_PATH) as PackedScene
+	var main_packed: PackedScene = ResourceLoader.load_threaded_get(GAME_MAIN_PATH) as PackedScene
 	if not is_instance_valid(main_packed):
 		push_error("boot: load_threaded_get 拿到非 PackedScene")
 		get_tree().quit(1)
 		return
-	var scene := main_packed.instantiate() as GameMain
+	var scene: GameMain = main_packed.instantiate() as GameMain
 	# 先订 Facade 信号，再 wire（wire 末尾可能立刻 emit 初始进度 / 已就绪）。
 	scene.preparation_progress.connect(
 		func(stage: String, p: float) -> void:
@@ -126,7 +152,7 @@ func _async_start() -> void:
 	get_tree().root.add_child(scene)
 	get_tree().current_scene = scene
 
-	var ready_deadline := Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
+	var ready_deadline: int = Time.get_ticks_msec() + ASYNC_LOAD_TIMEOUT_MSEC
 	while is_instance_valid(scene) and not scene.is_session_ready() \
 			and Time.get_ticks_msec() < ready_deadline:
 		await get_tree().process_frame
@@ -143,3 +169,86 @@ func _async_start() -> void:
 
 func _initial_map_title() -> String:
 	return "Echo Isles"
+
+## 启动参数仅编排导入，不承载解析/编译实现。
+func _prepare_asset_import() -> bool:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	var manifest_path: String = ""
+	var result_path: String = ""
+	var game_dir: String = ""
+	var request_path: String = ""
+	var cache_root: String = "user://wc3-cache/source-import"
+	var index: int = 0
+	while index < args.size():
+		if args[index] in ["--asset-root", "--asset-import-manifest", "--asset-import-result", "--warcraft-dir", "--asset-import-request", "--asset-import-cache"]:
+			if index + 1 >= args.size():
+				get_tree().quit(2)
+				return false
+			var flag: String = args[index]
+			index += 1
+			match flag:
+				"--asset-root": ProjectSettings.set_setting("warcraft3/asset_root", args[index])
+				"--asset-import-manifest": manifest_path = args[index]
+				"--asset-import-result": result_path = args[index]
+				"--warcraft-dir": game_dir = args[index]
+				"--asset-import-request": request_path = args[index]
+				"--asset-import-cache": cache_root = args[index]
+		index += 1
+	if manifest_path.is_empty() and game_dir.is_empty():
+		if "--asset-import-only" in args:
+			get_tree().quit(2)
+			return false
+		return true
+	var importer: RefCounted = AssetImport.new()
+	var result: Dictionary
+	if not game_dir.is_empty():
+		if not manifest_path.is_empty():
+			get_tree().quit(2)
+			return false
+		var source_importer: RefCounted = SourceImport.new()
+		result = source_importer.run_source(game_dir, request_path, cache_root, AssetProvider.runtime_content_sealed)
+	else:
+		result = importer.run_manifest(manifest_path, AssetProvider.runtime_content_sealed)
+	if not result_path.is_empty():
+		var file: FileAccess = FileAccess.open(result_path, FileAccess.WRITE)
+		if file == null:
+			get_tree().quit(2)
+			return false
+		file.store_string(JSON.stringify(result, "  ") + "\n")
+		file.close()
+	print("GAME asset import %s" % ["PASS" if result.ok else "FAIL"])
+	if not result.ok or "--asset-import-only" in args:
+		get_tree().quit(0 if result.ok else 1)
+		return false
+	return true
+
+## 子进程编译有限批次，缓存发布仍使用同一原子提交契约。
+
+func _run_import_worker() -> bool:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	var batch_index: int = args.find("--asset-worker-batch")
+	var task_index: int = batch_index if batch_index >= 0 else args.find("--asset-worker-task")
+	if task_index < 0:
+		return false
+	var result_index: int = args.find("--asset-worker-result")
+	if task_index + 1 >= args.size() or result_index < 0 or result_index + 1 >= args.size():
+		get_tree().quit(2)
+		return true
+	var result: Dictionary
+	var exit_code: int
+	if batch_index >= 0:
+		result = preload("res://app/asset_import_worker.gd").compile_batch(args[task_index + 1])
+		exit_code = 0 if result.get("ok", false) else 1
+	else:
+		var compiler: RefCounted = load("res://tools/godot/import_cached_compiler.gd").new()
+		var response: Dictionary = compiler.compile_task(args[task_index + 1])
+		result = response.result
+		exit_code = int(response.exit_code)
+	var file: FileAccess = FileAccess.open(args[result_index + 1], FileAccess.WRITE)
+	if file == null:
+		get_tree().quit(2)
+		return true
+	file.store_string(JSON.stringify(result))
+	file.close()
+	get_tree().quit(exit_code)
+	return true

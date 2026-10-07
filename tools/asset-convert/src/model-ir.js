@@ -1,3 +1,4 @@
+import { renameWithRetrySync } from "./atomic-write.js";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -53,6 +54,7 @@ export function createModelIr(input = {}) {
     attachments: input.attachments ?? {},
     team_color: input.team_color ?? {},
     glow_categories: input.glow_categories ?? [],
+    cameras: input.cameras ?? {},
     events: input.events ?? {},
     dependencies: Array.isArray(input.dependencies) ? input.dependencies : [],
     diagnostics: Array.isArray(input.diagnostics) ? input.diagnostics : [],
@@ -118,8 +120,13 @@ export function writeModelIr(destination, value) {
   if (!result.ok) throw new Error(`invalid model IR: ${result.errors.join("; ")}`);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   const temporary = `${destination}.tmp-${process.pid}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  fs.renameSync(temporary, destination);
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    renameWithRetrySync(temporary, destination);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch { /* Preserve the original failure. */ }
+    throw error;
+  }
 }
 
 /** @param {Buffer} bytes */

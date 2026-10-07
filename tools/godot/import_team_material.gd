@@ -1,5 +1,5 @@
 extends RefCounted
-## Opaque team-color base and alpha-blended diffuse top, with independent lighting.
+## Opaque team-color base and alpha-blended top with per-layer lighting/culling.
 static func supported(layers: Array, textures: Array) -> bool:
 	if layers.size() != 2:
 		return false
@@ -14,7 +14,7 @@ static func supported(layers: Array, textures: Array) -> bool:
 	# Per-axis wrapping requires a separate sampler implementation.
 	if int(textures[index].get("Flags", 0)) not in [0, 3] or int(textures[top_index].get("Flags", 0)) not in [0, 3]:
 		return false
-	return int(textures[index].get("ReplaceableId", 0)) == 1 and int(textures[top_index].get("ReplaceableId", 0)) == 0 and base.get("Alpha", 1) == 1 and int(base.get("FilterMode", 0)) == 0 and int(top.get("FilterMode", 0)) == 2 and (int(base.get("Shading", 0)) & 16) == (int(top.get("Shading", 0)) & 16)
+	return int(textures[index].get("ReplaceableId", 0)) == 1 and int(textures[top_index].get("ReplaceableId", 0)) == 0 and base.get("Alpha", 1) == 1 and int(base.get("FilterMode", 0)) in [0, 1] and int(top.get("FilterMode", 0)) == 2 and (not int(top.get("Shading", 0)) & 16 or int(base.get("Shading", 0)) & 16)
 
 static func compile(original: StandardMaterial3D, layers: Array, textures: Array, texture_base: String) -> ShaderMaterial:
 	var entry: Dictionary = textures[int(layers[0].TextureID)]
@@ -22,6 +22,9 @@ static func compile(original: StandardMaterial3D, layers: Array, textures: Array
 		return null
 	var image: Image = Image.load_from_file(texture_base.path_join(str(entry.uri)).simplify_path())
 	if image == null or original.albedo_texture == null:
+		return null
+	# Alpha-tested team layers are equivalent to opaque only with an opaque source.
+	if int(layers[0].get("FilterMode", 0)) == 1 and image.detect_alpha() != Image.ALPHA_NONE:
 		return null
 	image.generate_mipmaps()
 	var material: ShaderMaterial = ShaderMaterial.new()
@@ -38,7 +41,7 @@ uniform float layer_alpha = 1.0;
 void fragment() {
  vec4 diff = texture(diffuse_tex, UV);
  vec3 team = use_team_texture ? texture(team_color_tex, UV).rgb : team_color_fallback.rgb;
- float a = clamp(diff.a * layer_alpha, 0.0, 1.0);
+ float a = %s ? clamp(diff.a * layer_alpha, 0.0, 1.0) : 0.0;
  vec3 base = team * (1.0 - a);
  vec3 top = diff.rgb * a;
  ALBEDO = %s + %s;
@@ -46,7 +49,7 @@ void fragment() {
  ROUGHNESS = 1.0;
  SPECULAR = 0.0;
 }
-""" % [cull, _repeat(textures[int(layers[1].TextureID)]), _repeat(entry), _lit(layers[0], "base"), _lit(layers[1], "top"), _unlit(layers[0], "base"), _unlit(layers[1], "top")]
+""" % [cull, _repeat(textures[int(layers[1].TextureID)]), _repeat(entry), "true" if int(layers[1].get("Shading", 0)) & 16 else "FRONT_FACING", _lit(layers[0], "base"), _lit(layers[1], "top"), _unlit(layers[0], "base"), _unlit(layers[1], "top")]
 	material.shader = shader
 	material.set_shader_parameter("diffuse_tex", original.albedo_texture)
 	material.set_shader_parameter("team_color_tex", ImageTexture.create_from_image(image))

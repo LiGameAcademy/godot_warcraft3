@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import { collectBakeFrames, evaluateNodeWorldMatrices, isAlternateOrMorphSequenceName, normalizeGeosetAlpha, sampleGeosetAlphaInSequence, sequenceBakeDurationMs, wc3SequenceToAnimName } from "./anim.js";
 import { mat4Identity } from "./mat4.js";
 
@@ -5,6 +6,19 @@ import { writeGeosetVisSidecar } from "./mdx-animation-sidecars.js";
 import { transformMat4Wc3ToGltf, collapseConstantTrsTrack, collapseConstantScaleTrack } from "./mdx-skeleton.js";
 
 export function compileAnimations(model, document, buffer, restSeq, restStart, restEnd, allNodes, jointList, skinAnimNodes, jointByObjectId, geosetMeshNodes) {
+  const accessors = new Map();
+  // Joint tracks often share identical timelines and constant transforms.
+  // Reusing their float32 payloads preserves every sample and avoids thousands
+  // of duplicate accessors in Godot's glTF import.
+  const accessor = (name, type, values) => {
+    const array = new Float32Array(values);
+    const digest = createHash('sha256').update(Buffer.from(array.buffer)).digest('hex');
+    const key = type + ':' + digest;
+    if (!accessors.has(key)) {
+      accessors.set(key, document.createAccessor(name).setType(type).setArray(array).setBuffer(buffer));
+    }
+    return accessors.get(key);
+  };
   // --- Animations (one glTF animation per WC3 Sequence) ---
   // Global Sequence（旗/钟）不跟 Sequence 区间走：循环段烘焙时长拉到最长 GlobalSeq，
   // 段内骨骼 % seqDur，GlobalSeq 骨骼 % globalDur。MDX Billboard 位（0x8）原样保留，
@@ -120,27 +134,11 @@ export function compileAnimations(model, document, buffer, restSeq, restStart, r
         if (!joint || !track?.times.length) continue;
         track = collapseConstantTrsTrack(track);
 
-        const input = document
-          .createAccessor(`${animName}_${bone.ObjectId}_time`)
-          .setType("SCALAR")
-          .setArray(new Float32Array(track.times))
-          .setBuffer(buffer);
+        const input = accessor(`${animName}_${bone.ObjectId}_time`, "SCALAR", track.times);
 
-        const tOut = document
-          .createAccessor(`${animName}_${bone.ObjectId}_t`)
-          .setType("VEC3")
-          .setArray(new Float32Array(track.t))
-          .setBuffer(buffer);
-        const rOut = document
-          .createAccessor(`${animName}_${bone.ObjectId}_r`)
-          .setType("VEC4")
-          .setArray(new Float32Array(track.r))
-          .setBuffer(buffer);
-        const sOut = document
-          .createAccessor(`${animName}_${bone.ObjectId}_s`)
-          .setType("VEC3")
-          .setArray(new Float32Array(track.s))
-          .setBuffer(buffer);
+        const tOut = accessor(`${animName}_${bone.ObjectId}_t`, "VEC3", track.t);
+        const rOut = accessor(`${animName}_${bone.ObjectId}_r`, "VEC4", track.r);
+        const sOut = accessor(`${animName}_${bone.ObjectId}_s`, "VEC3", track.s);
 
         // glTF-Transform requires samplers to be attached to the Animation
         // via addSampler(); otherwise channels are written without sampler
@@ -192,16 +190,8 @@ export function compileAnimations(model, document, buffer, restSeq, restStart, r
         let gTrack = geosetScaleTracks.get(gi);
         if (!gTrack?.times.length) continue;
         gTrack = collapseConstantScaleTrack(gTrack);
-        const input = document
-          .createAccessor(`${animName}_geoset${gi}_time`)
-          .setType("SCALAR")
-          .setArray(new Float32Array(gTrack.times))
-          .setBuffer(buffer);
-        const sOut = document
-          .createAccessor(`${animName}_geoset${gi}_s`)
-          .setType("VEC3")
-          .setArray(new Float32Array(gTrack.s))
-          .setBuffer(buffer);
+        const input = accessor(`${animName}_geoset${gi}_time`, "SCALAR", gTrack.times);
+        const sOut = accessor(`${animName}_geoset${gi}_s`, "VEC3", gTrack.s);
         const sSampler = document
           .createAnimationSampler()
           .setInterpolation("STEP")

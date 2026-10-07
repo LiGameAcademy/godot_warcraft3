@@ -8,28 +8,28 @@ extends RefCounted
 ## Forward+ 下用 Decal 投到地形（cull_mask=TERRAIN），避免印到建筑墙体。
 ## （曾用 Mobile+PlaneMesh：同 mesh 最多 8 Decal，整图地形会丢脚印。）
 
-const SPLAT_ROOT_NAME := "UberSplat"
+const SPLAT_ROOT_NAME: String = "UberSplat"
 ## Decal 盒中心相对脚底；投影深度一半左右，保证盖住起伏地表
-const Y_BIAS := 0.12
+const Y_BIAS: float = 0.12
 ## 投影盒高度（Godot 单位）：过大易打到邻建筑，过小贴不稳坡地
-const PROJECTION_DEPTH := 0.5
+const PROJECTION_DEPTH: float = 0.5
 ## 建筑贴地下沉上限（Godot）。过大（按完整 UberSplat geoset 高度）会把主城埋进地里。
-const FOOT_SINK_MAX := 0.02
+const FOOT_SINK_MAX: float = 0.02
 ## 建筑整体略抬，避免脚底陷入地表（原作靠 moveHeight/贴地，不靠挖平地形）。
-const BUILDING_Y_LIFT := 0.08
+const BUILDING_Y_LIFT: float = 0.08
 ## SLK Scale 观感偏小（透明边 + 透视）；×2 接近原作脚印覆盖。
-const SIZE_MUL := 2.0
+const SIZE_MUL: float = 2.0
 ## 贴花相对建筑本地 yaw（PlaneMesh 时代试过 π / +π/2；Decal 先沿用 +90°）
-const YAW_LOCAL := PI * 0.5
+const YAW_LOCAL: float = PI * 0.5
 
 
 static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> Node3D:
 	if root == null or type_id.is_empty() or type_id == "sloc":
 		return null
-	var existing := root.get_node_or_null(SPLAT_ROOT_NAME)
+	var existing: Node = root.get_node_or_null(SPLAT_ROOT_NAME)
 	if existing != null:
 		existing.queue_free()
-	var code := _uber_splat_code(type_id)
+	var code: String = _uber_splat_code(type_id)
 	if code.is_empty() or code == "_":
 		return null
 	Wc3DefStore.ensure_table(UberSplatDef.TABLE_NAME)
@@ -37,10 +37,10 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> No
 	if not (row is UberSplatDef):
 		push_warning("Wc3UberSplat: 无 UberSplatData 行 type=%s code=%s" % [type_id, code])
 		return null
-	var def := row as UberSplatDef
+	var def: UberSplatDef = row as UberSplatDef
 	if def.file.is_empty() or def.scale <= 0.0:
 		return null
-	var tex := _load_splat_texture(def, tileset)
+	var tex: Texture2D = _load_splat_texture(def, tileset)
 	if tex == null:
 		push_warning(
 			"Wc3UberSplat: 贴图未找到 type=%s code=%s file=%s tileset=%s"
@@ -48,8 +48,8 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> No
 		)
 		return null
 	# Scale 为 WC3 世界边长（HTOW=230）；与模型同一 WORLD_SCALE，再乘观感倍率
-	var size_g := def.scale * Wc3Coords.WORLD_SCALE * SIZE_MUL
-	var decal := Decal.new()
+	var size_g: float = def.scale * Wc3Coords.WORLD_SCALE * SIZE_MUL
+	var decal: Decal = Decal.new()
 	decal.name = SPLAT_ROOT_NAME
 	decal.texture_albedo = tex
 	decal.modulate = Color.WHITE
@@ -60,6 +60,7 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> No
 	decal.position = Vector3(0.0, Y_BIAS, 0.0)
 	decal.rotation.y = YAW_LOCAL
 	decal.set_meta("uber_splat_code", code)
+	decal.set_meta("uber_splat_decay_seconds", def.decay)
 	decal.set_meta("is_runtime_uber_splat", true)
 	root.add_child(decal)
 	# GLB 根常带 MODEL_SCALE=0.01；size 按世界尺度写，须抵消父缩放
@@ -71,9 +72,9 @@ static func attach_to(root: Node3D, type_id: String, tileset: String = "") -> No
 static func _cancel_parent_model_scale(node: Node3D, root: Node3D) -> void:
 	if node == null or root == null:
 		return
-	var sx := absf(root.scale.x)
-	var sy := absf(root.scale.y)
-	var sz := absf(root.scale.z)
+	var sx: float = absf(root.scale.x)
+	var sy: float = absf(root.scale.y)
+	var sz: float = absf(root.scale.z)
 	if sx < 1e-8:
 		sx = 1.0
 	if sy < 1e-8:
@@ -98,25 +99,25 @@ static func compensate_parent_y(node: Node3D, parent_y_delta: float) -> void:
 static func foot_sink_y(root: Node3D) -> float:
 	if root == null:
 		return 0.0
-	var splat_min := INF
-	var visible_min := INF
-	for n in root.find_children("*", "MeshInstance3D", true, false):
-		var mi := n as MeshInstance3D
+	var splat_min: float = INF
+	var visible_min: float = INF
+	for n: Node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = n as MeshInstance3D
 		if mi == null or mi.mesh == null:
 			continue
 		if str(mi.name) == SPLAT_ROOT_NAME or bool(mi.get_meta("is_runtime_uber_splat", false)):
 			continue
 		if _is_under_pe2(mi):
 			continue
-		var local_aabb := _aabb_in_root(root, mi)
-		var blob := _mesh_blob(mi)
+		var local_aabb: AABB = _aabb_in_root(root, mi)
+		var blob: String = _mesh_blob(mi)
 		if blob.contains("ubersplat") or blob.contains("/splats/"):
 			splat_min = minf(splat_min, local_aabb.position.y)
 			continue
 		if mi.visible:
 			visible_min = minf(visible_min, local_aabb.position.y)
 	# 优先模型脚底环；否则仅当可见底边明显高于原点时下沉（避免把地基抬出地面）
-	var raw := 0.0
+	var raw: float = 0.0
 	if splat_min < INF and splat_min > 0.02:
 		raw = splat_min
 	elif visible_min < INF and visible_min > 0.15 and visible_min < 2.5:
@@ -133,11 +134,11 @@ static func _uber_splat_code(type_id: String) -> String:
 
 
 static func _load_splat_texture(def: UberSplatDef, tileset: String) -> Texture2D:
-	var file := def.file.get_file()
+	var file: String = def.file.get_file()
 	if file.is_empty():
 		file = def.file
-	var dir := def.dir.strip_edges().trim_prefix("/").trim_suffix("/")
-	var ts := tileset.strip_edges().to_upper()
+	var dir: String = def.dir.strip_edges().trim_prefix("/").trim_suffix("/")
+	var ts: String = tileset.strip_edges().to_upper()
 	if ts.length() > 1:
 		ts = ts.substr(0, 1)
 	var candidates: Array[String] = []
@@ -146,7 +147,7 @@ static func _load_splat_texture(def: UberSplatDef, tileset: String) -> Texture2D
 		candidates.append("%s/%s_%s" % [dir, ts, file])
 	candidates.append("%s/%s.png" % [dir, file])
 	candidates.append("%s/%s" % [dir, file])
-	for rel in candidates:
+	for rel: String in candidates:
 		var tex: Texture2D = RuntimeAssets.load_converted_texture(rel)
 		if tex != null:
 			return tex
@@ -154,20 +155,20 @@ static func _load_splat_texture(def: UberSplatDef, tileset: String) -> Texture2D
 
 
 static func _aabb_in_root(root: Node3D, mi: MeshInstance3D) -> AABB:
-	var local := mi.get_aabb()
+	var local: AABB = mi.get_aabb()
 	var xf: Transform3D = root.global_transform.affine_inverse() * mi.global_transform
 	return xf * local
 
 
 static func _mesh_blob(mi: MeshInstance3D) -> String:
-	var blob := str(mi.name).to_lower()
+	var blob: String = str(mi.name).to_lower()
 	if mi.mesh == null:
 		return blob
-	for si in range(mi.mesh.get_surface_count()):
+	for si: int in range(mi.mesh.get_surface_count()):
 		var mat: Material = mi.get_active_material(si)
 		if mat == null or not (mat is StandardMaterial3D):
 			continue
-		var sm := mat as StandardMaterial3D
+		var sm: StandardMaterial3D = mat as StandardMaterial3D
 		blob += " " + str(sm.resource_name).to_lower() + " " + str(sm.get_name()).to_lower()
 		var tex: Texture2D = sm.albedo_texture
 		if tex != null:
@@ -177,7 +178,7 @@ static func _mesh_blob(mi: MeshInstance3D) -> String:
 
 
 static func _is_under_pe2(n: Node) -> bool:
-	var p := n.get_parent()
+	var p: Node = n.get_parent()
 	while p != null:
 		if str(p.name) == "Pe2Root":
 			return true

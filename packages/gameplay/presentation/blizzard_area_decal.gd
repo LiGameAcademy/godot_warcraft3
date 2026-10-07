@@ -3,12 +3,12 @@ class_name BlizzardAreaDecal
 ## 技能地面范围圈（Present）：Godot Decal 投影到地形层，避免 PlaneMesh 与坡地/悬崖穿帮。
 ## 用于暴风雪瞄准/引导圈、群体传送落点标记等。
 
-const TEX_REL := "ReplaceableTextures/Selection/SpellAreaOfEffect.png"
+const TEX_REL: String = "ReplaceableTextures/Selection/SpellAreaOfEffect.png"
 ## 投影盒高度（Godot 单位）：越大越能盖住坡度；过大可能投到邻接无关面。
-const PROJECTION_DEPTH := 4.0
+const PROJECTION_DEPTH: float = 4.0
 ## 与建筑 UberSplat 一致：贴花绕 Y 转 90°，对齐水平投影。
-const YAW_LOCAL := PI * 0.5
-const DEFAULT_COLOR := Color(0.45, 0.78, 1.0, 0.72)
+const YAW_LOCAL: float = PI * 0.5
+const DEFAULT_COLOR: Color = Color(0.45, 0.78, 1.0, 0.72)
 
 var _age: float = 0.0
 ## <=0：预览模式，不自动销毁（由 Director 清理）。
@@ -28,7 +28,7 @@ static func spawn(
 ) -> BlizzardAreaDecal:
 	if parent == null or center_wc3 == Vector2.INF:
 		return null
-	var fx := BlizzardAreaDecal.new()
+	var fx: BlizzardAreaDecal = BlizzardAreaDecal.new()
 	fx.name = "SpellAreaDecal"
 	fx._radius_wc3 = maxf(radius_wc3, 1.0)
 	fx._lifetime = lifetime_sec
@@ -73,7 +73,10 @@ func _setup(center_wc3: Vector2, heightfield: Wc3Heightfield) -> void:
 	if tex != null:
 		_decal.texture_albedo = tex
 	_decal.modulate = _color
-	_decal.albedo_mix = 0.9
+	_decal.albedo_mix = 1.0
+	# 预览提示不随投影深度淡出；颜色/纹理仍保持原来的柔边。
+	_decal.upper_fade = 0.0
+	_decal.lower_fade = 0.0
 	_decal.cull_mask = Wc3Coords.RENDER_LAYER_TERRAIN
 	_decal.rotation.y = YAW_LOCAL
 	add_child(_decal)
@@ -93,16 +96,16 @@ func _place(center_wc3: Vector2, heightfield: Wc3Heightfield) -> void:
 	var z: float = 0.0
 	if heightfield != null and heightfield.is_valid():
 		z = heightfield.interpolated_height(center_wc3.x, center_wc3.y)
-	## 投影盒中心抬到地表上方半深度，上下都能盖住起伏。
-	var foot := Wc3Coords.wc3_xy_to_godot(center_wc3.x, center_wc3.y, z)
-	global_position = foot + Vector3(0.0, PROJECTION_DEPTH * 0.5, 0.0)
+	## 地面放在投影盒中心，给坡地上下各留半深度。
+	var foot: Vector3 = Wc3Coords.wc3_xy_to_godot(center_wc3.x, center_wc3.y, z)
+	global_position = foot
 
 
 func _process(delta: float) -> void:
 	_age += delta
 	if _decal != null:
-		var pulse: float = 0.72 + 0.18 * sin(_age * 3.4)
-		var c := _color
+		var pulse: float = 0.95 + 0.05 * sin(_age * 3.4)
+		var c: Color = _color
 		c.a = clampf(_color.a * pulse, 0.18, 1.0)
 		_decal.modulate = c
 	if _lifetime <= 0.0:

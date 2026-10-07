@@ -34,7 +34,12 @@ export function particlePayload(model, normalized, textures) {
           visible: scalar('Visibility', frame, 1) >= 0.5, rate: scalar('EmissionRate', frame, 0),
           width: scalar('Width', frame, 0), length: scalar('Length', frame, 0)};
       });
-      return {name: wc3SequenceToAnimName(seq.Name), keys};
+      const bursts = em.squirt ? (typeof source.EmissionRate === 'number'
+        ? [{Frame: start, Vector: [source.EmissionRate]}] : source.EmissionRate?.Keys ?? [])
+        .filter(key => key.Frame >= start && key.Frame <= end && key.Vector[0] > 0
+          && scalar('Visibility', key.Frame, 1) >= 0.5)
+        .map(key => ({time: (key.Frame-start)/1000, count: Math.round(key.Vector[0])})) : [];
+      return {name: wc3SequenceToAnimName(seq.Name), keys, bursts};
     });
     const unsupported = ['Speed','Variation','Latitude','Gravity'].filter(key=>typeof source[key] === 'object');
     if (Object.values(source).some(track=>track?.GlobalSeqId != null)) unsupported.push('global_sequence_controls');
