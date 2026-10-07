@@ -1,5 +1,5 @@
 extends SceneTree
-const State := preload("res://addons/rts_map/logic/ramp/wc3_ramp_cell_state.gd")
+const State := preload("res://packages/map/logic/ramp/wc3_ramp_cell_state.gd")
 func _initialize() -> void:
 	var cases := 0
 	var classes := {}

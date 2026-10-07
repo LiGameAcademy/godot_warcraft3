@@ -104,4 +104,4 @@ func height() -> int:
 func ensure_ramp_surface_plan() -> void:
 	ensure_ramp_topology()
 	if ramp_surface_plan.is_empty():
-		ramp_surface_plan = preload("res://addons/rts_map/logic/ramp/wc3_ramp_surface_plan.gd").build(heightfield, ramp)
+		ramp_surface_plan = preload("res://packages/map/logic/ramp/wc3_ramp_surface_plan.gd").build(heightfield, ramp)

@@ -9,9 +9,9 @@ extends SceneTree
 ##
 ## 跑法：godot --headless --path . -s res://tests/unit/selftest_group_move.gd
 
-const FormationScr = preload("res://addons/rts_gameplay/features/navigation/logic/formation_follow.gd")
-const SlopeSpeedScr = preload("res://addons/rts_gameplay/features/navigation/logic/slope_speed.gd")
-const UnitMoveSlotsScr = preload("res://addons/rts_gameplay/features/navigation/logic/unit_move_slots.gd")
+const FormationScr = preload("res://packages/gameplay/features/navigation/logic/formation_follow.gd")
+const SlopeSpeedScr = preload("res://packages/gameplay/features/navigation/logic/slope_speed.gd")
+const UnitMoveSlotsScr = preload("res://packages/gameplay/features/navigation/logic/unit_move_slots.gd")
 
 var failed := 0
 

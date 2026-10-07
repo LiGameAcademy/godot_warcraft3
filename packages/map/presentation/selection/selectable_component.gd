@@ -80,7 +80,28 @@ func ring_kind() -> int:
 		return RingKind.NEUTRAL
 	return RingKind.OWN
 
-## 计算拾取半径。
+## 未挂本组件时的轻量半径（只读 collision / 默认值，不扫 mesh、不 attach）。
+## [SelectionPicker] 热路径用；完整半径见 [method pick_radius_world]。
+static func estimate_pick_radius_world(host: Node3D) -> float:
+	if host == null:
+		return DEFAULT_UNIT_RADIUS
+	var tid := ""
+	var d: Dictionary = host.get_meta("unit_data", {})
+	tid = str(d.get("typeId", "")).strip_edges()
+	var is_bldg := BuildingVisual.is_building(tid)
+	var r := DEFAULT_BUILDING_RADIUS if is_bldg else DEFAULT_UNIT_RADIUS
+	if not tid.is_empty():
+		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
+		var bal: Resource = Wc3DefStore.get_row(UnitBalanceDef.TABLE_NAME, tid)
+		if bal is UnitBalanceDef:
+			var col := (bal as UnitBalanceDef).collision
+			if col > 0.0:
+				r = col * Wc3Coords.WORLD_SCALE
+	var cap := MAX_BUILDING_PICK_RADIUS if is_bldg else MAX_UNIT_PICK_RADIUS
+	return clampf(r, 0.12, cap)
+
+
+## 计算拾取半径（含 UnitUI / mesh 混合；结果缓存）。
 func pick_radius_world() -> float:
 	if _pick_radius > 0.0:
 		return _pick_radius
@@ -89,7 +110,7 @@ func pick_radius_world() -> float:
 		return DEFAULT_UNIT_RADIUS
 	var tid := type_id()
 	var is_bldg := is_building()
-	var r := DEFAULT_BUILDING_RADIUS if is_bldg else DEFAULT_UNIT_RADIUS
+	var r := estimate_pick_radius_world(h)
 	var from_collision := false
 	if not tid.is_empty():
 		Wc3DefStore.ensure_table(UnitBalanceDef.TABLE_NAME)
@@ -97,7 +118,6 @@ func pick_radius_world() -> float:
 		if bal is UnitBalanceDef:
 			var col := (bal as UnitBalanceDef).collision
 			if col > 0.0:
-				r = col * Wc3Coords.WORLD_SCALE
 				from_collision = true
 		if not from_collision:
 			Wc3DefStore.ensure_table(UnitUiDef.TABLE_NAME)

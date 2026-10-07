@@ -4,9 +4,9 @@ extends Node
 ## 对局内战斗协调：伤害管线、投射物、死亡/尸体、AttackController 装配。
 ## 由总管注入地图与横切依赖；本模块不依赖 GameDirector 类型。
 
-const CombatProjectileShellScene = preload("res://addons/rts_gameplay/features/combat/presentation/combat_projectile_shell.tscn")
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
-const Experience = preload("res://addons/rts_gameplay/features/heroes/logic/hero_experience.gd")
+const CombatProjectileShellScene = preload("res://packages/gameplay/features/combat/presentation/combat_projectile_shell.tscn")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
+const Experience = preload("res://packages/gameplay/features/heroes/logic/hero_experience.gd")
 
 var damage_pipeline: DamagePipeline = null
 var death_service: DeathService = null

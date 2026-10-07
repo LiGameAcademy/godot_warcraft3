@@ -1,7 +1,7 @@
 class_name MapCliffLayer
 extends Node3D
 
-const CliffStitcher := preload("res://addons/rts_map/presentation/cliff/wc3_cliff_stitcher.gd")
+const CliffStitcher := preload("res://packages/map/presentation/cliff/wc3_cliff_stitcher.gd")
 
 ## 悬崖表现层：只读 Context.placements + Catalog 资产 → MultiMesh。
 ## 禁止改 Heightfield；禁止做 TAG / 挖洞 / 变体选型（一律 Logic）。

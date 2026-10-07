@@ -83,6 +83,7 @@ wc3/
 assets/model-experiments/
 
 # D4: generated package sync into app shells (run Sync-Packages.ps1)
+apps/*/packages/
 apps/*/addons/
 apps/*/assets/
 apps/*/icon.svg

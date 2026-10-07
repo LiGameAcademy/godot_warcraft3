@@ -14,7 +14,9 @@ const out = fs.mkdtempSync(path.join(scratch, 'definition-layers-'));
 const write = (name, data) => { const file = path.join(out, name); fs.mkdirSync(path.dirname(file), {recursive: true}); fs.writeFileSync(file, data); };
 const copy = name => write(name, fs.readFileSync(path.join(repo, name)));
 write('project.godot', 'config_version=5\n[application]\nconfig/name="Definition policy regression"\n');
-for (const name of ['definition_layer_merge.gd', 'definition_layers.gd']) copy(`packages/content/definitions/${name}`);
+for (const name of ['definition_layer_merge.gd', 'definition_layers.gd']) {
+  write(`packages/content/definitions/${name}`, fs.readFileSync(path.join(repo, `packages/content/definitions/${name}`)));
+}
 for (const name of ['command_button_catalog.gd', 'item_catalog.gd', 'worker_build_list_catalog.gd', 'unit_requires_catalog.gd']) copy(`packages/gameplay/catalog/${name}`);
 for (const name of ['unit_abilities_def.gd', 'item_def.gd', 'ability_data_def.gd']) copy(`packages/content/definitions/units/${name}`);
 for (const name of ['unit_ui_def.gd', 'unit_data_def.gd', 'unit_balance_def.gd', 'destructable_data_def.gd']) copy(`packages/content/definitions/units/${name}`);

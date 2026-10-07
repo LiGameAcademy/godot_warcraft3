@@ -3,7 +3,7 @@ extends Node3D
 
 ## HiveWE-compatible ramp presentation: collect models, preserve entrance ground, boost low corners.
 
-const Wc3RampCollectScript = preload("res://addons/rts_map/logic/ramp/wc3_ramp_collect.gd")
+const Wc3RampCollectScript = preload("res://packages/map/logic/ramp/wc3_ramp_collect.gd")
 
 @export var terrain: MapTerrainLayer
 @export var cliffs: MapCliffLayer
@@ -162,7 +162,7 @@ func _mount_groups(
 			var xf: Transform3D = transforms[i]
 			var mi := MeshInstance3D.new()
 			mi.name = "Ramp_%s_%d_%d" % [glb.get_file().get_basename(), tex_idx, i]
-			mi.mesh = preload("res://addons/rts_map/presentation/cliff/wc3_cliff_stitcher.gd").build_mesh(mesh, xf, hf, seam_plan.tiles, seam_plan.boost)
+			mi.mesh = preload("res://packages/map/presentation/cliff/wc3_cliff_stitcher.gd").build_mesh(mesh, xf, hf, seam_plan.tiles, seam_plan.boost)
 			mi.transform = xf
 			if mat_override != null:
 				mi.material_override = mat_override

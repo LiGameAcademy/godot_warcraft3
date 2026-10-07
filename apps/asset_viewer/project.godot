@@ -16,8 +16,8 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
 
-AssetProvider="*res://addons/rts_content/asset_provider/asset_provider.gd"
-Wc3DefStore="*res://addons/rts_content/stores/wc3_def_store.gd"
+AssetProvider="*res://packages/content/asset_provider/asset_provider.gd"
+Wc3DefStore="*res://packages/content/stores/wc3_def_store.gd"
 
 [display]
 

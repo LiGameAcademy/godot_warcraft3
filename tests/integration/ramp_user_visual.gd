@@ -38,7 +38,7 @@ func _ready() -> void:
 	camera.position = center + (Vector3(3.5, 5, 4) if map_path.contains("222") else Vector3(3.5, 5, -4))
 	camera.look_at(center)
 	camera.current = true
-	var map: MapLoader = preload("res://addons/rts_map/scenes/map/map_root.tscn").instantiate()
+	var map: MapLoader = preload("res://packages/map/scenes/map/map_root.tscn").instantiate()
 	map.auto_load_on_ready = false
 	map.place_units = false
 	map.place_doodads = false

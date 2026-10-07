@@ -102,8 +102,8 @@ func run() -> void:
 		await capture(viewport, output.path_join("slope_selected.png"))
 	# Input handler must no longer compete with the central router in the real scene.
 	check(not selector.is_processing_input(), "real match owns input routing once")
-	check(not selector._hud_blocks_screen(Vector2(400, 1030)), "real HUD leaves bottom gap clickable")
-	check(selector._hud_blocks_screen(Vector2(1800, 1000)), "real command panel remains protected")
+	check(not selector.is_blocked_at(Vector2(400, 1030)), "real HUD leaves bottom gap clickable")
+	check(selector.is_blocked_at(Vector2(1800, 1000)), "real command panel remains protected")
 	game.queue_free()
 	await get_tree().process_frame
 	print("selection_review: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])

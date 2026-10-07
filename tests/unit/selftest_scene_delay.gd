@@ -1,6 +1,6 @@
 extends Node
 
-const Delay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const Delay = preload("res://packages/foundation/infra/scene_delay.gd")
 var failures := 0
 var checks := 0
 var calls := 0

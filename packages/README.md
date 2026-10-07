@@ -1,6 +1,7 @@
 # packages/ — 共享源码（单一来源）
 
-D4 起由 `tools/workspace/Sync-Packages.ps1` 复制到各应用的 `addons/rts_<name>/`。
+D4 起由 `tools/workspace/Sync-Packages.ps1` 复制到各应用的 `packages/<name>/`（`res://packages/...`）。
+这不是 Godot AssetLib addon；`addons/` 仅留给第三方插件（GAS/Panku 等）。
 **只在本目录编辑**；生成副本禁止手改。
 
 | 包 | 职责 |

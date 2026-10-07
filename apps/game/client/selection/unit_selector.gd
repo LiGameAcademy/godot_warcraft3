@@ -60,8 +60,6 @@ func _ready() -> void:
 	_ensure_gate()
 	_bind_input_layer()
 	_bind_overlay_layer()
-	# Director 若因脚本解析失败未 setup，下一帧自救绑定相机/单位层。
-	call_deferred("_try_autobind")
 
 
 func setup(p_camera: Camera3D, p_unit_host: Node) -> void:
@@ -88,42 +86,8 @@ func setup(p_camera: Camera3D, p_unit_host: Node) -> void:
 		)
 
 
-## Director 未调用 setup 时，从当前场景查找 RtsCamera / MapRoot.Units。
-func _try_autobind() -> void:
-	if camera != null and unit_host != null:
-		return
-	var scene: Node = get_tree().current_scene if get_tree() else null
-	if scene == null:
-		scene = get_parent()
-	if scene == null:
-		return
-	if camera == null:
-		var rts := scene.get_node_or_null("RtsCamera")
-		if rts != null and rts.has_method("get_camera"):
-			camera = rts.call("get_camera") as Camera3D
-		if camera == null:
-			camera = scene.find_child("Camera3D", true, false) as Camera3D
-	if unit_host == null:
-		var map_root := scene.get_node_or_null("MapRoot")
-		if map_root != null and map_root.has_method("get_unit_layer"):
-			unit_host = map_root.call("get_unit_layer")
-		if unit_host == null:
-			unit_host = scene.find_child("Units", true, false)
-	if camera != null and unit_host != null:
-		set_process_input(not _external_input)
-		_sync_picker()
-		_bind_input_layer()
-		_bind_overlay_layer()
-		AppLog.info(
-			AppLog.Layer.GAME,
-			"UnitSelector",
-			"autobind ok cam=%s host=%s" % [camera.name, unit_host.name]
-		)
-
-
-## 供 GameDirector._input 转发。处理了左键点选/框选则返回 true。
+## 供 GameDirector / MatchInputController 转发。处理了左键点选/框选则返回 true。
 func handle_pointer_event(event: InputEvent) -> bool:
-	_try_autobind()
 	if not enabled or camera == null or unit_host == null:
 		return false
 	if event is InputEventMouseButton:
@@ -136,7 +100,7 @@ func handle_pointer_event(event: InputEvent) -> bool:
 				return true
 			_on_release(mb.position)
 			return true
-		if _hud_blocks_screen(mb.position):
+		if is_blocked_at(mb.position):
 			return false
 		if mb.pressed:
 			_on_press(mb.position)
@@ -144,8 +108,7 @@ func handle_pointer_event(event: InputEvent) -> bool:
 			_on_release(mb.position)
 		return true
 	if event is InputEventMouseMotion and _marqueeing:
-		var mm := event as InputEventMouseMotion
-		_marquee.update(mm.position)
+		_marquee.update((event as InputEventMouseMotion).position)
 		return true
 	if event is InputEventMouseMotion and not _marqueeing:
 		_update_hover((event as InputEventMouseMotion).position)
@@ -217,13 +180,18 @@ func select_node(node: Node3D) -> void:
 	_set_selection([node])
 
 
+## 屏幕点是否落在会吃世界点击的 HUD 上（委托 [SelectorInputGate]）。
+func is_blocked_at(screen_pos: Vector2) -> bool:
+	_ensure_gate()
+	return _gate.is_blocked_at(screen_pos)
+
+
 ## 悬停预览：单位/建筑脚底半透明环；树木与已选中目标不显示。
 func _update_hover(screen_pos: Vector2) -> void:
-	_try_autobind()
 	if not enabled or camera == null or unit_host == null:
 		_clear_hover()
 		return
-	if _hud_blocks_screen(screen_pos):
+	if is_blocked_at(screen_pos):
 		_clear_hover()
 		return
 	var picked := _picker_pick_at(screen_pos)
@@ -266,35 +234,8 @@ func _is_tree_like(n: Node3D) -> bool:
 func _on_world_gui_input(event: InputEvent) -> void:
 	if _external_input:
 		return
-	_try_autobind()
-	if not enabled or camera == null or unit_host == null:
-		return
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index != MOUSE_BUTTON_LEFT:
-			return
-		# 与 handle_pointer_event 一致：框选中不受 HUD 区限制
-		if _marqueeing:
-			if not mb.pressed:
-				_on_release(mb.position)
-			if _input_root != null:
-				_input_root.accept_event()
-			return
-		if _hud_blocks_screen(mb.position):
-			return
-		if mb.pressed:
-			_on_press(mb.position)
-		else:
-			_on_release(mb.position)
-		if _input_root != null:
-			_input_root.accept_event()
-	elif event is InputEventMouseMotion:
-		if _marqueeing:
-			_marquee.update((event as InputEventMouseMotion).position)
-			if _input_root != null:
-				_input_root.accept_event()
-		else:
-			_update_hover((event as InputEventMouseMotion).position)
+	if handle_pointer_event(event) and _input_root != null:
+		_input_root.accept_event()
 
 
 func _input(event: InputEvent) -> void:
@@ -321,26 +262,6 @@ func _process(_delta: float) -> void:
 	# 兜底：松手事件被 HUD Control 吃掉时，仍结束框选
 	if _marqueeing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_on_release(get_viewport().get_mouse_position())
-
-
-## screen_pos 是否落在会吃世界点击的 HUD 上。
-## 保留第二参数兼容命令/建造调用；实现委托 [SelectorInputGate]。
-func _hud_blocks_screen(screen_pos: Vector2, _include_edge_bands: bool = true) -> bool:
-	_ensure_gate()
-	return _gate.is_blocked_at(screen_pos)
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	# 仅当输入层未建好时兜底（编辑器嵌入等）。
-	if _input_root != null and is_instance_valid(_input_root):
-		return
-	_on_world_gui_input(event)
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _marqueeing:
-		get_viewport().set_input_as_handled()
 
 
 func _on_press(screen_pos: Vector2) -> void:
@@ -375,7 +296,6 @@ func _on_release(screen_pos: Vector2) -> void:
 
 ## 供智能右键 / 采集瞄准：屏幕点选单位（含金矿建筑）。不含树木（树走 TreeRegistry）。
 func pick_at(screen_pos: Vector2) -> Node3D:
-	_try_autobind()
 	return _picker_pick_at(screen_pos)
 
 
@@ -437,15 +357,13 @@ func _set_selection(nodes: Array) -> void:
 	selection_changed.emit(_primary, _selected.duplicate())
 
 
-## 绑定外部输入层：取 [code]WorldInput[/code] Control；订阅 [signal SelectorInputLayer.gui_input_received]。
-## 若 [member input_layer_path] 为空，发出警告（独立场景应在 [code]_ready[/code] 之前手动挂上）。
+## 绑定外部输入层：取 [code]WorldInput[/code] Control。
 func _bind_input_layer() -> void:
 	if _input_root != null and is_instance_valid(_input_root):
 		return
 	var layer := _resolve_node(input_layer_path) as SelectorInputLayer
 	if layer == null:
 		return
-	# 调整 layer 到当前期望值。
 	layer.layer = input_canvas_layer
 	var world_input := layer.world_input()
 	if world_input == null:
@@ -470,10 +388,9 @@ func _bind_overlay_layer() -> void:
 
 
 ## 解析 [code]@export NodePath[/code] 引用的兄弟节点。
-## 返回原始 [Node]（不强转）便于调用方按已知类型 [code]as[/code]；空路径 / 未找到均 warn。
+## 空路径视为「未注入」（独立 selftest 正常），不报警。
 func _resolve_node(path: NodePath) -> Node:
 	if path.is_empty():
-		AppLog.warn(AppLog.Layer.GAME, "UnitSelector", "_resolve_node: 未注入（path 为空）")
 		return null
 	var raw := get_node_or_null(path)
 	if raw == null:

@@ -1,10 +1,21 @@
-"""Static ownership gate for canonical source (not generated app addons)."""
+"""Static ownership gate for canonical source (not generated app package copies)."""
 import pathlib,re,json,sys,subprocess
 from sync_packages import PACKAGES
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 
+def _is_canonical_script(p: pathlib.Path) -> bool:
+    parts = p.relative_to(ROOT).parts
+    if any(x in parts for x in ['.godot', 'assets', 'tests', 'addons']):
+        return False
+    # Generated sync mirrors live at apps/<app>/packages/; only scan repo packages/.
+    if parts[0] == 'apps' and 'packages' in parts:
+        return False
+    if p.is_relative_to(ROOT / 'apps/game/tools'):
+        return False
+    return True
+
 def main():
-    files=[p for folder in ['packages',*[f'apps/{app}' for app in PACKAGES]] for p in (ROOT/folder).rglob('*.gd') if not any(x in p.relative_to(ROOT).parts for x in ['addons','.godot','assets','tests']) and not p.is_relative_to(ROOT/'apps/game/tools')]
+    files=[p for folder in ['packages',*[f'apps/{app}' for app in PACKAGES]] for p in (ROOT/folder).rglob('*.gd') if _is_canonical_script(p)]
     classes={};errors=[]
     for p in files:
         m=re.search(r'^class_name\s+(\w+)',p.read_text('utf-8-sig'),re.M)
@@ -20,7 +31,7 @@ def main():
         for c in set(re.findall(r'\b[A-Z]\w*\b',src)):
             if c in classes and any(classes[c].startswith(f) for f in forbidden[package]):errors.append(f'{rel}: {c} -> {classes[c]}')
         for target in re.findall(r'res://([^"\s]+\.g[ds])',text):
-            if not target.startswith(('addons/','assets/')):errors.append(f'{rel}: application resource {target}')
+            if not target.startswith(('packages/','addons/','assets/')):errors.append(f'{rel}: application resource {target}')
     layout=json.loads((ROOT/'tools/workspace/source-layout.json').read_text())
     ignored=subprocess.run(['git','-C',str(ROOT),'check-ignore','--no-index','--stdin'],input='\n'.join(layout['moves'].values())+'\n',text=True,capture_output=True)
     if ignored.returncode not in (0,1):errors.append('Cannot check source ignore rules: '+ignored.stderr)
@@ -39,7 +50,7 @@ def main():
                     if not dest.exists() or dest.read_bytes()!=src.read_bytes():errors.append('Stale synchronized file: '+str(dest.relative_to(ROOT)))
                 elif not dest.exists() or hashlib.sha256(dest.read_bytes()).hexdigest()!=row['sha256']:
                     errors.append('Invalid generated redirect: '+row['path'])
-                if app!='game' and any(x in row['path'] for x in ['rts_gameplay','godot_ability_system','/client/']):errors.append('Game dependency shipped to '+app+': '+row['path'])
+                if app!='game' and any(x in row['path'] for x in ['packages/gameplay','godot_ability_system','/client/']):errors.append('Game dependency shipped to '+app+': '+row['path'])
     print(f'Layout: {len(files)} scripts, {len(layout["moves"])} moves, {len(errors)} violations')
     for e in errors:print(e)
     return bool(errors)

@@ -112,8 +112,10 @@ func rally_source() -> Node3D:
 
 
 func pointer_over_blocking_gui(screen_pos: Vector2) -> bool:
-	if unit_selector != null and unit_selector.has_method("_hud_blocks_screen"):
-		return bool(unit_selector.call("_hud_blocks_screen", screen_pos, false))
+	if unit_selector is UnitSelector:
+		return (unit_selector as UnitSelector).is_blocked_at(screen_pos)
+	if unit_selector != null and unit_selector.has_method("is_blocked_at"):
+		return bool(unit_selector.call("is_blocked_at", screen_pos))
 	var vp := get_viewport()
 	if vp == null:
 		return false

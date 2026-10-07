@@ -21,7 +21,7 @@ extends RefCounted
 ## - 调用方定期（如每帧）调 apply_steering_override(self._combat_steering_fn) 或 clear
 
 
-const SteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/steering_behaviors.gd")
+const SteeringScr = preload("res://packages/gameplay/features/navigation/logic/steering_behaviors.gd")
 
 
 ## 追兵：朝 target 直冲；target 移动时预判 τ = dist / max_speed。

@@ -1,5 +1,5 @@
 extends SceneTree
-const Stitcher := preload("res://addons/rts_map/presentation/cliff/wc3_cliff_stitcher.gd")
+const Stitcher := preload("res://packages/map/presentation/cliff/wc3_cliff_stitcher.gd")
 var failures := 0
 func check(ok: bool, message: String) -> void:
 	if not ok:

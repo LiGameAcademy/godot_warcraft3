@@ -1,7 +1,7 @@
 class_name Wc3RampPaint
 extends RefCounted
 
-const AppLogScript = preload("res://addons/rts_foundation/infra/app_log.gd")
+const AppLogScript = preload("res://packages/foundation/infra/app_log.gd")
 
 ## 低侧 fallback 搜索半径（格）
 const LOW_SIDE_SEARCH_RADIUS := 2

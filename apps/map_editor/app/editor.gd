@@ -12,8 +12,8 @@ const ToolPaletteWindowScript := preload("res://ui/tool_palette_window.gd")
 const InspectWindowScene := preload("res://ui/editor_inspect_window.tscn")
 const UnitPropertiesScene := preload("res://ui/unit_properties_dialog.tscn")
 ## 显式 preload，避免热重载时 class_name 尚未注册导致 Marquee* 解析失败
-const _MarqueeSelectionScript := preload("res://addons/rts_map/presentation/selection/marquee_selection.gd")
-const _MarqueeOverlayScript := preload("res://addons/rts_map/presentation/selection/marquee_overlay.gd")
+const _MarqueeSelectionScript := preload("res://packages/map/presentation/selection/marquee_selection.gd")
+const _MarqueeOverlayScript := preload("res://packages/map/presentation/selection/marquee_overlay.gd")
 
 @export var map_root: MapLoader
 @export var camera_rig: Node3D

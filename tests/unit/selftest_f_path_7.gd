@@ -6,9 +6,9 @@ extends SceneTree
 ## 不测 _process 行为（需要 body scene tree）— 留 F4 战斗时 e2e 验。
 ## 这里只验 5 个 API / 状态 / preload 行为。
 
-const UnitNavigatorScr = preload("res://addons/rts_gameplay/features/navigation/presentation/unit_navigator.gd")
-const SteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/steering_behaviors.gd")
-const PathArcScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_arc.gd")
+const UnitNavigatorScr = preload("res://packages/gameplay/features/navigation/presentation/unit_navigator.gd")
+const SteeringScr = preload("res://packages/gameplay/features/navigation/logic/steering_behaviors.gd")
+const PathArcScr = preload("res://packages/gameplay/features/navigation/logic/path_arc.gd")
 
 
 func _init() -> void:

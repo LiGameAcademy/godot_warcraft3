@@ -1,6 +1,6 @@
 extends RefCounted
 
-const Rules = preload("res://addons/rts_gameplay/catalog/melee_game_constants.gd")
+const Rules = preload("res://packages/gameplay/catalog/melee_game_constants.gd")
 const AWARDED := "hero_death_xp_processed"
 
 static func reward_for_level(level: int, hero: bool) -> float:

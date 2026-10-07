@@ -7,7 +7,7 @@ extends RefCounted
 const RIBBON_ROOT_NAME := "RibbonRoot"
 const META_PRESENTED := "wc3_ribbon_presented"
 
-const _EmitterScript := preload("res://addons/rts_map/presentation/wc3_model/wc3_ribbon_emitter.gd")
+const _EmitterScript := preload("res://packages/map/presentation/wc3_model/wc3_ribbon_emitter.gd")
 
 
 static func ribbon_path_from_glb(glb_path: String) -> String:

@@ -2,10 +2,10 @@ extends SceneTree
 ## 自测：斜坡下铺水 + WavesDepth + S/OC/IC 岸浪 MultiMesh。
 
 
-const Foam := preload("res://addons/rts_map/presentation/water/wc3_shore_foam.gd")
-const Builder := preload("res://addons/rts_map/presentation/water/wc3_shoreline_builder.gd")
-const Params := preload("res://addons/rts_map/presentation/water/wc3_water_params.gd")
-const WaterMesh := preload("res://addons/rts_map/presentation/water/wc3_water_mesh.gd")
+const Foam := preload("res://packages/map/presentation/water/wc3_shore_foam.gd")
+const Builder := preload("res://packages/map/presentation/water/wc3_shoreline_builder.gd")
+const Params := preload("res://packages/map/presentation/water/wc3_water_params.gd")
+const WaterMesh := preload("res://packages/map/presentation/water/wc3_water_mesh.gd")
 
 
 func _initialize() -> void:

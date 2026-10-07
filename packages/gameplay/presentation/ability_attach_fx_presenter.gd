@@ -1,7 +1,7 @@
 class_name AbilityAttachFxPresenter
 extends RefCounted
 
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
 ## 单位附着特效（Present · 通用）：施法者 / Buff 受益 / 限时 buff 附着。
 ## 组合用法：Logic 读 AbilityFxCatalog 路径，本类负责 spawn / sync / 清理。

@@ -95,16 +95,16 @@ func run() -> void:
 	worker.rotation = Vector3.ZERO
 	worker.position = Vector3.ZERO
 	# Clicking visible world between HUD panels near the bottom must work.
-	check(not selector._hud_blocks_screen(Vector2(300, 760)), "bottom world is not an invisible dead strip")
+	check(not selector.is_blocked_at(Vector2(300, 760)), "bottom world is not an invisible dead strip")
 	var panel := Panel.new()
 	panel.position = Vector2(50, 650)
 	panel.size = Vector2(150, 150)
 	panel.add_to_group("world_input_blockers")
 	viewport.add_child(panel)
-	check(selector._hud_blocks_screen(Vector2(100, 700)), "actual HUD rectangle blocks first click")
-	check(not selector._hud_blocks_screen(Vector2(300, 700)), "HUD gaps allow world clicks")
+	check(selector.is_blocked_at(Vector2(100, 700)), "actual HUD rectangle blocks first click")
+	check(not selector.is_blocked_at(Vector2(300, 700)), "HUD gaps allow world clicks")
 	panel.hide()
-	check(not selector._hud_blocks_screen(Vector2(100, 700)), "hidden HUD does not block world")
+	check(not selector.is_blocked_at(Vector2(100, 700)), "hidden HUD does not block world")
 	# Model replacement must not reuse the previous geometry's bounds.
 	var old := worker.get_node("Model")
 	old.name = "Model_Old"

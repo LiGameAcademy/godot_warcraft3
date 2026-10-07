@@ -1,6 +1,6 @@
 extends Node
 
-const ArmyScript = preload("res://addons/rts_gameplay/features/ai/logic/player_army_ai.gd")
+const ArmyScript = preload("res://packages/gameplay/features/ai/logic/player_army_ai.gd")
 var failures := 0
 var checks := 0
 var enemies: Array[Node3D] = []

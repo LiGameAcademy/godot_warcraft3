@@ -237,7 +237,7 @@ func _setup_game_director(
 	p_map_root: MapLoader,
 	p_rts_camera: RtsCamera,
 	p_game_hud: GameHud,
-	p_unit_selector: Node,
+	p_unit_selector: UnitSelector,
 	p_game_cursor: Node,
 	p_health_bar_manager: HealthBarManager,
 ) -> void:

@@ -1,7 +1,7 @@
 class_name AvatarController
 extends Node
 
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
 ## 天神下凡 AHav（Logic）：限时加血/加甲；Present 由 Catalog 路径驱动。
 

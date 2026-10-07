@@ -2,7 +2,7 @@ extends SceneTree
 ## F-PATH-4 · SlopeSpeed 单测。
 ## godot --headless --path . -s res://tests/unit/selftest_slope_speed.gd
 
-const SlopeSpeedScr = preload("res://addons/rts_gameplay/features/navigation/logic/slope_speed.gd")
+const SlopeSpeedScr = preload("res://packages/gameplay/features/navigation/logic/slope_speed.gd")
 
 var failed := 0
 

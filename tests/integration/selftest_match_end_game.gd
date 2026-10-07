@@ -48,7 +48,7 @@ func run() -> void:
 	check(session.get_match_result().is_empty() and director.can_process(), "双主城存活时不会提前结束")
 	# 结算夹具：真实出生与伤害/死亡入口；不冒充自然经营远征。
 	var attacker := director._spawn_trained_unit("hfoo", Wc3Coords.godot_to_wc3_xy(halls[1].global_position), 1)
-	var delayed := preload("res://addons/rts_foundation/infra/scene_delay.gd").create_timer(attacker, 0.5)
+	var delayed := preload("res://packages/foundation/infra/scene_delay.gd").create_timer(attacker, 0.5)
 	delayed.timeout.connect(func() -> void: expired = true)
 	var hit := director._damage_pipeline.apply({"attacker": attacker, "target": halls[0], "dmgplus": 100000, "dice": 0, "sides": 1})
 	check(hit.ok and hit.killed, "真实伤害入口摧毁最后一栋建筑")

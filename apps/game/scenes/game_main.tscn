@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b20kj6oms7qoi"]
 
-[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://addons/rts_map/scenes/map/map_root.tscn" id="1_map"]
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://packages/map/scenes/map/map_root.tscn" id="1_map"]
 [ext_resource type="Script" uid="uid://7qhuvmcswnli" path="res://scenes/game_main.gd" id="1_mn252"]
 [ext_resource type="PackedScene" uid="uid://ss6bd7p6xnoa" path="res://scenes/rts_camera.tscn" id="2_cam"]
 [ext_resource type="Script" uid="uid://cdwscnq1co36x" path="res://app/game_director.gd" id="3_director"]
@@ -9,7 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://cguk1p6l0kp7u" path="res://client/selection/unit_selector.tscn" id="6_sel"]
 [ext_resource type="PackedScene" uid="uid://ds5lxknp1vq6a" path="res://client/selection/selector_input_layer.tscn" id="7_input"]
 [ext_resource type="PackedScene" uid="uid://e8w2bqx3n1z7c" path="res://client/selection/selector_overlay_layer.tscn" id="8_overlay"]
-[ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://addons/rts_gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
+[ext_resource type="Script" uid="uid://cb20llm5bvqnf" path="res://packages/gameplay/presentation/health_bar_manager.gd" id="7_hpbar"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1

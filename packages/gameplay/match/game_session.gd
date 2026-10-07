@@ -3,7 +3,7 @@ extends RefCounted
 
 signal match_finished(result: Dictionary)
 
-const VictoryRules = preload("res://addons/rts_gameplay/match/rules/melee_victory_rules.gd")
+const VictoryRules = preload("res://packages/gameplay/match/rules/melee_victory_rules.gd")
 
 ## 对局会话态：地图、本地玩家、各族玩家库存。权威在此，Present/HUD 只读。
 

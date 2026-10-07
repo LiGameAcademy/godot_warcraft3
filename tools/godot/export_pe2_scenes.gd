@@ -4,7 +4,7 @@ extends SceneTree
 ##
 ##   godot --headless --path apps/game -s res://tools/godot/export_pe2_scenes.gd -- --include Buildings/Human/ --force
 
-const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
+const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
 
 
 func _initialize() -> void:

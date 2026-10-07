@@ -15,8 +15,8 @@ const Wc3ScnAnimkeysScript := preload("res://tools/godot/wc3_scn_animkeys.gd")
 const Wc3ScnPe2Script := preload("res://tools/godot/wc3_scn_pe2.gd")
 const Wc3ScnRibbonScript := preload("res://tools/godot/wc3_scn_ribbon.gd")
 const Wc3ScnDependencies := preload("res://tools/godot/wc3_scn_dependencies.gd")
-const Wc3ModelSceneScript := preload("res://addons/rts_map/presentation/wc3_model/wc3_model_scene.gd")
-const Wc3AnimPlayerScript := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+const Wc3ModelSceneScript := preload("res://packages/map/presentation/wc3_model/wc3_model_scene.gd")
+const Wc3AnimPlayerScript := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 
 
 func _initialize() -> void:

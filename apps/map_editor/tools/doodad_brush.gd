@@ -13,7 +13,7 @@ signal facing_changed(angle_deg: float) ## 笔刷朝向变化（无选中时 [ ]
 signal palette_cleared ## Esc 取消放置预览 / 清空笔刷类型
 
 const DoodadEditCommandScript := preload("res://documents/commands/doodad_edit_command.gd")
-const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
+const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
 
 const REBUILD_INTERVAL_MS := 80
 const PLACE_SPACING_TILES := 0.5 ## 拖拽节流：半格（与吸附步进一致）

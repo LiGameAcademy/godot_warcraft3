@@ -1,4 +1,6 @@
 extends RefCounted
+class_name UnitPickVolume
+
 ## Bounds are broad phase only. Selection requires a visible mesh triangle.
 const CACHE_KEY := "selection_body_bounds"
 const EXCLUDED := ["SelectionRing", "DeathDropRing", "UberSplat", "Pe2Root", "RibbonRoot", "Attachments", "Model_Old"]

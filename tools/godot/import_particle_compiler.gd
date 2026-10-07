@@ -1,5 +1,5 @@
 extends RefCounted
-const ParticleMaterial: GDScript = preload("res://addons/rts_map/presentation/wc3_model/wc3_pe2_material.gd")
+const ParticleMaterial: GDScript = preload("res://packages/map/presentation/wc3_model/wc3_pe2_material.gd")
 
 static func compile(scene: Node3D, ir: Dictionary, texture_base: String) -> Dictionary:
 	var result: Dictionary = {"emitters": 0, "tracks": 0, "diagnostics": []}

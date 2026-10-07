@@ -5,7 +5,7 @@ PACKAGES = {"game": ("foundation", "content", "map", "gameplay"), "map_editor": 
 
 def safe_path(app, relative):
     relative = pathlib.Path(relative)
-    if relative.parts[0] not in {'addons', 'assets', 'tools', 'scripts', 'icon.svg'}:
+    if relative.parts[0] not in {'packages', 'addons', 'assets', 'tools', 'scripts', 'icon.svg'}:
         raise ValueError(f"Not a generated resource: {relative}")
     target = app / relative
     if not target.resolve().is_relative_to(app.resolve()):
@@ -14,6 +14,13 @@ def safe_path(app, relative):
         if p == app.parent: break
         if p.is_symlink() or p.is_junction(): raise ValueError(f"Link in generated path: {p}")
     return target
+
+def _rmtree_generated(app, relative):
+    target = safe_path(app, relative)
+    if target.exists():
+        for p in target.rglob('*'):
+            safe_path(app, p.relative_to(app))
+        shutil.rmtree(target)
 
 def sync(name):
     app = ROOT / 'apps' / name
@@ -24,13 +31,24 @@ def sync(name):
         base = ROOT / 'packages' / package
         for path in base.rglob('*'):
             if path.is_file() and path.suffix not in {'.md', '.import'}:
-                sources[f'addons/rts_{package}/{path.relative_to(base).as_posix()}'] = path
+                sources[f'packages/{package}/{path.relative_to(base).as_posix()}'] = path
     plugins = ('godot_ability_system', 'panku_console') if name == 'game' else ()
     for plugin in plugins:
         base = ROOT / 'addons' / plugin
+        # Godot plugin repos often nest the real addon at addons/<name>/ inside the repo.
+        nested = base / 'addons' / plugin
         listed = subprocess.check_output(['git', '-C', str(base), 'ls-files', '-z']).decode().split('\0')
         for rel in filter(None, listed):
-            if (base / rel).is_file(): sources[f'addons/{plugin}/{rel}'] = base / rel
+            src = base / rel
+            if not src.is_file():
+                continue
+            if nested.is_dir():
+                prefix = f'addons/{plugin}/'
+                if not rel.startswith(prefix):
+                    continue
+                sources[f'addons/{plugin}/{rel[len(prefix):]}'] = src
+            else:
+                sources[f'addons/{plugin}/{rel}'] = src
     assets = subprocess.check_output(['git','-C',str(ROOT),'ls-files','-z','--','assets','icon.svg']).decode().split('\0')
     for rel in filter(None, assets):
         p = ROOT / rel
@@ -52,18 +70,20 @@ def sync(name):
     redirects = {}
     model_base = ROOT / 'packages/map/presentation/wc3_model'
     for source in model_base.glob('*.gd'):
-        target = 'res://addons/rts_map/presentation/wc3_model/' + source.name
+        target = 'res://packages/map/presentation/wc3_model/' + source.name
         for old in ['scripts/presentation/wc3_model/', 'scripts/map/presentation/']:
             rel = old + source.name + '.remap'
             redirects[rel] = ('[remap]\npath=' + json.dumps(target) + '\n').encode()
     for row in previous:
         if row['path'] not in sources and row['path'] not in redirects:
-            p = safe_path(app, row['path'])
+            # Old manifests may still list addons/rts_* paths; allow cleanup.
+            try:
+                p = safe_path(app, row['path'])
+            except ValueError:
+                continue
             if p.is_file(): p.unlink()
-    legacy = safe_path(app, 'addons/rts_runtime')
-    if legacy.exists():
-        for p in legacy.rglob('*'): safe_path(app, p.relative_to(app))
-        shutil.rmtree(legacy)
+    for legacy_name in ('rts_runtime', 'rts_foundation', 'rts_content', 'rts_map', 'rts_gameplay'):
+        _rmtree_generated(app, f'addons/{legacy_name}')
     records = []
     for relative, source in sorted(sources.items()):
         target = safe_path(app, relative)

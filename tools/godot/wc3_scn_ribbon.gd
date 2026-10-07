@@ -2,8 +2,8 @@ extends RefCounted
 ## bake:scn：*.ribbon.json → RibbonRoot（Wc3RibbonEmitter）+ AnimationPlayer 闸门/平移轨。
 ## 层：tool（headless bake）。
 
-const _Presenter := preload("res://addons/rts_map/presentation/wc3_model/wc3_ribbon_presenter.gd")
-const _EmitterScript := preload("res://addons/rts_map/presentation/wc3_model/wc3_ribbon_emitter.gd")
+const _Presenter := preload("res://packages/map/presentation/wc3_model/wc3_ribbon_presenter.gd")
+const _EmitterScript := preload("res://packages/map/presentation/wc3_model/wc3_ribbon_emitter.gd")
 
 
 static func apply(root: Node, glb_path: String) -> Dictionary:

@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" uid="uid://c2v6p9wzf1h3d" path="res://client/selection/selector_overlay_layer.gd" id="1_overlay_layer"]
-[ext_resource type="Script" path="res://addons/rts_map/presentation/selection/marquee_overlay.gd" id="2_marquee"]
+[ext_resource type="Script" path="res://packages/map/presentation/selection/marquee_overlay.gd" id="2_marquee"]
 
 [node name="SelectorOverlayLayer" type="CanvasLayer"]
 layer = 100

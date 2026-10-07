@@ -1,6 +1,6 @@
 extends SceneTree
-const Regions = preload("res://addons/rts_map/logic/ramp/wc3_ramp_regions.gd")
-const Plan = preload("res://addons/rts_map/logic/ramp/wc3_ramp_surface_plan.gd")
+const Regions = preload("res://packages/map/logic/ramp/wc3_ramp_regions.gd")
+const Plan = preload("res://packages/map/logic/ramp/wc3_ramp_surface_plan.gd")
 var failures := 0
 
 func check(condition: bool, message: String) -> void:

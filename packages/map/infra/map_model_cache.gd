@@ -434,21 +434,19 @@ func _ensure_packed(path: String) -> PackedScene:
 
 
 func _try_load_scn_packed(glb_path: String, prefer_visuals: bool = true) -> PackedScene:
-	# visuals/*.tscn 常 ExtResource pe2.tscn（贴图在 .gdignore），ResourceLoader 会刷屏失败。
-	# 优先：同目录 .scn + pe2.json 运行时组装（等价 visuals 配方，无 ExtResource）。
+	# prefer_visuals=true：从 .scn 运行时组装配方（anim / geoset / PE2）。
+	# 不再依赖 assets/visuals/*.tscn（薄继承已过时；D3 亦不入 git）。
 	if prefer_visuals:
-		var vis_path := RuntimeAssets.resolve_visual_scene(glb_path)
-		if not vis_path.is_empty():
-			var composed := _compose_visual_packed(glb_path)
-			if composed != null:
-				return composed
+		var composed := _compose_visual_packed(glb_path)
+		if composed != null:
+			return composed
 	var scn_path := RuntimeAssets.resolve_model_scene(glb_path)
 	if scn_path.is_empty():
 		return null
 	return RuntimeAssets.load_packed_scene(scn_path)
 
 
-## 磁盘上有 visuals/*.tscn 但 ResourceLoader 拉不下 gdignore 基座时：scn + PE2 + sync。
+## 从 bake .scn 组装运行时模型（PE2 / Wc3AnimPlayer / geoset / Wc3ModelScene）。
 func _compose_visual_packed(glb_path: String) -> PackedScene:
 	var scn_path := RuntimeAssets.resolve_model_scene(glb_path)
 	if scn_path.is_empty():
@@ -468,12 +466,12 @@ func _compose_visual_packed(glb_path: String) -> PackedScene:
 	if ap != null:
 		ap.autoplay = ""
 		ap.stop()
-		const _Anim := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+		const _Anim := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 		if ap.get_script() != _Anim:
 			ap.set_script(_Anim)
 	_inject_geoset_vis_tracks(glb_path, root)
-	const _Pe2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
-	const _Model := preload("res://addons/rts_map/presentation/wc3_model/wc3_model_scene.gd")
+	const _Pe2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
+	const _Model := preload("res://packages/map/presentation/wc3_model/wc3_model_scene.gd")
 	if _Pe2.has_emitters(glb_path):
 		_Pe2.attach_to(root, glb_path)
 	# PE2 就位后再剪悬空轨（含旧 bake 写进 Stand 的 Death-only :emitting）
@@ -890,8 +888,8 @@ func bake_model_scene(glb_path: String, force: bool = false) -> bool:
 func _ensure_model_scene_scripts(root: Node) -> void:
 	if root == null:
 		return
-	const _Model := preload("res://addons/rts_map/presentation/wc3_model/wc3_model_scene.gd")
-	const _Anim := preload("res://addons/rts_map/presentation/wc3_model/wc3_anim_player.gd")
+	const _Model := preload("res://packages/map/presentation/wc3_model/wc3_model_scene.gd")
+	const _Anim := preload("res://packages/map/presentation/wc3_model/wc3_anim_player.gd")
 	if root.get_script() != _Model:
 		root.set_script(_Model)
 	var ap := _find_animation_player(root)

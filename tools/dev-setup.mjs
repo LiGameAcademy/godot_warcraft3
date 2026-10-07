@@ -376,7 +376,7 @@ function stepGodot(opts) {
 }
 
 function stepPackages() {
-  logStep("8. sync packages → apps/*/addons/rts_*");
+  logStep("8. sync packages → apps/*/packages/*");
   try {
     syncWorkspace("all");
     return 0;
@@ -394,7 +394,7 @@ function printSummary(opts, gameDir) {
   console.log(`  [ ] assets/map-parsed/echoisles/（或你指定的地图）`);
   console.log(`  [ ] assets/asset-converted/ 含 PNG/GLB`);
   console.log(`  [ ] （可选）assets/pe2-prefabs/ / assets/visuals/`);
-  console.log(`  [ ] apps/game/addons/rts_map/ 存在（packages 已同步）`);
+  console.log(`  [ ] apps/game/packages/map/ 存在（packages 已同步）`);
   console.log("");
   console.log("已同步 packages → apps/*/addons。直接打开:");
   console.log("  apps/game/project.godot       # Echo Isles 对战");

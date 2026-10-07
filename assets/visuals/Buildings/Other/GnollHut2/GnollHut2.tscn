@@ -1,7 +1,0 @@
-[gd_scene load_steps=3 format=3]
-
-[ext_resource type="PackedScene" path="res://assets/asset-converted/Buildings/Other/GnollHut2/GnollHut2.scn" id="1_base"]
-[ext_resource type="Script" path="res://addons/rts_map/presentation/model_visual_sync.gd" id="2_sync"]
-
-[node name="Buildings_Other_GnollHut2_GnollHut2_mdx" instance=ExtResource("1_base")]
-script = ExtResource("2_sync")

@@ -1,7 +1,7 @@
 class_name TreeRegistry
 extends Node
 
-const SceneDelay = preload("res://addons/rts_foundation/infra/scene_delay.gd")
+const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
 
 ## 可交互树木注册表（Logic）：creationNumber → life / 空间索引。
 ## Present 只经 MapLoader.ensure_doodad_promoted / remove_doodad_instance。

@@ -2,7 +2,7 @@ extends SceneTree
 ## F-PATH-3 · PathArc 单测。
 ## godot --headless --path . -s res://tests/unit/selftest_path_arc.gd
 
-const PathArcScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_arc.gd")
+const PathArcScr = preload("res://packages/gameplay/features/navigation/logic/path_arc.gd")
 
 var failed := 0
 

@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cmcse56y5iy4" path="res://app/editor.gd" id="1b_editor"]
 [ext_resource type="Script" uid="uid://bt835wxh3srsy" path="res://app/editor_shell.gd" id="1_shell"]
-[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://addons/rts_map/scenes/map/map_root.tscn" id="2_map"]
+[ext_resource type="PackedScene" uid="uid://cmaprootwc3" path="res://packages/map/scenes/map/map_root.tscn" id="2_map"]
 [ext_resource type="PackedScene" uid="uid://bu5ueg1e2g7ad" path="res://scenes/editor_camera.tscn" id="4_i7eot"]
 [ext_resource type="Environment" path="res://resources/editor_environment.tres" id="7_env"]
 [ext_resource type="PackedScene" uid="uid://3yrhgljwb6r5" path="res://ui/open_map_dialog.tscn" id="8b_openmap"]

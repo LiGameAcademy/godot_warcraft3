@@ -1,7 +1,7 @@
 extends SceneTree
-const PE2 := preload("res://addons/rts_map/presentation/effects/wc3_pe2_particles.gd")
+const PE2 := preload("res://packages/map/presentation/effects/wc3_pe2_particles.gd")
 const BAKE := preload("res://tools/godot/wc3_scn_pe2.gd")
-const RIBBON := preload("res://addons/rts_map/presentation/wc3_model/wc3_ribbon_emitter.gd")
+const RIBBON := preload("res://packages/map/presentation/wc3_model/wc3_ribbon_emitter.gd")
 const DEPS := preload("res://tools/godot/wc3_scn_dependencies.gd")
 const TEMP := "res://tests/.fx_bake_test/"
 var failures := 0

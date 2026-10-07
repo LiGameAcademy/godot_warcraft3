@@ -12,12 +12,12 @@ signal arrived
 signal path_failed(reason: String)
 signal locomotion_changed(moving: bool)
 
-const SeparationScr = preload("res://addons/rts_gameplay/features/navigation/logic/unit_separation.gd")
-const AgentProfileScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_agent_profile.gd")
-const SlopeSpeedScr = preload("res://addons/rts_gameplay/features/navigation/logic/slope_speed.gd")
-const FormationFollowScr = preload("res://addons/rts_gameplay/features/navigation/logic/formation_follow.gd")
-const SteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/steering_behaviors.gd")
-const PathArcScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_arc.gd")
+const SeparationScr = preload("res://packages/gameplay/features/navigation/logic/unit_separation.gd")
+const AgentProfileScr = preload("res://packages/gameplay/features/navigation/logic/path_agent_profile.gd")
+const SlopeSpeedScr = preload("res://packages/gameplay/features/navigation/logic/slope_speed.gd")
+const FormationFollowScr = preload("res://packages/gameplay/features/navigation/logic/formation_follow.gd")
+const SteeringScr = preload("res://packages/gameplay/features/navigation/logic/steering_behaviors.gd")
+const PathArcScr = preload("res://packages/gameplay/features/navigation/logic/path_arc.gd")
 ## WC3 单位/秒。默认 270 ≈ 步兵；开局后由 UnitBalance.spd 覆盖。
 @export var speed_wc3: float = 270.0
 ## 外部倍率（顶盾等）；1=全速。不改 speed_wc3 权威值。

@@ -9,10 +9,10 @@ extends SceneTree
 ##   - selftest_steering/ path_arc/ slope_speed/ formation：单模块 5/5
 ##   - 本文件：跨模块 + Navigator 集成（4 个新模块全跑 + 1 个 Nav step）
 
-const SteeringScr = preload("res://addons/rts_gameplay/features/navigation/logic/steering_behaviors.gd")
-const PathArcScr = preload("res://addons/rts_gameplay/features/navigation/logic/path_arc.gd")
-const SlopeSpeedScr = preload("res://addons/rts_gameplay/features/navigation/logic/slope_speed.gd")
-const FormationScr = preload("res://addons/rts_gameplay/features/navigation/logic/formation_follow.gd")
+const SteeringScr = preload("res://packages/gameplay/features/navigation/logic/steering_behaviors.gd")
+const PathArcScr = preload("res://packages/gameplay/features/navigation/logic/path_arc.gd")
+const SlopeSpeedScr = preload("res://packages/gameplay/features/navigation/logic/slope_speed.gd")
+const FormationScr = preload("res://packages/gameplay/features/navigation/logic/formation_follow.gd")
 
 var failed := 0
 

@@ -1,7 +1,7 @@
 extends Window
 ## Isolated running view of an in-memory snapshot; never saves or edits the document.
 signal preview_built
-const MapScene := preload("res://addons/rts_map/scenes/map/map_root.tscn")
+const MapScene := preload("res://packages/map/scenes/map/map_root.tscn")
 const CameraScene := preload("res://scenes/editor_camera.tscn")
 var snapshot: Dictionary = {}
 var map: MapLoader
