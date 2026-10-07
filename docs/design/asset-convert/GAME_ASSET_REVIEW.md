@@ -192,3 +192,23 @@ node tools/asset-convert/src/game-development-import.test.mjs
 第一次发布复验的检查项通过，但日志暴露临时 Node3D 敌方夹具被实际战斗系统击杀后产生尸体回调类型错误。该记录保留于 tools/asset-convert/tmp/development-9beFl2/aura-review-attempt/。夹具改为使用真实 Unit。第二次复验发现开发地图开局没有带魔法值的敌方样本，检查失败记录保留在 aura-review-missing-enemy-attempt/；因此使用原生牧师配置临时生成敌方单位，完成排除检查后立即移除。发布验收也增加信号回调错误检查，最终结论须以最新 report.json 为准。既有空材质与退出资源告警并未在本轮修复。
 
 最终复验通过：最新游戏已重新导出，离线启动、OpenGL 地图显示与 Vulkan 实际技能/光环/战斗检查全部通过，asset-review-spells.json 的 aura.failures=0，战斗报告 failures=0；信号回调类型错误已不再出现。普通学习自动生效、源 Stand 循环、范围进出和死亡/恢复检查通过。复用了现有 480 个 SCN 和 10,903 个内容文件（reusedColdImport=true），未重新冷导入。光环生命周期/材质动画绑定隔离与通用动画循环两个针对性回归均通过；颜色大小与原作对比仍待人工裁定。
+
+
+## 技能范围预览与群体传送亮度（2026-10-07）
+
+暴风雪瞄准/引导圈和群体传送目标预览共用 BlizzardAreaDecal。原实现把投影盒中心抬高半深度，使地面位于投影底边，并保留默认深度边缘衰减；呼吸动画又把配置透明度乘以 0.54～0.90。现在地面位于投影中心，关闭上下深度衰减，保留纹理自身柔边，呼吸系数收窄至 0.90～1.00，albedo_mix=1。半径、地形采样、目标选择和施法规则不变。
+
+实际传送的 MassTeleportCaster、MassTeleportTarget、MassTeleportTo 源网格均使用 FilterMode=3。游戏实例通过 TeleportEffectPresentation 使用线性 RGB 加法增强可读性，保留源层/Geoset Alpha、纹理、骨骼、尺寸和 Birth/Stand/Death 动画；color_add 保持 true，不额外乘纹理 Alpha。增强仅应用这三个模型的 import_fx_material 网格，不改 PE2、其他技能、存储的 SCN 或只读查看器。此项明确属于表现增强，不能据此认定源加法混合语义错误或原作保真验收已通过。
+
+增强材质与 Shader 按实例独占，清除动画绑定缓存后继续由原透明度轨道驱动；PRESENT/TeleportMaterial 日志和 teleport_material_policy=teleport_linear_add 标记可审计。selftest_spell_visibility.tscn 验证 A/B/模板隔离、其他模型不受影响、源透明度语义、运行中动画绑定、重复 prepare 和预览投影位置。现有 development_spell_review.gd 增加实际施法者、出发/到达模型策略与目标贴花深度衰减检查。
+
+手动验收：
+
+1. 重新启动最新游戏程序，以 --asset-review 参数进入带大法师/牧师的验收开局，关闭地面栅格和 Pathing 色块。
+2. 选择暴风雪，在草地、泥地和坡地移动瞄准圈，检查符文边缘、连续显示及范围；取消施法应清理预览。
+3. 选择群体传送，检查目标预览；开始施法后观察施法者光圈、光柱，完成时检查出发闪光与到达符文。取消应清理施法提示，完成后特效正常消失。
+4. 对比原作同一动画时刻、镜头和地面；特别观察多单位传送的叠加亮度，中心高光仍需人工判断是否合适。
+
+本轮实机截图位于 .cache/devlog-preview/：blizzard-preview-after.png、teleport-preview-after.png、teleport-cast-after.png、teleport-arrival-after.png、teleport-arrival-late-after.png。截图使用真实开发地图、发布的原生 SCN 和 Vulkan Forward+，实际群体传送由 AbilityCastController 触发；两个范围预览通过同一生产组件生成。未加后期修图，既有空材质和退出资源告警仍保留。
+
+最终复验：selftest_spell_visibility.tscn failures=0；重新导出后的独立游戏离线缓存启动、OpenGL 地图渲染与 Vulkan 技能/战斗验收通过，asset-review-spells.json 与 asset-review-combat.json 均为 failures=0。复用 480 个 SCN、10,903 个内容文件，未重新冷导入；新程序已写入 tools/asset-convert/tmp/development-9beFl2/release/game.exe。亮度和多单位叠加效果仍待用户及原作视觉对照。

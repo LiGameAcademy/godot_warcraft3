@@ -86,12 +86,19 @@ func run(game: GameMain, capture: String) -> int:
 	await _wait(game, 1.0)
 	var attached: Node3D = caster.get_node_or_null("MassTeleportCasterFx") as Node3D
 	_check(CompiledModelPresentation.is_compiled(attached), "Teleport caster visual exists during channel")
+	_check(attached != null and attached.get_meta("teleport_material_policy", "") == TeleportEffectPresentation.POLICY, "Teleport caster uses logged gameplay brightness enhancement")
+	var marker: Node = game.map_root.get_node_or_null("MassTeleportDestMarker")
+	var decal: Decal = marker.get_node_or_null("Decal") as Decal if marker != null else null
+	_check(decal != null and decal.lower_fade == 0.0 and decal.upper_fade == 0.0, "Teleport preview retains visibility across projection depth")
 	await _save(game, capture.get_basename() + "-teleport-cast.png")
 	await _wait(game, 2.6)
 	_check(caster.global_position.distance_to(before) > 0.5, "Teleport moves caster")
 	_check(caster.get_node_or_null("MassTeleportCasterFx") == null, "Channel caster FX cleaned")
 	var arrivals: Array[AbilityGroundFx] = _ground_effects(game)
 	_check(not arrivals.is_empty(), "Teleport departure/arrival source scenes exist")
+	for arrival: AbilityGroundFx in arrivals:
+		var root: Node3D = arrival.get("_inst") as Node3D
+		_check(root != null and root.get_meta("teleport_material_policy", "") == TeleportEffectPresentation.POLICY, "Teleport departure/arrival brightness policy applied")
 	await _save(game, capture.get_basename() + "-teleport-arrival.png")
 	await _wait(game, 6.0)
 	_check(_ground_effects(game).is_empty(), "Ground effects finish Death and clean up")

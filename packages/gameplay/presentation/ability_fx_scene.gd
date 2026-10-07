@@ -18,6 +18,7 @@ static func instantiate(art: String, cache: MapModelCache) -> Node3D:
 			var root: Node3D = _scenes[path].instantiate() as Node3D
 			if CompiledModelPresentation.is_compiled(root):
 				CompiledModelPresentation.hide_backgrounds(root)
+				TeleportEffectPresentation.prepare(root, art)
 				return root
 			if root != null:
 				if cache == null:
