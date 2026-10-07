@@ -1,6 +1,6 @@
 # 静态寻路、动态占地与格子净空
 
-日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 尚待人工合并，本批以其分支为基础继续开发；动态导航 PR 为 [#5](https://github.com/LiGameAcademy/rts_kernel_cs/pull/5)。宿主固定内核提交 `246d3361cef8dc489031428f310968d53395b7a0`。
+日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 与动态导航 PR [#5](https://github.com/LiGameAcademy/rts_kernel_cs/pull/5) 已合并。宿主同步到内核合并提交 `c2e98c81f492917ba404e885a569bc5c04d2158f`。
 
 ## 实现范围
 
@@ -18,12 +18,12 @@ CLI 帧号、实体位置与此前一致，校验哈希因快照格式变化而�
 
 ## 验证
 
-使用 .NET 10 SDK，Windows，Release；Godot 4.7.2 Mono。
+使用 .NET 10 SDK，Windows，Release 编译验证；Godot 4.7.2 Mono 加载 Debug 程序集进行实际回归。
 
 - 内核 1027 项断言通过；静态检查包含全部 512 种 3×3 障碍布局与独立 Dijkstra 代价对照。
 - 动态检查覆盖窄路净空、地图边界、重叠增删、非法替换原子性、对局隔离、快照 JSON 往返、地图不匹配、待执行命令恢复、差异字段定位及 40 轮动态更新与独立静态栅格对照。
 - 游戏内容转换 4 项检查通过。
-- Godot 桥接 23 项检查通过，既有无地图骨架可保存并恢复 v2 快照；不代表本批已经向 Godot 暴露动态障碍命令。
+- 校正验证入口后，Godot 桥接 24 项检查通过，既有无地图骨架可保存并恢复 v2 快照；传入错误 CLI 哈希会失败。此前 Release 验证加载旧 Debug 程序集，原 23 项结果不能证明 v2 在 Godot 中运行，已在游戏 Issue #5 复现并修正。运行入口现保留所选配置的编译，同时构建 Debug 供 headless Godot 实际加载；期望哈希从当前 CLI 获取。
 - 依赖边界及负面夹具验证通过；相关自有代码文件均低于 500 行。
 
 验证命令：
