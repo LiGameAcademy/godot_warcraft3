@@ -1,6 +1,6 @@
 # 静态寻路、动态占地与格子净空
 
-日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 与动态导航 PR [#5](https://github.com/LiGameAcademy/rts_kernel_cs/pull/5) 已合并。宿主同步到内核合并提交 `c2e98c8c`（实际完整提交见子模块指针）。
+日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 与动态导航 PR [#5](https://github.com/LiGameAcademy/rts_kernel_cs/pull/5) 已合并。宿主同步到内核合并提交 `c2e98c81f492917ba404e885a569bc5c04d2158f`。
 
 ## 实现范围
 
