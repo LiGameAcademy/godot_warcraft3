@@ -170,3 +170,25 @@ node tools/asset-convert/src/game-development-import.test.mjs
 本轮最终复验通过：最新游戏重新导出后，离线 86 单位开局、OpenGL 地图渲染及 Vulkan 实际技能/战斗验收通过，`asset-review-combat.json` 与 `asset-review-spells.json` 均为 `failures=0`。实际农场记录 Death 约 2.333 秒、源 Decay 60 秒重定时到 30 秒、贴花淡出 10 秒，并确认贴花先清理、尸体最终清理；大法师 Attack-1 约 1.4 秒，约 0.410 秒出弹后仍保留收招，三个朝向的动态杖尖检查通过。五项针对性回归（战斗表现、循环策略与 A/B/模板隔离、战斗模块、追击朝向、弹道查询）通过；弹道查询中的旧样本缺失检查明确为 SKIP。
 
 截图中灰色残骸使用源尸体网格及 DeathSmug 贴图，并非本轮另加的占位立方体；但其形状、颜色和烟尘强度尚未与原作逐项裁定。既有空材质提示、退出资源告警和冷启动耗时问题仍保留。本轮复用 480 个 SCN、10,903 个内容文件，`reusedColdImport=true`，不记为重新完成冷导入。
+
+## 辉煌光环受益单位脚底提示（2026-10-07）
+
+本轮发现两个不同的问题。普通技能面板调用 HeroSkill.learn 后，未学习时已关闭 _process 的光环控制器没有被重新唤醒；GM 解锁技能会重新 configure，因而容易掩盖问题。现在控制器在未学习或死亡时清理表现并保持轻量空闲检查，学习、洗点后重学、复活均可自动恢复。由 configure/ensure_on 显式注入宿主，回蓝规则仍由 Buff 与 UnitRegen 执行。
+
+此外，真实 GeneralAuraTarget 已创建并播放 Stand 时，亮地面上仍很难看到其青蓝光圈。地形高度、原始纹理、源几何与临时平色材质对照确认模型没有丢失；平方 RGB 的 Additive 表现在这个场景下过暗。游戏内仅对辉煌光环受益提示使用 AddAlpha，保留原尺寸、位置、颜色、透明度曲线与骨骼脉动。此项是可读性增强，不能称为已验证与原作完全一致；大法师自己的 Brilliance 双环和资产查看器中的原始 SCN 不改动。
+
+调整由 AuraBeneficiaryPresentation 承担，运行时材质独占后清除动画资源绑定缓存，让后续透明度/颜色动画写入新材质。每个特效实例记录 aura_beneficiary_policy=beneficiary_add_alpha，并在 PRESENT/AuraBeneficiary 日志记录调整。没有重烘焙或写回源 SCN，现有资源缓存可以继续使用，需要重新导出并重启游戏程序。
+
+手动验收：
+
+1. 启动新程序，先关闭 GM 的地面栅格和 Pathing 地面色块，方便辨认光圈。
+2. 通过普通技能面板给大法师学习一级辉煌光环。开局已提供牧师，让牧师靠近大法师；HUD 应有辉煌增益，脚下应有青蓝光圈。无需点击 GM 解锁或重新选择单位触发。
+3. 让牧师移出 900 WC3 单位半径，再移回：增益与光圈应同步消失、恢复。受益圈持续循环，不每帧重建。
+4. 无魔法值的步兵与敌方单位没有受益圈；大法师死亡时，其受益单位提示清理。
+5. 和原作对比光圈颜色、大小、脉动与地形起伏处的遮挡；这部分仍以原作游戏内画面为最终裁定。
+
+开发自测：selftest_brilliance_runtime.tscn 覆盖普通学习自动生效、范围进出、洗点/重学、死亡/复活/移除与材质 A/B/模板隔离，另验证正在播放的动画能写入替换后的材质。发布游戏的 development_aura_review.gd 使用实际大法师、牧师、步兵与敌方单位，保存 asset-review-aura-beneficiary.png，并在 asset-review-spells.json 的 aura 字段记录学习入口、原生 SCN、循环、显示策略及清理检查。
+
+第一次发布复验的检查项通过，但日志暴露临时 Node3D 敌方夹具被实际战斗系统击杀后产生尸体回调类型错误。该记录保留于 tools/asset-convert/tmp/development-9beFl2/aura-review-attempt/。夹具改为使用真实 Unit。第二次复验发现开发地图开局没有带魔法值的敌方样本，检查失败记录保留在 aura-review-missing-enemy-attempt/；因此使用原生牧师配置临时生成敌方单位，完成排除检查后立即移除。发布验收也增加信号回调错误检查，最终结论须以最新 report.json 为准。既有空材质与退出资源告警并未在本轮修复。
+
+最终复验通过：最新游戏已重新导出，离线启动、OpenGL 地图显示与 Vulkan 实际技能/光环/战斗检查全部通过，asset-review-spells.json 的 aura.failures=0，战斗报告 failures=0；信号回调类型错误已不再出现。普通学习自动生效、源 Stand 循环、范围进出和死亡/恢复检查通过。复用了现有 480 个 SCN 和 10,903 个内容文件（reusedColdImport=true），未重新冷导入。光环生命周期/材质动画绑定隔离与通用动画循环两个针对性回归均通过；颜色大小与原作对比仍待人工裁定。

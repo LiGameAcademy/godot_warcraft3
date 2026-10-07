@@ -6,16 +6,16 @@ extends RefCounted
 ## - 受益者（含自身，仅有蓝单位）：BHab Targetart（GeneralAuraTarget）
 ## 路径读 AbilityFxCatalog；挂单位实体根，避免进 MODEL_SCALE 子树缩没。
 
-const ABIL_ID := "AHab"
-const CASTER_NODE := "BrillianceCasterFx"
+const ABIL_ID: String = "AHab"
+const CASTER_NODE: String = "BrillianceCasterFx"
 
 
 static func sync_caster(host: Node3D, active: bool, cache: MapModelCache) -> void:
 	# AHab 无 Casterart，权威是 Targetart=Brilliance.mdl
-	var art := AbilityFxCatalog.target_art(ABIL_ID) if active else ""
+	var art: String = AbilityFxCatalog.target_art(ABIL_ID) if active else ""
 	if active and art.is_empty():
 		art = AbilityFxCatalog.caster_art(ABIL_ID)
-	var attach := AbilityFxCatalog.target_attach(ABIL_ID)
+	var attach: String = AbilityFxCatalog.target_attach(ABIL_ID)
 	if attach.is_empty():
 		attach = "origin"
 	AbilityAttachFxPresenter.sync_attach(
@@ -42,6 +42,10 @@ static func sync_beneficiaries(
 	AbilityAttachFxPresenter.sync_buff_beneficiaries_for_abil(
 		host, in_range, ABIL_ID, cache, tracked, false, true
 	)
+	for effect: Node3D in tracked.values():
+		if is_instance_valid(effect):
+			AuraBeneficiaryPresentation.prepare(effect)
+
 
 
 static func clear_beneficiaries(tracked: Dictionary) -> void:

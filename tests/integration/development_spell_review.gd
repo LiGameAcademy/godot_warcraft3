@@ -1,6 +1,7 @@
 extends RefCounted
 ## Exercise the real cast controller, published scenes and gameplay presentation.
 const FxScene: GDScript = preload("res://packages/gameplay/presentation/ability_fx_scene.gd")
+const AuraReview: GDScript = preload("res://tmp/development_aura_review.gd")
 var failures: int = 0
 var _frames: Array[float] = []
 var _phases: Array[Dictionary] = []
@@ -101,7 +102,10 @@ func run(game: GameMain, capture: String) -> int:
 	await _wait(game, 0.1)
 	_check(caster.get_node_or_null("MassTeleportCasterFx") == null, "Canceled teleport clears caster FX")
 	_check(game.map_root.get_node_or_null("MassTeleportDestMarker") == null, "Canceled teleport clears destination preview")
+	var aura: Dictionary = await AuraReview.new().run(game, caster, capture)
+	failures += int(aura.get("failures", 1))
 	var stats: Dictionary = _timings(_frames)
+	stats["aura"] = aura
 	stats.merge({"scene_loads_before_casts": loads, "scene_loads_after_casts": FxScene.scene_loads, "phases": _phases, "instance_setup": _instances, "summon_transitions": _summon_transitions, "blizzard_loads_before": blizzard_loads, "blizzard_loads_after": _blizzard_loads(), "failures": failures, "visual": "requires_original_game_comparison"})
 	var file: FileAccess = FileAccess.open(capture.get_basename() + "-spells.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(stats, "  "))
