@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Content: GDScript = preload("res://app/asset_import_content.gd")
+const Validation: GDScript = preload("res://app/asset_cache_validation.gd")
 const DEFAULT_REQUEST: String = "res://config/development_asset_request.source"
 
 static func build_key(request_resource: String = DEFAULT_REQUEST) -> String:
@@ -12,7 +13,8 @@ static func build_key(request_resource: String = DEFAULT_REQUEST) -> String:
 	signature += FileAccess.get_sha256(bundle) if FileAccess.file_exists(bundle) else ""
 	return signature.sha256_text()
 
-static func latest(cache_root: String, request_resource: String = DEFAULT_REQUEST) -> Dictionary:
+static func latest(cache_root: String, request_resource: String = DEFAULT_REQUEST, validation: RefCounted = null) -> Dictionary:
+	var checker: RefCounted = validation if validation != null else Validation.new()
 	var directory: String = ProjectSettings.globalize_path(cache_root).path_join("indexes")
 	var files: PackedStringArray = DirAccess.get_files_at(directory) if DirAccess.dir_exists_absolute(directory) else PackedStringArray()
 	files.sort()
@@ -27,20 +29,17 @@ static func latest(cache_root: String, request_resource: String = DEFAULT_REQUES
 		if record.get("version") != 1 or record.get("build") != build_key(request_resource) or not record.get("results") is Array or record.results.is_empty():
 			return {}
 		var content_started: int = Time.get_ticks_usec()
-		if not record.get("content", {}) is Dictionary or not Content.validate(record.get("content", {})):
+		if not record.get("content", {}) is Dictionary or not Content.validate(record.get("content", {}), checker):
 			return {}
 		if request_resource == DEFAULT_REQUEST and record.get("content", {}).is_empty():
 			return {}
-		Content.trace("index_content_hashes", content_started, record.get("content", {}).get("files", []).size())
+		var measured: Dictionary = checker.snapshot()
+		Content.trace("index_content_hashes", content_started, record.get("content", {}).get("files", []).size(), {"bytes": measured.bytes, "worker_count": measured.worker_count})
 		var scenes_started: int = Time.get_ticks_usec()
-		for entry: Variant in record.results:
-			if not entry is Dictionary:
-				return {}
-			var result: Dictionary = entry
-			var scene: String = str(result.get("output_scene", ""))
-			if not FileAccess.file_exists(scene) or FileAccess.get_sha256(scene) != result.get("output_sha256", ""):
-				return {}
-		Content.trace("index_scene_hashes", scenes_started, record.results.size())
+		if not checker.validate_scenes(record.results):
+			return {}
+		measured = checker.snapshot()
+		Content.trace("index_scene_hashes", scenes_started, record.results.size(), {"bytes": measured.bytes, "worker_count": measured.worker_count})
 		return record
 	return {}
 

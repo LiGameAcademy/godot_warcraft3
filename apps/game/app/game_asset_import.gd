@@ -29,8 +29,8 @@ func run_manifest(path: String, content_in_use: bool) -> Dictionary:
 	return install_results(results, manifest.get("content", {}))
 
 ## Worker-thread entry: hashes only; no scene-tree access or scene loading.
-func validate_cache(cache_root: String, request_resource: String) -> bool:
-	_validated_record = Index.latest(cache_root, request_resource)
+func validate_cache(cache_root: String, request_resource: String, validation: RefCounted = null) -> bool:
+	_validated_record = Index.latest(cache_root, request_resource, validation)
 	return not _validated_record.is_empty()
 
 ## Call only after the validation thread has been joined. Consume once.
