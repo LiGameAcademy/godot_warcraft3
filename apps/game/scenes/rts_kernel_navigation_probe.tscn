@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/rts_kernel_navigation_probe.gd" id="1_probe"]
+[ext_resource type="Script" path="res://adapters/godot/RtsKernelBridge.cs" id="2_bridge"]
+
+[node name="RtsKernelNavigationProbe" type="Node2D"]
+script = ExtResource("1_probe")
+
+[node name="EntityVisual" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+color = Color(0.3, 0.75, 1, 1)
+
+[node name="Status" type="Label" parent="."]
+offset_left = 16.0
+offset_top = 524.0
+offset_right = 900.0
+offset_bottom = 590.0
+text = "initializing"
+mouse_filter = 2
+
+[node name="RtsKernelBridge" type="Node" parent="."]
+script = ExtResource("2_bridge")

@@ -1,5 +1,6 @@
 using Godot;
 using Rts.Kernel;
+using Rts.Kernel.Navigation;
 
 /// <summary>
 /// The single Godot-facing boundary for the engine-independent RTS simulation.
@@ -16,6 +17,7 @@ public partial class RtsKernelBridge : Node
         string detail);
 
     private RtsMatch _match = new(MatchConfig.Default, seed: 1);
+    private PathingGrid? _grid;
     private string _lastError = string.Empty;
 
     public long GetFrame() => _match.Frame;
@@ -31,6 +33,7 @@ public partial class RtsKernelBridge : Node
         try
         {
             _match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
+            _grid = null;
             _lastError = string.Empty;
             return true;
         }
@@ -39,6 +42,47 @@ public partial class RtsKernelBridge : Node
             _lastError = error.Message;
             return false;
         }
+    }
+
+    public bool ResetNavigationMatch(int width, int height, double cellSize, Vector2 origin,
+        byte[] flags, int tickRate = 30, long seed = 1)
+    {
+        try
+        {
+            var grid = new PathingGrid(width, height, cellSize, new SimVector2(origin.X, origin.Y), flags);
+            var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
+            _grid = grid;
+            _match = match;
+            _lastError = string.Empty;
+            return true;
+        }
+        catch (Exception error)
+        {
+            _lastError = error.Message;
+            return false;
+        }
+    }
+
+    public Godot.Collections.Dictionary SubmitMoveTo(long executeFrame, int playerId, long sequence,
+        long entityId, Vector2 goal, double speed, int clearanceCells = 0)
+    {
+        if (!TryEntityId(entityId, out var id)) return Rejected("invalid_entity_id");
+        return ToResult(_match.SubmitCommand(CommandEnvelope.MoveTo(executeFrame, playerId, sequence,
+            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells)));
+    }
+
+    public Godot.Collections.Dictionary SubmitSetObstacle(long executeFrame, int playerId, long sequence,
+        long obstacleId, Rect2I area)
+    {
+        if (obstacleId <= 0) return Rejected("invalid_obstacle_id");
+        return ToResult(_match.SubmitCommand(CommandEnvelope.SetObstacle(executeFrame, playerId, sequence,
+            (ulong)obstacleId, new GridArea(area.Position.X, area.Position.Y, area.Size.X, area.Size.Y))));
+    }
+
+    public Godot.Collections.Dictionary SubmitRemoveObstacle(long executeFrame, int playerId, long sequence, long obstacleId)
+    {
+        if (obstacleId <= 0) return Rejected("invalid_obstacle_id");
+        return ToResult(_match.SubmitCommand(CommandEnvelope.RemoveObstacle(executeFrame, playerId, sequence, (ulong)obstacleId)));
     }
 
     public Godot.Collections.Dictionary SubmitSpawn(
@@ -117,6 +161,7 @@ public partial class RtsKernelBridge : Node
             {
                 ["id"] = checked((long)entity.Id.Value),
                 ["owner_id"] = entity.OwnerId,
+                ["moving"] = _match.IsMoving(entity.Id),
                 ["position"] = new Vector2((float)entity.Position.X, (float)entity.Position.Y),
                 ["velocity"] = new Vector2((float)entity.Velocity.X, (float)entity.Velocity.Y),
             });
@@ -131,7 +176,9 @@ public partial class RtsKernelBridge : Node
     {
         try
         {
-            _match = RtsMatch.Restore(SnapshotJson.Deserialize(json));
+            var snapshot = SnapshotJson.Deserialize(json);
+            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _grid);
+            if (snapshot.Navigation is null) _grid = null;
             _lastError = string.Empty;
             return true;
         }

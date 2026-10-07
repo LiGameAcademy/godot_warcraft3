@@ -1,6 +1,6 @@
 # RTS 内核迁移与验收
 
-日期：2026-09-27（设计基线）；状态更新 2026-09-28：Batch 1 的最小移动战斗闭环未完成，但 Batch 1 的工程脚手架（双宿主 / 命令 / 帧 / 快照 / 状态哈希）已落地——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。其余 Batch 仍均未实施、未验收。
+日期：2026-09-27（设计基线）；状态更新 2026-09-28：Batch 1 的最小移动战斗闭环未完成，但 Batch 1 的工程脚手架（双宿主 / 命令 / 帧 / 快照 / 状态哈希）已落地——见 `docs/verification/rts_kernel/M0/R00.5_asbuilt.md`。2026-10-07：静态寻路与动态导航基础已合并，目标路径跟随正在按 Issue #3 分批交付；Batch 1 的完整移动与战斗仍未完成。见 `docs/verification/rts_kernel/M2/PATH_FOLLOWING.md`。
 
 主设计：[RTS_KERNEL.md](RTS_KERNEL.md)。技能设计：[RTS_ABILITY_SYSTEM.md](RTS_ABILITY_SYSTEM.md)。
 
