@@ -8,18 +8,20 @@ static func begin(caster: Node3D, abil_id: String, channel: bool, goal_wc3: Vect
 	if caster == null or not is_instance_valid(caster):
 		return
 	_face_goal(caster, goal_wc3)
-	var seq := AbilityCastCatalog.spell_sequence_for(abil_id)
-	var u := Unit.of(caster)
+	var seq: String = AbilityCastCatalog.spell_sequence_for(abil_id)
+	var u: Unit = Unit.of(caster)
 	if u != null:
 		u.play_spell_cast(seq, channel)
 	else:
 		_play_spell_on_body(caster, seq)
+	if channel:
+		_loop_channel(caster)
 
 
 static func end(caster: Node3D) -> void:
 	if caster == null or not is_instance_valid(caster):
 		return
-	var u := Unit.of(caster)
+	var u: Unit = Unit.of(caster)
 	if u != null:
 		u.end_spell_cast()
 
@@ -30,7 +32,7 @@ static func spawn_ground_effect(
 	duration_sec: float,
 	ctx: Dictionary
 ) -> void:
-	var art := AbilityCastCatalog.ground_effect_art(abil_id)
+	var art: String = AbilityCastCatalog.ground_effect_art(abil_id)
 	if art.is_empty():
 		return
 	var map_root: Node = ctx.get("map_root")
@@ -75,15 +77,24 @@ static func spawn_unit_timed_fx(
 static func _face_goal(caster: Node3D, goal_wc3: Vector2) -> void:
 	if goal_wc3 == Vector2.INF:
 		return
-	var from := Wc3Coords.godot_to_wc3_xy(caster.global_position)
-	var dir := goal_wc3 - from
+	var from: Vector2 = Wc3Coords.godot_to_wc3_xy(caster.global_position)
+	var dir: Vector2 = goal_wc3 - from
 	if dir.length_squared() < 1.0:
 		return
 	caster.rotation.y = atan2(dir.y, dir.x)
 
 
 static func _play_spell_on_body(body: Node3D, logical: String) -> void:
-	var ap := AnimPlayback.find_animation_player(body)
-	var fallbacks := ["Spell Throw", "Spell Channel", "Spell", "Attack"]
+	var ap: AnimationPlayer = AnimPlayback.find_animation_player(body)
+	var fallbacks: Array[String] = ["Spell Throw", "Spell Channel", "Spell", "Attack"]
 	AnimPlayback.play_logical(body, logical, 0.0, null, 0, fallbacks, ap)
 	Wc3Pe2Particles.apply_sequence(body, logical)
+
+## 引导是明确的播放策略；不把召唤/传送的一次性手势改成循环。
+static func _loop_channel(caster: Node3D) -> void:
+	var unit: Unit = Unit.of(caster)
+	var model: Node3D = unit.model_node() if unit != null else caster
+	var player: AnimationPlayer = AnimPlayback.find_animation_player(model)
+	if player == null or player.current_animation.is_empty():
+		return
+	AnimPlayback.play(model, player.current_animation, 0.0, null, 1, player)

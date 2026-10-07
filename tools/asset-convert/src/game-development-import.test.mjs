@@ -53,7 +53,7 @@ fs.writeFileSync(path.join(tmp, 'development_probe.tscn'), `[gd_scene load_steps
 [node name="Boot" type="Node"]
 script = ExtResource("1")
 `);
-for (const name of ['development_capture.gd', 'development_spell_review.gd']) {
+for (const name of ['development_capture.gd', 'development_spell_review.gd', 'development_combat_review.gd']) {
   fs.copyFileSync(path.join(repo, 'tests/integration', name), path.join(tmp, name));
 }
 const project = path.join(repo, 'apps/game/project.godot');
@@ -118,15 +118,20 @@ try {
   if (fs.existsSync(path.join(cache, 'inputs-disabled')) && !fs.existsSync(path.join(cache, 'inputs'))) fs.renameSync(path.join(cache, 'inputs-disabled'), path.join(cache, 'inputs'));
   if (fs.existsSync(path.join(bundle, 'node.disabled'))) fs.renameSync(path.join(bundle, 'node.disabled'), path.join(bundle, 'node.exe'));
 }
+const combatReviewPath = path.join(output, 'asset-review-combat.json');
+const combatReview = JSON.parse(fs.readFileSync(combatReviewPath));
+assert.equal(combatReview.failures, 0);
+assert.equal(combatReview.building.cleaned, true);
+assert.equal(combatReview.building.ground_cleaned, true);
 const spellReviewPath = path.join(output, 'asset-review-spells.json');
 const spellReview = JSON.parse(fs.readFileSync(spellReviewPath));
 assert.equal(spellReview.failures, 0);
 assert.deepEqual(spellReview.summon_transitions.map(row => row.unit), ["hwat", "hwt2", "hwt3"]);
 assert.ok(spellReview.summon_transitions.every(row => !row.caster_spell_casting && row.summon_animation.toLowerCase().startsWith("stand")));
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({binary, gameDir, cacheRoot: cache, capture, reviewCapture,
-  startupTimings: timings, spellReviewPath, spellReview, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
+  startupTimings: timings, combatReviewPath, combatReview, spellReviewPath, spellReview, reusedColdImport: Boolean(reuse), recoveredPublishedIndex: Boolean(recover), recoveredIndex, retriedInterruptedImport: Boolean(retry), sceneCacheHits: cold.result.results.filter(row => row.cache?.status === "hit").length, coverage: cold.result.content.coverage, models: cold.result.results.length, contentFiles: cold.result.content.files.length,
   checks: [recover ? 'recovered_published_index_after_acceptance_timeout' : 'full_background_import', recover ? 'prior_batched_compilation_artifacts' : 'batched_compilation', 'no_external_asset_root', 'complete_reference_coverage',
-    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons', 'vulkan_asset_review_models_portraits_pathing', 'three_summon_levels_native_models', 'summon_birth_and_caster_gesture_finish', 'repeated_blizzard_without_scene_reload', 'mass_teleport_effect_lifecycle_and_cancel'],
+    'no_packaged_original_map_or_definitions', 'offline_index_replay_without_node_or_ir', '86_unit_map_startup', 'rendered_map_and_icons', 'vulkan_asset_review_models_portraits_pathing', 'three_summon_levels_native_models', 'summon_birth_and_caster_gesture_finish', 'repeated_blizzard_without_scene_reload', 'mass_teleport_effect_lifecycle_and_cancel', 'native_attack_recovery_and_staff_tip', 'native_building_death_corpse_ground_cleanup'],
 }, null, 2));
 console.log(recover ? 'PASS: published full index -> offline standalone startup and rendered map' : 'PASS: original installation -> full background import -> standalone cached game');
 console.log('Report: ' + path.join(output, 'report.json'));

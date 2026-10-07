@@ -1,4 +1,5 @@
 extends Node
+const CombatReview: GDScript = preload("res://tmp/development_combat_review.gd")
 const SpellReview: GDScript = preload("res://tmp/development_spell_review.gd")
 ## Release-only acceptance probe; copied into the temporary export by the JS test.
 var _failures: int = 0
@@ -28,6 +29,7 @@ func _run() -> void:
 	if "--asset-review" in args:
 		await _review(game, capture)
 		_failures += await SpellReview.new().run(game, capture)
+		_failures += await CombatReview.new().run(game, capture)
 	print("PASS: release rendered map and icons without packaged original assets" if _failures == 0 else "FAIL: release presentation")
 	get_tree().quit(0 if _failures == 0 else 1)
 

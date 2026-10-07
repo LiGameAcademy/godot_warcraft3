@@ -4,9 +4,9 @@ extends Node
 ## 对局内战斗协调：伤害管线、投射物、死亡/尸体、AttackController 装配。
 ## 由总管注入地图与横切依赖；本模块不依赖 GameDirector 类型。
 
-const CombatProjectileShellScene = preload("res://packages/gameplay/features/combat/presentation/combat_projectile_shell.tscn")
-const SceneDelay = preload("res://packages/foundation/infra/scene_delay.gd")
-const Experience = preload("res://packages/gameplay/features/heroes/logic/hero_experience.gd")
+const CombatProjectileShellScene: PackedScene = preload("res://packages/gameplay/features/combat/presentation/combat_projectile_shell.tscn")
+const SceneDelay: GDScript = preload("res://packages/foundation/infra/scene_delay.gd")
+const Experience: GDScript = preload("res://packages/gameplay/features/heroes/logic/hero_experience.gd")
 
 var damage_pipeline: DamagePipeline = null
 var death_service: DeathService = null
@@ -91,11 +91,11 @@ func ensure_attack_controller(unit: Node3D) -> AttackController:
 	if _ensure_unit_visual.is_valid():
 		_ensure_unit_visual.call(unit)
 	UnitLife.ensure(unit)
-	var existing := unit.get_node_or_null("AttackController") as AttackController
+	var existing: AttackController = unit.get_node_or_null("AttackController") as AttackController
 	if existing != null:
 		existing.configure(_ensure_navigator, _unit_host, damage_pipeline, projectile_service)
 		return existing
-	var ac := AttackController.new()
+	var ac: AttackController = AttackController.new()
 	ac.name = "AttackController"
 	ac.configure(_ensure_navigator, _unit_host, damage_pipeline, projectile_service)
 	unit.add_child(ac)
@@ -151,7 +151,7 @@ func _disconnect_service_signals() -> void:
 
 func _disconnect_external_unit_died() -> void:
 	if death_service != null:
-		for cb in _external_unit_died:
+		for cb: Callable in _external_unit_died:
 			if cb.is_valid() and death_service.unit_died.is_connected(cb):
 				death_service.unit_died.disconnect(cb)
 	_external_unit_died.clear()
@@ -160,11 +160,11 @@ func _disconnect_external_unit_died() -> void:
 func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
 	if _map_root == null:
 		return
-	var awards := Experience.award_death(victim, killer, _map_root.get_unit_layer())
+	var awards: Array[Dictionary] = Experience.award_death(victim, killer, _map_root.get_unit_layer())
 	var primary: Node3D = null
 	if _get_primary.is_valid():
 		primary = _get_primary.call() as Node3D
-	for award in awards:
+	for award: Dictionary in awards:
 		if award.hero == primary:
 			if _apply_selection_info.is_valid():
 				var selected: Array = _get_selected.call() if _get_selected.is_valid() else []
@@ -177,38 +177,40 @@ func _award_death_experience(victim: Node3D, killer: Node3D) -> void:
 func _on_projectile_launched(info: Dictionary) -> void:
 	var from_wc3: Vector3 = info.get("from_wc3", Vector3.ZERO)
 	var to_wc3: Vector3 = info.get("to_wc3", Vector3.ZERO)
-	var duration := float(info.get("duration", 0.2))
+	var duration: float = float(info.get("duration", 0.2))
 	var attacker: Node3D = info.get("attacker") as Node3D
 	var target: Node3D = info.get("target") as Node3D
-	var show_tracer := true
-	var impact_art := ""
-	var missile_art := ""
-	var arc := 0.0
-	var speed_wc3 := 900.0
+	var show_tracer: bool = true
+	var impact_art: String = ""
+	var missile_art: String = ""
+	var arc: float = 0.0
+	var speed_wc3: float = 900.0
 	if bool(info.get("is_spell", false)):
 		show_tracer = true
-		var spell_missile := str(info.get("missile_art", "")).strip_edges()
+		var spell_missile: String = str(info.get("missile_art", "")).strip_edges()
 		if not spell_missile.is_empty():
 			missile_art = spell_missile
-		var spell_impact := str(info.get("impact_art", "")).strip_edges()
+		var spell_impact: String = str(info.get("impact_art", "")).strip_edges()
 		if not spell_impact.is_empty():
 			impact_art = spell_impact
 	elif attacker != null and is_instance_valid(attacker):
 		show_tracer = CombatQuery.wants_tracer_visual(attacker)
 		impact_art = CombatQuery.weapon_impact_art(attacker)
 		missile_art = CombatQuery.weapon_missile_art(attacker)
+		if not missile_art.is_empty():
+			from_wc3 = CombatProjectileOrigin.weapon_start_wc3(attacker, from_wc3)
 		arc = CombatQuery.missile_arc(attacker)
 		speed_wc3 = CombatQuery.missile_speed_wc3(attacker)
 	if info.has("speed_wc3"):
 		speed_wc3 = float(info.get("speed_wc3", speed_wc3))
-	var cache := _model_cache()
+	var cache: MapModelCache = _model_cache()
 	var shell: Node3D = CombatProjectileShellScene.instantiate() as Node3D
 	if shell == null:
 		return
 	shell.name = "CombatProjectileShell_%s" % str(info.get("id", 0))
 	var fx_parent: Node = _map_root
 	if _map_root != null and _map_root.has_method("get_unit_layer"):
-		var layer := _map_root.get_unit_layer()
+		var layer: MapUnitLayer = _map_root.get_unit_layer()
 		if layer != null:
 			fx_parent = layer
 	elif _map_root == null:
@@ -235,8 +237,8 @@ func _on_projectile_resolved(result: Dictionary) -> void:
 		return
 	if bool(result.get("is_spell", false)):
 		var target: Node3D = result.get("target") as Node3D
-		var abil_id := str(result.get("spell_abil_id", "")).strip_edges()
-		var hit_art := AbilityCastCatalog.hit_effect_art(abil_id)
+		var abil_id: String = str(result.get("spell_abil_id", "")).strip_edges()
+		var hit_art: String = AbilityCastCatalog.hit_effect_art(abil_id)
 		if not hit_art.is_empty() and target != null and is_instance_valid(target):
 			SpellHitFx.spawn_on(target, hit_art, _model_cache())
 		if _health_bar_manager != null:
@@ -245,7 +247,7 @@ func _on_projectile_resolved(result: Dictionary) -> void:
 	var attacker: Node3D = result.get("attacker") as Node3D
 	if attacker == null or not is_instance_valid(attacker):
 		return
-	var ac := attacker.get_node_or_null("AttackController") as AttackController
+	var ac: AttackController = attacker.get_node_or_null("AttackController") as AttackController
 	if ac != null:
 		ac.notify_strike_result(result)
 
@@ -253,7 +255,7 @@ func _on_projectile_resolved(result: Dictionary) -> void:
 func _on_damage_applied_present(result: Dictionary) -> void:
 	DamageFloatText.spawn(result.get("target") as Node3D, result)
 	var victim: Node3D = result.get("target") as Node3D
-	var ai := UnitAI.of(victim)
+	var ai: UnitAI = UnitAI.of(victim)
 	if ai != null:
 		ai.notify_damaged(result)
 
@@ -262,13 +264,13 @@ func on_unit_dying(unit: Node3D) -> void:
 	if unit == null:
 		return
 	InnerFireController.cleanup_on_death(unit)
-	var bh := BuffHost.of(unit)
+	var bh: BuffHost = BuffHost.of(unit)
 	if bh != null:
 		bh.clear_all()
 	if _prepare_hero_death.is_valid():
 		_prepare_hero_death.call(unit)
 	HeroDeathRegistry.register_death(unit)
-	var inv := Inventory.of(unit)
+	var inv: Inventory = Inventory.of(unit)
 	if inv != null:
 		inv.clear()
 	if _release_food.is_valid():
@@ -277,43 +279,45 @@ func on_unit_dying(unit: Node3D) -> void:
 		_terminate_production.call(unit)
 	if _deselect_unit.is_valid():
 		_deselect_unit.call(unit)
-	var vis: Variant = null
+	var vis: Unit = null
 	if _ensure_unit_visual.is_valid():
-		vis = _ensure_unit_visual.call(unit)
+		vis = _ensure_unit_visual.call(unit) as Unit
 	if vis != null:
 		if not vis.corpse_expired.is_connected(on_corpse_expired):
 			vis.corpse_expired.connect(on_corpse_expired)
+		if BuildingVisual.is_building(str(unit.get_meta("unit_data", {}).get("typeId", ""))):
+			BuildingDeathPresentation.prepare(unit, BuildingDeathSettings.from_source())
 		vis.play_death()
 	else:
-		var tree := get_tree()
+		var tree: SceneTree = get_tree()
 		if tree != null:
 			SceneDelay.create_timer(self, Unit.CORPSE_LINGER_SEC).timeout.connect(
 				on_corpse_expired.bind(unit)
 			)
 		else:
 			on_corpse_expired(unit)
-	var hc := unit.get_node_or_null("HarvestController") as HarvestController
+	var hc: HarvestController = unit.get_node_or_null("HarvestController") as HarvestController
 	if hc != null:
 		hc.abort()
-	var ac := unit.get_node_or_null("AttackController") as AttackController
+	var ac: AttackController = unit.get_node_or_null("AttackController") as AttackController
 	if ac != null:
 		ac.cancel()
-	var uai := UnitAI.of(unit)
+	var uai: UnitAI = UnitAI.of(unit)
 	if uai != null:
 		uai.yield_to_player()
-	var mc := MilitiaController.of(unit)
+	var mc: MilitiaController = MilitiaController.of(unit)
 	if mc != null:
 		mc.set_process(false)
-	var sl := unit.get_node_or_null("SummonLifetime") as SummonLifetime
+	var sl: SummonLifetime = unit.get_node_or_null("SummonLifetime") as SummonLifetime
 	if sl != null:
 		sl.set_process(false)
-	var pc := unit.get_node_or_null("PatrolController") as PatrolController
+	var pc: PatrolController = unit.get_node_or_null("PatrolController") as PatrolController
 	if pc != null:
 		pc.cancel()
-	var nav := unit.get_node_or_null("UnitNavigator") as UnitNavigator
+	var nav: UnitNavigator = unit.get_node_or_null("UnitNavigator") as UnitNavigator
 	if nav != null:
 		nav.stop()
-	var cast := AbilityCastController.of(unit)
+	var cast: AbilityCastController = AbilityCastController.of(unit)
 	if cast != null:
 		cast.cancel_cast()
 
@@ -322,7 +326,7 @@ func on_corpse_expired(unit: Node3D) -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
 	var d: Dictionary = unit.get_meta("unit_data", {})
-	var cn := int(d.get("creationNumber", -1))
+	var cn: int = int(d.get("creationNumber", -1))
 	if _map_root != null and cn >= 0 and _map_root.remove_unit_instance(cn):
 		return
 	unit.queue_free()

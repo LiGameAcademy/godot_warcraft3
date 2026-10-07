@@ -52,6 +52,9 @@ func run(game: GameMain, capture: String) -> int:
 		AbilityCooldowns.start(caster, "AHbz", 0.0)
 		_check(bool(controller.begin_cast("AHbz", goal, abilities.cast_context()).get("ok", false)), "Real Blizzard channel")
 		await _wait(game, 1.2)
+		var channel_player: AnimationPlayer = AnimPlayback.find_animation_player(caster.get_node("Model"))
+		_check(AnimPlayback.compact_seq_name(channel_player.current_animation) == "standchannel", "Blizzard uses dedicated Stand Channel")
+		_check(channel_player.is_playing() and channel_player.get_animation(channel_player.current_animation).loop_mode == Animation.LOOP_LINEAR, "Channel animation loops while casting")
 		var shards: Array[AbilityGroundFx] = _ground_effects(game)
 		var per_wave: int = clampi(int(round(AbilityCatalog.data("AHbz").data_c_at(1))), 2, 6)
 		_check(shards.size() >= per_wave, "Blizzard creates configured source shards")
@@ -66,10 +69,12 @@ func run(game: GameMain, capture: String) -> int:
 		if cast == 0:
 			await _save(game, capture.get_basename() + "-blizzard.png")
 		await _wait(game, 0.7)
+		_check(channel_player.is_playing() and AnimPlayback.compact_seq_name(channel_player.current_animation) == "standchannel", "Casting survives a second source animation cycle")
 		if cast == 0:
 			await _save(game, capture.get_basename() + "-blizzard-impact.png")
 		await _wait(game, 2.9)
 		_check(not controller.is_channeling(), "Blizzard channel finishes normally")
+		_check(AnimPlayback.compact_seq_name(channel_player.assigned_animation) != "standchannel", "Finished Blizzard releases casting animation")
 		_phases.append({"name": "blizzard_%d" % (cast+1), "timings": _timings(_frames.slice(first_frame))})
 	_check(_blizzard_loads() == blizzard_loads, "Repeated waves/casts do not reload Blizzard or FrostDamage scenes")
 	UnitMana.regenerate(caster, 1000)
