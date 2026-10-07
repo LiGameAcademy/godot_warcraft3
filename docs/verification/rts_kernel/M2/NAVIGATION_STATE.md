@@ -1,6 +1,6 @@
 # 静态寻路、动态占地与格子净空
 
-日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 尚待人工合并，本批以其分支为基础继续开发。
+日期：2026-10-07。功能分支 `codex/issue-2-dynamic-navigation`，内核 Issue [#1](https://github.com/LiGameAcademy/rts_kernel_cs/issues/1)、[#2](https://github.com/LiGameAcademy/rts_kernel_cs/issues/2)。静态查询 PR [#4](https://github.com/LiGameAcademy/rts_kernel_cs/pull/4) 尚待人工合并，本批以其分支为基础继续开发；动态导航 PR 为 [#5](https://github.com/LiGameAcademy/rts_kernel_cs/pull/5)。宿主固定内核提交 `246d3361cef8dc489031428f310968d53395b7a0`。
 
 ## 实现范围
 
@@ -8,7 +8,7 @@
 
 测试用 SetObstacle/RemoveObstacle 命令通过固定逻辑帧执行，使用现有命令排序与拒绝事件。它们暂不代表建筑权限或资源支付。公开查询经 RtsMatch 读取当前帧状态；宿主不能直接修改占地数组。
 
-内核完整接口及示例见子模块 [docs/NAVIGATION.md](../../../../../external/rts_kernel/docs/NAVIGATION.md)。内核远端已迁移到 `LiGameAcademy/rts_kernel_cs`，宿主子模块 URL 同步更新。
+内核完整接口及示例见子模块 [docs/NAVIGATION.md](../../../../external/rts_kernel/docs/NAVIGATION.md)。内核远端已迁移到 `LiGameAcademy/rts_kernel_cs`，宿主子模块 URL 同步更新。
 
 ## 快照兼容
 
