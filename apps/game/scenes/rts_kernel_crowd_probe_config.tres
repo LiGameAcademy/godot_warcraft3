@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="RtsKernelFormationProbeConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/rts_kernel_formation_probe_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+grid_size = Vector2i(64, 40)
+spawn_positions = PackedVector2Array(35, 35, 55, 35, 75, 35, 95, 35, 115, 35, 135, 35, 35, 55, 55, 55, 75, 55, 95, 55, 115, 55, 135, 55, 155, 155)
+movement_definition_ids = PackedInt64Array(2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+movement_definitions_json = "[{\"id\":1,\"speed\":60,\"radius\":4},{\"id\":2,\"speed\":20,\"radius\":6}]"
+initial_stop_ids = PackedInt64Array(13)
+blocked_cells = Array[Vector2i]([Vector2i(30, 5), Vector2i(30, 6), Vector2i(30, 7), Vector2i(30, 8), Vector2i(30, 9), Vector2i(30, 10), Vector2i(30, 11), Vector2i(30, 12), Vector2i(30, 13), Vector2i(30, 14), Vector2i(30, 18), Vector2i(30, 19), Vector2i(30, 20), Vector2i(30, 21), Vector2i(30, 22), Vector2i(30, 23), Vector2i(30, 24), Vector2i(30, 25), Vector2i(30, 26), Vector2i(30, 27)])

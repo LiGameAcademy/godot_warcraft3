@@ -4,6 +4,7 @@ var _checks: int = 0
 var _failures: int = 0
 var _goals: Dictionary[int, Vector2] = {}
 var _reported_failures: int = 0
+var _movement_failures: int = 0
 
 
 func _initialize() -> void:
@@ -12,6 +13,7 @@ func _initialize() -> void:
     bridge.set_script(script)
     root.add_child(bridge)
     bridge.connect("GroupMoveResultRaised", _on_group_result)
+    bridge.connect("MatchEventRaised", _on_match_event)
     await process_frame
     var flags: PackedByteArray = PackedByteArray()
     flags.resize(1024)
@@ -47,15 +49,15 @@ func _initialize() -> void:
     await process_frame
     other.call("ResetConfiguredNavigationMatch", 32, 32, 10.0, Vector2.ZERO, flags, definitions, 30, 7)
     _check(bool(other.call("RestoreSnapshotJson", snapshot)), "new host restores active group and definitions")
-    bridge.call("Step", 500)
+    bridge.call("Step", 1000)
     other.call("Step", 123)
-    other.call("Step", 377)
+    other.call("Step", 877)
     _check(str(bridge.call("GetStateHash")) == str(other.call("GetStateHash")), "restored soft formation agrees across host cadence")
     views = bridge.call("ReadEntityViews")
     var arrived: bool = true
     for view: Dictionary in views:
         arrived = arrived and not bool(view["moving"]) and (view["position"] as Vector2).is_equal_approx(_goals[int(view["id"])])
-    _check(arrived, "members arrive at actual separated formation destinations")
+    _check(arrived and _movement_failures == 0, "members complete sequenced assembly without movement failure")
     var altered: String = definitions.replace('"speed":30', '"speed":31')
     other.call("ResetConfiguredNavigationMatch", 32, 32, 10.0, Vector2.ZERO, flags, altered, 30, 7)
     hash = str(other.call("GetStateHash"))
@@ -135,3 +137,9 @@ func _check(condition: bool, label: String) -> void:
     else:
         _failures += 1
         push_error("[rts_kernel_formation] FAIL: %s" % label)
+
+
+func _on_match_event(_frame: int, _event_sequence: int, kind: int, _entity_id: int, detail: String) -> void:
+    if kind == 4:
+        _movement_failures += 1
+        print("[rts_kernel_formation] movement failure: %s" % detail)

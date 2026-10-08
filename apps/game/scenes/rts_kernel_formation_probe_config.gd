@@ -10,3 +10,6 @@ class_name RtsKernelFormationProbeConfig
     [Vector2(35, 35), Vector2(55, 35), Vector2(75, 35), Vector2(95, 35), Vector2(115, 35), Vector2(135, 35)])
 @export var movement_definition_ids: PackedInt64Array = PackedInt64Array([1, 2, 1, 2, 1, 2])
 @export_multiline var movement_definitions_json: String = '[{"id":1,"speed":30,"radius":4},{"id":2,"speed":20,"radius":6}]'
+
+@export var blocked_cells: Array[Vector2i] = []
+@export var initial_stop_ids: PackedInt64Array = PackedInt64Array()

@@ -78,4 +78,29 @@ public partial class RtsKernelBridge
         }
         return views;
     }
+
+    public Godot.Collections.Array<Godot.Collections.Dictionary> ReadGroupPlanViews()
+    {
+        var views = new Godot.Collections.Array<Godot.Collections.Dictionary>();
+        foreach (var plan in _match.ReadGroupPlans())
+            views.Add(new Godot.Collections.Dictionary
+            {
+                ["group_id"] = checked((long)plan.GroupId), ["members"] = plan.Members,
+                ["canceled"] = plan.Canceled, ["matching_row"] = plan.MatchingRow,
+            });
+        return views;
+    }
+
+    public Godot.Collections.Array<Godot.Collections.Dictionary> ReadMovementViews()
+    {
+        var views = new Godot.Collections.Array<Godot.Collections.Dictionary>();
+        foreach (var move in _match.ReadMoveOrders())
+            views.Add(new Godot.Collections.Dictionary
+            {
+                ["entity_id"] = checked((long)move.EntityId), ["wait_frames"] = move.WaitFrames,
+                ["retry_after_frame"] = move.RetryAfterFrame,
+            });
+        return views;
+    }
+
 }
