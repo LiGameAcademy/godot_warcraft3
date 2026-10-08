@@ -67,11 +67,16 @@ public partial class RtsKernelBridge : Node
     }
 
     public Godot.Collections.Dictionary SubmitMoveTo(long executeFrame, int playerId, long sequence,
-        long entityId, Vector2 goal, double speed, int clearanceCells = 0)
+        long entityId, Vector2 goal, double speed, int clearanceCells = 0) =>
+        SubmitMoveOrder(executeFrame, playerId, sequence, entityId, goal, speed, clearanceCells, false, 0);
+
+    public Godot.Collections.Dictionary SubmitMoveOrder(long executeFrame, int playerId, long sequence,
+        long entityId, Vector2 goal, double speed, int clearanceCells, bool append, int source)
     {
         if (!TryEntityId(entityId, out var id)) return Rejected("invalid_entity_id");
         return ToResult(_match.SubmitCommand(CommandEnvelope.MoveTo(executeFrame, playerId, sequence,
-            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells)));
+            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells,
+            mode: append ? OrderMode.Append : OrderMode.Replace, source: (OrderSource)source)));
     }
 
     public Godot.Collections.Dictionary SubmitSetObstacle(long executeFrame, int playerId, long sequence,
@@ -119,22 +124,14 @@ public partial class RtsKernelBridge : Node
             new SimVector2(velocity.X, velocity.Y))));
     }
 
-    public Godot.Collections.Dictionary SubmitStop(
-        long executeFrame,
-        int playerId,
-        long sequence,
-        long entityId)
-    {
-        if (!TryEntityId(entityId, out var id))
-        {
-            return Rejected("invalid_entity_id");
-        }
+    public Godot.Collections.Dictionary SubmitStop(long executeFrame, int playerId, long sequence, long entityId) =>
+        SubmitOrderStop(executeFrame, playerId, sequence, entityId, 0);
 
-        return ToResult(_match.SubmitCommand(CommandEnvelope.Stop(
-            executeFrame,
-            playerId,
-            sequence,
-            id)));
+    public Godot.Collections.Dictionary SubmitOrderStop(long executeFrame, int playerId, long sequence,
+        long entityId, int source)
+    {
+        if (!TryEntityId(entityId, out var id)) return Rejected("invalid_entity_id");
+        return ToResult(_match.SubmitCommand(CommandEnvelope.Stop(executeFrame, playerId, sequence, id, (OrderSource)source)));
     }
 
     public bool Step(int count = 1)
@@ -160,12 +157,16 @@ public partial class RtsKernelBridge : Node
         var views = new Godot.Collections.Array<Godot.Collections.Dictionary>();
         foreach (var entity in _match.Entities)
         {
+            var order = _match.ReadCurrentOrder(entity.Id);
             views.Add(new Godot.Collections.Dictionary
             {
                 ["id"] = checked((long)entity.Id.Value),
                 ["owner_id"] = entity.OwnerId,
                 ["moving"] = _match.IsMoving(entity.Id),
                 ["facing"] = entity.Facing,
+                ["order_kind"] = order is null ? 0 : (int)order.Kind,
+                ["order_source"] = order is null ? -1 : (int)order.Source,
+                ["pending_orders"] = _match.GetPendingOrderCount(entity.Id),
                 ["position"] = new Vector2((float)entity.Position.X, (float)entity.Position.Y),
                 ["velocity"] = new Vector2((float)entity.Velocity.X, (float)entity.Velocity.Y),
             });

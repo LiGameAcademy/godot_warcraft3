@@ -52,7 +52,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var cell: Vector2 = (mouse.position / CELL_SIZE).floor()
 			_aim = (cell + Vector2(0.5, 0.5)) * CELL_SIZE
 			var frame: int = int(_bridge.call("GetFrame")) + 1
-			_bridge.call("SubmitMotionMoveTo", frame, 0, _sequence, 1, _aim, move_speed, 0, turn_rate, true)
+			_bridge.call("SubmitMotionMoveOrder", frame, 0, _sequence, 1, _aim, move_speed, 0, turn_rate, true, mouse.shift_pressed, 0)
 			_sequence += 1
 	elif event is InputEventKey:
 		var key: InputEventKey = event as InputEventKey
@@ -89,6 +89,6 @@ func _sync_view() -> void:
 	var view: Dictionary = views[0]
 	_visual.position = view["position"] as Vector2
 	_visual.rotation = float(view["facing"])
-	_status.text = "Ground rises right | Click move | Space stop | S save | R restore\nframe=%d moving=%s  %s" % [
-		int(_bridge.call("GetFrame")), str(view["moving"]), str(_bridge.call("GetLastError"))]
+	_status.text = "Ground rises right | Click replace | Shift+Click queue | Space stop | S save | R restore\nframe=%d moving=%s queued=%d  %s" % [
+		int(_bridge.call("GetFrame")), str(view["moving"]), int(view["pending_orders"]), str(_bridge.call("GetLastError"))]
 	queue_redraw()

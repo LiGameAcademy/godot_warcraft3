@@ -27,14 +27,22 @@ public partial class RtsKernelBridge
         }
     }
 
-    // Diagnostic entry only. Production movement must use frozen unit definitions, not client parameters.
+    // Keep the original Godot-call arity; CLR optional defaults do not supply omitted call() arguments.
     public Godot.Collections.Dictionary SubmitMotionMoveTo(long executeFrame, int playerId, long sequence,
         long entityId, Vector2 goal, double speed, int clearanceCells = 0,
-        double turnRate = 0.5, bool scaleSlopeSpeed = true)
+        double turnRate = 0.5, bool scaleSlopeSpeed = true) =>
+        SubmitMotionMoveOrder(executeFrame, playerId, sequence, entityId, goal, speed,
+            clearanceCells, turnRate, scaleSlopeSpeed, false, 0);
+
+    // Diagnostic entry only. Production movement must use frozen unit definitions, not client parameters.
+    public Godot.Collections.Dictionary SubmitMotionMoveOrder(long executeFrame, int playerId, long sequence,
+        long entityId, Vector2 goal, double speed, int clearanceCells,
+        double turnRate, bool scaleSlopeSpeed, bool append, int source)
     {
         if (!TryEntityId(entityId, out var id)) return Rejected("invalid_entity_id");
         var motion = new MotionParameters(TurnRate: turnRate, ScaleSlopeSpeed: scaleSlopeSpeed);
         return ToResult(_match.SubmitCommand(CommandEnvelope.MoveTo(executeFrame, playerId, sequence,
-            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells, motion)));
+            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells, motion,
+            append ? OrderMode.Append : OrderMode.Replace, (OrderSource)source)));
     }
 }
