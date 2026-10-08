@@ -30,7 +30,8 @@ func _initialize() -> void:
 		if argument.begins_with("--expected-cli-hash="):
 			expected = argument.trim_prefix("--expected-cli-hash=")
 	_check(expected.length() == 64 and str(bridge.call("GetStateHash")) == expected, "native motion and Godot hash match")
-	var view: Dictionary = (bridge.call("ReadEntityViews") as Array)[0]
+	var views: Array[Dictionary] = bridge.call("ReadEntityViews")
+	var view: Dictionary = views[0]
 	_check(bool(view["moving"]) and absf(float(view["facing"])) > 0.01, "view exposes in-flight authoritative facing")
 	var snapshot: String = str(bridge.call("CaptureSnapshotJson"))
 	var saved_hash: String = str(bridge.call("GetStateHash"))
@@ -73,7 +74,8 @@ func _initialize() -> void:
 		probe.call("_unhandled_input", click)
 		probe_bridge.call("Step", 1)
 		probe.call("_sync_view")
-		var motion_view: Dictionary = (probe_bridge.call("ReadEntityViews") as Array)[0]
+		var motion_views: Array[Dictionary] = probe_bridge.call("ReadEntityViews")
+		var motion_view: Dictionary = motion_views[0]
 		var visual: Polygon2D = probe.get_node("EntityVisual") as Polygon2D
 		_check(float(motion_view["facing"]) < 0 and is_equal_approx(visual.rotation, float(motion_view["facing"])),
 			"scene rotation consumes kernel facing")

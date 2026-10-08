@@ -83,7 +83,7 @@ func _draw() -> void:
 
 
 func _sync_view() -> void:
-	var views: Array = _bridge.call("ReadEntityViews")
+	var views: Array[Dictionary] = _bridge.call("ReadEntityViews")
 	if views.is_empty():
 		return
 	var view: Dictionary = views[0]
