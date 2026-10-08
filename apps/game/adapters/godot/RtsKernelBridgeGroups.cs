@@ -94,7 +94,7 @@ public partial class RtsKernelBridge
     public Godot.Collections.Array<Godot.Collections.Dictionary> ReadMovementViews()
     {
         var views = new Godot.Collections.Array<Godot.Collections.Dictionary>();
-        foreach (var move in _match.ReadMoveOrders())
+        foreach (var move in _match.ReadMovementStatuses())
             views.Add(new Godot.Collections.Dictionary
             {
                 ["entity_id"] = checked((long)move.EntityId), ["wait_frames"] = move.WaitFrames,
