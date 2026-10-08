@@ -1,7 +1,8 @@
 extends Node2D
 
-## 隔离验证入口：点击目标，Godot 只提交命令和绘制内核位置。
+## 隔离验证入口：地面从左向右升高，Godot 只提交命令并显示内核位置/朝向。
 @export var move_speed: float = 120.0
+@export var turn_rate: float = 0.5
 @onready var _bridge: Node = $RtsKernelBridge
 @onready var _visual: Polygon2D = $EntityVisual
 @onready var _status: Label = $Status
@@ -21,7 +22,12 @@ func _ready() -> void:
 	for y: int in range(_wall.position.y, _wall.end.y):
 		for x: int in range(_wall.position.x, _wall.end.x):
 			flags[y * GRID_SIZE.x + x] = 2
-	if not bool(_bridge.call("ResetNavigationMatch", GRID_SIZE.x, GRID_SIZE.y, CELL_SIZE, Vector2.ZERO, flags, 30, 7)):
+	var heights: PackedFloat64Array = PackedFloat64Array()
+	heights.resize((GRID_SIZE.x + 1) * (GRID_SIZE.y + 1))
+	for index: int in range(heights.size()):
+		heights[index] = float(index % (GRID_SIZE.x + 1)) * CELL_SIZE
+	if not bool(_bridge.call("ResetTerrainMatch", GRID_SIZE.x, GRID_SIZE.y, CELL_SIZE, Vector2.ZERO, flags,
+		GRID_SIZE.x + 1, GRID_SIZE.y + 1, CELL_SIZE, Vector2.ZERO, heights, 30, 7)):
 		_status.text = str(_bridge.call("GetLastError"))
 		set_process(false)
 		return
@@ -46,7 +52,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var cell: Vector2 = (mouse.position / CELL_SIZE).floor()
 			_aim = (cell + Vector2(0.5, 0.5)) * CELL_SIZE
 			var frame: int = int(_bridge.call("GetFrame")) + 1
-			_bridge.call("SubmitMoveTo", frame, 0, _sequence, 1, _aim, move_speed, 0)
+			_bridge.call("SubmitMotionMoveTo", frame, 0, _sequence, 1, _aim, move_speed, 0, turn_rate, true)
 			_sequence += 1
 	elif event is InputEventKey:
 		var key: InputEventKey = event as InputEventKey
@@ -64,7 +70,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(GRID_SIZE) * CELL_SIZE), Color(0.04, 0.06, 0.09))
+	for column: int in range(GRID_SIZE.x):
+		var shade: float = 0.05 + 0.12 * float(column) / float(GRID_SIZE.x - 1)
+		draw_rect(Rect2(column * CELL_SIZE, 0, CELL_SIZE, GRID_SIZE.y * CELL_SIZE), Color(shade, shade + 0.02, shade + 0.04))
 	for x: int in range(GRID_SIZE.x + 1):
 		draw_line(Vector2(x * CELL_SIZE, 0), Vector2(x * CELL_SIZE, GRID_SIZE.y * CELL_SIZE), Color(0.14, 0.18, 0.22))
 	for y: int in range(GRID_SIZE.y + 1):
@@ -80,6 +88,7 @@ func _sync_view() -> void:
 		return
 	var view: Dictionary = views[0]
 	_visual.position = view["position"] as Vector2
-	_status.text = "Click move | Space stop | S save | R restore\nframe=%d moving=%s  %s" % [
+	_visual.rotation = float(view["facing"])
+	_status.text = "Ground rises right | Click move | Space stop | S save | R restore\nframe=%d moving=%s  %s" % [
 		int(_bridge.call("GetFrame")), str(view["moving"]), str(_bridge.call("GetLastError"))]
 	queue_redraw()

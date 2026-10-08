@@ -18,6 +18,7 @@ public partial class RtsKernelBridge : Node
 
     private RtsMatch _match = new(MatchConfig.Default, seed: 1);
     private PathingGrid? _grid;
+    private TerrainHeights? _terrain;
     private string _lastError = string.Empty;
 
     public long GetFrame() => _match.Frame;
@@ -34,6 +35,7 @@ public partial class RtsKernelBridge : Node
         {
             _match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
             _grid = null;
+            _terrain = null;
             _lastError = string.Empty;
             return true;
         }
@@ -52,6 +54,7 @@ public partial class RtsKernelBridge : Node
             var grid = new PathingGrid(width, height, cellSize, new SimVector2(origin.X, origin.Y), flags);
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
             _grid = grid;
+            _terrain = null;
             _match = match;
             _lastError = string.Empty;
             return true;
@@ -162,6 +165,7 @@ public partial class RtsKernelBridge : Node
                 ["id"] = checked((long)entity.Id.Value),
                 ["owner_id"] = entity.OwnerId,
                 ["moving"] = _match.IsMoving(entity.Id),
+                ["facing"] = entity.Facing,
                 ["position"] = new Vector2((float)entity.Position.X, (float)entity.Position.Y),
                 ["velocity"] = new Vector2((float)entity.Velocity.X, (float)entity.Velocity.Y),
             });
@@ -177,8 +181,10 @@ public partial class RtsKernelBridge : Node
         try
         {
             var snapshot = SnapshotJson.Deserialize(json);
-            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _grid);
+            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _grid,
+                snapshot.Navigation?.HeightHash is null ? null : _terrain);
             if (snapshot.Navigation is null) _grid = null;
+            if (snapshot.Navigation?.HeightHash is null) _terrain = null;
             _lastError = string.Empty;
             return true;
         }

@@ -7,7 +7,7 @@
 script = ExtResource("1_probe")
 
 [node name="EntityVisual" type="Polygon2D" parent="."]
-polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+polygon = PackedVector2Array(-8, -8, 12, 0, -8, 8, -4, 0)
 color = Color(0.3, 0.75, 1, 1)
 
 [node name="Status" type="Label" parent="."]
