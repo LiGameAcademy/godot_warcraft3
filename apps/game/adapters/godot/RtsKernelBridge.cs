@@ -36,6 +36,7 @@ public partial class RtsKernelBridge : Node
             _match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
             _grid = null;
             _terrain = null;
+            _movementDefinitions = null;
             _lastError = string.Empty;
             return true;
         }
@@ -55,6 +56,7 @@ public partial class RtsKernelBridge : Node
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
             _grid = grid;
             _terrain = null;
+            _movementDefinitions = null;
             _match = match;
             _lastError = string.Empty;
             return true;
@@ -164,6 +166,8 @@ public partial class RtsKernelBridge : Node
                 ["owner_id"] = entity.OwnerId,
                 ["moving"] = _match.IsMoving(entity.Id),
                 ["facing"] = entity.Facing,
+                ["radius"] = _match.ReadMovementDefinition(entity.Id)?.Radius ?? 0,
+                ["movement_definition_id"] = checked((long)entity.MovementDefinitionId),
                 ["order_kind"] = order is null ? 0 : (int)order.Kind,
                 ["order_source"] = order is null ? -1 : (int)order.Source,
                 ["pending_orders"] = _match.GetPendingOrderCount(entity.Id),
@@ -183,7 +187,9 @@ public partial class RtsKernelBridge : Node
         {
             var snapshot = SnapshotJson.Deserialize(json);
             _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _grid,
-                snapshot.Navigation?.HeightHash is null ? null : _terrain);
+                snapshot.Navigation?.HeightHash is null ? null : _terrain,
+                snapshot.MovementHash is null ? null : _movementDefinitions);
+            if (snapshot.MovementHash is null) _movementDefinitions = null;
             if (snapshot.Navigation is null) _grid = null;
             if (snapshot.Navigation?.HeightHash is null) _terrain = null;
             _lastError = string.Empty;
@@ -207,6 +213,11 @@ public partial class RtsKernelBridge : Node
                 (int)matchEvent.Kind,
                 checked((long)matchEvent.EntityId.Value),
                 matchEvent.Detail);
+            if (matchEvent.Group is { } group)
+                EmitSignal(SignalName.GroupMoveResultRaised, matchEvent.Frame, checked((long)group.GroupId),
+                    checked((long)matchEvent.EntityId.Value), group.Slot,
+                    group.Goal is { } goal ? new Vector2((float)goal.X, (float)goal.Y) : Vector2.Zero,
+                    matchEvent.Kind == MatchEventKind.GroupMoveAssigned, group.Adjusted, matchEvent.Detail);
         }
     }
 

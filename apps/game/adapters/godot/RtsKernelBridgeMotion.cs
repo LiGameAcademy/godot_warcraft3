@@ -16,6 +16,7 @@ public partial class RtsKernelBridge
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid, terrain);
             _grid = grid;
             _terrain = terrain;
+            _movementDefinitions = null;
             _match = match;
             _lastError = string.Empty;
             return true;
