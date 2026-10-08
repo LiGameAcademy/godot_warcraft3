@@ -2,10 +2,10 @@
 
 独立运行场景，复用 `scenes/map/map_root.tscn` 做地形 / 悬崖 / 水面预览。
 
-设计说明见 [`docs/design/editor/EDITOR.md`](../../docs/design/editor/EDITOR.md)。
-当前目标、已验证结果与后续验收见 [编辑器目标基线](../../docs/roadmap/EDITOR_GOAL_BASELINE.md)。
-完整地图的保存、打开与版本限制见 [地图文件 v1](../../docs/design/editor/MAP_FILE_FORMAT.md)。
-文件 → 测试地图可打开当前未保存内容的[运行预览](../../docs/design/editor/MAP_PREVIEW.md)。
+设计说明见 `docs/design/editor/EDITOR.md`（开发资料，公开版待审阅）。
+当前目标、已验证结果与后续验收见 编辑器目标基线（开发资料，公开版待审阅）。
+完整地图的保存、打开与版本限制见 地图文件 v1（开发资料，公开版待审阅）。
+文件 → 测试地图可打开当前未保存内容的运行预览（开发资料，公开版待审阅）。
 
 ## 运行
 

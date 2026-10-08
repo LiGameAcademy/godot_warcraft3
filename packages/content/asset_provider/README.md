@@ -12,7 +12,7 @@
 
 扩展名自动尝试：`.blp`→`.png`，`.mdx`/`.mdl`→`.glb`。
 
-契约详见 [docs/architecture/ASSET_LANES.md](../../../docs/architecture/ASSET_LANES.md)。
+契约详见 docs/architecture/ASSET_LANES.md（开发资料，公开版待审阅）。
 
 ## 配置
 

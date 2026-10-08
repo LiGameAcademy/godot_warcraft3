@@ -1,6 +1,6 @@
 # asset-convert
 
-玩家导入的最新入口、完整开发地图验收和手动启动见 [PLAYER_SOURCE_IMPORT.md](../../docs/design/asset-convert/PLAYER_SOURCE_IMPORT.md#开发地图资源覆盖2026-10-04)。默认 Windows 引导读取原版安装目录，准备 Echo Isles 所需内容及缓存 SCN；玩家无需安装 Node 或 Godot 编辑器。下文旧开发转换命令继续用于构建与调试。
+玩家导入的最新入口、完整开发地图验收和手动启动见 PLAYER_SOURCE_IMPORT.md（开发资料，公开版待审阅）。默认 Windows 引导读取原版安装目录，准备 Echo Isles 所需内容及缓存 SCN；玩家无需安装 Node 或 Godot 编辑器。下文旧开发转换命令继续用于构建与调试。
 
 将经典 WC3 资产转为 Godot 可用格式：
 
@@ -9,8 +9,8 @@
 3. **场景** `GLB` → 同目录 `.scn`（Godot headless 烘焙；运行时优先，免 `GLTFDocument`；bake 时注入 `*.geosetvis.json` 的 Geoset 显隐轨）
 4. **粒子** `ParticleEmitters2` → 同 stem 旁路 `*.pe2.json`；**`bake:scn` 写入 `Pe2Root`（GPUParticles3D）** 与各 Sequence 的 `:emitting` / position 轨。贴图内嵌进 `.scn`，不再落地 `pe2.tscn`。
    - **v2**：写入 `active_sequences`（Visibility∩EmissionRate 按 Sequence 作用域）；`null`=全程发射（火盆），数组=仅训练烟/建造尘等阶段性特效
-   - 字段对照与未做项：[docs/design/asset-convert/PE2_GODOT.md](../../docs/design/asset-convert/PE2_GODOT.md)
-   - **对外说明（特效全貌）**：[docs/blog/04-wc3-effects-conversion.md](../../docs/blog/04-wc3-effects-conversion.md)
+   - 字段对照与未做项：docs/design/asset-convert/PE2_GODOT.md（开发资料，公开版待审阅）
+   - **对外说明（特效全貌）**：docs/blog/04-wc3-effects-conversion.md（开发资料，公开版待审阅）
 5. **Geoset 显隐** → 同 stem 旁路 `*.geosetvis.json`（Sequence 作用域 alpha）；Godot 导入丢 scale 轨后由 `MapModelCache` 补 `:visible`
 6. **动画关键帧** → 同 stem 旁路 `*.animkeys.json`（MDX 原始 TRS / GeosetAnim / EventTrack；时间单位毫秒）。`bake:scn` 写入各 Animation 的 `loop_mode`、`wc3_mdx_name` / `wc3_rarity` / `wc3_move_speed`，以及 `MdxEvents.fire` Method Track（SND/FPT/SPL/SPN）。Hermite 原始 Keys 仍只留在 JSON。
 7. **碰撞** → 同 stem 旁路 `*.collision.json`（MDX CollisionShapes：球心/半径或箱 min/max，已 Y-up × 0.01）；`bake:scn` 写入 `MdxCollision`（Area3D，layer=0）

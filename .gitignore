@@ -117,3 +117,7 @@ apps/*/tmp/
 /output/devlog-*-materials.zip
 /tutorials/
 /_tutorials/
+
+# Internal development documents live in the course repository.
+# Add reviewed public documents explicitly with git add -f.
+/docs/

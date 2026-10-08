@@ -63,7 +63,7 @@ node tools/export-godot-assets.mjs --help
 | [`export_model_scenes.gd`](../scripts/tool/export_model_scenes.gd) | GLB | 同目录 `.scn`（含 PE2） | Godot headless |
 | [`export_visual_scenes.gd`](../scripts/tool/export_visual_scenes.gd) | `.scn` | `assets/visuals/` | 薄封装（可选） |
 
-分步细节与 AssetProvider 优先级：[docs/data/PIPELINE.md](../docs/data/PIPELINE.md)。  
+分步细节与 AssetProvider 优先级：docs/data/PIPELINE.md（开发资料，公开版待审阅）。
 asset-convert 已知问题（队伍色、Geoset 显隐、Additive）：[asset-convert/README.md](asset-convert/README.md)。
 
 ---

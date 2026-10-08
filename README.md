@@ -8,20 +8,20 @@
 git submodule update --init --recursive
 ```
 
-游戏 C# 桥接需要 **Godot 4.7.2 .NET（Mono）版**；当前构建与测试使用 **.NET 10 SDK**，内核类库目标为 net8.0。在根目录运行 `./tools/workspace/Test-RtsKernel.ps1` 验证内核及游戏内容转换。职责边界、桥接验证和更新步骤见 [内核仓库拆分记录](docs/verification/rts_kernel/REPOSITORY_SPLIT.md)。内核仍处于早期开发阶段，尚未完成完整 RTS 玩法迁移。
+游戏 C# 桥接需要 **Godot 4.7.2 .NET（Mono）版**；当前构建与测试使用 **.NET 10 SDK**，内核类库目标为 net8.0。在根目录运行 `./tools/workspace/Test-RtsKernel.ps1` 验证内核及游戏内容转换。职责边界、桥接验证和更新步骤见 内核仓库拆分记录（开发资料，公开版待审阅）。内核仍处于早期开发阶段，尚未完成完整 RTS 玩法迁移。
 
-仓库**不含**暴雪游戏资产。开发前须自备正版**经典**客户端（含 `War3.mpq` / `War3x.mpq`，不是仅有 `Data/` 的现代 CASC）。合规说明：[docs/data/LEGAL.md](docs/data/LEGAL.md)。
+仓库**不含**暴雪游戏资产。开发前须自备正版**经典**客户端（含 `War3.mpq` / `War3x.mpq`，不是仅有 `Data/` 的现代 CASC）。合规说明：docs/data/LEGAL.md（开发资料，公开版待审阅）。
 
 | 入口 | 场景 |
 |------|------|
 | **游戏项目** | `apps/game/project.godot`（Echo Isles） |
 | **地图编辑器项目** | `apps/map_editor/project.godot` |
 | **[资产查看器](apps/asset_viewer/README.md)** | `apps/asset_viewer/project.godot`（模型预览与全量审计） |
-| 文档索引 | [docs/README.md](docs/README.md) |
+| 文档索引 | docs/README.md（开发资料，公开版待审阅） |
 
 ---
 
-目录职责与公开文档范围见[仓库目录约定](docs/REPOSITORY_LAYOUT.md)。
+目录职责与公开文档范围见仓库目录约定（开发资料，公开版待审阅）。
 
 ## Godot 项目入口
 
@@ -40,7 +40,7 @@ python tools/workspace/sync_packages.py
 这不是 Godot AssetLib addon；`addons/` 只放第三方插件。
 只改了 `packages/` 之后也要重跑；首次同步还会写本机 `override.cfg` 的外部资产路径。
 
-详见 [同步与验证](tools/workspace/README.md) 和 [完整目录迁移记录](docs/architecture/DIRECTORY_CUTOVER_2026_09_24.md)。
+详见 [同步与验证](tools/workspace/README.md) 和 完整目录迁移记录（开发资料，公开版待审阅）。
 
 ## 新电脑：一条命令准备资源
 
@@ -99,7 +99,7 @@ node tools/dev-setup.mjs --help
 | `--only convert` | 只重跑某一步 |
 | `--force` | 强制重解/重转 |
 
-工具总览与分步说明：[tools/README.md](tools/README.md)。管线细节：[docs/data/PIPELINE.md](docs/data/PIPELINE.md)。
+工具总览与分步说明：[tools/README.md](tools/README.md)。管线细节：docs/data/PIPELINE.md（开发资料，公开版待审阅）。
 
 ### 仅补导 Godot 特效 / 场景
 
@@ -125,7 +125,7 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
 逻辑路径与经典客户端一致。运行时经 Autoload `AssetProvider`：**overlay → converted → slk-exported**（不读 `.cache`）。
 
-三车道契约：[docs/architecture/ASSET_LANES.md](docs/architecture/ASSET_LANES.md)。路径手册：[docs/data/WC3_ASSET_PATHS.md](docs/data/WC3_ASSET_PATHS.md)。
+三车道契约：docs/architecture/ASSET_LANES.md（开发资料，公开版待审阅）。路径手册：docs/data/WC3_ASSET_PATHS.md（开发资料，公开版待审阅）。
 
 ---
 
@@ -143,12 +143,12 @@ node tools/export-godot-assets.mjs --include Buildings/Human/ --force
 
 ## 文档与架构
 
-- 分层总纲：[docs/architecture/LAYERED_ARCHITECTURE.md](docs/architecture/LAYERED_ARCHITECTURE.md)
-- 资产三车道：[docs/architecture/ASSET_LANES.md](docs/architecture/ASSET_LANES.md)
-- 游戏场景：[docs/design/game/README.md](docs/design/game/README.md)
-- 地图编辑器：[docs/design/editor/EDITOR.md](docs/design/editor/EDITOR.md)
-- 水体：[docs/water/WATER.md](docs/water/WATER.md)
-- 路线图：[docs/roadmap/NEXT.md](docs/roadmap/NEXT.md)（近中期）· [docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)（地图 ①–⑫）
+- 分层总纲：docs/architecture/LAYERED_ARCHITECTURE.md（开发资料，公开版待审阅）
+- 资产三车道：docs/architecture/ASSET_LANES.md（开发资料，公开版待审阅）
+- 游戏场景：docs/design/game/README.md（开发资料，公开版待审阅）
+- 地图编辑器：docs/design/editor/EDITOR.md（开发资料，公开版待审阅）
+- 水体：docs/water/WATER.md（开发资料，公开版待审阅）
+- 路线图：docs/roadmap/NEXT.md（开发资料，公开版待审阅）（近中期）· docs/roadmap/ROADMAP.md（开发资料，公开版待审阅）（地图 ①–⑫）
 
 ---
 
