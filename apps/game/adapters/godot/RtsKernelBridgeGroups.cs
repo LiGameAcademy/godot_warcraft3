@@ -30,7 +30,10 @@ public partial class RtsKernelBridge
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error) { _lastError = error.Message; return false; }
+        catch (Exception error) when (error is JsonException or ArgumentException)
+        {
+            return RejectInput(nameof(ResetConfiguredNavigationMatch), error);
+        }
     }
 
     public Godot.Collections.Dictionary SubmitConfiguredSpawn(long executeFrame, int playerId, long sequence,
