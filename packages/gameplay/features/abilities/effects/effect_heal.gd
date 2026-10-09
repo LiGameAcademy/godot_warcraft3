@@ -7,10 +7,10 @@ extends RefCounted
 static func run(ec: EffectContext, data_field: String = "data_a") -> float:
 	if ec == null or ec.target == null or not is_instance_valid(ec.target):
 		return 0.0
-	var ab := AbilityCatalog.data(ec.abil_id)
+	var ab: AbilityDataDef = AbilityCatalog.data(ec.abil_id)
 	if ab == null:
 		return 0.0
-	var amount := 0.0
+	var amount: float = 0.0
 	match data_field:
 		"data_b":
 			amount = ab.data_b_at(ec.level)
@@ -21,8 +21,8 @@ static func run(ec: EffectContext, data_field: String = "data_a") -> float:
 	amount = maxf(amount, 0.0)
 	if amount <= 0.0:
 		return 0.0
-	var result := Wc3AbilityEffects.heal(ec.target, ec.caster, amount)
-	var healed := result.actual_amount
+	var result: Wc3HealResult = Wc3AbilityEffects.heal(ec.target, ec.caster, amount)
+	var healed: float = result.actual_amount
 	ec.result["heal_amount"] = healed
 	ec.result["heal_target"] = ec.target
 	return healed
