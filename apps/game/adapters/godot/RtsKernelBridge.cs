@@ -1,4 +1,5 @@
 using Godot;
+using System.Text.Json;
 using Rts.Kernel;
 using Rts.Kernel.Navigation;
 
@@ -40,10 +41,9 @@ public partial class RtsKernelBridge : Node
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (ArgumentException error)
         {
-            _lastError = error.Message;
-            return false;
+            return RejectInput(nameof(ResetMatch), error);
         }
     }
 
@@ -61,10 +61,9 @@ public partial class RtsKernelBridge : Node
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (ArgumentException error)
         {
-            _lastError = error.Message;
-            return false;
+            return RejectInput(nameof(ResetNavigationMatch), error);
         }
     }
 
@@ -195,11 +194,18 @@ public partial class RtsKernelBridge : Node
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (Exception error) when (error is JsonException or InvalidDataException or ArgumentException)
         {
-            _lastError = error.Message;
-            return false;
+            return RejectInput(nameof(RestoreSnapshotJson), error);
         }
+    }
+
+    // Expected boundary failures become user-facing errors. Unexpected exceptions propagate
+    // with their original type and stack through Godot's C# call boundary.
+    private bool RejectInput(string operation, Exception error)
+    {
+        _lastError = $"{operation}: {error.GetType().Name}: {error.Message}";
+        return false;
     }
 
     private void EmitPendingEvents()

@@ -66,6 +66,8 @@ func _initialize() -> void:
 		"execution rejection emitted as copied event"
 	)
 
+	_check_input_failures(bridge)
+
 	# 与 CLI 示例使用完全相同的初始状态和命令日志。
 	_check(bool(bridge.call("ResetMatch", 30, 0xC0FFEE)), "CLI parity match reset")
 	bridge.call("SubmitSpawn", 1, 0, 0, Vector2(128, 256))
@@ -110,6 +112,48 @@ func _initialize() -> void:
 	other.queue_free()
 	await process_frame
 	_finish()
+
+
+func _check_input_failures(bridge: Node) -> void:
+	var original_hash: String = str(bridge.call("GetStateHash"))
+	var flags: PackedByteArray = PackedByteArray()
+	flags.resize(16)
+	var empty_flags: PackedByteArray = PackedByteArray()
+	var heights: PackedFloat64Array = PackedFloat64Array()
+	_check_input_rejection(bridge, bool(bridge.call("ResetMatch", 0, 42)), "ResetMatch", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call(
+		"ResetNavigationMatch", 4, 4, 10.0, Vector2.ZERO, empty_flags, 30, 42
+	)), "ResetNavigationMatch", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call(
+		"ResetTerrainMatch", 4, 4, 10.0, Vector2.ZERO, flags,
+		1, 1, 10.0, Vector2.ZERO, heights, 30, 42
+	)), "ResetTerrainMatch", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call(
+		"ResetConfiguredNavigationMatch", 4, 4, 10.0, Vector2.ZERO, flags, "{", 30, 42
+	)), "ResetConfiguredNavigationMatch", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call(
+		"ResetConfiguredNavigationMatch", 4, 4, 10.0, Vector2.ZERO, flags,
+		'[{"Id":1,"Speed":-1,"Radius":2}]', 30, 42
+	)), "ResetConfiguredNavigationMatch", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call("RestoreSnapshotJson", "{")),
+		"RestoreSnapshotJson", original_hash)
+	_check_input_rejection(bridge, bool(bridge.call("RestoreSnapshotJson", "null")),
+		"RestoreSnapshotJson", original_hash)
+	var invalid_snapshot: String = str(bridge.call("CaptureSnapshotJson")).replace(
+		'"formatVersion":9', '"formatVersion":0'
+	)
+	_check_input_rejection(bridge, bool(bridge.call("RestoreSnapshotJson", invalid_snapshot)),
+		"RestoreSnapshotJson", original_hash)
+
+
+func _check_input_rejection(bridge: Node, accepted: bool, operation: String, expected_hash: String) -> void:
+	_check(not accepted, "%s rejects invalid input" % operation)
+	var error_text: String = str(bridge.call("GetLastError"))
+	_check(error_text.begins_with(operation + ": "), "%s reports operation context" % operation)
+	_check(error_text.contains(": ArgumentException:") or error_text.contains(": ArgumentOutOfRangeException:")
+		or error_text.contains(": JsonException:") or error_text.contains(": InvalidDataException:"),
+		"%s reports expected exception type" % operation)
+	_check(str(bridge.call("GetStateHash")) == expected_hash, "%s preserves the old match" % operation)
 
 
 func _expected_cli_hash() -> String:

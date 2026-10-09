@@ -21,10 +21,9 @@ public partial class RtsKernelBridge
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (ArgumentException error)
         {
-            _lastError = error.Message;
-            return false;
+            return RejectInput(nameof(ResetTerrainMatch), error);
         }
     }
 
