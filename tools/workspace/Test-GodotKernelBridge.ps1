@@ -48,14 +48,36 @@ try {
         throw "Game package sync failed"
     }
 
+    $logRoot = Join-Path $repositoryRoot "tmp/kernel-bridge-validation"
+    New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+    $scriptErrors = 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|Can.t load dependency'
+
+    # Sync can add or rename global script classes. Import before exercising the runtime.
+    $importLog = Join-Path $logRoot "import.log"
+    & $godotExecutable --headless --path apps/game --editor --import --quit `
+        --log-file "$importLog.engine" *> $importLog
+    $importExitCode = $LASTEXITCODE
+    $importOutput = Get-Content -LiteralPath $importLog -Raw
+    if ($importExitCode -ne 0 -or $importOutput -match $scriptErrors) {
+        throw "Godot script import failed. See $importLog"
+    }
+
+    $testName = [IO.Path]::GetFileNameWithoutExtension($TestCase)
+    $testLog = Join-Path $logRoot "$testName.log"
     & $godotExecutable `
         --headless `
         --path apps/game `
-        --log-file tmp/selftest_rts_kernel_bridge.log `
-        -s "res://tests/$testCase" `
-        -- "--expected-cli-hash=$expectedCliHash"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Godot kernel bridge test failed"
+        --log-file "$testLog.engine" `
+        -s "res://tests/$TestCase" `
+        -- "--expected-cli-hash=$expectedCliHash" *> $testLog
+    $testExitCode = $LASTEXITCODE
+    $testOutput = Get-Content -LiteralPath $testLog -Raw
+    Write-Output $testOutput
+    if ($testExitCode -ne 0 -or $testOutput -match $scriptErrors) {
+        throw "Godot kernel bridge test failed. See $testLog"
+    }
+    if ($testOutput -notmatch ([regex]::Escape($testName) + ': PASS')) {
+        throw "Godot kernel bridge test did not report completion. See $testLog"
     }
 }
 finally {

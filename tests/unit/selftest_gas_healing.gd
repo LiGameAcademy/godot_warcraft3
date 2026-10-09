@@ -1,7 +1,7 @@
 extends Node
 
-var checks := 0
-var failed := 0
+var checks: int = 0
+var failed: int = 0
 
 func check(value: bool, message: String) -> void:
 	checks += 1
@@ -10,14 +10,14 @@ func check(value: bool, message: String) -> void:
 		push_error("GAS HEALING: " + message)
 
 func unit(id: String, owner_id: int = 0) -> Node3D:
-	var node := Node3D.new()
+	var node: Node3D = Node3D.new()
 	node.set_meta("unit_data", {"typeId": id, "owner": owner_id})
 	node.set_meta("life", 100.0)
 	node.set_meta("max_life", 1000.0)
 	node.set_meta("mana", 100)
 	node.set_meta("max_mana", 100)
-	var player := AnimationPlayer.new()
-	var library := AnimationLibrary.new()
+	var player: AnimationPlayer = AnimationPlayer.new()
+	var library: AnimationLibrary = AnimationLibrary.new()
 	library.add_animation("SpellAttack", Animation.new())
 	player.add_animation_library("", library)
 	node.add_child(player)
@@ -28,46 +28,53 @@ func _ready() -> void:
 	call_deferred("run")
 
 func run() -> void:
-	var priest := unit("hmpr")
-	var hero := unit("Hamg")
-	var inv := Inventory.ensure_on(hero)
+	var priest: Node3D = unit("hmpr")
+	var hero: Node3D = unit("Hamg")
+	var inv: Inventory = Inventory.ensure_on(hero)
 	inv.insert(ItemInstance.create("phea"))
 	inv.insert(ItemInstance.create("phea"))
-	var effect := Wc3HealEffect.new()
+	var effect: Wc3HealEffect = Wc3HealEffect.new()
 	check(effect is GameplayEffect, "game healing uses plugin effect protocol")
-	var heal := AbilityCatalog.data("Ahea")
-	var before := UnitLife.get_life(hero)
-	var cast := HealAbility.try_cast(priest, "Ahea", hero, {})
+	var heal: AbilityDataDef = AbilityCatalog.data("Ahea")
+	var before: float = UnitLife.get_life(hero)
+	var cast: Dictionary = HealAbility.try_cast(priest, "Ahea", hero, {})
 	check(cast.get("ok", false), "actual HealAbility accepted")
 	check(UnitLife.get_life(hero) == before + heal.data_a_at(1), "spell heals exactly once with SLK amount")
 	check(UnitMana.get_mana(priest) == 100 - heal.cost_at(1), "spell pays mana exactly once")
 	check(inv.item_at(0).charges == 1 and inv.item_at(1).charges == 1, "spell does not consume held items")
 	check(inv.cooldown_remaining(0) == 0.0, "spell does not start potion cooldown")
-	var mana_before := UnitMana.get_mana(hero)
+	var mana_before: float = UnitMana.get_mana(hero)
 	before = UnitLife.get_life(hero)
 	check(inv.try_use(0).ok, "potion succeeds alongside spell cooldown")
 	check(UnitLife.get_life(hero) == before + ItemCatalog.effect("phea").data_a_at(1), "potion heals exactly once through shared backend")
 	check(UnitMana.get_mana(hero) == mana_before, "potion does not pay spell mana")
 	check(inv.item_at(0) == null and inv.item_at(1).charges == 1, "only source potion consumed")
 	check(not inv.try_use(1).ok, "shared potion cooldown remains authoritative")
-	var full := unit("Hamg")
+	var full: Node3D = unit("Hamg")
 	UnitLife.set_life(full, 1000.0)
-	var full_inv := Inventory.ensure_on(full)
+	var full_inv: Inventory = Inventory.ensure_on(full)
 	full_inv.insert(ItemInstance.create("phea"))
-	check(Wc3AbilityEffects.heal(full, priest, 20.0).outcome == GameplayEffectResult.Outcome.NO_EFFECT, "full health returns no_effect")
+	check(Wc3AbilityEffects.heal(full, priest, 20.0).outcome == Wc3HealResult.Outcome.NO_EFFECT, "full health returns no_effect")
 	check(not full_inv.try_use(0).ok and full_inv.item_at(0).charges == 1 and full_inv.cooldown_remaining(0) == 0.0, "full health rejects without item charge or cooldown")
-	var other_priest := unit("hmpr")
+	var other_priest: Node3D = unit("hmpr")
 	check(not HealAbility.try_cast(other_priest, "Ahea", full, {}).get("ok", false), "full health spell rejected")
 	check(UnitMana.get_mana(other_priest) == 100 and AbilityCooldowns.is_ready(other_priest, "Ahea"), "failed spell costs nothing")
 	UnitLife.set_life(full, 995.0)
 	check(full_inv.try_use(0).ok and UnitLife.get_life(full) == 1000.0, "same backend caps at maximum")
 	UnitLife.set_life(full, 0.0)
-	check(Wc3AbilityEffects.heal(full, priest, 20.0).outcome == GameplayEffectResult.Outcome.REJECTED, "healing never revives dead target")
-	check(Wc3AbilityEffects.heal(null, priest, 20.0).outcome == GameplayEffectResult.Outcome.REJECTED, "missing target rejected")
-	var enemy := unit("hfoo", 1)
+	check(Wc3AbilityEffects.heal(full, priest, 20.0).outcome == Wc3HealResult.Outcome.REJECTED, "healing never revives dead target")
+	check(Wc3AbilityEffects.heal(null, priest, 20.0).outcome == Wc3HealResult.Outcome.REJECTED, "missing target rejected")
+	var enemy: Node3D = unit("hfoo", 1)
 	check(not HealAbility.try_cast(other_priest, "Ahea", enemy, {}).get("ok", false), "existing faction validation preserved")
 	check(hero.get_node_or_null("GameplayVitalAttributeComponent") == null, "no second HP/MP storage attached")
-	for child in get_children():
+	before = UnitLife.get_life(hero)
+	var result: Wc3HealResult = Wc3AbilityEffects.heal(hero, priest, 10.0)
+	check(result.outcome == Wc3HealResult.Outcome.APPLIED and result.actual_amount == 10.0 and UnitLife.get_life(hero) == before + 10.0, "game result reports healing applied exactly once")
+	effect.amount = 10.0
+	var direct_before: float = UnitLife.get_life(hero)
+	effect.apply(hero, priest)
+	check(UnitLife.get_life(hero) == direct_before + 10.0, "plugin apply invokes legacy healing hook exactly once")
+	for child: Node in get_children():
 		child.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame
