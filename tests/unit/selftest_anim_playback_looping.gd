@@ -16,6 +16,8 @@ func _run() -> void:
 	_add_clip(library, "Spell", "source_looping", false)
 	_add_clip(library, "Stand", "source_looping", true)
 	_add_clip(library, "Attack", "source_looping", true)
+	_add_clip(library, "Attack Lumber", "source_looping", false)
+	_add_clip(library, "Attack Gold", "source_looping", false)
 	_add_clip(library, "LegacyBirth", "wc3_seq_looping", false)
 	_add_clip(library, "LegacyStand", "wc3_seq_looping", true)
 	_add_clip(library, "Untagged", "", false)
@@ -61,6 +63,18 @@ func _run() -> void:
 	_check(bp.get_animation("native/Attack").loop_mode == Animation.LOOP_LINEAR, "Attack override leaves B unchanged")
 	ap.advance(0.25)
 	_check(finished.has(&"native/Attack"), "Attack still emits completion")
+	# Harvesting holds ATTACK state rather than requesting each swing again.
+	for name: String in ["Attack Lumber", "Attack Gold"]:
+		var clip: String = "native/" + name
+		AnimPlayback.play_logical(a, name, 0.0, null, AnimSequenceResolver.Activity.ATTACK)
+		ap.advance(0.65)
+		_check(ap.is_playing(), name + " continues beyond multiple clip lengths")
+		_check(ap.get_animation(clip).loop_mode == Animation.LOOP_LINEAR, name + " forces continuous harvesting")
+		_check(not finished.has(StringName(clip)), name + " does not finish while harvesting")
+		_check(bp.get_animation(clip).loop_mode == Animation.LOOP_NONE, name + " leaves B unchanged")
+		_check(library.get_animation(name).loop_mode == Animation.LOOP_NONE, name + " leaves template unchanged")
+	AnimPlayback.play_logical(a, "Stand")
+	_check(ap.current_animation == "native/Stand", "Leaving harvest switches to Stand")
 	var c: Node3D = packed.instantiate() as Node3D
 	_check(AnimPlayback.find_animation_player(c).get_animation("native/Spell").loop_mode == Animation.LOOP_NONE, "New instance keeps source policy")
 	c.free()

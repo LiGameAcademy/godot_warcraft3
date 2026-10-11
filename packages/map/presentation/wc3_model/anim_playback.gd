@@ -335,17 +335,14 @@ static func play_logical(
 		)
 		return out
 	# 战斗默认 Attack 单次；伐木 Attack Lumber / Attack Gold 仍要 LOOP
-	var force_loop := -1
+	var force_loop: int = -1
 	if activity_hint == AnimSequenceResolver.Activity.DEATH:
 		force_loop = 0
 	elif activity_hint == AnimSequenceResolver.Activity.ATTACK:
-		var leaf := logical.replace("_", " ").strip_edges().to_lower()
-		if leaf == "attack" or (
-			leaf.begins_with("attack")
-			and not leaf.contains("lumber")
-			and not leaf.contains("gold")
-		):
-			force_loop = 0
+		var leaf: String = logical.replace("_", " ").strip_edges().to_lower()
+		if leaf.begins_with("attack"):
+			# 持续采集状态不会逐次重播，必须覆盖源动画的 NonLooping。
+			force_loop = 1 if leaf.contains("lumber") or leaf.contains("gold") else 0
 	var played := play(root, resolved, blend, cache, force_loop, ap)
 	out["ok"] = bool(played.get("ok", false))
 	out["ping_pong"] = bool(played.get("ping_pong", false))
