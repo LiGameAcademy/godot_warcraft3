@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Preferences: GDScript = preload("res://app/asset_import_preferences.gd")
+
 signal progress_changed(stage: String, completed: int, total: int)
 signal finished(result: Dictionary)
 
@@ -46,9 +48,9 @@ func start(game_dir: String, requested_cache: String = "user://wc3-cache/source-
 	if AssetProvider.runtime_content_sealed:
 		_fail("content_in_use", "对局运行中不能导入资产")
 		return
-	var bundle: String = OS.get_executable_path().get_base_dir().path_join("asset-import-runtime")
-	if OS.has_feature("editor") or OS.get_name() != "Windows" or not FileAccess.file_exists(bundle.path_join("node.exe")):
-		_fail("source_runtime_missing", "请使用包含 asset-import-runtime 的 Windows 发布包")
+	var bundle: String = Preferences.runtime_bundle()
+	if OS.get_name() != "Windows" or not FileAccess.file_exists(bundle.path_join("node.exe")):
+		_fail("source_runtime_missing", "请选择有效的 asset-import-runtime 目录（Windows）")
 		return
 	_guard = Guard.new()
 	if _guard.acquire(cache_root) != OK:
@@ -153,7 +155,7 @@ func _start_worker() -> void:
 	if not _write(batch_path, JSON.stringify(batch)):
 		_fail("worker_batch_unwritable", "不能写入场景编译批次")
 		return
-	_pid = OS.create_process(OS.get_executable_path(), PackedStringArray(["--headless", "--", "--asset-worker-batch", batch_path, "--asset-worker-result", _result_path]), false)
+	_pid = OS.create_process(OS.get_executable_path(), Preferences.worker_args(batch_path, _result_path, OS.has_feature("editor"), ProjectSettings.globalize_path("res://")), false)
 	_guard.track_child(_pid)
 	if _pid < 0:
 		_fail("worker_start_failed", "不能启动场景编译进程")

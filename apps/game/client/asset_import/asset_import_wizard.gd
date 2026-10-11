@@ -2,6 +2,7 @@ extends Control
 
 signal ready_to_play()
 
+const Preferences: GDScript = preload("res://app/asset_import_preferences.gd")
 const Validation: GDScript = preload("res://app/asset_cache_validation.gd")
 const Guard: GDScript = preload("res://app/asset_import_guard.gd")
 const Job: GDScript = preload("res://app/asset_import_job.gd")
@@ -11,6 +12,10 @@ const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
 @export var auto_resume: bool = true
 @export_range(1, 4) var cache_validation_workers: int = 2
 @export var cache_root: String = "user://wc3-cache/source-import"
+@onready var cache_directory: LineEdit = %CacheDirectory
+@onready var runtime_directory: LineEdit = %RuntimeDirectory
+@onready var check_button: Button = %CheckCache
+@onready var cache_info: Label = %CacheInfo
 @onready var directory: LineEdit = %Directory
 @onready var browse: Button = %Browse
 @onready var start_button: Button = %Start
@@ -27,6 +32,12 @@ var checking_cache: bool = false
 var job: RefCounted
 
 func _ready() -> void:
+	cache_directory.text = cache_root
+	runtime_directory.text = Preferences.runtime_bundle()
+	runtime_directory.visible = OS.has_feature("editor")
+	directory.text = str(Preferences.read().get_value("paths", "source", ""))
+	check_button.pressed.connect(_check_selected_cache)
+	cache_info.text = "缓存：" + ProjectSettings.globalize_path(cache_root)
 	job = Job.new()
 	job.request_resource = request_resource
 	job.progress_changed.connect(_on_progress)
@@ -35,27 +46,50 @@ func _ready() -> void:
 	dialog.dir_selected.connect(func(path: String) -> void: directory.text = path)
 	start_button.pressed.connect(_start_import)
 	cancel_button.pressed.connect(_cancel)
-	play_button.pressed.connect(func() -> void: ready_to_play.emit())
+	play_button.pressed.connect(_resume)
 	if auto_resume:
-		if Guard.register_reader(cache_root) != OK:
-			status.text = "缓存正被其他进程使用，请关闭后重启。"
-			start_button.disabled = true
-			return
-		checking_cache = true
-		status.text = "正在后台校验资源缓存…"
+		_check_cache()
+
+func _check_selected_cache() -> void:
+	if checking_cache or job.active:
+		return
+	if cache_directory.text.strip_edges().is_empty():
+		status.text = "请填写缓存目录。"
+		return
+	cache_root = cache_directory.text.strip_edges()
+	Preferences.save(cache_root, directory.text.strip_edges(), runtime_directory.text.strip_edges())
+	_check_cache()
+
+func _set_paths_editable(enabled: bool) -> void:
+	cache_directory.editable = enabled
+	runtime_directory.editable = enabled
+	check_button.disabled = not enabled
+
+func _check_cache() -> void:
+	play_button.disabled = true
+	cache_info.text = "缓存：" + ProjectSettings.globalize_path(cache_root)
+	_set_paths_editable(false)
+	if Guard.register_reader(cache_root) != OK:
+		status.text = "缓存正被其他进程使用，请关闭后重启。"
 		start_button.disabled = true
-		cancel_button.disabled = false
-		cancel_button.text = "取消校验"
-		_cache_validation = Validation.new(cache_validation_workers)
-		_cache_importer = TaskImport.new()
-		_cache_thread = Thread.new()
-		var error: Error = _cache_thread.start(_cache_importer.validate_cache.bind(cache_root, request_resource, _cache_validation))
-		if error == OK:
-			return
-		checking_cache = false
-		cancel_button.text = "取消导入"
-		cancel_button.disabled = true
-		start_button.disabled = false
+		_set_paths_editable(true)
+		return
+	checking_cache = true
+	status.text = "正在后台校验资源缓存…"
+	start_button.disabled = true
+	cancel_button.disabled = false
+	cancel_button.text = "取消校验"
+	_cache_validation = Validation.new(cache_validation_workers)
+	_cache_importer = TaskImport.new()
+	_cache_thread = Thread.new()
+	var error: Error = _cache_thread.start(_cache_importer.validate_cache.bind(cache_root, request_resource, _cache_validation))
+	if error == OK:
+		return
+	checking_cache = false
+	_set_paths_editable(true)
+	cancel_button.text = "取消导入"
+	cancel_button.disabled = true
+	start_button.disabled = false
 	status.text = "请选择经典《魔兽争霸3》安装目录（包含 MPQ 文件）。"
 
 func _process(_delta: float) -> void:
@@ -64,6 +98,7 @@ func _process(_delta: float) -> void:
 	if checking_cache and _cache_thread != null and not _cache_thread.is_alive():
 		var valid: bool = bool(_cache_thread.wait_to_finish())
 		checking_cache = false
+		_set_paths_editable(true)
 		cancel_button.text = "取消导入"
 		cancel_button.disabled = true
 		progress.indeterminate = false
@@ -93,6 +128,12 @@ func _start_import() -> void:
 	if directory.text.strip_edges().is_empty():
 		status.text = "请先选择原版安装目录。"
 		return
+	cache_root = cache_directory.text.strip_edges()
+	if cache_root.is_empty():
+		status.text = "请填写缓存目录。"
+		return
+	Preferences.save(cache_root, directory.text.strip_edges(), runtime_directory.text.strip_edges())
+	_set_paths_editable(false)
 	start_button.disabled = true
 	browse.disabled = true
 	directory.editable = false
@@ -108,6 +149,7 @@ func _on_progress(stage: String, completed: int, total: int) -> void:
 
 func _on_finished(result: Dictionary) -> void:
 	cancel_button.disabled = true
+	_set_paths_editable(true)
 	progress.indeterminate = false
 	if result.get("ok", false):
 		if Guard.register_reader(cache_root) != OK:
@@ -119,6 +161,7 @@ func _on_finished(result: Dictionary) -> void:
 		if not result.get("content", {}).get("coverage", {}).get("complete", true):
 			status.text += " 存在未解析引用，详情见资源缓存中的 coverage.json。"
 		play_button.disabled = false
+		_set_paths_editable(false)
 		progress.value = progress.max_value
 	else:
 		status.text = "导入失败，请重试。"
@@ -133,6 +176,8 @@ func _on_finished(result: Dictionary) -> void:
 		directory.editable = true
 
 func _resume() -> void:
+	Preferences.save(cache_root, directory.text.strip_edges(), Preferences.runtime_bundle())
+	print("ASSET_CACHE_READY ", ProjectSettings.globalize_path(cache_root), " request=", request_resource)
 	ready_to_play.emit()
 
 func _cancel() -> void:

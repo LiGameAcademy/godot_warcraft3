@@ -11,6 +11,7 @@ extends Node
 ## 设计文档：docs/design/game/SCENE_BOOTSTRAP.md §10。
 
 const SourceImport: GDScript = preload("res://app/game_source_import.gd")
+const Preferences: GDScript = preload("res://app/asset_import_preferences.gd")
 const AssetImport: GDScript = preload("res://app/game_asset_import.gd")
 
 const GAME_MAIN_PATH: String = "res://scenes/game_main.tscn"
@@ -30,15 +31,13 @@ func _start() -> void:
 	if not _prepare_asset_import():
 		return
 	var args: PackedStringArray = OS.get_cmdline_user_args()
-	if (not OS.has_feature("editor") or "--asset-import-wizard" in args) and not "--warcraft-dir" in args and not "--asset-import-manifest" in args:
+	if Preferences.needs_wizard(args):
 		var wizard: Control = (load("res://client/asset_import/asset_import_wizard.tscn") as PackedScene).instantiate() as Control
 		wizard.auto_resume = not "--asset-import-wizard" in args
 		var request_index: int = args.find("--asset-import-request")
 		if request_index >= 0 and request_index + 1 < args.size():
 			wizard.request_resource = args[request_index + 1]
-		var cache_index: int = args.find("--asset-import-cache")
-		if cache_index >= 0 and cache_index + 1 < args.size():
-			wizard.cache_root = args[cache_index + 1]
+		wizard.cache_root = Preferences.cache_path(args)
 		wizard.ready_to_play.connect(func() -> void:
 			wizard.queue_free()
 			if "--smoke-test" in args:
@@ -177,7 +176,7 @@ func _prepare_asset_import() -> bool:
 	var result_path: String = ""
 	var game_dir: String = ""
 	var request_path: String = ""
-	var cache_root: String = "user://wc3-cache/source-import"
+	var cache_root: String = Preferences.cache_path(args)
 	var index: int = 0
 	while index < args.size():
 		if args[index] in ["--asset-root", "--asset-import-manifest", "--asset-import-result", "--warcraft-dir", "--asset-import-request", "--asset-import-cache"]:
