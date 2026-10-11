@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Preferences: GDScript = preload("res://app/asset_import_preferences.gd")
+
 const Guard: GDScript = preload("res://app/asset_import_guard.gd")
 const Index: GDScript = preload("res://app/asset_import_index.gd")
 const TaskImport: GDScript = preload("res://app/game_asset_import.gd")
@@ -9,9 +11,9 @@ const DEFAULT_REQUEST: String = "res://config/development_asset_request.source"
 func run_source(game_dir: String, request_path: String, cache_root: String, content_in_use: bool) -> Dictionary:
 	if content_in_use:
 		return _failure("content_in_use", "对局运行中不能导入资产")
-	if OS.has_feature("editor") or OS.get_name() != "Windows":
+	if OS.get_name() != "Windows":
 		return _failure("source_platform_unsupported", "源资产入口目前仅验证 Windows 发布包")
-	var bundle: String = OS.get_executable_path().get_base_dir().path_join("asset-import-runtime")
+	var bundle: String = Preferences.runtime_bundle()
 	var executable: String = bundle.path_join("node.exe")
 	var entry: String = bundle.path_join("tools/asset-convert/src/runtime-source-import.mjs")
 	if not FileAccess.file_exists(executable) or not FileAccess.file_exists(entry):

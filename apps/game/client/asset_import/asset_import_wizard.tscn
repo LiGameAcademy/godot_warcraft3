@@ -52,6 +52,21 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "浏览目录…"
 
+[node name="CacheDirectory" type="LineEdit" parent="Center/Panel"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "新管线缓存目录"
+
+[node name="RuntimeDirectory" type="LineEdit" parent="Center/Panel"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "编辑器导入运行时目录（asset-import-runtime）"
+
+[node name="CacheInfo" type="Label" parent="Center/Panel"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
 [node name="Progress" type="ProgressBar" parent="Center/Panel"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -65,6 +80,11 @@ autowrap_mode = 2
 
 [node name="Actions" type="HBoxContainer" parent="Center/Panel"]
 layout_mode = 2
+
+[node name="CheckCache" type="Button" parent="Center/Panel/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "检查此缓存"
 
 [node name="Start" type="Button" parent="Center/Panel/Actions"]
 unique_name_in_owner = true

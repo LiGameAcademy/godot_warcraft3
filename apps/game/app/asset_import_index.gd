@@ -1,11 +1,13 @@
 extends RefCounted
 
+const Preferences: GDScript = preload("res://app/asset_import_preferences.gd")
+
 const Content: GDScript = preload("res://app/asset_import_content.gd")
 const Validation: GDScript = preload("res://app/asset_cache_validation.gd")
 const DEFAULT_REQUEST: String = "res://config/development_asset_request.source"
 
 static func build_key(request_resource: String = DEFAULT_REQUEST) -> String:
-	var bundle: String = OS.get_executable_path().get_base_dir().path_join("asset-import-runtime/runtime-bundle.json")
+	var bundle: String = Preferences.runtime_bundle().path_join("runtime-bundle.json")
 	var signature: String = Engine.get_version_info().string + "|player-index-v2|"
 	for source: String in ["import_compiler.source", "import_billboard_pose.gd.source", "import_ribbon_runtime.gd.source"]:
 		signature += FileAccess.get_sha256("res://tools/godot/" + source)
