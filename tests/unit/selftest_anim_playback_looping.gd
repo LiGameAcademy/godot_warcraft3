@@ -78,11 +78,33 @@ func _run() -> void:
 	var c: Node3D = packed.instantiate() as Node3D
 	_check(AnimPlayback.find_animation_player(c).get_animation("native/Spell").loop_mode == Animation.LOOP_NONE, "New instance keeps source policy")
 	c.free()
+	_check_harvest_unit(packed)
 	a.free()
 	b.free()
 	template.free()
 	print("PASS: native/legacy loop policy, finish signals and A/B/template isolation" if _failures == 0 else "FAIL: animation loop regressions=%d" % _failures)
 	get_tree().quit(0 if _failures == 0 else 1)
+
+func _check_harvest_unit(packed: PackedScene) -> void:
+	# Load after autoload initialization, as in a real match.
+	var unit: Node3D = load("res://packages/gameplay/entities/presentation/unit.gd").new() as Node3D
+	var model: Node3D = packed.instantiate() as Node3D
+	model.name = "Model"
+	unit.add_child(model)
+	add_child(unit)
+	var ap: AnimationPlayer = AnimPlayback.find_animation_player(model)
+	ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	unit.call("bind_animation_player", ap)
+	unit.call("set_chopping", true)
+	var clip: String = ap.current_animation
+	_check(clip == "native/Attack Lumber", "Unit selects lumber attack while chopping")
+	for swing: int in range(5):
+		ap.advance(ap.current_animation_length + 0.01)
+		unit.call("set_chopping", true)
+		_check(ap.is_playing() and ap.current_animation == clip, "Repeated chopping state keeps swing %d playing" % swing)
+	unit.call("set_chopping", false)
+	_check(ap.current_animation != clip, "Unit leaves harvest animation when chopping stops")
+	unit.free()
 
 func _add_clip(library: AnimationLibrary, name: String, tag: String, looping: bool) -> void:
 	var animation: Animation = Animation.new()
