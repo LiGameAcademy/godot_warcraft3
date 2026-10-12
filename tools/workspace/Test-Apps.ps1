@@ -15,8 +15,10 @@ foreach ($name in $selected) {
         $arguments = @("--headless", "--path", $appRoot, "--log-file", "$log.engine")
         if ($phase -eq "import") { $arguments += @("--editor", "--import", "--quit") }
         else { $arguments += @("--", "--smoke-test") }
-        & $Godot @arguments *> $log
-        $exitCode = $LASTEXITCODE
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try { & $Godot @arguments *> $log } finally { $ErrorActionPreference = $previous }
+        $exitCode = [int]$LASTEXITCODE
         $output = Get-Content -LiteralPath $log -Raw
         if ($exitCode -ne 0 -or $output -match 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|Can.t load dependency') {
             throw "$name $phase failed. See $log"

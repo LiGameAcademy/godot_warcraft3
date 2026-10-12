@@ -52,11 +52,26 @@ try {
     New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
     $scriptErrors = 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|Can.t load dependency'
 
+    # Godot may write non-fatal ERROR lines to stderr (e.g. external text editor).
+    # Keep exit-code/log checks as the authority; do not let stderr abort Stop mode.
+    function Invoke-GodotLogged([string[]]$GodotArguments, [string]$LogPath) {
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $godotExecutable @GodotArguments *> $LogPath
+            return [int]$LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previous
+        }
+    }
+
     # Sync can add or rename global script classes. Import before exercising the runtime.
     $importLog = Join-Path $logRoot "import.log"
-    & $godotExecutable --headless --path apps/game --editor --import --quit `
-        --log-file "$importLog.engine" *> $importLog
-    $importExitCode = $LASTEXITCODE
+    $importExitCode = Invoke-GodotLogged @(
+        "--headless", "--path", "apps/game", "--editor", "--import", "--quit",
+        "--log-file", "$importLog.engine"
+    ) $importLog
     $importOutput = Get-Content -LiteralPath $importLog -Raw
     if ($importExitCode -ne 0 -or $importOutput -match $scriptErrors) {
         throw "Godot script import failed. See $importLog"
@@ -64,13 +79,12 @@ try {
 
     $testName = [IO.Path]::GetFileNameWithoutExtension($TestCase)
     $testLog = Join-Path $logRoot "$testName.log"
-    & $godotExecutable `
-        --headless `
-        --path apps/game `
-        --log-file "$testLog.engine" `
-        -s "res://tests/$TestCase" `
-        -- "--expected-cli-hash=$expectedCliHash" *> $testLog
-    $testExitCode = $LASTEXITCODE
+    $testExitCode = Invoke-GodotLogged @(
+        "--headless", "--path", "apps/game",
+        "--log-file", "$testLog.engine",
+        "-s", "res://tests/$TestCase",
+        "--", "--expected-cli-hash=$expectedCliHash"
+    ) $testLog
     $testOutput = Get-Content -LiteralPath $testLog -Raw
     Write-Output $testOutput
     if ($testExitCode -ne 0 -or $testOutput -match $scriptErrors) {
