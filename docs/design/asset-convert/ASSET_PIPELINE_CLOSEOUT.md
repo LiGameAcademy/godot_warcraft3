@@ -1,5 +1,7 @@
 # 资产导入管线重构：收尾与验收
 
+> 2026-10-14：本重构及 #27/#28 补充修复已合并主干。本文保留历史阶段记录；当前合并状态、启动入口和遗留事项见[合并收尾记录](../../dev-log/2026-10-14-asset-pipeline-closeout.md)。
+
 2026-10-05。分支 `codex/asset-pipeline-rebuild`。本文是当前交付入口；历史阶段记录见 [PLAYER_SOURCE_IMPORT.md](PLAYER_SOURCE_IMPORT.md) 和 [路线图](RUNTIME_IMPORT_REBUILD_ROADMAP.md)。
 
 ## 当前交付边界
