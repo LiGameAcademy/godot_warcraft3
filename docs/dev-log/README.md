@@ -2,6 +2,7 @@
 
 记录工程里程碑的实现、验证和限制。口播稿、专栏草稿、录制素材及课程讲义在仓库外维护，不作为本索引的依赖。
 
+- [2026-10-14：资产管线重构合并收尾](2026-10-14-asset-pipeline-closeout.md)
 - [2026-08-24：技能打磨与水元素表现](2026-08-24-ability-polish-water-visuals.md)
 - [2026-08-23：水元素与玩法竖切](2026-08-23-feature-f10-water-elemental.md)
 - [2026-08-19：资产转换](../design/asset-convert/DEVLOG_2026-08-19.md)
