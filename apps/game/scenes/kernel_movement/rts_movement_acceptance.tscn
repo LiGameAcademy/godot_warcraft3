@@ -1,0 +1,106 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/kernel_movement/rts_movement_acceptance.gd" id="1_root"]
+[ext_resource type="PackedScene" path="res://packages/map/scenes/map/map_root.tscn" id="2_map"]
+[ext_resource type="PackedScene" path="res://scenes/rts_camera.tscn" id="3_camera"]
+[ext_resource type="Script" path="res://adapters/godot/RtsKernelBridge.cs" id="4_bridge"]
+[ext_resource type="PackedScene" path="res://scenes/kernel_movement/movement_selection_view.tscn" id="5_selection"]
+
+[sub_resource type="Environment" id="WorldEnvironment"]
+background_mode = 1
+background_color = Color(0.08, 0.1, 0.14, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.65, 0.7, 0.8, 1)
+ambient_light_energy = 0.85
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+bg_color = Color(0.03, 0.04, 0.06, 0.9)
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+
+[node name="RtsMovementAcceptance" type="Node3D"]
+script = ExtResource("1_root")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("WorldEnvironment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-45, -35, 0)
+light_energy = 1.1
+
+[node name="MapRoot" parent="." instance=ExtResource("2_map")]
+map_dir = "res://assets/map-parsed/echoisles"
+place_units = false
+show_start_locations = false
+show_drop_rings = false
+show_editor_helpers = false
+show_pathing_debug_grid = false
+show_ramp_debug = false
+build_terrain_collision = true
+status_path = NodePath("")
+
+[node name="RtsCamera" parent="." instance=ExtResource("3_camera")]
+use_wc3_zoom_curve = false
+min_distance = 10.0
+max_distance = 120.0
+initial_distance = 35.0
+edge_pan_enabled = false
+
+[node name="RtsKernelBridge" type="Node" parent="."]
+script = ExtResource("4_bridge")
+
+[node name="Units" type="Node3D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="MovementSelectionView" parent="UI" instance=ExtResource("5_selection")]
+
+[node name="Panel" type="PanelContainer" parent="UI"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 1080.0
+theme_override_styles/panel = SubResource("PanelStyle")
+
+[node name="Rows" type="VBoxContainer" parent="UI/Panel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/Panel/Rows"]
+layout_mode = 2
+text = "RTS 内核 · M2 移动验收 / Echo Isles"
+
+[node name="Help" type="Label" parent="UI/Panel/Rows"]
+layout_mode = 2
+text = "左键 / 框选；A 全选；右键移动；Shift+右键追加；Space 停止；1–4 队形\n方向键平移；滚轮缩放；F 聚焦；P 暂停；F5 保存；F9 恢复"
+
+[node name="Presets" type="HBoxContainer" parent="UI/Panel/Rows"]
+layout_mode = 2
+
+[node name="Profile" type="OptionButton" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 0)
+
+[node name="Count12" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 12 单位"
+
+[node name="Count64" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 64 单位"
+
+[node name="Count65" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 65 单位"
+
+[node name="Count300" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 300 单位"
+
+[node name="Count500" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 500 单位"
+
+[node name="Status" type="Label" parent="UI/Panel/Rows"]
+layout_mode = 2
+text = "正在加载地图…"
