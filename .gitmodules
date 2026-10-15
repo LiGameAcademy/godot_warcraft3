@@ -3,7 +3,7 @@
 	url = https://github.com/LiGameAcademy/godot_ability_system.git
 [submodule "addons/panku_console"]
 	path = addons/panku_console
-	url = https://github.com/Ark2000/panku_console
+	url = https://github.com/Ark2000/PankuConsole.git
 [submodule "external/rts_kernel"]
 	path = external/rts_kernel
 	url = https://github.com/LiGameAcademy/rts_kernel_cs.git
