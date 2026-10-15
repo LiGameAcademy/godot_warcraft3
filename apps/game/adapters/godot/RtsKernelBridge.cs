@@ -1,6 +1,9 @@
 using Godot;
+using System.Text.Json;
 using Rts.Kernel;
 using Rts.Kernel.Navigation;
+using Rts.Kernel.Numerics;
+using Rts.Content;
 
 /// <summary>
 /// The single Godot-facing boundary for the engine-independent RTS simulation.
@@ -37,7 +40,7 @@ public partial class RtsKernelBridge : Node
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException or JsonException)
         {
             _lastError = error.Message;
             return false;
@@ -47,16 +50,21 @@ public partial class RtsKernelBridge : Node
     public bool ResetNavigationMatch(int width, int height, double cellSize, Vector2 origin,
         byte[] flags, int tickRate = 30, long seed = 1)
     {
+        if (!BinaryScalarInput.TryConvert(cellSize, out var fixedCellSize) || !TryVector(origin, out var fixedOrigin))
+        {
+            _lastError = "invalid_numeric_input";
+            return false;
+        }
         try
         {
-            var grid = new PathingGrid(width, height, cellSize, new SimVector2(origin.X, origin.Y), flags);
+            var grid = new PathingGrid(width, height, fixedCellSize, fixedOrigin, flags);
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
             _grid = grid;
             _match = match;
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException or JsonException)
         {
             _lastError = error.Message;
             return false;
@@ -64,11 +72,17 @@ public partial class RtsKernelBridge : Node
     }
 
     public Godot.Collections.Dictionary SubmitMoveTo(long executeFrame, int playerId, long sequence,
-        long entityId, Vector2 goal, double speed, int clearanceCells = 0)
+        long entityId, Vector2 goal, double speed, int clearanceCells = 0) =>
+        SubmitMoveOrder(executeFrame, playerId, sequence, entityId, goal, speed, clearanceCells, false);
+
+    public Godot.Collections.Dictionary SubmitMoveOrder(long executeFrame, int playerId, long sequence,
+        long entityId, Vector2 goal, double speed, int clearanceCells, bool append)
     {
         if (!TryEntityId(entityId, out var id)) return Rejected("invalid_entity_id");
+        if (!TryVector(goal, out var fixedGoal) || !BinaryScalarInput.TryConvert(speed, out var fixedSpeed))
+            return Rejected("invalid_numeric_input");
         return ToResult(_match.SubmitCommand(CommandEnvelope.MoveTo(executeFrame, playerId, sequence,
-            id, new SimVector2(goal.X, goal.Y), speed, clearanceCells)));
+            id, fixedGoal, fixedSpeed, clearanceCells, mode: append ? OrderMode.Append : OrderMode.Replace)));
     }
 
     public Godot.Collections.Dictionary SubmitSetObstacle(long executeFrame, int playerId, long sequence,
@@ -89,12 +103,11 @@ public partial class RtsKernelBridge : Node
         long executeFrame,
         int playerId,
         long sequence,
-        Vector2 position) =>
-        ToResult(_match.SubmitCommand(CommandEnvelope.Spawn(
-            executeFrame,
-            playerId,
-            sequence,
-            new SimVector2(position.X, position.Y))));
+        Vector2 position)
+    {
+        if (!TryVector(position, out var fixedPosition)) return Rejected("invalid_numeric_input");
+        return ToResult(_match.SubmitCommand(CommandEnvelope.Spawn(executeFrame, playerId, sequence, fixedPosition)));
+    }
 
     public Godot.Collections.Dictionary SubmitVelocity(
         long executeFrame,
@@ -108,12 +121,13 @@ public partial class RtsKernelBridge : Node
             return Rejected("invalid_entity_id");
         }
 
+        if (!TryVector(velocity, out var fixedVelocity)) return Rejected("invalid_numeric_input");
         return ToResult(_match.SubmitCommand(CommandEnvelope.SetVelocity(
             executeFrame,
             playerId,
             sequence,
             id,
-            new SimVector2(velocity.X, velocity.Y))));
+            fixedVelocity)));
     }
 
     public Godot.Collections.Dictionary SubmitStop(
@@ -162,8 +176,8 @@ public partial class RtsKernelBridge : Node
                 ["id"] = checked((long)entity.Id.Value),
                 ["owner_id"] = entity.OwnerId,
                 ["moving"] = _match.IsMoving(entity.Id),
-                ["position"] = new Vector2((float)entity.Position.X, (float)entity.Position.Y),
-                ["velocity"] = new Vector2((float)entity.Velocity.X, (float)entity.Velocity.Y),
+                ["position"] = new Vector2((float)entity.Position.X.ToPresentationDouble(), (float)entity.Position.Y.ToPresentationDouble()),
+                ["velocity"] = new Vector2((float)entity.Velocity.X.ToPresentationDouble(), (float)entity.Velocity.Y.ToPresentationDouble()),
             });
         }
 
@@ -182,7 +196,7 @@ public partial class RtsKernelBridge : Node
             _lastError = string.Empty;
             return true;
         }
-        catch (Exception error)
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException or JsonException)
         {
             _lastError = error.Message;
             return false;
@@ -221,6 +235,15 @@ public partial class RtsKernelBridge : Node
             ["accepted"] = false,
             ["error"] = error,
         };
+    }
+
+    private static bool TryVector(Vector2 value, out FixedVector2 result)
+    {
+        result = default;
+        if (!BinaryScalarInput.TryConvert(value.X, out var x) || !BinaryScalarInput.TryConvert(value.Y, out var y))
+            return false;
+        result = new FixedVector2(x, y);
+        return true;
     }
 
     private static bool TryEntityId(long value, out EntityId entityId)
