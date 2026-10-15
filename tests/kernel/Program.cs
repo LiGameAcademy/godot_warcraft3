@@ -20,6 +20,7 @@ Check(!terrain.TrySample(new FixedVector2(1, 0), out _), "height outside map exp
 
 ContentNumericChecks.Run(Check);
 ContentMovementChecks.Run(Check);
+PresetSpawnChecks.Run(Check);
 if (args.Length == 2 && args[0] == "--asset-root") ContentAssetChecks.Run(args[1], Check);
 else if (args.Length != 0) throw new ArgumentException("Usage: [--asset-root <existing-asset-directory>]");
 

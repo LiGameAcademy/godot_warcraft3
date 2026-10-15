@@ -4,6 +4,7 @@ using Rts.Kernel;
 using Rts.Kernel.Navigation;
 using Rts.Kernel.Numerics;
 using Rts.Content;
+using Rts.Game;
 
 /// <summary>
 /// The single Godot-facing boundary for the engine-independent RTS simulation.
@@ -20,7 +21,7 @@ public partial class RtsKernelBridge : Node
         string detail);
 
     private RtsMatch _match = new(MatchConfig.Default, seed: 1);
-    private PathingGrid? _grid;
+    private MatchContent? _content;
     private string _lastError = string.Empty;
 
     public long GetFrame() => _match.Frame;
@@ -36,7 +37,7 @@ public partial class RtsKernelBridge : Node
         try
         {
             _match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
-            _grid = null;
+            _content = null;
             _lastError = string.Empty;
             return true;
         }
@@ -59,7 +60,7 @@ public partial class RtsKernelBridge : Node
         {
             var grid = new PathingGrid(width, height, fixedCellSize, fixedOrigin, flags);
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
-            _grid = grid;
+            _content = MatchContent.Navigation(grid);
             _match = match;
             _lastError = string.Empty;
             return true;
@@ -70,6 +71,70 @@ public partial class RtsKernelBridge : Node
             return false;
         }
     }
+
+    public bool ResetContentMatch(string pathing, string heights, string unitData, string unitBalance,
+        string placements, byte[] runtimeFootprints, int tickRate, long seed)
+    {
+        try
+        {
+            var content = MatchContent.Read(pathing, heights, unitData, unitBalance, placements, runtimeFootprints);
+            var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), content.Grid,
+                content.Heights, content.Units!.Definitions);
+            _content = content;
+            _match = match;
+            _lastError = string.Empty;
+            return true;
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException
+            or FormatException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            _lastError = error.Message;
+            return false;
+        }
+    }
+
+    public Godot.Collections.Dictionary SpawnPreset(string unitCode, int count, int playerId)
+    {
+        if (_content?.Units is null || _match.Frame != 0 || _match.Entities.Count != 0 || _match.CaptureSnapshot().PendingCommands.Count != 0)
+            return Rejected("preset_requires_fresh_content_match");
+        if (!_content.Units.TryGet(unitCode, out var definition)) return Rejected("unsupported_unit_profile");
+        var start = _content.Starts.FirstOrDefault(item => item.PlayerId == playerId);
+        if (start is null) return Rejected("start_marker_missing");
+        try
+        {
+            var points = PresetSpawnLayout.Find(_match, _content.Grid, definition!, start.Position, count);
+            var candidate = new RtsMatch(_match.Config, _match.CaptureSnapshot().RngState, _content.Grid,
+                _content.Heights, _content.Units.Definitions);
+            for (var index = 0; index < points.Count; index++)
+            {
+                var accepted = candidate.SubmitCommand(CommandEnvelope.Spawn(1, playerId, index, points[index], definition!.Id));
+                if (!accepted.Accepted) throw new InvalidOperationException(accepted.Error);
+            }
+            candidate.Step();
+            if (candidate.Entities.Count != count) throw new InvalidOperationException("Validated preset spawn failed during commit.");
+            _match = candidate;
+            EmitPendingEvents();
+            return ToResult(CommandAcceptance.Accept());
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException)
+        {
+            return Rejected(error.Message);
+        }
+    }
+
+    public Godot.Collections.Dictionary SubmitGroupMove(long executeFrame, int playerId, long sequence,
+        long[] entityIds, Vector2 goal, int formation, bool append)
+    {
+        if (entityIds.Length is < 1 or > 500) return Rejected("invalid_group_size");
+        if (entityIds.Any(id => id <= 0)) return Rejected("invalid_entity_id");
+        if (!TryVector(goal, out var fixedGoal)) return Rejected("invalid_numeric_input");
+        var members = entityIds.Select(id => new EntityId((ulong)id)).ToArray();
+        return ToResult(_match.SubmitCommand(CommandEnvelope.MoveGroup(executeFrame, playerId, sequence,
+            new GroupMoveRequest(members, fixedGoal, (FormationKind)formation),
+            append ? OrderMode.Append : OrderMode.Replace)));
+    }
+
+    public Godot.Collections.Dictionary ReadMovementFrame() => RtsMovementFrame.Read(_match, _content?.Heights);
 
     public Godot.Collections.Dictionary SubmitMoveTo(long executeFrame, int playerId, long sequence,
         long entityId, Vector2 goal, double speed, int clearanceCells = 0) =>
@@ -191,8 +256,10 @@ public partial class RtsKernelBridge : Node
         try
         {
             var snapshot = SnapshotJson.Deserialize(json);
-            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _grid);
-            if (snapshot.Navigation is null) _grid = null;
+            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _content?.Grid,
+                snapshot.Navigation is null ? null : _content?.Heights,
+                snapshot.Navigation is null ? null : _content?.Units?.Definitions);
+            if (snapshot.Navigation is null) _content = null;
             _lastError = string.Empty;
             return true;
         }

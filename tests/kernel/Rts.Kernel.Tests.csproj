@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../../packages/rts_content/Rts.Content.csproj" />
     <ProjectReference Include="../../external/rts_kernel/src/Rts.Kernel/Rts.Kernel.csproj" />
+    <Compile Include="../../apps/game/adapters/rts/PresetSpawnLayout.cs" Link="PresetSpawnLayout.cs" />
   </ItemGroup>
 </Project>

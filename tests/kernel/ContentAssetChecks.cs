@@ -8,10 +8,12 @@ internal static class ContentAssetChecks
     internal static void Run(string assetRoot, Action<bool, string> check)
     {
         string Read(string relative) => File.ReadAllText(Path.Combine(assetRoot, relative));
-        var catalog = new UnitMovementCatalog(Read("slk-exported/Units/UnitData.json"), Read("slk-exported/Units/UnitBalance.json"));
-        var starts = MapStartLocations.Read(Read("map-parsed/echoisles/units.json"));
-        var grid = ParsedTerrainReader.ReadPathing(Read("map-parsed/echoisles/pathing.json"));
-        var terrain = ParsedTerrainReader.ReadHeights(Read("map-parsed/echoisles/terrain-heightfield.json"));
+        var content = MatchContent.Read(Read("map-parsed/echoisles/pathing.json"), Read("map-parsed/echoisles/terrain-heightfield.json"),
+            Read("slk-exported/Units/UnitData.json"), Read("slk-exported/Units/UnitBalance.json"), Read("map-parsed/echoisles/units.json"), []);
+        var catalog = content.Units!;
+        var starts = content.Starts;
+        var grid = content.Grid;
+        var terrain = content.Heights;
         check(catalog.TryGet("hfoo", out var foot) && foot?.Speed == 270 && foot.Radius == 31, "existing hfoo numbers reach the kernel exactly");
         check(catalog.TryGet("Hamg", out var hero) && hero?.Speed == 320 && hero.Radius == 32, "existing hero capability is retained");
         check(catalog.TryGet("eaoe", out var ancient) && ancient?.Radius == 144, "large moving ancient is admitted");
