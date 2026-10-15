@@ -19,5 +19,8 @@ Check(terrain.TrySample(FixedVector2.Zero, out altitude) && altitude == 30, "las
 Check(!terrain.TrySample(new FixedVector2(1, 0), out _), "height outside map explicitly missing");
 
 ContentNumericChecks.Run(Check);
+ContentMovementChecks.Run(Check);
+if (args.Length == 2 && args[0] == "--asset-root") ContentAssetChecks.Run(args[1], Check);
+else if (args.Length != 0) throw new ArgumentException("Usage: [--asset-root <existing-asset-directory>]");
 
 Console.WriteLine($"Rts.Content integration PASS ({checks} checks)");
