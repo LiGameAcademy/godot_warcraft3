@@ -1,6 +1,7 @@
 using Godot;
 using Rts.Kernel;
 using Rts.Kernel.Navigation;
+using Rts.Kernel.Numerics;
 
 internal static class RtsMovementFrame
 {
@@ -15,6 +16,7 @@ internal static class RtsMovementFrame
         var radii = new double[count];
         var moving = new byte[count];
         var queued = new int[count];
+        var travelling = new byte[count];
         var index = 0;
         foreach (var entity in match.Entities)
         {
@@ -30,12 +32,13 @@ internal static class RtsMovementFrame
                 ?? throw new InvalidOperationException("Movement view has no definition.")).ToPresentationDouble();
             moving[index] = match.IsMoving(entity.Id) ? (byte)1 : (byte)0;
             queued[index] = match.GetPendingOrderCount(entity.Id);
+            travelling[index] = entity.Velocity != FixedVector2.Zero ? (byte)1 : (byte)0;
             index++;
         }
         return new Godot.Collections.Dictionary
         {
             ["frame"] = match.Frame, ["ids"] = ids, ["definitions"] = definitions, ["owners"] = owners,
-            ["positions"] = positions, ["facing"] = facing, ["radii"] = radii, ["moving"] = moving, ["queued"] = queued,
+            ["positions"] = positions, ["facing"] = facing, ["radii"] = radii, ["moving"] = moving, ["queued"] = queued, ["travelling"] = travelling,
         };
     }
 }
