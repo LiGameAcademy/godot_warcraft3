@@ -40,7 +40,7 @@ var _drag_start: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
-	DisplayServer.window_set_title("RTS 移动验收 · 24 单位软落点 · v12")
+	DisplayServer.window_set_title("RTS 移动验收 · 24 单位同组让路 · v13")
 	AssetProvider.seal_runtime_content()
 	for profile: String in PROFILES:
 		_profiles.add_item(profile)
