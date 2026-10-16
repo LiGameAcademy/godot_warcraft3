@@ -2,7 +2,8 @@ extends Node3D
 
 ## M2 黑盒验收入口：真实地图和模型，单位状态只由 C# 内核推进。
 const UNIT_VIEW: PackedScene = preload("res://scenes/kernel_movement/movement_unit_view.tscn")
-const COUNTS: Array[int] = [12, 64, 65, 300, 500]
+const MAX_SELECTION: int = 24
+const COUNTS: Array[int] = [12, 24, 64, 65, 300, 500]
 const PROFILES: Array[String] = ["hfoo", "Hamg", "ogru", "earc", "eaoe"]
 const FORMATIONS: Array[String] = ["紧凑", "矩形", "楔形", "圆形"]
 
@@ -62,12 +63,12 @@ func _ready() -> void:
 			_fail("缺少内容：" + path)
 			return
 		_sources.append(FileAccess.get_file_as_string(path))
-	var initial_count: int = 12
+	var initial_count: int = 24
 	for argument: String in OS.get_cmdline_user_args():
 		if argument.begins_with("--kernel-count="):
 			var count_text: String = argument.trim_prefix("--kernel-count=")
 			if not count_text.is_valid_int() or not int(count_text) in COUNTS:
-				_fail("验收规模必须为 12、64、65、300 或 500")
+				_fail("验收规模必须为 12、24、64、65、300 或 500")
 				return
 			initial_count = int(count_text)
 	await _spawn_preset(initial_count)
@@ -237,6 +238,8 @@ func _selected_ids() -> PackedInt64Array:
 func _select_all() -> void:
 	_selected.clear()
 	for id: int in _views:
+		if _selected.size() >= MAX_SELECTION:
+			break
 		_selected[id] = true
 
 
@@ -252,14 +255,14 @@ func _select_region(region: Rect2, append: bool) -> void:
 			continue
 		var screen: Vector2 = camera.unproject_position(point)
 		if region.size.length_squared() > 36.0:
-			if region.has_point(screen):
+			if region.has_point(screen) and _selected.size() < MAX_SELECTION:
 				_selected[id] = true
 		else:
 			var distance: float = screen.distance_squared_to(region.get_center())
 			if distance < best:
 				best = distance
 				nearest = id
-	if nearest != 0:
+	if nearest != 0 and (_selected.has(nearest) or _selected.size() < MAX_SELECTION):
 		_selected[nearest] = true
 
 

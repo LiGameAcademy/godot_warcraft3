@@ -68,11 +68,11 @@ layout_mode = 2
 
 [node name="Title" type="Label" parent="UI/Panel/Rows"]
 layout_mode = 2
-text = "RTS 内核 · M2 移动验收 / Echo Isles"
+text = "RTS 内核 · 24 单位软落点验收 / Echo Isles"
 
 [node name="Help" type="Label" parent="UI/Panel/Rows"]
 layout_mode = 2
-text = "左键 / 框选；A 全选；右键移动；Shift+右键追加；Space 停止；1–4 队形\n方向键平移；滚轮缩放；F 聚焦；P 暂停；F5 保存；F9 恢复"
+text = "左键 / 框选（最多24）；A 选取前24；右键移动；Shift+右键追加；Space 停止；1–4 队形\n方向键平移；滚轮缩放；F 聚焦；P 暂停；F5 保存；F9 恢复"
 
 [node name="Presets" type="HBoxContainer" parent="UI/Panel/Rows"]
 layout_mode = 2
@@ -84,6 +84,10 @@ custom_minimum_size = Vector2(140, 0)
 [node name="Count12" type="Button" parent="UI/Panel/Rows/Presets"]
 layout_mode = 2
 text = "重开 12 单位"
+
+[node name="Count24" type="Button" parent="UI/Panel/Rows/Presets"]
+layout_mode = 2
+text = "重开 24 单位"
 
 [node name="Count64" type="Button" parent="UI/Panel/Rows/Presets"]
 layout_mode = 2
