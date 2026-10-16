@@ -40,17 +40,24 @@ func _start() -> void:
 		wizard.cache_root = Preferences.cache_path(args)
 		wizard.ready_to_play.connect(func() -> void:
 			wizard.queue_free()
-			if "--smoke-test" in args:
-				_smoke_start.call_deferred()
-			else:
-				_async_start.call_deferred())
+			_start_ready.call_deferred())
 		get_tree().root.add_child(wizard)
 		get_tree().current_scene = wizard
 		return
-	if "--smoke-test" in args:
+	_start_ready()
+
+
+func _start_ready() -> void:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if "--kernel-movement-acceptance" in args:
+		var error: Error = get_tree().change_scene_to_file("res://scenes/kernel_movement/rts_movement_acceptance.tscn")
+		if error != OK:
+			push_error("Kernel movement scene could not start: %s" % error)
+			get_tree().quit(1)
+	elif "--smoke-test" in args:
 		_smoke_start()
-		return
-	_async_start()
+	else:
+		_async_start()
 
 
 ## --smoke-test：跳过 loading，经 Facade 配置并等待 session。

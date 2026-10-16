@@ -1,4 +1,5 @@
 using Rts.Kernel;
+using Rts.Kernel.Numerics;
 using Rts.Content;
 using Rts.Kernel.Navigation;
 
@@ -13,8 +14,14 @@ var fromArray = ParsedTerrainReader.ReadPathing("""{"width":2,"height":2,"cells"
 var fromBase64 = ParsedTerrainReader.ReadPathing("""{"width":2,"height":2,"cellsBase64":"AAIECA=="}""");
 Check(fromArray.FlagsAt(new GridCell(1, 1)) == fromBase64.FlagsAt(new GridCell(1, 1)), "pathing encodings equivalent");
 var terrain = ParsedTerrainReader.ReadHeights("""{"tilepointWidth":2,"tilepointHeight":2,"tileSize":128,"centerOffset":{"x":-128,"y":-128},"heights":[0,10,20,30]}""");
-Check(terrain.TrySample(new SimVector2(-64, -64), out var altitude) && altitude == 15, "bilinear height sample");
-Check(terrain.TrySample(SimVector2.Zero, out altitude) && altitude == 30, "last corner samples final quad");
-Check(!terrain.TrySample(new SimVector2(1, 0), out _), "height outside map explicitly missing");
+Check(terrain.TrySample(new FixedVector2(-64, -64), out var altitude) && altitude == 15, "bilinear height sample");
+Check(terrain.TrySample(FixedVector2.Zero, out altitude) && altitude == 30, "last corner samples final quad");
+Check(!terrain.TrySample(new FixedVector2(1, 0), out _), "height outside map explicitly missing");
+
+ContentNumericChecks.Run(Check);
+ContentMovementChecks.Run(Check);
+PresetSpawnChecks.Run(Check);
+if (args.Length == 2 && args[0] == "--asset-root") ContentAssetChecks.Run(args[1], Check);
+else if (args.Length != 0) throw new ArgumentException("Usage: [--asset-root <existing-asset-directory>]");
 
 Console.WriteLine($"Rts.Content integration PASS ({checks} checks)");

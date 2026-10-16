@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Rts.Kernel;
+using Rts.Kernel.Numerics;
 using Rts.Kernel.Navigation;
 
 namespace Rts.Content;
@@ -15,7 +15,7 @@ public static class ParsedTerrainReader
             ? Convert.FromBase64String(encoded.GetString()!)
             : root.GetProperty("cells").EnumerateArray().Select(value => value.GetByte()).ToArray();
         return new PathingGrid(root.GetProperty("width").GetInt32(), root.GetProperty("height").GetInt32(),
-            NumberOr(root, "cellSize", 32), Origin(root, "origin"), flags, obstacleFlags);
+            JsonScalarInput.NumberOr(root, "cellSize", 32), Origin(root, "origin"), flags, obstacleFlags);
     }
 
     public static TerrainHeights ReadHeights(string json)
@@ -23,14 +23,12 @@ public static class ParsedTerrainReader
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         return new TerrainHeights(root.GetProperty("tilepointWidth").GetInt32(),
-            root.GetProperty("tilepointHeight").GetInt32(), NumberOr(root, "tileSize", 128),
+            root.GetProperty("tilepointHeight").GetInt32(), JsonScalarInput.NumberOr(root, "tileSize", 128),
             Origin(root, "centerOffset"),
-            root.GetProperty("heights").EnumerateArray().Select(value => value.GetDouble()).ToArray());
+            root.GetProperty("heights").EnumerateArray().Select(value => JsonScalarInput.Number(value)).ToArray());
     }
 
-    private static SimVector2 Origin(JsonElement root, string key) => root.TryGetProperty(key, out var value)
-        ? new SimVector2(NumberOr(value, "x", 0), NumberOr(value, "y", 0)) : SimVector2.Zero;
+    private static FixedVector2 Origin(JsonElement root, string key) => root.TryGetProperty(key, out var value)
+        ? new FixedVector2(JsonScalarInput.NumberOr(value, "x", 0), JsonScalarInput.NumberOr(value, "y", 0)) : FixedVector2.Zero;
 
-    private static double NumberOr(JsonElement root, string key, double fallback) =>
-        root.TryGetProperty(key, out var value) ? value.GetDouble() : fallback;
 }

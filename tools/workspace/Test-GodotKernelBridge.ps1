@@ -3,7 +3,9 @@ param(
     [string]$GodotConsole,
     [string]$Configuration = "Debug",
     [string]$TestCase = "integration/selftest_rts_kernel_bridge.gd",
-    [string[]]$CliArguments = @()
+    [string[]]$CliArguments = @(),
+    [switch]$UseImportedProject,
+    [ValidateRange(1, 600)][int]$TimeoutSeconds = 120
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,26 +57,46 @@ try {
     # Godot may write non-fatal ERROR lines to stderr (e.g. external text editor).
     # Keep exit-code/log checks as the authority; do not let stderr abort Stop mode.
     function Invoke-GodotLogged([string[]]$GodotArguments, [string]$LogPath) {
-        $previous = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
+        $info = [Diagnostics.ProcessStartInfo]::new()
+        $info.FileName = $godotExecutable
+        $info.WorkingDirectory = $repositoryRoot
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+        foreach ($argument in $GodotArguments) { $info.ArgumentList.Add($argument) }
+        $probeProcess = [Diagnostics.Process]::new()
+        $probeProcess.StartInfo = $info
         try {
-            & $godotExecutable @GodotArguments *> $LogPath
-            return [int]$LASTEXITCODE
+            $probeProcess.Start() | Out-Null
+            $stdout = $probeProcess.StandardOutput.ReadToEndAsync()
+            $stderr = $probeProcess.StandardError.ReadToEndAsync()
+            $timedOut = -not $probeProcess.WaitForExit($TimeoutSeconds * 1000)
+            if ($timedOut) { $probeProcess.Kill($true); $probeProcess.WaitForExit() }
+            [IO.File]::WriteAllText($LogPath, $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult())
+            if ($timedOut) { throw "Godot probe exceeded ${TimeoutSeconds}s; see $LogPath" }
+            return $probeProcess.ExitCode
         }
-        finally {
-            $ErrorActionPreference = $previous
-        }
+        finally { $probeProcess.Dispose() }
     }
 
     # Sync can add or rename global script classes. Import before exercising the runtime.
-    $importLog = Join-Path $logRoot "import.log"
-    $importExitCode = Invoke-GodotLogged @(
-        "--headless", "--path", "apps/game", "--editor", "--import", "--quit",
-        "--log-file", "$importLog.engine"
-    ) $importLog
-    $importOutput = Get-Content -LiteralPath $importLog -Raw
-    if ($importExitCode -ne 0 -or $importOutput -match $scriptErrors) {
-        throw "Godot script import failed. See $importLog"
+    if ($UseImportedProject) {
+        if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot 'apps/game/.godot'))) {
+            throw 'Explicit runtime-only verification requires an imported game project.'
+        }
+        Write-Output 'Runtime-only: using existing import cache; editor import is not verified in this run.'
+    }
+    else {
+        $importLog = Join-Path $logRoot "import.log"
+        $importExitCode = Invoke-GodotLogged @(
+            "--headless", "--path", "apps/game", "--editor", "--import",
+            "--log-file", "$importLog.engine"
+        ) $importLog
+        $importOutput = Get-Content -LiteralPath $importLog -Raw
+        if ($importExitCode -ne 0 -or $importOutput -match $scriptErrors) {
+            throw "Godot script import failed. See $importLog"
+        }
     }
 
     $testName = [IO.Path]::GetFileNameWithoutExtension($TestCase)
