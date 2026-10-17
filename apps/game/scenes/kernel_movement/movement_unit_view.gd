@@ -43,8 +43,7 @@ func accept_frame(wc3_position: Vector3, facing: float, radius: float, snap: boo
 		_initialized = true
 		position = _to_position
 		_model.rotation.y = _to_facing
-		_idle_elapsed = 0.0
-		_set_walking(false, 0.0)
+		_reset_animation()
 	_ring.scale = Vector3(radius * Wc3Coords.WORLD_SCALE, 1.0, radius * Wc3Coords.WORLD_SCALE)
 
 
@@ -67,6 +66,17 @@ func display(alpha: float, selected: bool, delta: float) -> void:
 		_idle_elapsed += delta
 		if _idle_elapsed >= idle_delay:
 			_set_walking(false, animation_blend)
+
+
+## Snapshot discontinuities discard prior pose blending, even when already idle.
+func _reset_animation() -> void:
+	_moving = false
+	_idle_elapsed = 0.0
+	if _player == null or _stand_clip.is_empty():
+		return
+	_player.stop()
+	_player.play(_stand_clip, 0.0)
+	_player.advance(0.0)
 
 
 func _set_walking(value: bool, blend: float) -> void:
