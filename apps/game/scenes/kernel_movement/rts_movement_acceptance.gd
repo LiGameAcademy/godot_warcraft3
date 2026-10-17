@@ -40,7 +40,7 @@ var _drag_start: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
-	DisplayServer.window_set_title("RTS 移动验收 · 24 单位同组让路 · v13")
+	DisplayServer.window_set_title("RTS 移动验收 · 24 单位落点与动画修复 · v13")
 	AssetProvider.seal_runtime_content()
 	for profile: String in PROFILES:
 		_profiles.add_item(profile)
@@ -102,7 +102,7 @@ func _process(delta: float) -> void:
 			advanced += 1
 	var alpha: float = 1.0 if _paused else minf(_accumulator * float(_bridge.call("GetTickRate")), 1.0)
 	for id: int in _views:
-		_views[id].display(alpha, _selected.has(id))
+		_views[id].display(alpha, _selected.has(id), delta)
 	if _dragging:
 		_selection_view.call("show_region", Rect2(_drag_start, get_viewport().get_mouse_position() - _drag_start).abs(), true)
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -225,9 +225,8 @@ func _apply_frame(snap: bool) -> void:
 	var positions: PackedVector3Array = _frame.positions
 	var facing: PackedFloat64Array = _frame.facing
 	var radii: PackedFloat64Array = _frame.radii
-	var travelling: PackedByteArray = _frame.travelling
 	for index: int in range(ids.size()):
-		_views[ids[index]].accept_frame(positions[index], facing[index], radii[index], travelling[index] != 0, snap)
+		_views[ids[index]].accept_frame(positions[index], facing[index], radii[index], snap)
 
 
 func _selected_ids() -> PackedInt64Array:
