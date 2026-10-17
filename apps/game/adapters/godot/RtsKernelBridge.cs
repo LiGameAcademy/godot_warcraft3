@@ -32,11 +32,25 @@ public partial class RtsKernelBridge : Node
 
     public string GetStateHash() => _match.ComputeStateHash();
 
+    /// <summary>Loading-time work only; safe between steps and after navigation edits.</summary>
+    public double PrepareForPlay() => PrepareMatch(_match, "explicit");
+
+    private static double PrepareMatch(RtsMatch match, string context)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        match.PrepareForPlay();
+        watch.Stop();
+        GD.Print($"[RTS preparation] context={context} frame={match.Frame} elapsed_ms={watch.Elapsed.TotalMilliseconds:F3}");
+        return watch.Elapsed.TotalMilliseconds;
+    }
+
     public bool ResetMatch(int tickRate = 30, long seed = 1)
     {
         try
         {
-            _match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
+            var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed));
+            PrepareMatch(match, "new-match");
+            _match = match;
             _content = null;
             _lastError = string.Empty;
             return true;
@@ -60,6 +74,7 @@ public partial class RtsKernelBridge : Node
         {
             var grid = new PathingGrid(width, height, fixedCellSize, fixedOrigin, flags);
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), grid);
+            PrepareMatch(match, "new-navigation-match");
             _content = MatchContent.Navigation(grid);
             _match = match;
             _lastError = string.Empty;
@@ -80,6 +95,7 @@ public partial class RtsKernelBridge : Node
             var content = MatchContent.Read(pathing, heights, unitData, unitBalance, placements, runtimeFootprints);
             var match = new RtsMatch(new MatchConfig(tickRate), unchecked((ulong)seed), content.Grid,
                 content.Heights, content.Units!.Definitions);
+            PrepareMatch(match, "new-content-match");
             _content = content;
             _match = match;
             _lastError = string.Empty;
@@ -105,6 +121,7 @@ public partial class RtsKernelBridge : Node
             var points = PresetSpawnLayout.Find(_match, _content.Grid, definition!, start.Position, count);
             var candidate = new RtsMatch(_match.Config, _match.CaptureSnapshot().RngState, _content.Grid,
                 _content.Heights, _content.Units.Definitions);
+            PrepareMatch(candidate, "preset-match");
             for (var index = 0; index < points.Count; index++)
             {
                 var accepted = candidate.SubmitCommand(CommandEnvelope.Spawn(1, playerId, index, points[index], definition!.Id));
@@ -256,9 +273,11 @@ public partial class RtsKernelBridge : Node
         try
         {
             var snapshot = SnapshotJson.Deserialize(json);
-            _match = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _content?.Grid,
+            var restored = RtsMatch.Restore(snapshot, snapshot.Navigation is null ? null : _content?.Grid,
                 snapshot.Navigation is null ? null : _content?.Heights,
                 snapshot.Navigation is null ? null : _content?.Units?.Definitions);
+            PrepareMatch(restored, "restored-match");
+            _match = restored;
             if (snapshot.Navigation is null) _content = null;
             _lastError = string.Empty;
             return true;
