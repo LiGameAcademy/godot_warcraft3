@@ -15,6 +15,8 @@ const FORMATIONS: Array[String] = ["紧凑", "矩形", "楔形", "圆形"]
 @onready var _profiles: OptionButton = $UI/Panel/Rows/Presets/Profile
 @onready var _buttons: HBoxContainer = $UI/Panel/Rows/Presets
 @onready var _selection_view: Control = $UI/MovementSelectionView
+@onready var _route_view: MovementRouteView = $MovementRouteView
+@onready var _route_toggle: CheckButton = $UI/Panel/Rows/ShowRoutes
 
 var _sources: Array[String] = []
 var _footprints: PackedByteArray = PackedByteArray()
@@ -42,6 +44,7 @@ var _drag_start: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	DisplayServer.window_set_title("RTS 移动验收 · 24 单位落点与动画修复 · v13")
 	AssetProvider.seal_runtime_content()
+	_route_toggle.toggled.connect(_on_routes_toggled)
 	for profile: String in PROFILES:
 		_profiles.add_item(profile)
 	for index: int in range(COUNTS.size()):
@@ -111,6 +114,7 @@ func _process(delta: float) -> void:
 	_status_elapsed += delta
 	if _status_elapsed >= 0.2:
 		_status_elapsed = 0.0
+		_refresh_routes()
 		var moving: PackedByteArray = _frame.get("moving", PackedByteArray())
 		_status.text = "帧 %d | 单位 %d / 选中 %d / 移动 %d | %s | 失败 %d | Step %.2f / 峰值 %.2f ms%s\n%s" % [
 			int(_bridge.call("GetFrame")), _views.size(), _selected.size(), moving.count(1), FORMATIONS[_formation],
@@ -137,6 +141,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not key.pressed or key.echo:
 			return
 		match key.keycode:
+			KEY_F2:
+				_route_toggle.button_pressed = not _route_toggle.button_pressed
 			KEY_1, KEY_2, KEY_3, KEY_4:
 				_formation = int(key.keycode - KEY_1)
 			KEY_A:
@@ -322,6 +328,22 @@ func _set_buttons_disabled(disabled: bool) -> void:
 func _finish_spawning() -> void:
 	_spawning = false
 	_set_buttons_disabled(false)
+	_route_view.clear_routes()
+
+
+func _on_routes_toggled(enabled: bool) -> void:
+	_route_view.visible = enabled
+	if enabled:
+		_refresh_routes()
+	else:
+		_route_view.clear_routes()
+
+
+func _refresh_routes() -> void:
+	if not _route_toggle.button_pressed:
+		return
+	var routes: Array[Dictionary] = _bridge.call("ReadMovementRoutes", _selected_ids())
+	_route_view.show_routes(routes)
 
 
 func _fail(message: String) -> void:
