@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scenes/kernel_movement/rts_movement_acceptance.gd" id="1_root"]
 [ext_resource type="PackedScene" path="res://packages/map/scenes/map/map_root.tscn" id="2_map"]
 [ext_resource type="PackedScene" path="res://scenes/rts_camera.tscn" id="3_camera"]
 [ext_resource type="Script" path="res://adapters/godot/RtsKernelBridge.cs" id="4_bridge"]
 [ext_resource type="PackedScene" path="res://scenes/kernel_movement/movement_selection_view.tscn" id="5_selection"]
+[ext_resource type="PackedScene" path="res://scenes/kernel_movement/movement_route_view.tscn" id="6_routes"]
 
 [sub_resource type="Environment" id="WorldEnvironment"]
 background_mode = 1
@@ -53,6 +54,8 @@ script = ExtResource("4_bridge")
 
 [node name="Units" type="Node3D" parent="."]
 
+[node name="MovementRouteView" parent="." instance=ExtResource("6_routes")]
+
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="MovementSelectionView" parent="UI" instance=ExtResource("5_selection")]
@@ -72,7 +75,7 @@ text = "RTS 内核 · 24 单位软落点验收 / Echo Isles"
 
 [node name="Help" type="Label" parent="UI/Panel/Rows"]
 layout_mode = 2
-text = "左键 / 框选（最多24）；A 选取前24；右键移动；Shift+右键追加；Space 停止；1–4 队形\n方向键平移；滚轮缩放；F 聚焦；P 暂停；F5 保存；F9 恢复"
+text = "左键 / 框选（最多24）；A 选取前24；右键移动；Shift+右键追加；Space 停止；1–4 队形\n方向键平移；滚轮缩放；F 聚焦；P 暂停；F5 保存；F9 恢复；F2 路线（青：当前，橙：让路，绿：偏好终点，黄：实际终点）"
 
 [node name="Presets" type="HBoxContainer" parent="UI/Panel/Rows"]
 layout_mode = 2
@@ -108,3 +111,7 @@ text = "重开 500 单位"
 [node name="Status" type="Label" parent="UI/Panel/Rows"]
 layout_mode = 2
 text = "正在加载地图…"
+
+[node name="ShowRoutes" type="CheckButton" parent="UI/Panel/Rows"]
+layout_mode = 2
+text = "显示选中单位当前路线（F2）"

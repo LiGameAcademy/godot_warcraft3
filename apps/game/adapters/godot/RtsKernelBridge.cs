@@ -153,6 +153,9 @@ public partial class RtsKernelBridge : Node
 
     public Godot.Collections.Dictionary ReadMovementFrame() => RtsMovementFrame.Read(_match, _content?.Heights);
 
+    public Godot.Collections.Array<Godot.Collections.Dictionary> ReadMovementRoutes(long[] selected) =>
+        RtsMovementRoutes.Read(_match, _content?.Heights, selected);
+
     public Godot.Collections.Dictionary SubmitMoveTo(long executeFrame, int playerId, long sequence,
         long entityId, Vector2 goal, double speed, int clearanceCells = 0) =>
         SubmitMoveOrder(executeFrame, playerId, sequence, entityId, goal, speed, clearanceCells, false);
