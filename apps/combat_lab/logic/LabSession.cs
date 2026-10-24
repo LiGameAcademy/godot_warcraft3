@@ -29,6 +29,8 @@ internal sealed class LabSession
         _combat = combat;
     }
 
+    internal LabPreparationResult PrepareForPlay() => LabPreparation.EnsureReady();
+
     internal long Frame => _combat.Frame;
     internal IReadOnlyList<CombatantState> ReadStates() => _combat.ReadCombatants();
     internal string CombatHash() => _combat.ComputeStateHash();

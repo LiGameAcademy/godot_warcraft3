@@ -33,15 +33,22 @@ try {
     if ($Profiles) {
         $results = @()
         foreach ($count in @(24, 300, 500)) {
-            # Each invocation creates an independent cold process. Keep every first frame.
-            $cliText = Run-Check "cli-$count" "dotnet" @($cli, "--profile", "$count") "combat_lab_host"
-            $godotText = Run-Check "godot-$count" $Godot @("--headless", "--path", $labRoot, "--", "--profile", "$count") "COMBAT_LAB_PROFILE_PASS"
-            $cliResult = ($cliText -split "\r?\n" | Where-Object { $_.StartsWith('{"scenario"') }) | ConvertFrom-Json
-            $godotResult = ($godotText -split "\r?\n" | Where-Object { $_.StartsWith('{"scenario"') }) | ConvertFrom-Json
-            if ($cliResult.state_hash -ne $godotResult.state_hash -or $cliResult.event_hash -ne $godotResult.event_hash) {
-                throw "$count CLI/Godot state/event trace mismatch."
+            $fixture = Join-Path $OutputDirectory "resume-$count.json"
+            $null = Run-Check "save-$count" "dotnet" @($cli, "--save-profile", "$count", $fixture) "COMBAT_LAB_CLI_PASS"
+            foreach ($mode in @("fresh", "restore")) {
+                # No business Step in a measured process before its real first frame, except isolated loading preparation.
+                $cliArgs = @($cli, "--profile", "$count")
+                $godotArgs = @("--headless", "--path", $labRoot, "--", "--profile", "$count")
+                if ($mode -eq "restore") { $cliArgs += $fixture; $godotArgs += $fixture }
+                $cliText = Run-Check "cli-$count-$mode" "dotnet" $cliArgs "combat_lab_host"
+                $godotText = Run-Check "godot-$count-$mode" $Godot $godotArgs "COMBAT_LAB_PROFILE_PASS"
+                $cliResult = ($cliText -split "\r?\n" | Where-Object { $_.StartsWith('{"scenario"') }) | ConvertFrom-Json
+                $godotResult = ($godotText -split "\r?\n" | Where-Object { $_.StartsWith('{"scenario"') }) | ConvertFrom-Json
+                if ($cliResult.state_hash -ne $godotResult.state_hash -or $cliResult.event_hash -ne $godotResult.event_hash) {
+                    throw "$count $mode CLI/Godot state/event trace mismatch."
+                }
+                $results += [PSCustomObject]@{ count = $count; mode = $mode; cli = $cliResult; godot = $godotResult }
             }
-            $results += [PSCustomObject]@{ count = $count; cli = $cliResult; godot = $godotResult }
         }
         $results | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $OutputDirectory "profiles.json") -Encoding utf8
         $over = @($results | Where-Object { $_.cli.over_budget -gt 0 -or $_.godot.over_budget -gt 0 })

@@ -59,6 +59,11 @@ public partial class CombatLab : Control
                 _speedInfo.Text = $"表现速度 ×{value:0.0}（逻辑保持30Hz）";
             };
             ResetPreset(0);
+            var prepareStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            var preparation = _session.PrepareForPlay();
+            GD.Print("COMBAT_LAB_PREPARATION " + System.Text.Json.JsonSerializer.Serialize(new {
+                call_ms = System.Diagnostics.Stopwatch.GetElapsedTime(prepareStarted).TotalMilliseconds,
+                fixture_ms = preparation.ElapsedMs, alloc_bytes = preparation.AllocatedBytes }));
             GD.Print("COMBAT_LAB_READY");
             if (testing)
             {
@@ -72,7 +77,7 @@ public partial class CombatLab : Control
                 _paused = true;
                 var checks = 0;
                 LabHostChecks.Profile((condition, message) => { checks++; if (!condition) throw new InvalidOperationException(message); },
-                    int.Parse(args[profile + 1]));
+                    int.Parse(args[profile + 1]), args.Length > profile + 2 ? args[profile + 2] : null);
                 GD.Print($"COMBAT_LAB_PROFILE_PASS checks={checks}");
                 GetTree().Quit();
             }
@@ -179,6 +184,7 @@ public partial class CombatLab : Control
         try
         {
             var restored = LabSession.Load(_saveStore.Load(), _configurations);
+            restored.PrepareForPlay();
             _session = restored;
             _paused = true;
             Selected = 0;

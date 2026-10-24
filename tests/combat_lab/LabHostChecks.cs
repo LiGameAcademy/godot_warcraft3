@@ -25,6 +25,10 @@ internal static class LabHostChecks
         var session = new LabSession(configuration);
         session.Attack(1, 2);
         var before = session.Save();
+        var preparation = session.PrepareForPlay();
+        check(session.Save() == before, "loading preparation leaves real root state and pending command untouched");
+        check(ReferenceEquals(preparation, session.PrepareForPlay()) && session.Save() == before,
+            "repeated preparation shares only an immutable report and never advances this world");
         var clone = LabSession.Load(before, [configuration]);
         check(session.StateHash() == clone.StateHash(), "pending attack and input counters survive save before first step");
         for (var frame = 1; frame <= 100; frame++)
@@ -75,16 +79,20 @@ internal static class LabHostChecks
         check(session.ReadStates()[0].NextAttackFrame == firstDeadline, "host Stop and reattack preserve cooldown");
     }
 
-    internal static void Profile(Action<bool, string> check, int count)
+    internal static void Profile(Action<bool, string> check, int count, string? resumeFile = null)
     {
         var configuration = Pairs(count).Freeze();
-        var host = new LabSession(configuration);
-        var direct = new StationaryCombat(configuration.Seed);
-        foreach (var entry in configuration.Definitions) direct.AddCombatant(new(entry.Id), entry.Definition);
-        host.StartDuels();
-        var commands = configuration.Duels.Select((duel, index) => new CombatCommand(
-            configuration.Entities.Single(e => e.Id.Value == duel.Attacker).OwnerId, index,
-            CombatCommandKind.Attack, new(duel.Attacker), new(duel.Target))).ToArray();
+        var host = resumeFile is null ? new LabSession(configuration) : LabSession.Load(File.ReadAllText(resumeFile), [configuration]);
+        if (resumeFile is null) host.StartDuels();
+        var beforePrepare = host.Save();
+        var prepareStarted = Stopwatch.GetTimestamp();
+        var preparation = host.PrepareForPlay();
+        var prepareMs = Stopwatch.GetElapsedTime(prepareStarted).TotalMilliseconds;
+        check(beforePrepare == host.Save(), "loading preparation cannot alter real state, queue, IDs or RNG");
+        var root = LabJson.Read<LabSnapshot>(beforePrepare);
+        var initialFrame = host.Frame;
+        var direct = StationaryCombat.Restore(CombatSnapshotJson.Deserialize(root.Combat), configuration.Definitions);
+        var commands = root.Pending.OrderBy(command => command.Arrival).Select(command => command.ToCommand()).ToArray();
         using var state = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var events = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var samples = new double[600];
@@ -101,7 +109,7 @@ internal static class LabHostChecks
             var after = CombatFrameLog.ReadCounters();
             samples[i] = Stopwatch.GetElapsedTime(started, ended).TotalMilliseconds;
             observer.Record(i, started, ended, allocated, before, after);
-            var expected = direct.Advance(i + 1, configuration.Entities, i == 0 ? commands : []);
+            var expected = direct.Advance(initialFrame + i + 1, configuration.Entities, i == 0 ? commands : []);
             check(host.CombatHash() == direct.ComputeStateHash() && result.Events.SequenceEqual(expected.Events), "host commands and frame results match direct CLI kernel");
             state.AppendData(Encoding.UTF8.GetBytes(host.StateHash()));
             events.AppendData(JsonSerializer.SerializeToUtf8Bytes(result.Events));
@@ -110,7 +118,8 @@ internal static class LabHostChecks
         var sorted = samples.Order().ToArray();
         Console.WriteLine(JsonSerializer.Serialize(new
         {
-            scenario = "combat_lab_host", count, frames = samples.Length,
+            scenario = "combat_lab_host", count, frames = samples.Length, restored = resumeFile is not null,
+            preparation_call_ms = prepareMs, preparation_fixture_ms = preparation.ElapsedMs, preparation_alloc_bytes = preparation.AllocatedBytes,
             first_ms = samples[0], max_ms = sorted[^1], p95_ms = sorted[569],
             over_budget = samples.Count(ms => ms > 1000.0 / 30),
             state_hash = Convert.ToHexString(state.GetHashAndReset()), event_hash = Convert.ToHexString(events.GetHashAndReset()),
