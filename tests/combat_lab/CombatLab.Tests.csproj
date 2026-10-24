@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../external/rts_kernel/src/Rts.Kernel/Rts.Kernel.csproj" />
+    <Compile Include="../../apps/combat_lab/logic/*.cs" Link="Logic/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
