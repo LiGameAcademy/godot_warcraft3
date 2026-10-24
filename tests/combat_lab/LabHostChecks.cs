@@ -88,16 +88,25 @@ internal static class LabHostChecks
         using var state = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var events = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var samples = new double[600];
+        var observer = new CombatFrameLog(samples.Length);
+        _ = CombatFrameLog.ReadCounters();
         for (var i = 0; i < samples.Length; i++)
         {
+            var before = CombatFrameLog.ReadCounters();
+            var bytes = GC.GetAllocatedBytesForCurrentThread();
             var started = Stopwatch.GetTimestamp();
             var result = host.Step();
-            samples[i] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            var ended = Stopwatch.GetTimestamp();
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - bytes;
+            var after = CombatFrameLog.ReadCounters();
+            samples[i] = Stopwatch.GetElapsedTime(started, ended).TotalMilliseconds;
+            observer.Record(i, started, ended, allocated, before, after);
             var expected = direct.Advance(i + 1, configuration.Entities, i == 0 ? commands : []);
             check(host.CombatHash() == direct.ComputeStateHash() && result.Events.SequenceEqual(expected.Events), "host commands and frame results match direct CLI kernel");
             state.AppendData(Encoding.UTF8.GetBytes(host.StateHash()));
             events.AppendData(JsonSerializer.SerializeToUtf8Bytes(result.Events));
         }
+        observer.Report(count);
         var sorted = samples.Order().ToArray();
         Console.WriteLine(JsonSerializer.Serialize(new
         {

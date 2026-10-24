@@ -9,5 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../../external/rts_kernel/src/Rts.Kernel/Rts.Kernel.csproj" />
     <Compile Include="../../apps/combat_lab/logic/*.cs" Link="Logic/%(Filename)%(Extension)" />
+    <Compile Include="../../external/rts_kernel/tests/Rts.Kernel.Tests/FrameSpikeLog.cs" Link="Verification/FrameSpikeLog.cs" />
+    <Compile Include="../../external/rts_kernel/tests/Rts.Kernel.Tests/ThreadWorkObservation.cs" Link="Verification/ThreadWorkObservation.cs" />
   </ItemGroup>
 </Project>
