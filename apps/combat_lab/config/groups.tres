@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="CombatLabPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/CombatLabPreset.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+ScenarioId = "groups"
+Title = "3  24单位固定交战"
+Health = 130
+Damage = 10
+Dice = 1
+WindupFrames = 18
+CooldownFrames = 45
+Positions = Array[Vector2i]([Vector2i(0, 0), Vector2i(76, 0), Vector2i(220, 0), Vector2i(296, 0), Vector2i(440, 0), Vector2i(516, 0), Vector2i(660, 0), Vector2i(736, 0), Vector2i(0, 180), Vector2i(76, 180), Vector2i(220, 180), Vector2i(296, 180), Vector2i(440, 180), Vector2i(516, 180), Vector2i(660, 180), Vector2i(736, 180), Vector2i(0, 360), Vector2i(76, 360), Vector2i(220, 360), Vector2i(296, 360), Vector2i(440, 360), Vector2i(516, 360), Vector2i(660, 360), Vector2i(736, 360)])
+Owners = Array[int]([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
+Duels = Array[Vector2i]([Vector2i(1, 2), Vector2i(2, 1), Vector2i(3, 4), Vector2i(4, 3), Vector2i(5, 6), Vector2i(6, 5), Vector2i(7, 8), Vector2i(8, 7), Vector2i(9, 10), Vector2i(10, 9), Vector2i(11, 12), Vector2i(12, 11), Vector2i(13, 14), Vector2i(14, 13), Vector2i(15, 16), Vector2i(16, 15), Vector2i(17, 18), Vector2i(18, 17), Vector2i(19, 20), Vector2i(20, 19), Vector2i(21, 22), Vector2i(22, 21), Vector2i(23, 24), Vector2i(24, 23)])

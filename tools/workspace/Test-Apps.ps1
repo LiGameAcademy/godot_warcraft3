@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Godot,
-    [ValidateSet("all", "game", "map_editor", "asset_viewer")][string]$App = "all"
+    [ValidateSet("all", "game", "map_editor", "asset_viewer")][string]$App = "all",
+    [string[]]$BootArguments = @(),
+    [ValidateRange(1, 1800)][int]$TimeoutSeconds = 180
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
@@ -12,20 +14,7 @@ foreach ($name in $selected) {
     $appRoot = Join-Path $repoRoot "apps/$name"
     foreach ($phase in @("import", "boot")) {
         $log = Join-Path $logRoot "$name-$phase.log"
-        $arguments = @("--headless", "--path", $appRoot, "--log-file", "$log.engine")
-        if ($phase -eq "import") { $arguments += @("--editor", "--import", "--quit") }
-        else { $arguments += @("--", "--smoke-test") }
-        $previous = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        try { & $Godot @arguments *> $log } finally { $ErrorActionPreference = $previous }
-        $exitCode = [int]$LASTEXITCODE
-        $output = Get-Content -LiteralPath $log -Raw
-        if ($exitCode -ne 0 -or $output -match 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|Can.t load dependency') {
-            throw "$name $phase failed. See $log"
-        }
-        if ($phase -eq "boot" -and $output -notmatch 'APP startup PASS') {
-            throw "$name did not exercise the runtime package. See $log"
-        }
+        & (Join-Path $PSScriptRoot "Invoke-GodotCheck.ps1") -Godot $Godot -AppRoot $appRoot -Log $log -Phase $phase -TimeoutSeconds $TimeoutSeconds -BootArguments $BootArguments -Rendered:($phase -eq "boot")
     }
     Write-Output "$name import and actual application startup PASS"
 }

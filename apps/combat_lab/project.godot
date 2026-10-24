@@ -1,0 +1,23 @@
+config_version=5
+
+[application]
+config/name="RTS Stationary Combat Lab"
+run/main_scene="res://combat_lab.tscn"
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+
+[display]
+window/size/viewport_width=1360
+window/size/viewport_height=850
+window/size/window_width_override=1360
+window/size/window_height_override=850
+window/stretch/mode="canvas_items"
+
+[dotnet]
+project/assembly_name="CombatLab"
+
+[physics]
+common/physics_ticks_per_second=30
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.04, 0.06, 0.085, 1)

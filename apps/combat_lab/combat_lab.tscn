@@ -1,0 +1,257 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://CombatLab.cs" id="1"]
+[ext_resource type="PackedScene" path="res://presentation/combat_arena.tscn" id="2"]
+[ext_resource type="Resource" path="res://config/basic.tres" id="3"]
+[ext_resource type="Resource" path="res://config/mutual.tres" id="4"]
+[ext_resource type="Resource" path="res://config/groups.tres" id="5"]
+[ext_resource type="Script" path="res://config/CombatLabPreset.cs" id="6"]
+
+[sub_resource type="SystemFont" id="Font"]
+font_names = PackedStringArray("Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI")
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+bg_color = Color(0.075, 0.105, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.16, 0.22, 0.28, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_left = 12
+corner_radius_bottom_right = 12
+
+[sub_resource type="StyleBoxFlat" id="Button"]
+bg_color = Color(0.13, 0.19, 0.25, 1)
+content_margin_left = 12.0
+content_margin_top = 9.0
+content_margin_right = 12.0
+content_margin_bottom = 9.0
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_left = 6
+corner_radius_bottom_right = 6
+
+[sub_resource type="Theme" id="Theme"]
+default_font = SubResource("Font")
+default_font_size = 16
+Button/styles/normal = SubResource("Button")
+PanelContainer/styles/panel = SubResource("Panel")
+
+[node name="CombatLab" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = SubResource("Theme")
+script = ExtResource("1")
+Presets = Array[ExtResource("6")]([ExtResource("3"), ExtResource("4"), ExtResource("5")])
+
+[node name="Layout" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 22.0
+offset_right = -24.0
+offset_bottom = -22.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Layout"]
+layout_mode = 2
+
+[node name="Titles" type="VBoxContainer" parent="Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Title" type="Label" parent="Layout/Header/Titles"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
+theme_override_font_sizes/font_size = 27
+text = "固定站位 · 战斗实验"
+
+[node name="Subtitle" type="Label" parent="Layout/Header/Titles"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.65, 0.74, 1)
+theme_override_font_sizes/font_size = 14
+text = "攻击 / Stop / 换目标 / 死亡 / 读档     ·     即时伤害，不移动、不追击"
+
+[node name="Clock" type="Label" parent="Layout/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.8, 0.86, 1)
+text = "30 Hz"
+horizontal_alignment = 2
+
+[node name="Body" type="HBoxContainer" parent="Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="Sidebar" type="PanelContainer" parent="Layout/Body"]
+custom_minimum_size = Vector2(295, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Layout/Body/Sidebar"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+
+[node name="Controls" type="VBoxContainer" parent="Layout/Body/Sidebar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PresetTitle" type="Label" parent="Layout/Body/Sidebar/Margin/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.82, 0.57, 1)
+text = "实验场景"
+
+[node name="PresetChoice" type="OptionButton" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+
+[node name="Selection" type="Label" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(250, 143)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.77, 0.86, 0.92, 1)
+text = "未选择单位"
+
+[node name="StopButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "停止所选  Space"
+
+[node name="DuelButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "双方交战  D"
+
+[node name="TimeRow" type="HBoxContainer" parent="Layout/Body/Sidebar/Margin/Controls"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PauseButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls/TimeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "暂停  P"
+
+[node name="StepButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls/TimeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "单步  N"
+
+[node name="SpeedInfo" type="Label" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.55, 0.68, 0.78, 1)
+text = "表现速度 ×1.0（逻辑保持30Hz）"
+
+[node name="VisualSpeed" type="HSlider" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+min_value = 0.0
+max_value = 3.0
+step = 0.5
+value = 1.0
+
+[node name="Spacer" type="Control" parent="Layout/Body/Sidebar/Margin/Controls"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SaveRow" type="HBoxContainer" parent="Layout/Body/Sidebar/Margin/Controls"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SaveButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls/SaveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "保存 F5"
+
+[node name="LoadButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls/SaveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "读档 F9"
+
+[node name="SaveInfo" type="Label" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(250, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.55, 0.68, 0.78, 1)
+text = "F5 保存整个实验状态；F9 读档后暂停。"
+autowrap_mode = 3
+
+[node name="ResetButton" type="Button" parent="Layout/Body/Sidebar/Margin/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "重置当前场景  R"
+
+[node name="ArenaColumn" type="VBoxContainer" parent="Layout/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="ArenaPanel" type="PanelContainer" parent="Layout/Body/ArenaColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Arena" parent="Layout/Body/ArenaColumn/ArenaPanel" instance=ExtResource("2")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="LogPanel" type="PanelContainer" parent="Layout/Body/ArenaColumn"]
+custom_minimum_size = Vector2(0, 162)
+layout_mode = 2
+
+[node name="LogMargin" type="MarginContainer" parent="Layout/Body/ArenaColumn/LogPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 10
+
+[node name="EventLog" type="RichTextLabel" parent="Layout/Body/ArenaColumn/LogPanel/LogMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/default_color = Color(0.6, 0.73, 0.8, 1)
+theme_override_font_sizes/normal_font_size = 13
+mouse_filter = 2
+text = "事件记录"
+scroll_active = false
+
+[node name="Status" type="Label" parent="Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.57, 1)
+text = "准备实验场景…"
+autowrap_mode = 3
+
+[node name="Help" type="Label" parent="Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.48, 0.6, 0.69, 1)
+theme_override_font_sizes/font_size = 13
+text = "左键选择任意一方  ·  右键攻击异色单位  ·  蓝圈为射程  ·  1 / 2 / 3 切换场景  ·  死亡后不可选"
