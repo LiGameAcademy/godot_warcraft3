@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="CombatLabPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/CombatLabPreset.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+ScenarioId = "basic"
+Title = "1  攻击 / Stop / 换目标"
+Health = 130
+Damage = 10
+Dice = 1
+WindupFrames = 18
+CooldownFrames = 45
+Positions = Array[Vector2i]([Vector2i(-55, 0), Vector2i(-55, 70), Vector2i(15, -30), Vector2i(15, 30), Vector2i(200, 0)])
+Owners = Array[int]([0, 0, 1, 1, 1])
+Duels = Array[Vector2i]([Vector2i(1, 3), Vector2i(3, 1), Vector2i(2, 4), Vector2i(4, 2)])

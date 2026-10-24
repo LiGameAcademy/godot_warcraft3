@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://presentation/CombatUnitView.cs" id="1"]
+
+[node name="CombatUnitView" type="Control"]
+layout_mode = 0
+offset_right = 72.0
+offset_bottom = 88.0
+mouse_filter = 2
+script = ExtResource("1")

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="CombatLabPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/CombatLabPreset.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+ScenarioId = "mutual"
+Title = "2  同帧互杀"
+Health = 18
+Damage = 18
+Dice = 0
+WindupFrames = 15
+CooldownFrames = 45
+Positions = Array[Vector2i]([Vector2i(-25, 0), Vector2i(25, 0)])
+Owners = Array[int]([0, 1])
+Duels = Array[Vector2i]([Vector2i(1, 2), Vector2i(2, 1)])
