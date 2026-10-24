@@ -123,3 +123,34 @@ static func _nodes_share_tree(a: Node, b: Node) -> bool:
 
 static func node_has_mesh(root: Node) -> bool:
 	return MapPlaceholders.node_has_mesh(root)
+
+## 只用于缓存自身拥有的原型与临时实例，不接管调用方已取得的实例。
+## 所有材质保持强引用，直到Node和子渲染实例完成释放；不改材质或网格内容。
+static func free_owned_model(root: Node) -> void:
+	if root == null:
+		return
+	var retained: Array[Material] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		for child: Node in node.get_children():
+			pending.append(child)
+		if node is GeometryInstance3D:
+			var geometry: GeometryInstance3D = node as GeometryInstance3D
+			if geometry.material_override != null:
+				retained.append(geometry.material_override)
+			if geometry.material_overlay != null:
+				retained.append(geometry.material_overlay)
+		if node is MeshInstance3D:
+			var mesh_instance: MeshInstance3D = node as MeshInstance3D
+			if mesh_instance.mesh == null:
+				continue
+			for surface: int in range(mesh_instance.mesh.get_surface_count()):
+				var override_material: Material = mesh_instance.get_surface_override_material(surface)
+				if override_material != null:
+					retained.append(override_material)
+				var mesh_material: Material = mesh_instance.mesh.surface_get_material(surface)
+				if mesh_material != null:
+					retained.append(mesh_material)
+	root.free()
+	retained.clear()

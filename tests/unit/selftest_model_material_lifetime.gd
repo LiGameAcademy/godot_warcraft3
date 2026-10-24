@@ -25,13 +25,17 @@ func _run() -> void:
 		var a: Node3D = cache.instance_glb("material-fixture")
 		var b: Node3D = cache.instance_glb("material-fixture")
 		_check(a.get_child_count() == 2 and b.get_child_count() == 2, "Packing preserves both geosets")
+		# 测试负责清理已交付的实例；保活A资源，避免把测试清理错误混入缓存临时实例的释放。
+		var before_a: Array = _capture(a)
 		var before: Array = _capture(b)
 		_check(a.get_child(1).get_active_material(0) != b.get_child(1).get_active_material(0),
 			"Hidden local material must be isolated between instances")
 		var parts: Array = cache.mesh_parts_from_glb("material-fixture")
 		_check(parts.size() == 1, "Static extraction keeps the visible canopy, not the hidden stump")
 		var hidden: WeakRef = weakref(a.get_child(1).get_active_material(0))
+		_check(_capture(a) == before_a, "Static extraction cannot alter a handed-out instance")
 		a.free()
+		before_a.clear()
 		_check(hidden.get_ref() == null, "Destroying an instance releases its unretained hidden material")
 		_check(parts[0].mesh != null and parts[0].material != null, "Extracted geometry and material remain alive")
 		_check(_capture(b) == before, "Destroying A cannot change B mesh, material, visibility or transform")
@@ -43,12 +47,14 @@ func _run() -> void:
 
 	print("MODEL_MATERIAL_LIFETIME_SYNC elapsed_ms=", float(Time.get_ticks_usec() - first_started) / 1000.0)
 	var queued: Node3D = packed.instantiate() as Node3D
+	var queued_resources: Array = _capture(queued)
 	root.add_child(queued)
 	var queued_id: int = queued.get_instance_id()
 	queued.queue_free()
 	await process_frame
 	await process_frame
 	_check(not is_instance_id_valid(queued_id), "Queued destruction completes")
+	queued_resources.clear()
 	var prototype_id: int = prototype.get_instance_id()
 	var cache_reference: WeakRef = weakref(cache)
 	cache = null

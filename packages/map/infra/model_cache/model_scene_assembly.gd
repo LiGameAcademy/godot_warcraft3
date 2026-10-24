@@ -1,6 +1,7 @@
 extends RefCounted
 ## 组装模型表现并保存原型；不拥有运行时缓存。
 
+const Geometry: GDScript = preload("model_geometry.gd")
 const Queries: GDScript = preload("model_animation_queries.gd")
 const Rules: GDScript = preload("model_material_rules.gd")
 const Tracks: GDScript = preload("model_animation_tracks.gd")
@@ -31,7 +32,7 @@ static func _compose_visual_packed(glb_path: String) -> PackedScene:
 	var root_n: Node = base.instantiate()
 	if root_n == null or not (root_n is Node3D):
 		if root_n:
-			root_n.free()
+			Geometry.free_owned_model(root_n)
 		return null
 	var root: Node3D = root_n as Node3D
 	var logical: String = glb_path.replace("\\", "/").trim_prefix("res://assets/asset-converted/")
@@ -54,9 +55,9 @@ static func _compose_visual_packed(glb_path: String) -> PackedScene:
 	root.set_script(_Model)
 	var packed: PackedScene = PackedScene.new()
 	if packed.pack(root) != OK:
-		root.free()
+		Geometry.free_owned_model(root)
 		return null
-	root.free()
+	Geometry.free_owned_model(root)
 	return packed
 
 

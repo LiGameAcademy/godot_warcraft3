@@ -32,7 +32,7 @@ func _notification(what: int) -> void:
 	# 仅释放原型；instance_glb 返回的副本由各自宿主负责。
 	for prototype: Variant in _scene_cache.values():
 		if prototype is Node and is_instance_valid(prototype):
-			prototype.free()
+			Geometry.free_owned_model(prototype as Node)
 	_scene_cache.clear()
 
 
@@ -66,7 +66,7 @@ func _instance_glb_internal(path: String, sanitize: bool, unit_soft_blend: bool 
 				Geometry._sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
-			inst.free()
+			Geometry.free_owned_model(inst)
 	var proto: Node3D = _ensure_scene(path)
 	if proto == null:
 		return null
@@ -104,7 +104,7 @@ func evict(path: String) -> void:
 		var proto: Variant = _scene_cache[path]
 		_scene_cache.erase(path)
 		if proto is Node and is_instance_valid(proto):
-			(proto as Node).free()
+			Geometry.free_owned_model(proto as Node)
 	_packed_cache.erase(path)
 	_anim_flags.erase(path)
 	_parts_cache.erase(path)
@@ -161,7 +161,7 @@ func instance_glb_preview(
 			Geometry._sanitize_triangle_meshes(inst as Node3D)
 			return inst as Node3D
 		if inst != null:
-			inst.free()
+			Geometry.free_owned_model(inst)
 	var proto: Node3D = _ensure_scene(path, prefer_visuals)
 	if proto == null:
 		var disk_abs: String = RuntimeAssets.project_abs(path)
@@ -212,7 +212,7 @@ func instance_glb_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 			Rules._fix_wc3_blend_materials(inst as Node3D, false)
 			return inst as Node3D
 		if inst != null:
-			inst.free()
+			Geometry.free_owned_model(inst)
 	var dup: Node3D = proto.duplicate() as Node3D
 	if dup != null:
 		Rules._fix_wc3_blend_materials(dup, false)
@@ -251,7 +251,7 @@ func _ensure_scene(path: String, prefer_visuals: bool = true) -> Node3D:
 			if inst is Node3D:
 				return _register_loaded_scene(path, inst as Node3D, false)
 			if inst != null:
-				inst.free()
+				Geometry.free_owned_model(inst)
 	var loaded: Node3D = RuntimeAssets.load_gltf_scene(path)
 	if loaded == null:
 		return null
@@ -270,7 +270,7 @@ func _ensure_scene_from_bytes(path: String, bytes: PackedByteArray) -> Node3D:
 		if inst is Node3D:
 			return _register_loaded_scene(path, inst as Node3D, false)
 		if inst != null:
-			inst.free()
+			Geometry.free_owned_model(inst)
 	# JSON .gltf 禁止 append_from_buffer（外链 URI + 会误入 fail 黑名单）
 	if path.to_lower().ends_with(".gltf"):
 		var from_file: Node3D = RuntimeAssets.load_gltf_scene(path)
@@ -426,7 +426,7 @@ func mesh_parts_from_glb(path: String) -> Array:
 		return []
 	var parts: Array = []
 	Geometry._collect_mesh_parts(root, parts)
-	root.free()
+	Geometry.free_owned_model(root)
 	_parts_cache[path] = parts
 	return parts
 

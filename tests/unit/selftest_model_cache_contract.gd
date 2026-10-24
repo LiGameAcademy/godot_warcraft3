@@ -25,7 +25,7 @@ func _run() -> void:
 		var saved: String = _root_dir.path_join(name + ".scn")
 		_check(ResourceSaver.save(packed, saved) == OK, "save fixture " + name)
 		compiled["contract/" + name + ".scn"] = ProjectSettings.globalize_path(saved)
-		prototype.free()
+		_free_instance(prototype)
 	var content: String = ProjectSettings.globalize_path(_root_dir.path_join("assets"))
 	DirAccess.make_dir_recursive_absolute(content)
 	_check(ContentPaths.install_compiled_scenes(compiled, content) == OK, "mount fixture publications")
@@ -43,20 +43,20 @@ func _run() -> void:
 	_check(parts.size() == 1, "Stand hides the stump before static extraction")
 	_check(is_same(parts, cache.mesh_parts_from_glb(path)), "static cache hit returns the same array")
 	_trace.append(["hits", _describe(b), _stats(cache), parts.size(), cache.get_proto(path) != null])
-	a.free()
+	_free_instance(a)
 	_check(_describe(b) == before_b, "A destruction cannot change B")
-	b.free()
+	_free_instance(b)
 	cache.reset_load_stats()
 	var preview: Node3D = cache.instance_glb_preview(_path("preview"))
 	_trace.append(["preview", _describe(preview), _stats(cache)])
-	preview.free()
+	_free_instance(preview)
 	var hud: Node3D = cache.instance_glb_hud(path)
 	_trace.append(["hud", _describe(hud), _stats(cache)])
-	hud.free()
+	_free_instance(hud)
 	for name: String in ["unit_fm1", "unit_fm2", "glow"]:
 		var sample: Node3D = cache.instance_glb(_path(name), true)
 		_trace.append([name, _describe(sample)])
-		sample.free()
+		_free_instance(sample)
 	await _preload(cache)
 	_check(cache.preload_pending_count() == 0, "all preload work consumed")
 	var source: Node3D = _fixture("source")
@@ -65,7 +65,7 @@ func _run() -> void:
 	_check(document.append_from_scene(source, state) == OK, "export source fixture")
 	var glb_path: String = _root_dir.path_join("source.glb")
 	_check(document.write_to_filesystem(state, glb_path) == OK, "write embedded GLB fixture")
-	source.free()
+	_free_instance(source)
 	var bytes: PackedByteArray = FileAccess.get_file_as_bytes(glb_path)
 	var raw: String = "contract/raw.glb"
 	cache.store_bytes(raw, bytes)
@@ -73,20 +73,20 @@ func _run() -> void:
 	_check(cache.take_cached_bytes(raw) == bytes, "take is a non-consuming read in the existing API")
 	var from_bytes: Node3D = cache.instance_glb_from_bytes(raw, bytes)
 	_trace.append(["bytes", _describe(from_bytes), _stats(cache)])
-	from_bytes.free()
+	_free_instance(from_bytes)
 	var byte_hit: Node3D = cache.instance_glb_from_bytes(raw, bytes)
 	_trace.append(["bytes_hit", _describe(byte_hit), _stats(cache)])
-	byte_hit.free()
+	_free_instance(byte_hit)
 	var byte_preview: Node3D = cache.instance_glb_from_bytes_preview("contract/raw_preview.glb", bytes)
 	_trace.append(["bytes_preview", _describe(byte_preview), _stats(cache)])
-	byte_preview.free()
+	_free_instance(byte_preview)
 	var prototype: Node3D = cache.get_proto(raw)
 	var prototype_id: int = prototype.get_instance_id()
 	var survivor: Node3D = cache.instance_glb(raw)
 	cache.evict(raw)
 	_check(not is_instance_id_valid(prototype_id) and not cache.has_cached(raw) and not cache.has_bytes_cached(raw), "eviction clears its owned caches")
 	_check(survivor.get_child_count() > 0, "eviction cannot destroy handed-out instances")
-	survivor.free()
+	_free_instance(survivor)
 	cache.request_preload(_path("preload_a"))
 	cache.cancel_preloads()
 	_trace.append(["cancel", cache.preload_pending_count(), cache.is_preload_pending(_path("preload_a"))])
@@ -113,7 +113,7 @@ func _preload(cache: MapModelCache) -> void:
 	for name: String in ["preload_a", "preload_b"]:
 		var node: Node3D = cache.instance_glb(_path(name))
 		_trace.append([name, _describe(node), cache.get_proto(_path(name)) != null])
-		node.free()
+		_free_instance(node)
 	_trace.append(["preload_stats", _stats(cache)])
 
 func _path(name: String) -> String:
@@ -164,3 +164,15 @@ func _describe(model: Node3D) -> Array:
 					row.append([str(standard.resource_name), standard.transparency, standard.cull_mode, standard.blend_mode, standard.depth_draw_mode, str(standard.albedo_color), standard.alpha_scissor_threshold])
 		result.append(row)
 	return result
+## 测试持有已交付的实例，仅隔离调用方清理；不替代缓存内部释放的被测代码。
+func _free_instance(model: Node3D) -> void:
+	var materials: Array[Material] = []
+	for node: Node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = node as MeshInstance3D
+		if mesh.mesh != null:
+			for surface: int in range(mesh.mesh.get_surface_count()):
+				var material: Material = mesh.get_active_material(surface)
+				if material != null:
+					materials.append(material)
+	model.free()
+	materials.clear()
