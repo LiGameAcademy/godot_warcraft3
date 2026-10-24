@@ -17,7 +17,7 @@ func _run() -> void:
 	var packed: PackedScene = PackedScene.new()
 	_check(packed.pack(prototype) == OK, "Fixture must pack")
 	var cache: MapModelCache = MapModelCache.new()
-	cache._scene_cache["material-fixture"] = prototype
+	cache._scenes._scene_cache["material-fixture"] = prototype
 	cache.register_external_packed("material-fixture", packed)
 	var first_started: int = Time.get_ticks_usec()
 	for iteration: int in range(12):
