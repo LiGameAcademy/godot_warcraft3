@@ -4,15 +4,15 @@ func _ready() -> void:
 	call_deferred("run")
 
 func run() -> void:
-	var failures := 0
-	var cache := MapModelCache.new()
-	var prototype := Node3D.new()
-	var mesh := MeshInstance3D.new()
+	var failures: int = 0
+	var cache: MapModelCache = MapModelCache.new()
+	var prototype: Node3D = Node3D.new()
+	var mesh: MeshInstance3D = MeshInstance3D.new()
 	mesh.mesh = BoxMesh.new()
 	prototype.add_child(mesh)
 	# 原型缓存的所有权边界；绕过磁盘转换以单独验证生命周期。
-	cache._scene_cache["fixture"] = prototype
-	var instance := prototype.duplicate()
+	cache._scenes._scene_cache["fixture"] = prototype
+	var instance: Node = prototype.duplicate()
 	add_child(instance)
 	var reference: WeakRef = weakref(cache)
 	cache = null
